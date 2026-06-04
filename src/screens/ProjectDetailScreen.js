@@ -136,12 +136,538 @@ function PlayGlyph() {
   return <Ionicons name="play" size={23} color="#fff" />;
 }
 
+const SAMPLE_CLOCKIN_DAYS = [
+  {
+    id: 'today',
+    label: 'Today',
+    dateLabel: 'Jun 04, 2026',
+    painters: [
+      {
+        name: 'Jad Slim',
+        initials: 'JS',
+        isYou: true,
+        segments: [
+          { start: '7:00 AM', startSrc: 'GPS', end: '10:23 AM', endSrc: 'GPS', duration: '3h 23m', status: 'on' },
+          { start: '10:24 AM', startSrc: 'Manual', end: '10:24 AM', endSrc: 'GPS', duration: '0h 0m', status: 'on' },
+          { start: '10:55 AM', startSrc: 'Auto', end: '12:05 PM', endSrc: 'Auto', duration: '1h 10m', status: 'on' },
+          { start: '12:05 PM', startSrc: 'Auto', end: '12:55 PM', endSrc: 'Auto', duration: '0h 50m', status: 'off' },
+          { start: '12:55 PM', startSrc: 'Auto', end: '2:01 PM', endSrc: 'GPS', duration: '1h 6m', status: 'on' },
+        ],
+      },
+      {
+        name: 'Marco Rivera',
+        initials: 'MR',
+        segments: [
+          { start: '7:15 AM', startSrc: 'GPS', end: '11:30 AM', endSrc: 'GPS', duration: '4h 15m', status: 'on' },
+          { start: '11:30 AM', startSrc: 'Auto', end: '12:00 PM', endSrc: 'Auto', duration: '0h 30m', status: 'off' },
+          { start: '12:00 PM', startSrc: 'Auto', end: '3:15 PM', endSrc: 'GPS', duration: '3h 15m', status: 'on' },
+        ],
+      },
+      {
+        name: 'Emily Tran',
+        initials: 'ET',
+        segments: [
+          { start: '9:00 AM', startSrc: 'GPS', end: '11:53 AM', endSrc: 'Manual', duration: '2h 53m', status: 'on' },
+          { start: '11:53 AM', startSrc: 'Auto', end: '12:30 PM', endSrc: 'Auto', duration: '0h 37m', status: 'off' },
+          { start: '12:30 PM', startSrc: 'Auto', end: '4:10 PM', endSrc: 'GPS', duration: '3h 40m', status: 'on' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'yesterday',
+    label: 'Yesterday',
+    dateLabel: 'Jun 03, 2026',
+    painters: [
+      {
+        name: 'Jad Slim',
+        initials: 'JS',
+        isYou: true,
+        segments: [
+          { start: '7:30 AM', startSrc: 'GPS', end: '11:45 AM', endSrc: 'Auto', duration: '4h 15m', status: 'on' },
+          { start: '11:45 AM', startSrc: 'Auto', end: '12:15 PM', endSrc: 'Auto', duration: '0h 30m', status: 'off' },
+          { start: '12:15 PM', startSrc: 'Auto', end: '2:30 PM', endSrc: 'GPS', duration: '2h 15m', status: 'on' },
+        ],
+      },
+      {
+        name: 'Marco Rivera',
+        initials: 'MR',
+        segments: [
+          { start: '7:00 AM', startSrc: 'GPS', end: '2:10 PM', endSrc: 'Auto', duration: '7h 10m', status: 'on' },
+        ],
+      },
+      {
+        name: 'David Kim',
+        initials: 'DK',
+        segments: [
+          { start: '8:00 AM', startSrc: 'Manual', end: '12:00 PM', endSrc: 'GPS', duration: '4h 0m', status: 'on' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'tuesday',
+    label: 'Tuesday',
+    dateLabel: 'Jun 02, 2026',
+    painters: [
+      {
+        name: 'Jad Slim',
+        initials: 'JS',
+        isYou: true,
+        segments: [
+          { start: '8:00 AM', startSrc: 'GPS', end: '3:00 PM', endSrc: 'GPS', duration: '7h 0m', status: 'on' },
+        ],
+      },
+      {
+        name: 'Emily Tran',
+        initials: 'ET',
+        segments: [
+          { start: '8:30 AM', startSrc: 'GPS', end: '2:30 PM', endSrc: 'GPS', duration: '6h 0m', status: 'on' },
+        ],
+      },
+    ],
+  },
+];
+
+function parseDurationToMinutes(label) {
+  const match = String(label).match(/(\d+)\s*h\s*(\d+)\s*m/);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function formatMinutesLabel(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${minutes}m`;
+}
+
+function buildPainterSummaries(days) {
+  const byName = new Map();
+  for (const day of days) {
+    for (const painter of day.painters) {
+      const key = painter.name;
+      if (!byName.has(key)) {
+        byName.set(key, {
+          id: key.toLowerCase().replace(/\s+/g, '-'),
+          name: painter.name,
+          initials: painter.initials,
+          isYou: !!painter.isYou,
+          totalMinutes: 0,
+          segmentCount: 0,
+          onSiteCount: 0,
+          offSiteCount: 0,
+          days: [],
+        });
+      }
+      const entry = byName.get(key);
+      entry.days.push({
+        dayId: day.id,
+        label: day.label,
+        dateLabel: day.dateLabel,
+        segments: painter.segments,
+      });
+      for (const segment of painter.segments) {
+        entry.totalMinutes += parseDurationToMinutes(segment.duration);
+        entry.segmentCount += 1;
+        if (segment.status === 'on') entry.onSiteCount += 1;
+        else entry.offSiteCount += 1;
+      }
+    }
+  }
+  return Array.from(byName.values()).sort((a, b) => {
+    if (a.isYou && !b.isYou) return -1;
+    if (!a.isYou && b.isYou) return 1;
+    return b.totalMinutes - a.totalMinutes;
+  });
+}
+
+function StatusPill({ status, distanceLabel }) {
+  const onSite = status === 'on';
+  return (
+    <View
+      style={[
+        styles.segStatusPill,
+        { backgroundColor: onSite ? '#e6f2f4' : '#fbecea' },
+      ]}
+    >
+      <View
+        style={[
+          styles.segStatusDot,
+          { backgroundColor: onSite ? BRAND : '#c0432b' },
+        ]}
+      />
+      <Text
+        style={[
+          styles.segStatusText,
+          { color: onSite ? BRAND : '#c0432b' },
+        ]}
+      >
+        {onSite ? 'On Site' : 'Off Site'}
+      </Text>
+      {distanceLabel ? (
+        <>
+          <Text
+            style={[
+              styles.segStatusText,
+              styles.segStatusDistanceDivider,
+              { color: onSite ? BRAND : '#c0432b' },
+            ]}
+          >
+            -
+          </Text>
+          <Text
+            style={[
+              styles.segStatusText,
+              { color: onSite ? BRAND : '#c0432b' },
+            ]}
+          >
+            {distanceLabel}
+          </Text>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function PainterSummaryRow({ painter, onPress }) {
+  return (
+    <TouchableOpacity
+      style={styles.painterSummaryCard}
+      activeOpacity={0.85}
+      onPress={onPress}
+    >
+      <View style={[styles.painterAvatar, painter.isYou && styles.painterAvatarYou]}>
+        <Text
+          style={[
+            styles.painterAvatarText,
+            painter.isYou && styles.painterAvatarTextYou,
+          ]}
+        >
+          {painter.initials}
+        </Text>
+      </View>
+      <View style={styles.painterSummaryBody}>
+        <View style={styles.painterSummaryTopRow}>
+          <View style={styles.painterNameWrap}>
+            <Text style={styles.painterName} numberOfLines={1}>
+              {painter.name}
+            </Text>
+            {painter.isYou ? <Text style={styles.painterYouTag}>You</Text> : null}
+          </View>
+          <Text style={styles.painterTotal}>
+            {formatMinutesLabel(painter.totalMinutes)}
+          </Text>
+        </View>
+        <View style={styles.painterSummaryMetaRow}>
+          <Text style={styles.painterMetaText}>
+            {painter.segmentCount} {painter.segmentCount === 1 ? 'clock-in' : 'clock-ins'}
+          </Text>
+          <View style={styles.painterMetaDivider} />
+          <View style={styles.painterStatusInline}>
+            <View style={[styles.segStatusDot, { backgroundColor: BRAND }]} />
+            <Text style={[styles.painterMetaText, styles.painterMetaOn]}>
+              {painter.onSiteCount} On Site
+            </Text>
+          </View>
+          {painter.offSiteCount > 0 ? (
+            <>
+              <View style={styles.painterMetaDivider} />
+              <View style={styles.painterStatusInline}>
+                <View style={[styles.segStatusDot, { backgroundColor: '#c0432b' }]} />
+                <Text style={[styles.painterMetaText, styles.painterMetaOff]}>
+                  {painter.offSiteCount} Off Site
+                </Text>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={SUBTLE} />
+    </TouchableOpacity>
+  );
+}
+
+function PainterDetailView({ painter, onBack, onSegmentPress }) {
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.detailBackRow}
+        activeOpacity={0.7}
+        onPress={onBack}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons name="chevron-back" size={18} color={BRAND} />
+        <Text style={styles.detailBackText}>All painters</Text>
+      </TouchableOpacity>
+
+      <View style={styles.detailHeaderCard}>
+        <View
+          style={[
+            styles.painterAvatar,
+            styles.detailHeaderAvatar,
+            painter.isYou && styles.painterAvatarYou,
+          ]}
+        >
+          <Text
+            style={[
+              styles.painterAvatarText,
+              styles.detailHeaderAvatarText,
+              painter.isYou && styles.painterAvatarTextYou,
+            ]}
+          >
+            {painter.initials}
+          </Text>
+        </View>
+        <View style={styles.detailHeaderTextWrap}>
+          <Text style={styles.detailHeaderName} numberOfLines={1}>
+            {painter.name}
+            {painter.isYou ? ' (You)' : ''}
+          </Text>
+          <Text style={styles.detailHeaderMeta} numberOfLines={1}>
+            {painter.segmentCount} clock-ins · {painter.onSiteCount} on site · {painter.offSiteCount} off site
+          </Text>
+        </View>
+        <Text style={styles.detailHeaderTotal}>
+          {formatMinutesLabel(painter.totalMinutes)}
+        </Text>
+      </View>
+
+      {painter.days.map((day) => {
+        const dayMinutes = day.segments.reduce(
+          (acc, segment) => acc + parseDurationToMinutes(segment.duration),
+          0,
+        );
+        return (
+          <View key={day.dayId} style={styles.dayGroup}>
+            <View style={styles.dayHeader}>
+              <View style={styles.dayHeaderLeft}>
+                <Text style={styles.dayLabel}>{day.label},</Text>
+                <Text style={styles.dayDate}> {day.dateLabel}</Text>
+              </View>
+              <Text style={styles.dayTotal}>{formatMinutesLabel(dayMinutes)}</Text>
+            </View>
+            <View style={styles.segmentListCard}>
+              {day.segments.map((segment, index) => {
+                const canEdit = painter.isYou;
+                const RowComponent = canEdit ? TouchableOpacity : View;
+                const rowProps = canEdit
+                  ? {
+                      activeOpacity: 0.78,
+                      onPress: () =>
+                        onSegmentPress?.({
+                          painter,
+                          day,
+                          segment,
+                          index,
+                        }),
+                    }
+                  : {};
+
+                return (
+                  <RowComponent
+                    key={`${day.dayId}-${index}`}
+                    style={[styles.segmentRow, index > 0 && styles.segmentRowBorder]}
+                    {...rowProps}
+                  >
+                    <View style={styles.segmentLeft}>
+                      <Text style={styles.segmentTime} numberOfLines={1}>
+                        <Text style={styles.segmentTimeStrong}>{segment.start}</Text>
+                        <Text style={styles.segmentSrc}> {segment.startSrc}</Text>
+                        <Text style={styles.segmentDash}>  -  </Text>
+                        <Text style={styles.segmentTimeStrong}>{segment.end}</Text>
+                        <Text style={styles.segmentSrc}> {segment.endSrc}</Text>
+                      </Text>
+                    <StatusPill
+                      status={segment.status}
+                      distanceLabel={getDistanceLabel(segment)}
+                    />
+                  </View>
+                    <View style={styles.segmentRight}>
+                      <Text style={styles.segmentDuration}>{segment.duration}</Text>
+                      {canEdit ? (
+                        <Ionicons name="chevron-forward" size={16} color={SUBTLE} />
+                      ) : null}
+                    </View>
+                  </RowComponent>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function formatEditDateLabel(dateLabel) {
+  return String(dateLabel || '').replace(/(\D)0(\d,)/, '$1$2');
+}
+
+function getDistanceLabel(segment) {
+  return segment?.status === 'on' ? '42 m from job site' : '1.4 km from job site';
+}
+
+function EditMapPreview({ distanceLabel, distanceVisible, onPress }) {
+  return (
+    <TouchableOpacity
+      style={styles.editMapPreview}
+      activeOpacity={0.82}
+      onPress={onPress}
+    >
+      <View style={[styles.editMapRoad, styles.editMapRoadOne]} />
+      <View style={[styles.editMapRoad, styles.editMapRoadTwo]} />
+      <View style={[styles.editMapRoad, styles.editMapRoadThree]} />
+      <View style={styles.editMapZone} />
+      <View style={styles.editMapPin}>
+        <Ionicons name="location" size={17} color="#fff" />
+      </View>
+      <View style={styles.editMapClock}>
+        <Ionicons name="time" size={14} color={BRAND} />
+      </View>
+      {distanceVisible ? (
+        <View style={styles.editDistanceBubble}>
+          <Text style={styles.editDistanceText}>{distanceLabel}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+function EditTimeScreen({ title, address, entry, onBack }) {
+  const { painter, day, segment } = entry;
+  const [distanceVisible, setDistanceVisible] = useState(false);
+  const distanceLabel = getDistanceLabel(segment);
+
+  return (
+    <SafeAreaView style={styles.editSafeArea}>
+      <View style={styles.editHeader}>
+        <TouchableOpacity
+          style={styles.editBackButton}
+          activeOpacity={0.7}
+          onPress={onBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={34} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.editTitle}>Edit Time</Text>
+      </View>
+
+      <ScrollView
+        style={styles.editContent}
+        contentContainerStyle={styles.editContentInner}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.editShiftCard}>
+          <View style={styles.editShiftTop}>
+            <View style={styles.editShiftText}>
+              <Text style={styles.editPainterName}>{painter.name}</Text>
+              <View style={styles.editLocationRow}>
+                <Ionicons name="location" size={20} color="#4e659f" />
+                <Text style={styles.editLocationText} numberOfLines={1}>
+                  {title}
+                </Text>
+              </View>
+            </View>
+            <EditMapPreview
+              distanceLabel={distanceLabel}
+              distanceVisible={distanceVisible}
+              onPress={() => setDistanceVisible((visible) => !visible)}
+            />
+          </View>
+
+          <View style={styles.editTimeline}>
+            <View style={styles.editTimeBlock}>
+              <Text style={styles.editTimeValue}>{segment.start}</Text>
+              <Text style={styles.editTimeSource}>{segment.startSrc}</Text>
+            </View>
+            <View style={styles.editTimelineLine} />
+            <View style={[styles.editTimeBlock, styles.editTimeBlockRight]}>
+              <Text style={[styles.editTimeValue, styles.editTimeEnd]}>{segment.end}</Text>
+              <Text style={styles.editTimeSource}>{segment.endSrc}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.editDots}>
+          {[0, 1, 2, 3, 4, 5].map((dot) => (
+            <View
+              key={dot}
+              style={[styles.editDot, dot === 5 && styles.editDotActive]}
+            />
+          ))}
+        </View>
+
+        <View style={styles.editFormCard}>
+          <View style={styles.editFormRow}>
+            <Text style={styles.editFieldLabel}>Date</Text>
+            <View style={styles.editFieldPill}>
+              <Text style={styles.editFieldPillText}>{formatEditDateLabel(day.dateLabel)}</Text>
+            </View>
+          </View>
+          <View style={styles.editFormRow}>
+            <Text style={styles.editFieldLabel}>Clock-In Time</Text>
+            <View style={styles.editFieldPill}>
+              <Text style={styles.editFieldPillText}>{segment.start}</Text>
+            </View>
+          </View>
+          <View style={styles.editFormRow}>
+            <Text style={styles.editFieldLabel}>Clock-Out Time</Text>
+            <View style={styles.editFieldPill}>
+              <Text style={styles.editFieldPillText}>{segment.end}</Text>
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.editActionCard} activeOpacity={0.85}>
+          <Text style={styles.editActionText}>Change Project</Text>
+          <Ionicons name="location-outline" size={27} color="#77bed1" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.editActionCard} activeOpacity={0.85}>
+          <Text style={styles.editActionText}>Add Note</Text>
+          <Ionicons name="document-text-outline" size={28} color="#77bed1" />
+        </TouchableOpacity>
+
+        <Text style={styles.editAddressHint} numberOfLines={2}>
+          Tap the map preview to show distance from the job site. {address}
+        </Text>
+      </ScrollView>
+
+      <View style={styles.editBottomActions}>
+        <TouchableOpacity style={styles.editSaveButton} activeOpacity={0.75}>
+          <Text style={styles.editSaveText}>Save Changes</Text>
+        </TouchableOpacity>
+        <View style={styles.editSplitActions}>
+          <TouchableOpacity
+            style={styles.editCancelButton}
+            activeOpacity={0.75}
+            onPress={onBack}
+          >
+            <Text style={styles.editCancelText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editDeleteButton} activeOpacity={0.75}>
+            <Text style={styles.editDeleteText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 export default function ProjectDetailScreen({ project, onBack }) {
   const [activeTab, setActiveTab] = useState('clock');
+  const [selectedPainterId, setSelectedPainterId] = useState(null);
+  const [selectedTimeEntry, setSelectedTimeEntry] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photosLoaded, setPhotosLoaded] = useState(false);
   const [photosError, setPhotosError] = useState('');
+
+  const painterSummaries = buildPainterSummaries(SAMPLE_CLOCKIN_DAYS);
+  const selectedPainter =
+    selectedPainterId === null
+      ? null
+      : painterSummaries.find((painter) => painter.id === selectedPainterId) ?? null;
 
   const title = getProjectTitle(project);
   const companyCamProjectId = getCompanyCamProjectId(project);
@@ -227,6 +753,17 @@ export default function ProjectDetailScreen({ project, onBack }) {
     };
   }, [activeTab, companyCamProjectId, photosLoaded]);
 
+  if (selectedTimeEntry) {
+    return (
+      <EditTimeScreen
+        title={title}
+        address={address}
+        entry={selectedTimeEntry}
+        onBack={() => setSelectedTimeEntry(null)}
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -277,7 +814,7 @@ export default function ProjectDetailScreen({ project, onBack }) {
         contentContainerStyle={styles.contentInner}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'clock' ? (
+        {activeTab === 'clock' && !selectedPainter ? (
           <View style={styles.infoCard}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{getInitials(title)}</Text>
@@ -298,60 +835,70 @@ export default function ProjectDetailScreen({ project, onBack }) {
         ) : null}
 
         {activeTab === 'clock' ? (
-          <>
-            <View style={styles.hoursGrid}>
-              <View style={[styles.hourCard, styles.youCard]}>
-                <View style={[styles.hourBadge, { backgroundColor: '#eaf4f6' }]}>
-                  <Text style={[styles.hourBadgeText, { color: BRAND }]}>You</Text>
-                </View>
-                <Text style={styles.hourValue}>{yourHours}</Text>
-                <Text style={styles.hourLabel}>Your hours</Text>
-              </View>
-
-              <View style={[styles.hourCard, styles.comboCard]}>
-                <View style={styles.comboStats}>
-                  <View style={styles.comboStat}>
-                    <Text style={styles.comboKicker}>Team</Text>
-                    <Text style={[styles.hourValue, styles.comboValue]}>{teamHours}</Text>
-                    <Text style={styles.hourLabel}>Total hours</Text>
+          selectedPainter ? (
+            <PainterDetailView
+              painter={selectedPainter}
+              onBack={() => setSelectedPainterId(null)}
+              onSegmentPress={setSelectedTimeEntry}
+            />
+          ) : (
+            <>
+              <View style={styles.hoursGrid}>
+                <View style={[styles.hourCard, styles.youCard]}>
+                  <View style={[styles.hourBadge, { backgroundColor: '#eaf4f6' }]}>
+                    <Text style={[styles.hourBadgeText, { color: BRAND }]}>You</Text>
                   </View>
-                  <View style={styles.comboDivider} />
-                  <View style={styles.comboStat}>
-                    <Text style={styles.comboKicker}>Budget</Text>
-                    <Text style={[styles.hourValue, styles.comboValue]}>{budgetedHours}</Text>
-                    <Text style={styles.hourLabel}>Budgeted</Text>
-                  </View>
+                  <Text style={styles.hourValue}>{yourHours}</Text>
+                  <Text style={styles.hourLabel}>Your hours</Text>
                 </View>
 
-                {budgetStatus ? (
-                  <View style={[styles.statusPill, { backgroundColor: budgetStatus.bg }]}>
-                    <View style={[styles.statusDot, { backgroundColor: budgetStatus.dot }]} />
-                    <Text style={[styles.statusText, { color: budgetStatus.color }]}>
-                      {budgetStatus.label}
-                    </Text>
+                <View style={[styles.hourCard, styles.comboCard]}>
+                  <View style={styles.comboStats}>
+                    <View style={styles.comboStat}>
+                      <Text style={styles.comboKicker}>Team</Text>
+                      <Text style={[styles.hourValue, styles.comboValue]}>{teamHours}</Text>
+                      <Text style={styles.hourLabel}>Total hours</Text>
+                    </View>
+                    <View style={styles.comboDivider} />
+                    <View style={styles.comboStat}>
+                      <Text style={styles.comboKicker}>Budget</Text>
+                      <Text style={[styles.hourValue, styles.comboValue]}>{budgetedHours}</Text>
+                      <Text style={styles.hourLabel}>Budgeted</Text>
+                    </View>
                   </View>
-                ) : null}
-              </View>
-            </View>
 
-            <TouchableOpacity style={styles.clockButton} activeOpacity={0.9}>
-              <View style={styles.clockIconCircle}>
-                <PlayGlyph />
+                  {budgetStatus ? (
+                    <View style={[styles.statusPill, { backgroundColor: budgetStatus.bg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: budgetStatus.dot }]} />
+                      <Text style={[styles.statusText, { color: budgetStatus.color }]}>
+                        {budgetStatus.label}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
-              <Text style={styles.clockButtonText}>Clock In</Text>
-            </TouchableOpacity>
 
-            <View style={styles.emptyState}>
-              <View style={styles.emptyArt}>
-                <View style={styles.artCircle} />
-                <ClockGlyph color={BRAND} size={44} />
+              <TouchableOpacity style={styles.clockButton} activeOpacity={0.9}>
+                <View style={styles.clockIconCircle}>
+                  <PlayGlyph />
+                </View>
+                <Text style={styles.clockButtonText}>Clock In</Text>
+              </TouchableOpacity>
+
+              <View style={styles.recentHeader}>
+                <Text style={styles.recentTitle}>Hours by Painter</Text>
+                <Text style={styles.recentSeeAll}>{painterSummaries.length} crew</Text>
               </View>
-              <Text style={styles.emptyTitle}>No clock-ins yet</Text>
-              <Text style={styles.emptyHint}>
-                Tap Clock In to start tracking time on this job.
-              </Text>
-            </View>
-          </>
+
+              {painterSummaries.map((painter) => (
+                <PainterSummaryRow
+                  key={painter.id}
+                  painter={painter}
+                  onPress={() => setSelectedPainterId(painter.id)}
+                />
+              ))}
+            </>
+          )
         ) : (
           <PhotosPanel
             photos={photos}
@@ -365,7 +912,7 @@ export default function ProjectDetailScreen({ project, onBack }) {
         )}
       </ScrollView>
 
-      {activeTab === 'clock' ? (
+      {activeTab === 'clock' && !selectedPainter ? (
         <TouchableOpacity style={styles.addTimeButton} activeOpacity={0.9}>
           <Text style={styles.addTimeText}>Add Time</Text>
           <View style={styles.addDivider} />
@@ -1004,6 +1551,640 @@ const styles = StyleSheet.create({
   viewerImage: {
     width: '100%',
     height: '100%',
+  },
+
+  recentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 22,
+    paddingHorizontal: 2,
+    marginBottom: 10,
+  },
+  recentTitle: {
+    color: INK,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.1,
+  },
+  recentSeeAll: {
+    color: BRAND,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  dayGroup: {
+    marginBottom: 14,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: SOFT,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginBottom: 8,
+  },
+  dayHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flex: 1,
+  },
+  dayLabel: {
+    color: INK,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  dayDate: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dayTotal: {
+    color: NAVY,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.1,
+  },
+
+  painterCard: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  painterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  painterAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#eef1f4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  painterAvatarYou: {
+    backgroundColor: BRAND,
+  },
+  painterAvatarText: {
+    color: NAVY,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  painterAvatarTextYou: {
+    color: '#fff',
+  },
+  painterNameWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  painterName: {
+    color: INK,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.1,
+  },
+  painterYouTag: {
+    color: BRAND,
+    backgroundColor: '#eaf4f6',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  painterTotal: {
+    color: INK,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+
+  segmentList: {
+    paddingTop: 8,
+  },
+  segmentListCard: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 14,
+  },
+  segmentRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  painterSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    gap: 4,
+  },
+  painterSummaryBody: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  painterSummaryTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  painterSummaryMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  painterMetaText: {
+    color: MUTED,
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  painterMetaOn: {
+    color: BRAND,
+    fontWeight: '800',
+  },
+  painterMetaOff: {
+    color: '#c0432b',
+    fontWeight: '800',
+  },
+  painterMetaDivider: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: SUBTLE,
+  },
+  painterStatusInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  detailBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    marginTop: 6,
+    marginBottom: 6,
+    alignSelf: 'flex-start',
+  },
+  detailBackText: {
+    color: BRAND,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    marginBottom: 16,
+    gap: 12,
+  },
+  detailHeaderAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: 0,
+  },
+  detailHeaderAvatarText: {
+    fontSize: 14,
+  },
+  detailHeaderTextWrap: {
+    flex: 1,
+  },
+  detailHeaderName: {
+    color: INK,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  detailHeaderMeta: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  detailHeaderTotal: {
+    color: NAVY,
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  segmentLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  segmentRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  segmentTime: {
+    color: BRAND,
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  segmentTimeStrong: {
+    color: BRAND,
+    fontWeight: '800',
+  },
+  segmentSrc: {
+    color: BRAND,
+    fontWeight: '600',
+    opacity: 0.85,
+  },
+  segmentDash: {
+    color: SUBTLE,
+    fontWeight: '600',
+  },
+  segmentDuration: {
+    color: INK,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+  },
+  segStatusPill: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginTop: 5,
+  },
+  segStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  segStatusText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  segStatusDistanceDivider: {
+    marginHorizontal: -2,
+  },
+
+  editSafeArea: {
+    flex: 1,
+    backgroundColor: '#f6f6f6',
+  },
+  editHeader: {
+    height: 116,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8e8e8',
+  },
+  editBackButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  editTitle: {
+    color: '#202124',
+    fontSize: 38,
+    fontWeight: '800',
+    letterSpacing: -1.2,
+  },
+  editContent: {
+    flex: 1,
+  },
+  editContentInner: {
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    paddingBottom: 220,
+  },
+  editShiftCard: {
+    borderWidth: 1.2,
+    borderColor: '#8f9296',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 14,
+  },
+  editShiftTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  editShiftText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  editPainterName: {
+    color: TEXT,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  editLocationRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  editLocationText: {
+    flex: 1,
+    color: '#4e659f',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  editMapPreview: {
+    width: 86,
+    height: 76,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#e8f2ef',
+    borderWidth: 1,
+    borderColor: '#d9e4df',
+  },
+  editMapRoad: {
+    position: 'absolute',
+    height: 9,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    opacity: 0.9,
+  },
+  editMapRoadOne: {
+    width: 110,
+    top: 16,
+    left: -18,
+    transform: [{ rotate: '-22deg' }],
+  },
+  editMapRoadTwo: {
+    width: 90,
+    top: 46,
+    left: 8,
+    transform: [{ rotate: '26deg' }],
+  },
+  editMapRoadThree: {
+    width: 76,
+    top: 36,
+    left: 20,
+    transform: [{ rotate: '-62deg' }],
+  },
+  editMapZone: {
+    position: 'absolute',
+    width: 55,
+    height: 55,
+    borderRadius: 28,
+    right: 8,
+    top: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(43,132,150,0.35)',
+    backgroundColor: 'rgba(43,132,150,0.13)',
+  },
+  editMapPin: {
+    position: 'absolute',
+    right: 16,
+    top: 18,
+    width: 27,
+    height: 27,
+    borderRadius: 14,
+    backgroundColor: '#91cbb1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  editMapClock: {
+    position: 'absolute',
+    left: 13,
+    top: 35,
+    width: 29,
+    height: 29,
+    borderRadius: 15,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#8fc7d5',
+  },
+  editDistanceBubble: {
+    position: 'absolute',
+    left: 5,
+    right: 5,
+    bottom: 5,
+    minHeight: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(49,73,93,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  editDistanceText: {
+    color: '#fff',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: -0.1,
+  },
+  editTimeline: {
+    marginTop: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editTimeBlock: {
+    minWidth: 90,
+  },
+  editTimeBlockRight: {
+    alignItems: 'flex-end',
+  },
+  editTimeValue: {
+    color: '#6ba7ff',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  editTimeEnd: {
+    color: '#7087bd',
+  },
+  editTimeSource: {
+    marginTop: 2,
+    color: '#6482bd',
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontWeight: '800',
+  },
+  editTimelineLine: {
+    flex: 1,
+    height: 1,
+    marginHorizontal: 12,
+    backgroundColor: '#c8ccd0',
+  },
+  editDots: {
+    marginTop: 28,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 11,
+  },
+  editDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#e0e0e0',
+  },
+  editDotActive: {
+    backgroundColor: '#949494',
+  },
+  editFormCard: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  editFormRow: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 18,
+  },
+  editFieldLabel: {
+    color: '#000',
+    fontSize: 20,
+    fontWeight: '500',
+    letterSpacing: -0.3,
+  },
+  editFieldPill: {
+    minHeight: 41,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    backgroundColor: '#eeeeef',
+  },
+  editFieldPillText: {
+    color: '#000',
+    fontSize: 20,
+    fontWeight: '500',
+    letterSpacing: -0.2,
+  },
+  editActionCard: {
+    minHeight: 72,
+    marginTop: 12,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 7,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  editActionText: {
+    color: '#77bed1',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  editAddressHint: {
+    marginTop: 12,
+    paddingHorizontal: 4,
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  editBottomActions: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 16,
+  },
+  editSaveButton: {
+    height: 54,
+    borderRadius: 4,
+    backgroundColor: '#c8e7ee',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editSaveText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  editSplitActions: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 18,
+  },
+  editCancelButton: {
+    flex: 1,
+    height: 58,
+    borderWidth: 1,
+    borderColor: '#8d8d8d',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  editCancelText: {
+    color: '#8d8d8d',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  editDeleteButton: {
+    flex: 1,
+    height: 58,
+    borderWidth: 1,
+    borderColor: '#f36b65',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  editDeleteText: {
+    color: '#ef716d',
+    fontSize: 20,
+    fontWeight: '800',
   },
 
   addTimeButton: {

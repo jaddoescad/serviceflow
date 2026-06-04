@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -6,10 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 
 const COLORS = {
@@ -23,11 +21,14 @@ const COLORS = {
   ink: "#11201d",
 };
 
-const PROJECTS_PAGE_SIZE = 20;
+const FILTERS = [
+  { key: "active", label: "Active" },
+  { key: "nearby", label: "Nearby" },
+  { key: "assigned", label: "Assigned" },
+  { key: "date", label: "Date", chevron: true },
+];
 
-function escapeSearchTerm(value) {
-  return value.replace(/[%_]/g, (match) => `\\${match}`);
-}
+const PROJECTS_PAGE_SIZE = 20;
 
 export default function ProjectsScreen({ onSelectProject }) {
   const [projects, setProjects] = useState([]);
@@ -36,13 +37,11 @@ export default function ProjectsScreen({ onSelectProject }) {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [activeFilter, setActiveFilter] = useState("active");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [totalProjects, setTotalProjects] = useState(null);
-  const [searchText, setSearchText] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const searchInputRef = useRef(null);
 
   const loadProjects = useCallback(async ({ quiet = false, pageToLoad = 0, append = false } = {}) => {
     if (!quiet && !append) setLoading(true);
@@ -51,31 +50,12 @@ export default function ProjectsScreen({ onSelectProject }) {
 
     const from = pageToLoad * PROJECTS_PAGE_SIZE;
     const to = from + PROJECTS_PAGE_SIZE - 1;
-    const trimmedSearch = searchQuery.trim();
-    const escapedSearch = escapeSearchTerm(trimmedSearch);
 
-    let query = supabase
+    const { data, error: queryError, count } = await supabase
       .from("companycam_projects")
-      .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_lead,last_synced_at,companycam_updated_at", { count: "exact" })
-      .eq("is_archived", false)
-      .order("companycam_updated_at", { ascending: false, nullsFirst: false });
-
-    if (escapedSearch) {
-      const pattern = `%${escapedSearch}%`;
-      query = query.or(
-        [
-          `name.ilike.${pattern}`,
-          `formatted_address.ilike.${pattern}`,
-          `city.ilike.${pattern}`,
-          `state.ilike.${pattern}`,
-          `postal_code.ilike.${pattern}`,
-        ].join(","),
-      );
-    } else {
-      query = query.eq("is_lead", false);
-    }
-
-    const { data, error: queryError, count } = await query.range(from, to);
+      .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,last_synced_at,companycam_updated_at", { count: "exact" })
+      .order("companycam_updated_at", { ascending: false, nullsFirst: false })
+      .range(from, to);
 
     if (queryError) {
       setError(queryError.message);
@@ -96,7 +76,7 @@ export default function ProjectsScreen({ onSelectProject }) {
 
     if (!quiet && !append) setLoading(false);
     if (append) setLoadingMore(false);
-  }, [searchQuery]);
+  }, []);
 
   const refreshProjects = useCallback(async () => {
     setRefreshing(true);
@@ -142,17 +122,8 @@ export default function ProjectsScreen({ onSelectProject }) {
     loadProjects({ pageToLoad: 0 });
   }, [loadProjects]);
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setSearchQuery(searchText.trim());
-    }, 250);
-
-    return () => clearTimeout(timeout);
-  }, [searchText]);
-
   const ongoing = useMemo(() => projects.filter((p) => !p.is_archived), [projects]);
-  const isSearching = searchQuery.length > 0;
-  const featured = isSearching ? null : ongoing[0];
+  const featured = ongoing[0];
   const remaining = featured ? ongoing.slice(1) : ongoing;
 
   return (
@@ -173,32 +144,30 @@ export default function ProjectsScreen({ onSelectProject }) {
           </View>
         </View>
 
-        <Pressable style={styles.searchBar} onPress={() => searchInputRef.current?.focus()}>
-          <Ionicons name="search-outline" size={25} color={COLORS.muted} />
-          <TextInput
-            ref={searchInputRef}
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholder="Search projects"
-            placeholderTextColor={COLORS.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-            returnKeyType="search"
-            style={styles.searchInput}
-          />
-          {searchText ? (
-            <Pressable
-              onPress={() => {
-                setSearchText("");
-                setSearchQuery("");
-              }}
-              hitSlop={8}
-            >
-              <Ionicons name="close-circle" size={22} color={COLORS.muted} />
-            </Pressable>
-          ) : null}
-        </Pressable>
+        <View style={styles.searchBar}>
+          <SearchIcon color={COLORS.muted} />
+          <Text style={styles.searchPlaceholder}>Search projects</Text>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTERS.map((f) => {
+            const active = activeFilter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => setActiveFilter(f.key)}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+              >
+                <Text style={[styles.filterLabel, active && styles.filterLabelActive]}>{f.label}</Text>
+                {f.chevron ? <ChevronDown color={active ? COLORS.ink : COLORS.muted} /> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
 
         {!!message && <Text style={styles.messageText}>{message}</Text>}
         {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -215,21 +184,15 @@ export default function ProjectsScreen({ onSelectProject }) {
             ) : null}
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                {isSearching ? "Search Results" : "Ongoing Projects"}
-              </Text>
+              <Text style={styles.sectionTitle}>Ongoing Projects</Text>
               <Text style={styles.sectionCount}>({totalProjects ?? ongoing.length})</Text>
             </View>
 
             {remaining.length === 0 && !featured ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>
-                  {searchQuery ? "No matching projects" : "No synced projects yet"}
-                </Text>
+                <Text style={styles.emptyTitle}>No synced projects yet</Text>
                 <Text style={styles.emptyText}>
-                  {searchQuery
-                    ? "Try another name, address, city, or postal code."
-                    : "Tap the sync button to pull projects from CompanyCam."}
+                  Tap the sync button to pull projects from CompanyCam.
                 </Text>
               </View>
             ) : (
@@ -259,7 +222,7 @@ export default function ProjectsScreen({ onSelectProject }) {
         disabled={syncing}
         style={({ pressed }) => [styles.fab, pressed && styles.fabPressed, syncing && { opacity: 0.85 }]}
       >
-        {syncing ? <ActivityIndicator color="#fff" /> : <Ionicons name="add" size={42} color="#fff" />}
+        {syncing ? <ActivityIndicator color="#fff" /> : <PlusIcon color="#fff" />}
       </Pressable>
     </View>
   );
@@ -334,11 +297,72 @@ function formatDate(value) {
 function MapThumb({ tone = "light" }) {
   const dark = tone === "dark";
   const base = dark ? COLORS.green : COLORS.surface;
+  const line = dark ? "rgba(255,255,255,0.18)" : COLORS.border;
   const pin = dark ? "#ffffff" : COLORS.teal;
   const size = dark ? 64 : 52;
   return (
     <View style={[styles.mapThumb, { width: size, height: size, backgroundColor: base, borderColor: dark ? "transparent" : COLORS.border, borderWidth: dark ? 0 : 1 }]}>
-      <Ionicons name="location" size={dark ? 35 : 30} color={pin} />
+      <View style={[styles.mapLineH, { backgroundColor: line, top: size * 0.32 }]} />
+      <View style={[styles.mapLineH, { backgroundColor: line, top: size * 0.66 }]} />
+      <View style={[styles.mapLineV, { backgroundColor: line, left: size * 0.38 }]} />
+      <View style={[styles.mapLineV, { backgroundColor: line, left: size * 0.72 }]} />
+      <View style={[styles.mapPin, { backgroundColor: pin }]} />
+      <View style={[styles.mapPinStem, { backgroundColor: pin, top: size / 2 + 3 }]} />
+    </View>
+  );
+}
+
+function SearchIcon({ color }) {
+  return (
+    <View style={{ width: 18, height: 18 }}>
+      <View
+        style={{
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          borderWidth: 1.8,
+          borderColor: color,
+        }}
+      />
+      <View
+        style={{
+          position: "absolute",
+          width: 2,
+          height: 6,
+          backgroundColor: color,
+          borderRadius: 1,
+          transform: [{ rotate: "-45deg" }],
+          bottom: 0,
+          right: 1,
+        }}
+      />
+    </View>
+  );
+}
+
+function ChevronDown({ color }) {
+  return (
+    <View style={{ width: 10, height: 8, marginLeft: 6, justifyContent: "center", alignItems: "center" }}>
+      <View
+        style={{
+          width: 7,
+          height: 7,
+          borderRightWidth: 1.6,
+          borderBottomWidth: 1.6,
+          borderColor: color,
+          transform: [{ rotate: "45deg" }],
+          marginTop: -3,
+        }}
+      />
+    </View>
+  );
+}
+
+function PlusIcon({ color }) {
+  return (
+    <View style={{ width: 24, height: 24, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ position: "absolute", width: 18, height: 2.6, backgroundColor: color, borderRadius: 2 }} />
+      <View style={{ position: "absolute", width: 2.6, height: 18, backgroundColor: color, borderRadius: 2 }} />
     </View>
   );
 }
@@ -376,22 +400,18 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     marginHorizontal: 20,
-    marginBottom: 16,
     backgroundColor: COLORS.surface,
     borderRadius: 18,
     paddingHorizontal: 18,
-    height: 54,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  searchInput: {
-    flex: 1,
-    color: COLORS.ink,
+  searchPlaceholder: {
+    color: COLORS.muted,
     fontSize: 15,
-    fontWeight: "600",
-    height: "100%",
-    paddingVertical: 0,
+    fontWeight: "500",
   },
   filterRow: {
     paddingHorizontal: 20,
@@ -580,8 +600,35 @@ const styles = StyleSheet.create({
   mapThumb: {
     borderRadius: 12,
     overflow: "hidden",
-    alignItems: "center",
-    justifyContent: "center",
+  },
+  mapLineH: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 1,
+  },
+  mapLineV: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 1,
+  },
+  mapPin: {
+    position: "absolute",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    left: "50%",
+    top: "50%",
+    marginLeft: -4,
+    marginTop: -10,
+  },
+  mapPinStem: {
+    position: "absolute",
+    width: 2,
+    height: 5,
+    left: "50%",
+    marginLeft: -1,
   },
   emptyCard: {
     marginHorizontal: 20,
