@@ -1,0 +1,4 @@
+project_id = "bwbckdkouqghdadpkjvn"
+
+[functions.sync-companycam-projects]
+verify_jwt = true
