@@ -270,13 +270,6 @@ export default function ProjectDetailScreen({ project, onBack }) {
             {addedDate}
           </Text>
         </View>
-
-        <TouchableOpacity style={styles.headerAction} activeOpacity={0.7}>
-          <Text style={styles.headerActionText}>Edit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerAction} activeOpacity={0.7}>
-          <Text style={styles.headerActionText}>Share</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.tabs}>
