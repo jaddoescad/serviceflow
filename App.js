@@ -7,9 +7,12 @@ import {
   Text,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import LoginScreen from "./src/screens/LoginScreen";
 import ProjectsScreen from "./src/screens/ProjectsScreen";
 import ProjectDetailScreen from "./src/screens/ProjectDetailScreen";
+import ClockInScreen from "./src/screens/ClockInScreen";
+import TimesheetScreen from "./src/screens/TimesheetScreen";
 import { supabase } from "./src/lib/supabase";
 
 const COLORS = {
@@ -33,7 +36,7 @@ const TABS = [
 export default function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("projects");
+  const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
 
   useEffect(() => {
@@ -45,7 +48,7 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       if (nextSession) {
-        setActiveTab("projects");
+        setActiveTab("clock");
         setSelectedProject(null);
       }
     });
@@ -65,25 +68,33 @@ export default function App() {
     return <LoginScreen />;
   }
 
-  if (selectedProject) {
-    return (
-      <ProjectDetailScreen
-        project={selectedProject}
-        onBack={() => setSelectedProject(null)}
-      />
-    );
-  }
-
   return (
     <SafeAreaView style={styles.shell}>
       <View style={styles.content}>
-        {activeTab === "projects" ? (
+        <View
+          style={[styles.tabScene, activeTab !== "clock" && styles.hiddenScene]}
+          pointerEvents={activeTab === "clock" ? "auto" : "none"}
+        >
+          <ClockInScreen onViewProject={setSelectedProject} />
+        </View>
+        <View
+          style={[styles.tabScene, activeTab !== "projects" && styles.hiddenScene]}
+          pointerEvents={activeTab === "projects" ? "auto" : "none"}
+        >
           <ProjectsScreen onSelectProject={setSelectedProject} />
-        ) : activeTab === "more" ? (
+        </View>
+        <View
+          style={[styles.tabScene, activeTab !== "timesheet" && styles.hiddenScene]}
+          pointerEvents={activeTab === "timesheet" ? "auto" : "none"}
+        >
+          <TimesheetScreen />
+        </View>
+        <View
+          style={[styles.tabScene, activeTab !== "more" && styles.hiddenScene]}
+          pointerEvents={activeTab === "more" ? "auto" : "none"}
+        >
           <MoreScreen userEmail={session.user?.email} />
-        ) : (
-          <PlaceholderScreen title={TABS.find((t) => t.key === activeTab)?.label} />
-        )}
+        </View>
       </View>
       <View style={styles.tabBar}>
         {TABS.map((t) => (
@@ -96,6 +107,14 @@ export default function App() {
           />
         ))}
       </View>
+      {selectedProject ? (
+        <View style={styles.detailOverlay}>
+          <ProjectDetailScreen
+            project={selectedProject}
+            onBack={() => setSelectedProject(null)}
+          />
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -111,54 +130,14 @@ function TabButton({ icon, label, active, onPress }) {
 }
 
 function TabIcon({ name, color }) {
-  if (name === "clock") {
-    return (
-      <View style={[iconStyle.box]}>
-        <View style={[iconStyle.ring, { borderColor: color }]} />
-        <View style={[iconStyle.handV, { backgroundColor: color }]} />
-        <View style={[iconStyle.handH, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-  if (name === "projects") {
-    return (
-      <View style={iconStyle.box}>
-        <View style={[iconStyle.folderTab, { backgroundColor: color }]} />
-        <View style={[iconStyle.folderBody, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-  if (name === "timesheet") {
-    return (
-      <View style={iconStyle.box}>
-        <View style={[iconStyle.sheet, { borderColor: color }]}>
-          <View style={[iconStyle.sheetLine, { backgroundColor: color, top: 5 }]} />
-          <View style={[iconStyle.sheetLine, { backgroundColor: color, top: 10 }]} />
-          <View style={[iconStyle.sheetLine, { backgroundColor: color, top: 15, width: 8 }]} />
-        </View>
-      </View>
-    );
-  }
-  if (name === "team") {
-    return (
-      <View style={iconStyle.box}>
-        <View style={[iconStyle.head, { backgroundColor: color, left: 4 }]} />
-        <View style={[iconStyle.head, { backgroundColor: color, right: 4 }]} />
-        <View style={[iconStyle.bodyLeft, { backgroundColor: color }]} />
-        <View style={[iconStyle.bodyRight, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-  if (name === "more") {
-    return (
-      <View style={[iconStyle.box, { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 }]}>
-        <View style={[iconStyle.dot, { backgroundColor: color }]} />
-        <View style={[iconStyle.dot, { backgroundColor: color }]} />
-        <View style={[iconStyle.dot, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-  return null;
+  const iconNames = {
+    clock: "time-outline",
+    projects: "folder",
+    timesheet: "reader-outline",
+    more: "ellipsis-horizontal",
+  };
+
+  return <Ionicons name={iconNames[name] || "ellipse-outline"} size={27} color={color} />;
 }
 
 function PlaceholderScreen({ title }) {
@@ -200,6 +179,18 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  tabScene: {
+    flex: 1,
+  },
+  hiddenScene: {
+    display: "none",
+  },
+  detailOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    elevation: 20,
+    backgroundColor: COLORS.white,
   },
   tabBar: {
     flexDirection: "row",

@@ -21,10 +21,6 @@ const COLORS = {
   ink: "#11201d",
 };
 
-const CATEGORIES = [
-  { key: "current", label: "Current" },
-];
-
 const FILTERS = [
   { key: "active", label: "Active" },
   { key: "nearby", label: "Nearby" },
@@ -41,7 +37,6 @@ export default function ProjectsScreen({ onSelectProject }) {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [activeCategory, setActiveCategory] = useState("current");
   const [activeFilter, setActiveFilter] = useState("active");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -147,29 +142,7 @@ export default function ProjectsScreen({ onSelectProject }) {
             <Text style={styles.kicker}>Ottawa Painters</Text>
             <Text style={styles.headline}>Projects</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>OP</Text>
-          </View>
         </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryRow}
-        >
-          {CATEGORIES.map((c) => {
-            const active = activeCategory === c.key;
-            return (
-              <Pressable
-                key={c.key}
-                onPress={() => setActiveCategory(c.key)}
-                style={[styles.categoryPill, active && styles.categoryPillActive]}
-              >
-                <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{c.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
 
         <View style={styles.searchBar}>
           <SearchIcon color={COLORS.muted} />
@@ -424,47 +397,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900",
     letterSpacing: -0.6,
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    color: COLORS.green,
-    fontWeight: "900",
-    fontSize: 13,
-    letterSpacing: 0.4,
-  },
-  categoryRow: {
-    paddingHorizontal: 20,
-    gap: 10,
-    paddingBottom: 16,
-  },
-  categoryPill: {
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  categoryPillActive: {
-    backgroundColor: COLORS.green,
-    borderColor: COLORS.green,
-  },
-  categoryLabel: {
-    color: COLORS.ink,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  categoryLabelActive: {
-    color: COLORS.white,
   },
   searchBar: {
     marginHorizontal: 20,

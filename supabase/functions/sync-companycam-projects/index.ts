@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const COMPANYCAM_API_BASE = "https://api.companycam.com/v2";
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 50;
 const MAX_PAGES = 50;
 
 const corsHeaders = {
@@ -31,8 +31,9 @@ Deno.serve(async (req) => {
   });
 
   const projects = await fetchCompanyCamProjects(companyCamToken);
+  const projectsWithLabels = await attachProjectLabels(companyCamToken, projects);
   const syncedAt = new Date().toISOString();
-  const rows = projects.map((project) => normalizeProject(project, syncedAt));
+  const rows = projectsWithLabels.map((project) => normalizeProject(project, syncedAt));
 
   let upserted = 0;
   for (const chunk of chunkRows(rows, 500)) {
@@ -50,7 +51,7 @@ Deno.serve(async (req) => {
 });
 
 async function fetchCompanyCamProjects(token: string) {
-  const projects: unknown[] = [];
+  const projects: Record<string, unknown>[] = [];
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const url = new URL(`${COMPANYCAM_API_BASE}/projects`);
@@ -79,6 +80,71 @@ async function fetchCompanyCamProjects(token: string) {
   return projects;
 }
 
+async function attachProjectLabels(token: string, projects: Record<string, unknown>[]) {
+  const labelledProjects: Record<string, unknown>[] = [];
+  const concurrency = 8;
+
+  for (let index = 0; index < projects.length; index += concurrency) {
+    const chunk = projects.slice(index, index + concurrency);
+    const labelledChunk = await Promise.all(
+      chunk.map(async (project) => {
+        const projectId = String(project.id ?? project.project_id ?? project.uuid ?? "").trim();
+        if (!projectId) return project;
+
+        const labels = await fetchProjectLabels(token, projectId);
+        return {
+          ...project,
+          labels,
+          project_labels: labels,
+        };
+      }),
+    );
+
+    labelledProjects.push(...labelledChunk);
+  }
+
+  return labelledProjects;
+}
+
+async function fetchProjectLabels(token: string, projectId: string) {
+  const labels: Record<string, unknown>[] = [];
+
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const url = new URL(`${COMPANYCAM_API_BASE}/projects/${encodeURIComponent(projectId)}/labels`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per_page", String(PAGE_SIZE));
+
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (response.status === 404) return labels;
+    if (!response.ok) return labels;
+
+    const payload = await response.json();
+    const pageLabels = extractLabels(payload);
+    labels.push(...pageLabels);
+
+    if (pageLabels.length < PAGE_SIZE) break;
+  }
+
+  return labels;
+}
+
+function extractLabels(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload as Record<string, unknown>[];
+  if (!payload || typeof payload !== "object") return [];
+
+  const body = payload as Record<string, unknown>;
+  if (Array.isArray(body.labels)) return body.labels as Record<string, unknown>[];
+  if (Array.isArray(body.data)) return body.data as Record<string, unknown>[];
+
+  return [];
+}
+
 function extractProjects(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload as Record<string, unknown>[];
   if (!payload || typeof payload !== "object") return [];
@@ -99,10 +165,17 @@ function normalizeProject(project: Record<string, unknown>, syncedAt: string) {
   const coordinates = asObject(project.coordinates);
   const latitude = toNumber(coordinates.latitude ?? coordinates.lat ?? project.latitude ?? project.lat);
   const longitude = toNumber(coordinates.longitude ?? coordinates.lng ?? coordinates.lon ?? project.longitude ?? project.lng ?? project.lon);
+  const labels = Array.isArray(project.labels)
+    ? project.labels
+    : Array.isArray(project.project_labels)
+      ? project.project_labels
+      : [];
 
   return {
     companycam_id: companycamId,
     name: toText(project.name ?? project.title ?? `CompanyCam Project ${companycamId}`),
+    labels,
+    is_lead: hasLeadLabel(labels),
     street_address_1: toNullableText(address.street_address_1 ?? address.line_1 ?? address.address_1),
     street_address_2: toNullableText(address.street_address_2 ?? address.line_2 ?? address.address_2),
     city: toNullableText(address.city),
@@ -112,7 +185,7 @@ function normalizeProject(project: Record<string, unknown>, syncedAt: string) {
     formatted_address: toNullableText(project.formatted_address ?? project.address_string ?? formatAddress(address)),
     latitude,
     longitude,
-    is_archived: Boolean(project.archived ?? project.is_archived ?? false),
+    is_archived: isArchivedProject(project),
     companycam_created_at: toIsoDate(project.created_at ?? project.inserted_at),
     companycam_updated_at: toIsoDate(project.updated_at ?? project.modified_at ?? project.last_activity_at),
     raw: project,
@@ -144,6 +217,29 @@ function toIsoDate(value: unknown) {
   if (!value) return null;
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function hasLeadLabel(labels: unknown[]) {
+  return labels.some((label) => {
+    const labelObject = asObject(label);
+    const text = toNullableText(
+      labelObject.value ??
+      labelObject.display_value ??
+      labelObject.name ??
+      labelObject.title ??
+      label,
+    );
+
+    if (!text) return false;
+
+    const normalized = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return normalized === "lead" || normalized === "leads";
+  });
+}
+
+function isArchivedProject(project: Record<string, unknown>) {
+  const status = toNullableText(project.status);
+  return Boolean(project.archived ?? project.is_archived ?? false) || status?.toLowerCase() === "deleted";
 }
 
 function formatAddress(address: Record<string, unknown>) {

@@ -16,7 +16,7 @@ module.exports = {
       fallbackToCacheTimeout: 0
     },
     assetBundlePatterns: ["**/*"],
-    plugins: ["expo-asset"],
+    plugins: ["expo-asset", "expo-font"],
     extra: {
       appTitle: "Ottawa Painters"
     }
