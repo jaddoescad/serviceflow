@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
@@ -8,16 +7,24 @@ import { supabase } from "./supabase";
 import { distanceMeters, formatDistance, normalizeProject } from "./trackingModel";
 import { activeEntry, applyEntryTimeUpdate, entryProjectId, shiftToEntry } from "./timeEntryModel";
 import { getProjectTimeTotals } from "./timeEntryPresenters";
+import {
+  enqueueWrite,
+  readGeocodeCache,
+  readLocationLabelCache,
+  readQueuedDeleteKeys,
+  readStore,
+  readWriteQueue,
+  writeGeocodeCache,
+  writeLocationLabelCache,
+  writeStore,
+  writeWriteQueue,
+} from "./timeTrackingStorage";
 
 export { distanceMeters, formatAddress, formatDistance, formatDuration, normalizeProject } from "./trackingModel";
 export { buildProjectClockInDays, buildTimesheetDays, getProjectTimeTotals } from "./timeEntryPresenters";
 
 export const BACKGROUND_LOCATION_TASK = "ottawa-painters-background-location";
 
-const STORAGE_KEY = "ottawaPainters.timeTracking.v1";
-const WRITE_QUEUE_KEY = "ottawaPainters.timeTracking.writeQueue.v1";
-const GEOCODE_CACHE_KEY = "ottawaPainters.projectGeocodes.v1";
-const LOCATION_LABEL_CACHE_KEY = "ottawaPainters.locationLabels.v1";
 const CLOCK_OUT_NOTIFICATION_CATEGORY = "ottawa-painters-clock-out-prompt";
 const SWITCH_PROJECT_NOTIFICATION_CATEGORY = "ottawa-painters-switch-project-prompt";
 const CLOCK_OUT_NOTIFICATION_ACTION = "clock_out";
@@ -26,86 +33,6 @@ const SITE_RADIUS_METERS = 150;
 const CLOCK_OUT_PROMPT_METERS = 300;
 const JOB_SUGGESTION_METERS = 175;
 const NOTIFICATION_COOLDOWN_MS = 10 * 60 * 1000;
-
-function parseJson(value, fallback) {
-  try {
-    return value ? JSON.parse(value) : fallback;
-  } catch (_error) {
-    return fallback;
-  }
-}
-
-async function readStore() {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  return parseJson(raw, { activeShift: null, entries: [], knownProjects: [], lastNotificationAt: 0 });
-}
-
-async function writeStore(store) {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-}
-
-async function readWriteQueue() {
-  const raw = await AsyncStorage.getItem(WRITE_QUEUE_KEY);
-  const queue = parseJson(raw, []);
-  return Array.isArray(queue) ? queue : [];
-}
-
-async function writeWriteQueue(queue) {
-  await AsyncStorage.setItem(WRITE_QUEUE_KEY, JSON.stringify(queue));
-}
-
-function queueKey(operation) {
-  return (
-    operation.client_entry_id ||
-    operation.payload?.client_entry_id ||
-    operation.payload?.id ||
-    operation.id ||
-    operation.createdAt
-  );
-}
-
-async function enqueueWrite(operation) {
-  const queue = await readWriteQueue();
-  const key = queueKey(operation);
-  const withoutDuplicate = key
-    ? queue.filter((item) => queueKey(item) !== key)
-    : queue;
-  await writeWriteQueue([...withoutDuplicate, { ...operation, createdAt: operation.createdAt || new Date().toISOString() }]);
-}
-
-async function readQueuedDeleteKeys() {
-  const queue = await readWriteQueue();
-  const ids = new Set();
-  const clientEntryIds = new Set();
-
-  for (const operation of queue) {
-    if (operation.action !== "delete") continue;
-    if (operation.id) ids.add(String(operation.id));
-    if (operation.client_entry_id) clientEntryIds.add(String(operation.client_entry_id));
-  }
-
-  return { ids, clientEntryIds };
-}
-
-async function readGeocodeCache() {
-  const raw = await AsyncStorage.getItem(GEOCODE_CACHE_KEY);
-  const cache = parseJson(raw, {});
-  return cache && typeof cache === "object" ? cache : {};
-}
-
-async function writeGeocodeCache(cache) {
-  await AsyncStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
-}
-
-async function readLocationLabelCache() {
-  const raw = await AsyncStorage.getItem(LOCATION_LABEL_CACHE_KEY);
-  const cache = parseJson(raw, {});
-  return cache && typeof cache === "object" ? cache : {};
-}
-
-async function writeLocationLabelCache(cache) {
-  await AsyncStorage.setItem(LOCATION_LABEL_CACHE_KEY, JSON.stringify(cache));
-}
 
 function compactUser(user) {
   if (!user) return { id: null, email: null, name: "Painter" };
