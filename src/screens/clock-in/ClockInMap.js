@@ -35,12 +35,15 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
   const userCoordinate = toCoordinate(currentPoint);
   const region = buildMapRegion(siteCoordinate, userCoordinate, markerCoordinates);
   const [visibleRegion, setVisibleRegion] = useState(region);
+  const [selectedOverlayPoint, setSelectedOverlayPoint] = useState(null);
   const markerKey = projectMarkers.map((marker) => `${marker.id}:${coordinateKey(marker.coordinate)}`).join("|");
   const zoomDelta = Math.max(
     visibleRegion?.latitudeDelta ?? region.latitudeDelta,
     visibleRegion?.longitudeDelta ?? region.longitudeDelta,
   );
   const showProjectLabels = zoomDelta <= 0.18;
+  const showSelectedOverlay = Boolean(selectedMarkerCoordinate && zoomDelta > 0.18);
+  const showSelectedNativeMarker = Boolean(selectedMarkerCoordinate && (!showSelectedOverlay || !selectedOverlayPoint));
 
   const recenterMap = async () => {
     const freshCoordinate = toCoordinate(await onRequestLocation?.());
@@ -103,6 +106,48 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
       cancelled = true;
     };
   }, [project?.companycam_id, project?.formatted_address, project?.city, project?.state, project?.postal_code, projects]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!showSelectedOverlay || !selectedMarkerCoordinate || !mapRef.current?.pointForCoordinate) {
+      setSelectedOverlayPoint(null);
+      return undefined;
+    }
+
+    setSelectedOverlayPoint(null);
+
+    const frame = requestAnimationFrame(() => {
+      mapRef.current
+        ?.pointForCoordinate(selectedMarkerCoordinate)
+        .then((point) => {
+          if (cancelled) return;
+
+          if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+            setSelectedOverlayPoint(null);
+            return;
+          }
+
+          setSelectedOverlayPoint(point);
+        })
+        .catch(() => {
+          if (!cancelled) setSelectedOverlayPoint(null);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    selectedMarkerCoordinate?.latitude,
+    selectedMarkerCoordinate?.longitude,
+    showSelectedOverlay,
+    visibleRegion?.latitude,
+    visibleRegion?.longitude,
+    visibleRegion?.latitudeDelta,
+    visibleRegion?.longitudeDelta,
+  ]);
 
   return (
     <>
@@ -183,7 +228,7 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
           );
         })}
 
-        {selectedMarkerCoordinate ? (
+        {showSelectedNativeMarker ? (
           <Marker
             key={`selected-${getProjectId(selectedMarkerProject) || coordinateKey(selectedMarkerCoordinate)}`}
             coordinate={selectedMarkerCoordinate}
@@ -220,6 +265,28 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
           </Marker>
         ) : null}
       </MapView>
+
+      {showSelectedOverlay && selectedOverlayPoint ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.selectedMarkerOverlay,
+            {
+              left: selectedOverlayPoint.x - 92,
+              top: selectedOverlayPoint.y - 74,
+            },
+          ]}
+        >
+          <View style={[styles.projectMarkerLabel, styles.projectMarkerLabelSelected]}>
+            <Text style={[styles.projectMarkerLabelText, styles.projectMarkerLabelTextSelected]} numberOfLines={1}>
+              {selectedMarkerProject?.name || "Project"}
+            </Text>
+          </View>
+          <View style={styles.siteMarker}>
+            <Ionicons name="location" size={25} color={COLORS.white} />
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.mapControls} pointerEvents="box-none">
         <Pressable style={styles.mapButton} hitSlop={6} onPress={recenterMap}>
@@ -348,6 +415,13 @@ function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
 const styles = StyleSheet.create({
   projectMarkerStack: {
     alignItems: "center",
+  },
+  selectedMarkerOverlay: {
+    position: "absolute",
+    width: 184,
+    alignItems: "center",
+    zIndex: 20,
+    elevation: 20,
   },
   projectMarkerLabel: {
     maxWidth: 156,
