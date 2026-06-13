@@ -14,6 +14,8 @@ import ProjectDetailScreen from "./src/screens/ProjectDetailScreen";
 import ClockInScreen from "./src/screens/ClockInScreen";
 import TimesheetScreen from "./src/screens/TimesheetScreen";
 import { supabase } from "./src/lib/supabase";
+import { useTimeTracking } from "./src/lib/timeTracking";
+import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
 
 const COLORS = {
   green: "#173f37",
@@ -56,6 +58,17 @@ export default function App() {
     return () => authListener.subscription.unsubscribe();
   }, []);
 
+  const {
+    sessionUser,
+    trackingProjects,
+    employeeProfile,
+    assignedProjectIds,
+    painterName,
+    refreshProjectData,
+  } = useEmployeeProjectContext(session);
+
+  const tracking = useTimeTracking(trackingProjects, sessionUser);
+
   if (loading) {
     return (
       <View style={styles.bootScreen}>
@@ -75,25 +88,51 @@ export default function App() {
           style={[styles.tabScene, activeTab !== "clock" && styles.hiddenScene]}
           pointerEvents={activeTab === "clock" ? "auto" : "none"}
         >
-          <ClockInScreen onViewProject={setSelectedProject} />
+          <ClockInScreen
+            painterName={painterName}
+            onViewProject={setSelectedProject}
+            activeShift={tracking.activeShift}
+            activeElapsedMs={tracking.activeElapsedMs}
+            locationStatus={tracking.locationStatus}
+            trackingNotice={tracking.trackingNotice}
+            suggestedProject={tracking.suggestedProject}
+            projects={tracking.resolvedProjects}
+            onClockIn={tracking.clockIn}
+            onClockOut={tracking.clockOut}
+            onSwitchProject={tracking.switchProject}
+            onUpdateTimeEntry={tracking.updateTimeEntry}
+          />
         </View>
         <View
           style={[styles.tabScene, activeTab !== "projects" && styles.hiddenScene]}
           pointerEvents={activeTab === "projects" ? "auto" : "none"}
         >
-          <ProjectsScreen onSelectProject={setSelectedProject} />
+          <ProjectsScreen
+            onSelectProject={setSelectedProject}
+            activeShift={tracking.activeShift}
+            projectTimeTotals={tracking.projectTimeTotals}
+            assignedProjectIds={assignedProjectIds}
+            onProjectsChanged={refreshProjectData}
+          />
         </View>
         <View
           style={[styles.tabScene, activeTab !== "timesheet" && styles.hiddenScene]}
           pointerEvents={activeTab === "timesheet" ? "auto" : "none"}
         >
-          <TimesheetScreen />
+          <TimesheetScreen
+            entries={tracking.entries}
+            activeShift={tracking.activeShift}
+            projects={trackingProjects}
+            painterName={painterName}
+            onDeleteTimeEntry={tracking.deleteTimeEntry}
+            onUpdateTimeEntry={tracking.updateTimeEntry}
+          />
         </View>
         <View
           style={[styles.tabScene, activeTab !== "more" && styles.hiddenScene]}
           pointerEvents={activeTab === "more" ? "auto" : "none"}
         >
-          <MoreScreen userEmail={session.user?.email} />
+          <MoreScreen userEmail={session.user?.email} profile={employeeProfile} />
         </View>
       </View>
       <View style={styles.tabBar}>
@@ -112,6 +151,15 @@ export default function App() {
           <ProjectDetailScreen
             project={selectedProject}
             onBack={() => setSelectedProject(null)}
+            entries={tracking.liveTeamEntries}
+            activeShift={tracking.activeShift}
+            projects={trackingProjects}
+            user={session.user}
+            onClockIn={tracking.clockIn}
+            onClockOut={tracking.clockOut}
+            onSwitchProject={tracking.switchProject}
+            onDeleteTimeEntry={tracking.deleteTimeEntry}
+            onUpdateTimeEntry={tracking.updateTimeEntry}
           />
         </View>
       ) : null}
