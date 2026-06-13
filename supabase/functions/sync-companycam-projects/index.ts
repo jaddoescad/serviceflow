@@ -1,4 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+type ServiceClient = SupabaseClient;
 
 const COMPANYCAM_API_BASE = "https://api.companycam.com/v2";
 const PAGE_SIZE = 50;
@@ -33,7 +35,8 @@ Deno.serve(async (req) => {
   const projects = await fetchCompanyCamProjects(companyCamToken);
   const projectsWithLabels = await attachProjectLabels(companyCamToken, projects);
   const syncedAt = new Date().toISOString();
-  const rows = projectsWithLabels.map((project) => normalizeProject(project, syncedAt));
+  const existingProjects = await fetchExistingProjectMap(supabase, projectsWithLabels);
+  const rows = projectsWithLabels.map((project) => normalizeProject(project, syncedAt, existingProjects));
 
   let upserted = 0;
   for (const chunk of chunkRows(rows, 500)) {
@@ -106,6 +109,26 @@ async function attachProjectLabels(token: string, projects: Record<string, unkno
   return labelledProjects;
 }
 
+async function fetchExistingProjectMap(supabase: ServiceClient, projects: Record<string, unknown>[]) {
+  const ids = projects
+    .map((project) => String(project.id ?? project.project_id ?? project.uuid ?? "").trim())
+    .filter(Boolean);
+  const existingProjects = new Map<string, Record<string, unknown>>();
+
+  for (const chunk of chunkRows(ids, 500)) {
+    const { data } = await supabase
+      .from("companycam_projects")
+      .select("companycam_id,latitude,longitude,geocoded_at,geocode_source,geocode_query,geocode_error")
+      .in("companycam_id", chunk);
+
+    for (const project of data || []) {
+      existingProjects.set(String(project.companycam_id), project);
+    }
+  }
+
+  return existingProjects;
+}
+
 async function fetchProjectLabels(token: string, projectId: string) {
   const labels: Record<string, unknown>[] = [];
 
@@ -156,15 +179,23 @@ function extractProjects(payload: unknown): Record<string, unknown>[] {
   return [];
 }
 
-function normalizeProject(project: Record<string, unknown>, syncedAt: string) {
+function normalizeProject(
+  project: Record<string, unknown>,
+  syncedAt: string,
+  existingProjects: Map<string, Record<string, unknown>>,
+) {
   const idValue = project.id ?? project.project_id ?? project.uuid;
   const companycamId = String(idValue ?? "");
   if (!companycamId) throw new Error("CompanyCam project is missing an id");
 
   const address = asObject(project.address);
   const coordinates = asObject(project.coordinates);
-  const latitude = toNumber(coordinates.latitude ?? coordinates.lat ?? project.latitude ?? project.lat);
-  const longitude = toNumber(coordinates.longitude ?? coordinates.lng ?? coordinates.lon ?? project.longitude ?? project.lng ?? project.lon);
+  const rawLatitude = toNumber(coordinates.latitude ?? coordinates.lat ?? project.latitude ?? project.lat);
+  const rawLongitude = toNumber(coordinates.longitude ?? coordinates.lng ?? coordinates.lon ?? project.longitude ?? project.lng ?? project.lon);
+  const hasCompanyCamCoordinates = rawLatitude != null && rawLongitude != null;
+  const existingProject = existingProjects.get(companycamId) || {};
+  const latitude = hasCompanyCamCoordinates ? rawLatitude : toNumber(existingProject.latitude);
+  const longitude = hasCompanyCamCoordinates ? rawLongitude : toNumber(existingProject.longitude);
   const labels = Array.isArray(project.labels)
     ? project.labels
     : Array.isArray(project.project_labels)
@@ -185,6 +216,10 @@ function normalizeProject(project: Record<string, unknown>, syncedAt: string) {
     formatted_address: toNullableText(project.formatted_address ?? project.address_string ?? formatAddress(address)),
     latitude,
     longitude,
+    geocoded_at: hasCompanyCamCoordinates ? syncedAt : existingProject.geocoded_at ?? null,
+    geocode_source: hasCompanyCamCoordinates ? "companycam" : existingProject.geocode_source ?? null,
+    geocode_query: hasCompanyCamCoordinates ? null : existingProject.geocode_query ?? null,
+    geocode_error: hasCompanyCamCoordinates ? null : existingProject.geocode_error ?? null,
     is_archived: isArchivedProject(project),
     companycam_created_at: toIsoDate(project.created_at ?? project.inserted_at),
     companycam_updated_at: toIsoDate(project.updated_at ?? project.modified_at ?? project.last_activity_at),

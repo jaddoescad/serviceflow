@@ -2,3 +2,6 @@ project_id = "bwbckdkouqghdadpkjvn"
 
 [functions.sync-companycam-projects]
 verify_jwt = true
+
+[functions.project-assignments]
+verify_jwt = false
