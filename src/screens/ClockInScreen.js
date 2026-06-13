@@ -8,7 +8,14 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { supabase } from "../lib/supabase";
+import { formatDistance } from "../lib/timeTracking";
+import ClockInMap, {
+  findNearestProject,
+  formatProjectAddress as formatAddress,
+  toCoordinate,
+} from "./clock-in/ClockInMap";
 
 const COLORS = {
   green: "#173f37",
@@ -18,13 +25,22 @@ const COLORS = {
   ink: "#11201d",
   muted: "#8b9692",
   border: "#e0e3e1",
-  mapBg: "#e7efe2",
-  mapBlock: "#f4eede",
-  mapRoad: "#ffffff",
-  mapRoadEdge: "#dde2d7",
 };
 
-export default function ClockInScreen({ onViewProject }) {
+export default function ClockInScreen({
+  painterName = "Painter",
+  onViewProject,
+  activeShift,
+  activeElapsedMs = 0,
+  locationStatus,
+  trackingNotice,
+  suggestedProject,
+  projects = [],
+  onClockIn,
+  onClockOut,
+  onSwitchProject,
+  onUpdateTimeEntry,
+}) {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,16 +48,7 @@ export default function ClockInScreen({ onViewProject }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
-  const [now, setNow] = useState(() => new Date());
-  const [clockedInAt, setClockedInAt] = useState(
-    () => new Date(Date.now() - (3 * 60 + 24) * 60 * 1000)
-  );
-  const [clockedIn, setClockedIn] = useState(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const [foregroundPoint, setForegroundPoint] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,19 +79,50 @@ export default function ClockInScreen({ onViewProject }) {
     };
   }, []);
 
+  const refreshForegroundLocation = async () => {
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) return null;
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const point = toCoordinate(position);
+      if (point) setForegroundPoint(point);
+      return point;
+    } catch (_error) {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    refreshForegroundLocation();
+  }, []);
+
+  const currentPoint = locationStatus?.point || foregroundPoint;
+  const nearestProject = useMemo(
+    () => findNearestProject(projects, currentPoint),
+    [currentPoint?.latitude, currentPoint?.longitude, projects],
+  );
+  const displayProject = activeShift?.project || nearestProject?.project || project;
+  const displayClockedInAt = activeShift?.startedAt ? new Date(activeShift.startedAt) : null;
+  const isClockedIn = !!activeShift;
+
   const address = useMemo(() => {
-    return formatAddress(project);
-  }, [project]);
+    return formatAddress(displayProject);
+  }, [displayProject]);
 
   const workedSinceClockIn = useMemo(() => {
-    const totalMinutes = Math.max(0, Math.floor((now.getTime() - clockedInAt.getTime()) / 60000));
+    const elapsedMs = activeShift ? activeElapsedMs : 0;
+    const totalMinutes = Math.max(0, Math.floor(elapsedMs / 60000));
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     return `${hours}H ${String(minutes).padStart(2, "0")}M`;
-  }, [clockedInAt, now]);
+  }, [activeElapsedMs, activeShift]);
 
   const activeTimer = useMemo(() => {
-    const totalSeconds = Math.max(0, Math.floor((now.getTime() - clockedInAt.getTime()) / 1000));
+    const elapsedMs = activeShift ? activeElapsedMs : 0;
+    const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
@@ -100,9 +138,12 @@ export default function ClockInScreen({ onViewProject }) {
       main: `00:${String(minutes).padStart(2, "0")}`,
       seconds: String(seconds).padStart(2, "0"),
     };
-  }, [clockedInAt, now]);
+  }, [activeElapsedMs, activeShift]);
 
-  const startTimeLabel = useMemo(() => formatClockTime(clockedInAt), [clockedInAt]);
+  const startTimeLabel = useMemo(
+    () => (displayClockedInAt ? formatClockTime(displayClockedInAt) : "--"),
+    [displayClockedInAt],
+  );
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -150,27 +191,65 @@ export default function ClockInScreen({ onViewProject }) {
 
   const selectProject = (nextProject) => {
     setProject(nextProject);
+    setLoading(false);
     setSearchQuery("");
     setSearchResults([]);
     setSearchError("");
   };
 
-  const startClockIn = () => {
-    setClockedInAt(new Date());
-    setNow(new Date());
-    setClockedIn(true);
+  const startClockIn = async () => {
+    if (!displayProject) return;
+    await onClockIn?.(displayProject);
   };
 
-  if (clockedIn) {
+  const stopClockIn = async () => {
+    await onClockOut?.("manual");
+  };
+
+  const switchSuggestedProject = async () => {
+    if (!suggestedProject) return;
+    await onSwitchProject?.(suggestedProject);
+  };
+
+  const switchToSearchProject = async (nextProject) => {
+    if (!nextProject) return;
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+    await onSwitchProject?.(nextProject);
+  };
+
+  const adjustActiveStart = async (minutes) => {
+    if (!activeShift?.startedAt) return;
+    const currentStart = new Date(activeShift.startedAt);
+    const nextStart = new Date(currentStart.getTime() + minutes * 60000);
+    if (nextStart.getTime() > Date.now()) return;
+    await onUpdateTimeEntry?.(activeShift, { startedAt: nextStart.toISOString() });
+  };
+
+  if (isClockedIn) {
     return (
       <ActiveClockInView
-        project={project}
+        project={displayProject}
         address={address}
         workedSinceClockIn={workedSinceClockIn}
         activeTimer={activeTimer}
         startTimeLabel={startTimeLabel}
-        onClockOut={() => setClockedIn(false)}
-        onViewProject={project ? () => onViewProject?.(project) : null}
+        trackingNotice={trackingNotice}
+        locationStatus={locationStatus}
+        suggestedProject={suggestedProject}
+        painterName={painterName}
+        searchQuery={searchQuery}
+        searchResults={searchResults}
+        searching={searching}
+        searchError={searchError}
+        onSearchChange={setSearchQuery}
+        onClearSearch={() => setSearchQuery("")}
+        onSelectSearchProject={switchToSearchProject}
+        onAdjustStart={adjustActiveStart}
+        onSwitchProject={switchSuggestedProject}
+        onClockOut={stopClockIn}
+        onViewProject={displayProject ? () => onViewProject?.(displayProject) : null}
       />
     );
   }
@@ -178,7 +257,7 @@ export default function ClockInScreen({ onViewProject }) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.painterName}>Jad Slim</Text>
+        <Text style={styles.painterName}>{painterName}</Text>
         <View style={styles.timeRow}>
           <Text style={styles.timeBig}>{workedSinceClockIn}</Text>
           <Text style={styles.timeLabel}>Worked since clock in</Text>
@@ -236,7 +315,13 @@ export default function ClockInScreen({ onViewProject }) {
       </View>
 
       <View style={styles.canvas}>
-        <MapBackdrop />
+        <ClockInMap
+          project={displayProject}
+          projects={projects}
+          currentPoint={currentPoint}
+          onSelectProject={selectProject}
+          onRequestLocation={refreshForegroundLocation}
+        />
 
         <View style={styles.projectCardWrap} pointerEvents="box-none">
           <View style={styles.projectCard}>
@@ -246,10 +331,10 @@ export default function ClockInScreen({ onViewProject }) {
             <View style={styles.projectInfo}>
               {loading ? (
                 <ActivityIndicator color={COLORS.teal} />
-              ) : project ? (
+              ) : displayProject ? (
                 <>
                   <Text style={styles.projectName} numberOfLines={1}>
-                    {project.name}
+                    {displayProject.name}
                   </Text>
                   <Text style={styles.projectAddress} numberOfLines={1}>
                     {address || "No address on file"}
@@ -266,27 +351,7 @@ export default function ClockInScreen({ onViewProject }) {
                 </>
               )}
             </View>
-            <View style={styles.cornerFold} />
           </View>
-        </View>
-
-        <View style={styles.geofenceWrap} pointerEvents="none">
-          <View style={styles.geofence}>
-            <View style={styles.geofenceInner} />
-          </View>
-          <View style={styles.pinShadow} />
-          <View style={styles.pinBubble}>
-            <Ionicons name="location" size={22} color={COLORS.white} />
-          </View>
-        </View>
-
-        <View style={styles.mapControls} pointerEvents="box-none">
-          <Pressable style={styles.mapButton} hitSlop={6}>
-            <Ionicons name="navigate" size={18} color={COLORS.teal} />
-          </Pressable>
-          <Pressable style={styles.mapButton} hitSlop={6}>
-            <Ionicons name="layers-outline" size={20} color={COLORS.teal} />
-          </Pressable>
         </View>
 
         <View style={styles.clockInWrap} pointerEvents="box-none">
@@ -305,14 +370,6 @@ export default function ClockInScreen({ onViewProject }) {
   );
 }
 
-function formatAddress(project) {
-  if (!project) return "";
-  return (
-    project.formatted_address ||
-    [project.city, project.state, project.postal_code].filter(Boolean).join(", ")
-  );
-}
-
 function formatClockTime(date) {
   return date.toLocaleTimeString([], {
     hour: "numeric",
@@ -321,19 +378,36 @@ function formatClockTime(date) {
 }
 
 function ActiveClockInView({
+  painterName,
   project,
   address,
   workedSinceClockIn,
   activeTimer,
   startTimeLabel,
+  trackingNotice,
+  locationStatus,
+  suggestedProject,
+  searchQuery,
+  searchResults,
+  searching,
+  searchError,
+  onSearchChange,
+  onClearSearch,
+  onSelectSearchProject,
+  onAdjustStart,
+  onSwitchProject,
   onClockOut,
   onViewProject,
 }) {
+  const distanceLabel =
+    locationStatus?.activeDistance == null ? null : `${formatDistance(locationStatus.activeDistance)} from job`;
+  const statusMessage = trackingNotice?.message || locationStatus?.label || null;
+
   return (
     <View style={styles.activeScreen}>
       <View style={styles.activeTopBar}>
         <View style={styles.activeTopText}>
-          <Text style={styles.painterName}>Jad Slim</Text>
+          <Text style={styles.painterName}>{painterName}</Text>
           <View style={styles.timeRow}>
             <Text style={styles.timeBig}>{workedSinceClockIn}</Text>
             <Text style={styles.timeLabel}>Logged Today</Text>
@@ -347,6 +421,58 @@ function ActiveClockInView({
 
       <View style={styles.activeProgressTrack}>
         <View style={styles.activeProgressFill} />
+      </View>
+
+      <View style={styles.activeSearchWrap}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={20} color={COLORS.muted} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholder="Search to switch projects"
+            placeholderTextColor={COLORS.muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {searching ? (
+            <ActivityIndicator size="small" color={COLORS.teal} />
+          ) : searchQuery ? (
+            <Pressable hitSlop={8} onPress={onClearSearch}>
+              <Ionicons name="close-circle" size={20} color={COLORS.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {String(searchQuery || "").trim() ? (
+          <View style={styles.searchResults}>
+            {searchResults.map((result) => (
+              <Pressable
+                key={result.companycam_id}
+                style={styles.searchResultRow}
+                onPress={() => onSelectSearchProject?.(result)}
+              >
+                <View style={styles.searchResultIcon}>
+                  <Ionicons name="swap-horizontal" size={15} color={COLORS.teal} />
+                </View>
+                <View style={styles.searchResultText}>
+                  <Text style={styles.searchResultName} numberOfLines={1}>
+                    {result.name}
+                  </Text>
+                  <Text style={styles.searchResultAddress} numberOfLines={1}>
+                    {formatAddress(result) || "No address on file"}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+            {!searching && !searchResults.length ? (
+              <Text style={styles.searchEmpty}>
+                {searchError || "No matching projects found."}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.activeContent}>
@@ -367,6 +493,29 @@ function ActiveClockInView({
             {address || "No address on file"}
           </Text>
 
+          {statusMessage ? (
+            <View style={styles.activeLocationNotice}>
+              <Ionicons
+                name={locationStatus?.onSite === false ? "warning-outline" : "navigate-outline"}
+                size={16}
+                color={locationStatus?.onSite === false ? "#b56025" : COLORS.teal}
+              />
+              <Text style={styles.activeLocationText} numberOfLines={2}>
+                {statusMessage}
+                {distanceLabel && !String(statusMessage).includes("from job") ? ` (${distanceLabel})` : ""}
+              </Text>
+            </View>
+          ) : null}
+
+          {suggestedProject ? (
+            <Pressable style={styles.switchProjectButton} onPress={onSwitchProject}>
+              <Ionicons name="swap-horizontal" size={17} color={COLORS.white} />
+              <Text style={styles.switchProjectText} numberOfLines={1}>
+                Switch to {suggestedProject.name}
+              </Text>
+            </Pressable>
+          ) : null}
+
           <View style={styles.bigTimerRow}>
             <Text style={styles.bigTimerMain}>{activeTimer.main}</Text>
             <Text style={styles.bigTimerSeconds}>{activeTimer.seconds}</Text>
@@ -383,8 +532,16 @@ function ActiveClockInView({
 
         <View style={styles.activeRowCard}>
           <Text style={styles.activeRowLabel}>Edit Start Time</Text>
-          <View style={styles.startTimePill}>
-            <Text style={styles.startTimeText}>{startTimeLabel}</Text>
+          <View style={styles.startTimeControls}>
+            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(-15)}>
+              <Text style={styles.startAdjustText}>-15m</Text>
+            </Pressable>
+            <View style={styles.startTimePill}>
+              <Text style={styles.startTimeText}>{startTimeLabel}</Text>
+            </View>
+            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(15)}>
+              <Text style={styles.startAdjustText}>+15m</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -401,32 +558,6 @@ function ActiveClockInView({
           <Text style={styles.viewProjectText}>View Project</Text>
         </Pressable>
       </View>
-    </View>
-  );
-}
-
-function MapBackdrop() {
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <View style={styles.mapBase} />
-
-      <View style={[styles.block, { top: 60, left: 24, width: 110, height: 70 }]} />
-      <View style={[styles.block, { top: 110, right: 26, width: 90, height: 130 }]} />
-      <View style={[styles.block, { top: 280, right: 30, width: 120, height: 70 }]} />
-      <View style={[styles.block, { bottom: 80, left: 22, width: 130, height: 90 }]} />
-      <View style={[styles.block, { bottom: 30, right: 60, width: 100, height: 60 }]} />
-      <View style={[styles.block, { top: 200, left: 18, width: 70, height: 50 }]} />
-
-      <View style={[styles.roadV, { left: "38%" }]} />
-      <View style={[styles.roadV, { left: "82%", width: 6 }]} />
-      <View style={[styles.roadH, { top: "48%" }]} />
-      <View style={[styles.roadH, { top: "72%", height: 6 }]} />
-      <View style={[styles.roadDiagonal]} />
-
-      <View style={[styles.roadVEdgeL, { left: "38%" }]} />
-      <View style={[styles.roadVEdgeR, { left: "38%" }]} />
-      <View style={[styles.roadHEdgeT, { top: "48%" }]} />
-      <View style={[styles.roadHEdgeB, { top: "48%" }]} />
     </View>
   );
 }
@@ -467,6 +598,11 @@ const styles = StyleSheet.create({
     width: "32%",
     height: "100%",
     backgroundColor: "#70c5d8",
+  },
+  activeSearchWrap: {
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    backgroundColor: "#f7f7f7",
   },
   activeContent: {
     flex: 1,
@@ -579,6 +715,24 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     paddingHorizontal: 15,
     paddingVertical: 9,
+  },
+  startTimeControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  startAdjustButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    backgroundColor: COLORS.white,
+  },
+  startAdjustText: {
+    color: COLORS.teal,
+    fontSize: 11.5,
+    fontWeight: "900",
   },
   startTimeText: {
     color: "#050505",
@@ -718,73 +872,6 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
   },
-  mapBase: {
-    flex: 1,
-    backgroundColor: COLORS.mapBg,
-  },
-  block: {
-    position: "absolute",
-    backgroundColor: COLORS.mapBlock,
-    borderRadius: 4,
-  },
-  roadV: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 18,
-    backgroundColor: COLORS.mapRoad,
-    marginLeft: -9,
-  },
-  roadH: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 18,
-    backgroundColor: COLORS.mapRoad,
-    marginTop: -9,
-  },
-  roadVEdgeL: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: COLORS.mapRoadEdge,
-    marginLeft: -9,
-  },
-  roadVEdgeR: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    backgroundColor: COLORS.mapRoadEdge,
-    marginLeft: 8,
-  },
-  roadHEdgeT: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: COLORS.mapRoadEdge,
-    marginTop: -9,
-  },
-  roadHEdgeB: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: COLORS.mapRoadEdge,
-    marginTop: 8,
-  },
-  roadDiagonal: {
-    position: "absolute",
-    width: 600,
-    height: 14,
-    backgroundColor: COLORS.mapRoad,
-    top: 100,
-    left: -150,
-    transform: [{ rotate: "60deg" }],
-    opacity: 0.9,
-  },
   projectCardWrap: {
     position: "absolute",
     top: 14,
@@ -830,86 +917,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
-  cornerFold: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 0,
-    height: 0,
-    borderStyle: "solid",
-    borderTopWidth: 14,
-    borderLeftWidth: 14,
-    borderTopColor: "transparent",
-    borderLeftColor: "#d8dcd1",
-  },
-  geofenceWrap: {
-    position: "absolute",
-    top: "38%",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  geofence: {
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(47,141,127,0.18)",
-    borderWidth: 2,
-    borderColor: "rgba(47,141,127,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  geofenceInner: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "rgba(47,141,127,0.06)",
-  },
-  pinShadow: {
-    position: "absolute",
-    top: 125 - 4,
-    width: 22,
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: "rgba(0,0,0,0.18)",
-    transform: [{ translateY: 26 }],
-  },
-  pinBubble: {
-    position: "absolute",
-    top: 125 - 22,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.teal,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 3,
-    borderColor: COLORS.white,
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  mapControls: {
-    position: "absolute",
-    right: 14,
-    bottom: 110,
-    gap: 10,
-  },
-  mapButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.white,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
   clockInWrap: {
     position: "absolute",
     left: 0,
@@ -949,5 +956,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
     letterSpacing: 0.3,
+  },
+  activeLocationNotice: {
+    marginTop: 12,
+    borderRadius: 14,
+    backgroundColor: "#f5f8f6",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  activeLocationText: {
+    flex: 1,
+    color: COLORS.ink,
+    fontSize: 12.5,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  switchProjectButton: {
+    marginTop: 10,
+    minHeight: 42,
+    borderRadius: 14,
+    backgroundColor: COLORS.green,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  switchProjectText: {
+    color: COLORS.white,
+    fontSize: 13.5,
+    fontWeight: "900",
   },
 });
