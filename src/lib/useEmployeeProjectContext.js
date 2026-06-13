@@ -1,17 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppState } from "react-native";
-import { supabase } from "./supabase";
+import { getEmployeeDisplayName, upsertEmployeeProfileForUser } from "./employeeRepository";
 import { listActiveCompanyCamProjects, listActiveProjectAssignmentIds } from "./projectRepository";
-
-function getPainterName(profile, user) {
-  return (
-    profile?.full_name ||
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    user?.email?.split("@")[0] ||
-    "Painter"
-  );
-}
 
 export function useEmployeeProjectContext(session) {
   const sessionUser = session?.user || null;
@@ -28,6 +18,7 @@ export function useEmployeeProjectContext(session) {
     const { projects } = await listActiveCompanyCamProjects();
     setTrackingProjects(projects);
   }, [sessionUser?.id]);
+
   const refreshAssignments = useCallback(async () => {
     if (!sessionUser) {
       setAssignedProjectIds([]);
@@ -37,6 +28,7 @@ export function useEmployeeProjectContext(session) {
     const { projectIds } = await listActiveProjectAssignmentIds(sessionUser.id);
     setAssignedProjectIds(projectIds);
   }, [sessionUser?.id]);
+
   const loadEmployeeContext = useCallback(async () => {
     if (!sessionUser) {
       setEmployeeProfile(null);
@@ -44,22 +36,8 @@ export function useEmployeeProjectContext(session) {
       return;
     }
 
-    const fullName = getPainterName(null, sessionUser);
-
-    const { data: profileData } = await supabase
-      .from("employee_profiles")
-      .upsert(
-        {
-          user_id: sessionUser.id,
-          email: sessionUser.email,
-          full_name: fullName,
-        },
-        { onConflict: "user_id" },
-      )
-      .select("user_id,email,full_name,role,is_active")
-      .single();
-
-    if (profileData) setEmployeeProfile(profileData);
+    const { profile } = await upsertEmployeeProfileForUser(sessionUser);
+    if (profile) setEmployeeProfile(profile);
     await refreshAssignments();
   }, [refreshAssignments, sessionUser?.id, sessionUser?.email, sessionUser?.user_metadata?.full_name, sessionUser?.user_metadata?.name]);
 
@@ -90,7 +68,7 @@ export function useEmployeeProjectContext(session) {
   }, [loadEmployeeContext, loadTrackingProjects]);
 
   const painterName = useMemo(
-    () => getPainterName(employeeProfile, sessionUser),
+    () => getEmployeeDisplayName(employeeProfile, sessionUser),
     [employeeProfile?.full_name, sessionUser?.email, sessionUser?.user_metadata?.full_name, sessionUser?.user_metadata?.name],
   );
 
