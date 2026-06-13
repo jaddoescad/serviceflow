@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppState } from "react-native";
 import { supabase } from "./supabase";
-
-const TRACKING_PROJECT_SELECT =
-  "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,country,formatted_address,latitude,longitude,is_archived,is_lead,companycam_updated_at,last_synced_at";
-const TRACKING_PROJECT_PAGE_SIZE = 1000;
+import { listActiveCompanyCamProjects, listActiveProjectAssignmentIds } from "./projectRepository";
 
 function getPainterName(profile, user) {
   return (
@@ -28,45 +25,18 @@ export function useEmployeeProjectContext(session) {
       return;
     }
 
-    const allProjects = [];
-    let from = 0;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("companycam_projects")
-        .select(TRACKING_PROJECT_SELECT)
-        .eq("is_archived", false)
-        .eq("is_lead", false)
-        .order("companycam_updated_at", { ascending: false, nullsFirst: false })
-        .range(from, from + TRACKING_PROJECT_PAGE_SIZE - 1);
-
-      if (error) return;
-
-      const nextProjects = data || [];
-      allProjects.push(...nextProjects);
-
-      if (nextProjects.length < TRACKING_PROJECT_PAGE_SIZE) break;
-      from += TRACKING_PROJECT_PAGE_SIZE;
-    }
-
-    setTrackingProjects(allProjects);
+    const { projects } = await listActiveCompanyCamProjects();
+    setTrackingProjects(projects);
   }, [sessionUser?.id]);
-
   const refreshAssignments = useCallback(async () => {
     if (!sessionUser) {
       setAssignedProjectIds([]);
       return;
     }
 
-    const { data: assignments } = await supabase
-      .from("project_assignments")
-      .select("companycam_project_id")
-      .eq("user_id", sessionUser.id)
-      .eq("status", "active");
-
-    setAssignedProjectIds((assignments || []).map((assignment) => String(assignment.companycam_project_id)));
+    const { projectIds } = await listActiveProjectAssignmentIds(sessionUser.id);
+    setAssignedProjectIds(projectIds);
   }, [sessionUser?.id]);
-
   const loadEmployeeContext = useCallback(async () => {
     if (!sessionUser) {
       setEmployeeProfile(null);

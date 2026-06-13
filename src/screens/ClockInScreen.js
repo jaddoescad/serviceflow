@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { supabase } from "../lib/supabase";
+import { getLatestActiveCompanyCamProject, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import ClockInMap, {
   findNearestProject,
@@ -55,20 +55,14 @@ export default function ClockInScreen({
     async function loadProject() {
       setLoading(true);
       setError("");
-      const { data, error: queryError } = await supabase
-        .from("companycam_projects")
-        .select("*")
-        .eq("is_archived", false)
-        .eq("is_lead", false)
-        .order("companycam_updated_at", { ascending: false, nullsFirst: false })
-        .limit(1);
+      const { project: latestProject, error: queryError } = await getLatestActiveCompanyCamProject();
 
       if (cancelled) return;
 
       if (queryError) {
         setError(queryError.message);
       } else {
-        setProject((data && data[0]) || null);
+        setProject(latestProject);
       }
       setLoading(false);
     }
@@ -159,18 +153,7 @@ export default function ClockInScreen({
       setSearching(true);
       setSearchError("");
 
-      const safeQuery = query.replace(/,/g, " ");
-      const match = `%${safeQuery}%`;
-      const { data, error: queryError } = await supabase
-        .from("companycam_projects")
-        .select("*")
-        .eq("is_archived", false)
-        .eq("is_lead", false)
-        .or(
-          `name.ilike.${match},formatted_address.ilike.${match},city.ilike.${match},state.ilike.${match},postal_code.ilike.${match}`
-        )
-        .order("companycam_updated_at", { ascending: false, nullsFirst: false })
-        .limit(6);
+      const { projects: matches, error: queryError } = await searchActiveCompanyCamProjects(query, { limit: 6 });
 
       if (cancelled) return;
 
@@ -178,7 +161,7 @@ export default function ClockInScreen({
         setSearchError(queryError.message);
         setSearchResults([]);
       } else {
-        setSearchResults(data || []);
+        setSearchResults(matches || []);
       }
       setSearching(false);
     }, 250);
