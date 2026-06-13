@@ -5,6 +5,12 @@ import * as Location from "expo-location";
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import { supabase } from "./supabase";
+import { distanceMeters, formatDistance, normalizeProject } from "./trackingModel";
+import { activeEntry, applyEntryTimeUpdate, entryProjectId, shiftToEntry } from "./timeEntryModel";
+import { getProjectTimeTotals } from "./timeEntryPresenters";
+
+export { distanceMeters, formatAddress, formatDistance, formatDuration, normalizeProject } from "./trackingModel";
+export { buildProjectClockInDays, buildTimesheetDays, getProjectTimeTotals } from "./timeEntryPresenters";
 
 export const BACKGROUND_LOCATION_TASK = "ottawa-painters-background-location";
 
@@ -99,36 +105,6 @@ async function readLocationLabelCache() {
 
 async function writeLocationLabelCache(cache) {
   await AsyncStorage.setItem(LOCATION_LABEL_CACHE_KEY, JSON.stringify(cache));
-}
-
-export function formatAddress(project) {
-  if (!project) return "";
-  if (project.formatted_address) return project.formatted_address;
-  if (project.address) return project.address;
-  return [project.street_address_1, project.street_address_2, project.city, project.state, project.postal_code]
-    .filter(Boolean)
-    .join(", ");
-}
-
-export function normalizeProject(project) {
-  if (!project) return null;
-  const id = String(project.companycam_id || project.companycam_project_id || project.projectId || project.id || "");
-  if (!id) return null;
-
-  const latitude = Number(project.latitude);
-  const longitude = Number(project.longitude);
-  const address = formatAddress(project);
-
-  return {
-    ...project,
-    id,
-    companycam_id: id,
-    name: project.name || project.project_name || "Project",
-    address,
-    formatted_address: project.formatted_address || address,
-    latitude: Number.isFinite(latitude) ? latitude : null,
-    longitude: Number.isFinite(longitude) ? longitude : null,
-  };
 }
 
 function compactUser(user) {
@@ -255,140 +231,6 @@ async function geocodeProjects(projects, limit = 80) {
   return output;
 }
 
-export function distanceMeters(a, b) {
-  if (!a || !b) return null;
-  const radius = 6371000;
-  const toRad = (value) => (value * Math.PI) / 180;
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLng = toRad(b.longitude - a.longitude);
-  const lat1 = toRad(a.latitude);
-  const lat2 = toRad(b.latitude);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return Math.round(radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
-}
-
-export function formatDistance(meters) {
-  if (meters == null || !Number.isFinite(meters)) return "distance unknown";
-  if (meters < 1000) return `${Math.max(0, Math.round(meters))} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
-}
-
-export function formatDuration(ms) {
-  const minutes = Math.max(0, Math.floor((ms || 0) / 60000));
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
-}
-
-function formatSegmentDistanceLabel(segment, fallbackDistanceMeters = null) {
-  const distanceMeters = segment?.distanceMeters ?? fallbackDistanceMeters;
-  const distanceLabel =
-    distanceMeters == null || !Number.isFinite(Number(distanceMeters))
-      ? null
-      : `${formatDistance(distanceMeters)} from site`;
-
-  if (segment?.locationLabel) {
-    return distanceLabel
-      ? `near ${segment.locationLabel} · ${distanceLabel}`
-      : `near ${segment.locationLabel}`;
-  }
-
-  return distanceLabel;
-}
-
-function getEntrySegments(entry) {
-  const segments = Array.isArray(entry?.segments) && entry.segments.length
-    ? entry.segments
-    : [
-        {
-          mode: entry?.onSite === false ? "off_site" : "on_site",
-          startedAt: entry?.startedAt,
-          endedAt: entry?.endedAt,
-          distanceMeters: entry?.lastDistanceMeters,
-        },
-      ];
-
-  return segments.map((segment) => ({
-    ...segment,
-    mode: segment.mode || (entry?.onSite === false ? "off_site" : "on_site"),
-    startedAt: segment.startedAt || entry?.startedAt,
-    endedAt: segment.endedAt || entry?.endedAt || new Date().toISOString(),
-    distanceMeters: segment.distanceMeters ?? entry?.lastDistanceMeters ?? null,
-    locationLabel: segment.locationLabel || entry?.lastLocationLabel || null,
-  }));
-}
-
-function getSegmentDurationMs(segment) {
-  const start = new Date(segment.startedAt).getTime();
-  const end = new Date(segment.endedAt || Date.now()).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
-  return Math.max(0, end - start);
-}
-
-function summarizeSegments(entry) {
-  const summary = {
-    totalMs: 0,
-    onSiteMs: 0,
-    offSiteMs: 0,
-    latestDistanceMeters: entry?.lastDistanceMeters ?? null,
-    latestLocationLabel: entry?.lastLocationLabel || null,
-    status: entry?.onSite === false ? "Off Site" : "On Site",
-  };
-
-  for (const segment of getEntrySegments(entry)) {
-    const durationMs = getSegmentDurationMs(segment);
-    summary.totalMs += durationMs;
-
-    if (segment.mode === "off_site") {
-      summary.offSiteMs += durationMs;
-      summary.status = "Off Site";
-    } else {
-      summary.onSiteMs += durationMs;
-    }
-
-    if (segment.distanceMeters != null) {
-      summary.latestDistanceMeters = segment.distanceMeters;
-    }
-
-    if (segment.locationLabel) {
-      summary.latestLocationLabel = segment.locationLabel;
-    }
-  }
-
-  if (summary.onSiteMs > 0 && summary.offSiteMs > 0) summary.status = "Mixed";
-  if (summary.totalMs === 0) summary.totalMs = entry?.durationMs || 0;
-  if (summary.onSiteMs === 0 && summary.offSiteMs === 0) {
-    if (entry?.onSite === false) summary.offSiteMs = summary.totalMs;
-    else summary.onSiteMs = summary.totalMs;
-  }
-
-  return summary;
-}
-
-function formatClock(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "--";
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-function formatDayKey(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "unknown";
-  return date.toISOString().slice(0, 10);
-}
-
-function initials(name) {
-  return String(name || "Painter")
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase() || "P";
-}
-
 function createLocationStatus(shift, projects, point) {
   const activeDistance = distanceMeters(point, projectPoint(shift.project));
   const onSite = activeDistance == null ? null : activeDistance <= SITE_RADIUS_METERS;
@@ -500,37 +342,6 @@ function createShift(project, user, point) {
   };
 }
 
-function shiftToEntry(shift, endedAt = new Date().toISOString(), reason = "manual") {
-  const durationMs = Math.max(0, new Date(endedAt).getTime() - new Date(shift.startedAt).getTime());
-  return {
-    id: shift.serverId || shift.localId,
-    localId: shift.localId,
-    serverId: shift.serverId,
-    userId: shift.userId,
-    userEmail: shift.userEmail,
-    userName: shift.userName,
-    project: shift.project,
-    startedAt: shift.startedAt,
-    endedAt,
-    durationMs,
-    clockOutReason: reason,
-    startedLocation: shift.startedLocation,
-    lastLocation: shift.lastLocation,
-    lastLocationLabel: shift.lastLocationLabel,
-    lastDistanceMeters: shift.lastDistanceMeters,
-    onSite: shift.onSite,
-    segments: shift.segments || [],
-  };
-}
-
-function activeEntry(activeShift) {
-  return activeShift ? shiftToEntry(activeShift, new Date().toISOString(), "active") : null;
-}
-
-function entryProjectId(entry) {
-  return String(entry?.project?.companycam_id || entry?.companycam_project_id || "");
-}
-
 function supabasePayload(entry, status) {
   return {
     client_entry_id: entry.localId || entry.id || entry.serverId,
@@ -623,31 +434,6 @@ function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(value || ""),
   );
-}
-
-function applyEntryTimeUpdate(entry, updates = {}) {
-  const startedAt = updates.startedAt || entry.startedAt;
-  const isActive = entry.clockOutReason === "active" || !entry.endedAt;
-  const endedAt = updates.endedAt || entry.endedAt || (isActive ? null : new Date().toISOString());
-  const project = updates.project ? normalizeProject(updates.project) : entry.project;
-  const durationEnd = endedAt || new Date().toISOString();
-  const durationMs = Math.max(0, new Date(durationEnd).getTime() - new Date(startedAt).getTime());
-  const segments = Array.isArray(entry.segments) && entry.segments.length
-    ? entry.segments.map((segment, index, list) => ({
-        ...segment,
-        startedAt: index === 0 ? startedAt : segment.startedAt,
-        endedAt: index === list.length - 1 ? endedAt : segment.endedAt,
-      }))
-    : entry.segments || [];
-
-  return {
-    ...entry,
-    project,
-    startedAt,
-    endedAt,
-    durationMs,
-    segments,
-  };
 }
 
 async function persistUpdatedEntry(entry) {
@@ -1442,158 +1228,4 @@ export function useTimeTracking(projects = [], user) {
     deleteTimeEntry,
     updateTimeEntry,
   };
-}
-
-export function getProjectTimeTotals(entries = [], activeShift = null) {
-  const active = activeEntry(activeShift);
-  const all = active ? [active, ...entries] : entries;
-  const totals = {};
-
-  for (const entry of all) {
-    const id = entryProjectId(entry);
-    if (!id) continue;
-    totals[id] = (totals[id] || 0) + (entry.durationMs || 0);
-  }
-
-  return Object.fromEntries(Object.entries(totals).map(([id, ms]) => [id, formatDuration(ms)]));
-}
-
-export function buildTimesheetDays(entries = [], activeShift = null) {
-  const active = activeEntry(activeShift);
-  const all = active ? [active, ...entries] : entries;
-  const groups = new Map();
-
-  for (const entry of all) {
-    const key = formatDayKey(entry.startedAt);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(entry);
-  }
-
-  return Array.from(groups.entries())
-    .sort(([a], [b]) => (a < b ? 1 : -1))
-    .map(([key, dayEntries]) => {
-      const date = new Date(`${key}T12:00:00`);
-      const totalMinutes = Math.floor(dayEntries.reduce((sum, entry) => sum + (entry.durationMs || 0), 0) / 60000);
-      const segmentSummary = dayEntries.reduce(
-        (summary, entry) => {
-          const entrySummary = summarizeSegments(entry);
-          return {
-            onSiteMs: summary.onSiteMs + entrySummary.onSiteMs,
-            offSiteMs: summary.offSiteMs + entrySummary.offSiteMs,
-          };
-        },
-        { onSiteMs: 0, offSiteMs: 0 },
-      );
-      const onSiteMinutes = Math.floor(segmentSummary.onSiteMs / 60000);
-      const driveMinutes = Math.floor(segmentSummary.offSiteMs / 60000);
-
-      return {
-        id: key,
-        weekday: date.toLocaleDateString([], { weekday: "short" }),
-        date: date.toLocaleDateString([], { month: "short", day: "2-digit" }),
-        type: "worked",
-        total: formatDuration(totalMinutes * 60000),
-        totalMinutes,
-        onSite: formatDuration(onSiteMinutes * 60000),
-        drive: formatDuration(driveMinutes * 60000),
-        jobs: Array.from(new Set(dayEntries.map((entry) => entry.project?.name || "Project"))).slice(0, 4),
-        entries: dayEntries.map((entry) => {
-          const entrySummary = summarizeSegments(entry);
-          return {
-            id: entry.id || entry.localId,
-            job: entry.project?.name || "Project",
-            address: entry.project?.formatted_address || entry.project?.address || "No address on file",
-            start: formatClock(entry.startedAt),
-            startSrc: entry.startedLocation ? "GPS" : "Manual",
-            end: entry.clockOutReason === "active" ? "Now" : formatClock(entry.endedAt),
-            endSrc: entry.lastLocation ? "GPS" : "Manual",
-            duration: formatDuration(entry.durationMs),
-            status: entrySummary.status,
-            distance:
-              entrySummary.latestLocationLabel
-                ? formatSegmentDistanceLabel(
-                    { locationLabel: entrySummary.latestLocationLabel, distanceMeters: entrySummary.latestDistanceMeters },
-                  )
-                : entrySummary.latestDistanceMeters == null
-                  ? "distance unknown"
-                  : `${formatDistance(entrySummary.latestDistanceMeters)} from site`,
-            onSiteDuration: formatDuration(entrySummary.onSiteMs),
-            offSiteDuration: formatDuration(entrySummary.offSiteMs),
-            raw: entry,
-          };
-        }),
-      };
-    });
-}
-
-export function buildProjectClockInDays(entries = [], activeShift = null, project, user = null) {
-  const projectId = normalizeProject(project)?.companycam_id;
-  if (!projectId) return [];
-  const currentUserId = user?.id || null;
-  const currentUserEmail = user?.email || null;
-
-  const active = activeEntry(activeShift);
-  const seenEntries = new Set();
-  const all = (active ? [active, ...entries] : entries)
-    .filter((entry) => {
-      const key = entry.serverId || entry.id || entry.localId;
-      if (!key) return true;
-      if (seenEntries.has(key)) return false;
-      seenEntries.add(key);
-      return true;
-    })
-    .filter((entry) => entryProjectId(entry) === projectId);
-  const groups = new Map();
-
-  for (const entry of all) {
-    const dayKey = formatDayKey(entry.startedAt);
-    const userName = entry.userName || "Painter";
-    if (!groups.has(dayKey)) groups.set(dayKey, new Map());
-    const byPainter = groups.get(dayKey);
-    if (!byPainter.has(userName)) {
-      byPainter.set(userName, {
-        name: userName,
-        initials: initials(userName),
-        isYou: Boolean(
-          (currentUserId && entry.userId === currentUserId) ||
-          (currentUserEmail && entry.userEmail === currentUserEmail),
-        ),
-        segments: [],
-      });
-    }
-
-    const sourceSegments = getEntrySegments(entry);
-    const isCurrentUser = Boolean(
-      (currentUserId && entry.userId === currentUserId) ||
-      (currentUserEmail && entry.userEmail === currentUserEmail),
-    );
-    for (const segment of sourceSegments) {
-      const start = segment.startedAt || entry.startedAt;
-      const end = segment.endedAt || entry.endedAt;
-      const durationMs = getSegmentDurationMs({ startedAt: start, endedAt: end });
-      byPainter.get(userName).segments.push({
-        start: formatClock(start),
-        startSrc: entry.startedLocation ? "GPS" : "Manual",
-        end: entry.clockOutReason === "active" ? "Now" : formatClock(end),
-        endSrc: entry.lastLocation ? "GPS" : "Manual",
-        duration: formatDuration(durationMs),
-        status: segment.mode === "off_site" ? "off" : "on",
-        distanceLabel: formatSegmentDistanceLabel(segment),
-        raw: entry,
-        isCurrentUser,
-      });
-    }
-  }
-
-  return Array.from(groups.entries())
-    .sort(([a], [b]) => (a < b ? 1 : -1))
-    .map(([key, byPainter], index) => {
-      const date = new Date(`${key}T12:00:00`);
-      return {
-        id: key,
-        label: index === 0 ? "Today" : date.toLocaleDateString([], { weekday: "long" }),
-        dateLabel: date.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }),
-        painters: Array.from(byPainter.values()),
-      };
-    });
 }
