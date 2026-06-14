@@ -10,7 +10,11 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { supabase } from "../lib/supabase";
+import {
+  getProjectId,
+  listActiveCompanyCamProjectPage,
+  syncCompanyCamProjects,
+} from "../lib/projectRepository";
 
 const COLORS = {
   green: "#173f37",
@@ -24,12 +28,16 @@ const COLORS = {
 };
 
 const PROJECTS_PAGE_SIZE = 20;
+const EMPTY_PROJECT_TOTALS = Object.freeze({});
+const EMPTY_PROJECT_IDS = Object.freeze([]);
 
-function escapeSearchTerm(value) {
-  return value.replace(/[%_]/g, (match) => `\\${match}`);
-}
-
-export default function ProjectsScreen({ onSelectProject }) {
+export default function ProjectsScreen({
+  onSelectProject,
+  activeShift,
+  projectTimeTotals = EMPTY_PROJECT_TOTALS,
+  assignedProjectIds = EMPTY_PROJECT_IDS,
+  onProjectsChanged,
+}) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,45 +52,43 @@ export default function ProjectsScreen({ onSelectProject }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const searchInputRef = useRef(null);
+  const trackedProjectIds = useMemo(
+    () => Object.keys(projectTimeTotals || {}).map((projectId) => String(projectId)).filter(Boolean),
+    [projectTimeTotals],
+  );
+  const relevantAssignedIds = useMemo(() => {
+    const ids = new Set([
+      ...assignedProjectIds.map((projectId) => String(projectId)).filter(Boolean),
+      ...trackedProjectIds,
+    ]);
+    const activeId = getProjectId(activeShift?.project);
+    if (activeId) ids.add(activeId);
+    return Array.from(ids);
+  }, [activeShift?.project, assignedProjectIds, trackedProjectIds]);
 
   const loadProjects = useCallback(async ({ quiet = false, pageToLoad = 0, append = false } = {}) => {
     if (!quiet && !append) setLoading(true);
     if (append) setLoadingMore(true);
     setError("");
 
-    const from = pageToLoad * PROJECTS_PAGE_SIZE;
-    const to = from + PROJECTS_PAGE_SIZE - 1;
     const trimmedSearch = searchQuery.trim();
-    const escapedSearch = escapeSearchTerm(trimmedSearch);
+    const assignedProjectIdsForQuery =
+      !trimmedSearch && filter === "assigned" ? relevantAssignedIds : null;
 
-    let query = supabase
-      .from("companycam_projects")
-      .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_lead,last_synced_at,companycam_updated_at", { count: "exact" })
-      .eq("is_archived", false)
-      .order("companycam_updated_at", { ascending: false, nullsFirst: false });
-
-    if (escapedSearch) {
-      const pattern = `%${escapedSearch}%`;
-      query = query.or(
-        [
-          `name.ilike.${pattern}`,
-          `formatted_address.ilike.${pattern}`,
-          `city.ilike.${pattern}`,
-          `state.ilike.${pattern}`,
-          `postal_code.ilike.${pattern}`,
-        ].join(","),
-      );
-    } else {
-      query = query.eq("is_lead", false);
-    }
-
-    const { data, error: queryError, count } = await query.range(from, to);
+    const {
+      projects: nextProjects,
+      error: queryError,
+      count,
+    } = await listActiveCompanyCamProjectPage({
+      page: pageToLoad,
+      pageSize: PROJECTS_PAGE_SIZE,
+      search: trimmedSearch,
+      projectIds: assignedProjectIdsForQuery,
+    });
 
     if (queryError) {
       setError(queryError.message);
     } else {
-      const nextProjects = data || [];
-
       setProjects((currentProjects) => {
         if (!append) return nextProjects;
 
@@ -92,12 +98,13 @@ export default function ProjectsScreen({ onSelectProject }) {
       });
       setPage(pageToLoad);
       setTotalProjects(count ?? null);
-      setHasMore(count == null ? nextProjects.length === PROJECTS_PAGE_SIZE : to + 1 < count);
+      const loadedThrough = pageToLoad * PROJECTS_PAGE_SIZE + nextProjects.length;
+      setHasMore(count == null ? nextProjects.length === PROJECTS_PAGE_SIZE : loadedThrough < count);
     }
 
     if (!quiet && !append) setLoading(false);
     if (append) setLoadingMore(false);
-  }, [searchQuery]);
+  }, [filter, relevantAssignedIds, searchQuery]);
 
   const refreshProjects = useCallback(async () => {
     setRefreshing(true);
@@ -110,9 +117,12 @@ export default function ProjectsScreen({ onSelectProject }) {
     setError("");
     setMessage("");
 
-    const { data, error: syncError } = await supabase.functions.invoke("sync-companycam-projects", {
-      body: {},
-    });
+    const {
+      synced,
+      geocoded,
+      error: syncError,
+      geocodeError,
+    } = await syncCompanyCamProjects({ geocodeLimit: 12 });
 
     if (syncError) {
       setError(syncError.message || "CompanyCam sync failed.");
@@ -120,10 +130,16 @@ export default function ProjectsScreen({ onSelectProject }) {
       return;
     }
 
-    setMessage(`Synced ${data?.synced ?? 0} CompanyCam projects.`);
+    if (geocodeError) {
+      setMessage(`Synced ${synced} CompanyCam projects. Coordinate backfill could not run.`);
+    } else {
+      setMessage(`Synced ${synced} CompanyCam projects. Geocoded ${geocoded}.`);
+    }
+
     await loadProjects({ quiet: true, pageToLoad: 0 });
+    await onProjectsChanged?.();
     setSyncing(false);
-  }, [loadProjects]);
+  }, [loadProjects, onProjectsChanged]);
 
   const loadMoreProjects = useCallback(async () => {
     if (loading || loadingMore || !hasMore) return;
@@ -151,14 +167,26 @@ export default function ProjectsScreen({ onSelectProject }) {
     return () => clearTimeout(timeout);
   }, [searchText]);
 
+  const assignedProjectIdSet = useMemo(() => new Set(relevantAssignedIds), [relevantAssignedIds]);
+  const trackedProjectIdSet = useMemo(() => new Set(trackedProjectIds), [trackedProjectIds]);
   const ongoing = useMemo(() => projects.filter((p) => !p.is_archived), [projects]);
-  const filtered = useMemo(
-    () => (filter === "assigned" ? ongoing.filter(isAssignedToCurrentUser) : ongoing),
-    [filter, ongoing],
-  );
   const isSearching = searchQuery.length > 0;
-  const featured = isSearching ? null : filtered[0];
-  const remaining = featured ? filtered.slice(1) : filtered;
+  const filtered = useMemo(
+    () => (filter === "assigned" && !isSearching ? ongoing.filter((project) => assignedProjectIdSet.has(getProjectId(project))) : ongoing),
+    [assignedProjectIdSet, filter, isSearching, ongoing],
+  );
+  const activeProjectId = getProjectId(activeShift?.project);
+  const activeProject = useMemo(() => {
+    if (!activeProjectId || isSearching) return null;
+
+    const loadedProject = ongoing.find((project) => getProjectId(project) === activeProjectId);
+    return loadedProject || activeShift.project;
+  }, [activeProjectId, activeShift?.project, isSearching, ongoing]);
+  const featured = activeProject;
+  const featuredStatusLabel = activeShift?.onSite === false ? "Off site" : "Clocked in";
+  const remaining = featured
+    ? filtered.filter((project) => getProjectId(project) !== getProjectId(featured))
+    : filtered;
 
   return (
     <View style={styles.screen}>
@@ -234,9 +262,8 @@ export default function ProjectsScreen({ onSelectProject }) {
             {featured ? (
               <CurrentProjectCard
                 project={featured}
-                assignedHoursLabel={
-                  isAssignedToCurrentUser(featured) ? formatAssignedHours(featured) : null
-                }
+                statusLabel={featuredStatusLabel}
+                assignedHoursLabel={getProjectHoursLabel(featured, projectTimeTotals)}
                 onPress={() => onSelectProject?.(featured)}
               />
             ) : null}
@@ -266,7 +293,7 @@ export default function ProjectsScreen({ onSelectProject }) {
                   ? "Search Results"
                   : filter === "assigned"
                     ? "Assigned Projects"
-                    : "Ongoing Projects"}
+                    : "Active Projects"}
               </Text>
               <Text style={styles.sectionCount}>
                 ({filter === "assigned" || isSearching ? filtered.length : (totalProjects ?? ongoing.length)})
@@ -276,23 +303,31 @@ export default function ProjectsScreen({ onSelectProject }) {
             {remaining.length === 0 && !featured ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>
-                  {searchQuery ? "No matching projects" : "No synced projects yet"}
+                  {searchQuery
+                    ? "No matching projects"
+                    : filter === "assigned"
+                      ? "No assigned projects"
+                      : "No synced projects yet"}
                 </Text>
                 <Text style={styles.emptyText}>
                   {searchQuery
                     ? "Try another name, address, city, or postal code."
-                    : "Tap the sync button to pull projects from CompanyCam."}
+                    : filter === "assigned"
+                      ? "Assignments can be created from the office/backend."
+                      : "Tap the sync button to pull projects from CompanyCam."}
                 </Text>
               </View>
             ) : (
               <>
                 {remaining.map((p) => {
-                  const assigned = isAssignedToCurrentUser(p);
+                  const assigned = assignedProjectIdSet.has(getProjectId(p));
+                  const tracked = trackedProjectIdSet.has(getProjectId(p));
+                  const hoursLabel = getProjectHoursLabel(p, projectTimeTotals);
                   return (
                     <ProjectCard
                       key={p.companycam_id}
                       project={p}
-                      assignedHoursLabel={assigned ? formatAssignedHours(p) : null}
+                      assignedHoursLabel={hoursLabel || (assigned && !tracked ? "0h 0m" : null)}
                       onPress={() => onSelectProject?.(p)}
                     />
                   );
@@ -310,18 +345,11 @@ export default function ProjectsScreen({ onSelectProject }) {
         <View style={{ height: 110 }} />
       </ScrollView>
 
-      <Pressable
-        onPress={syncProjects}
-        disabled={syncing}
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed, syncing && { opacity: 0.85 }]}
-      >
-        {syncing ? <ActivityIndicator color="#fff" /> : <Ionicons name="add" size={42} color="#fff" />}
-      </Pressable>
     </View>
   );
 }
 
-function CurrentProjectCard({ project, onPress, assignedHoursLabel }) {
+function CurrentProjectCard({ project, onPress, assignedHoursLabel, statusLabel }) {
   const address = formatAddress(project);
   return (
     <Pressable
@@ -332,7 +360,7 @@ function CurrentProjectCard({ project, onPress, assignedHoursLabel }) {
       <View style={styles.currentInfo}>
         <View style={styles.statusDotRow}>
           <View style={styles.liveDot} />
-          <Text style={styles.statusLabel}>On site</Text>
+          <Text style={styles.statusLabel}>{statusLabel || "Clocked in"}</Text>
         </View>
         <Text style={styles.currentName} numberOfLines={1}>
           {project.name}
@@ -376,24 +404,8 @@ function ProjectCard({ project, onPress, assignedHoursLabel }) {
   );
 }
 
-function hashProjectId(value) {
-  const str = String(value ?? "");
-  let h = 0;
-  for (let i = 0; i < str.length; i += 1) {
-    h = (h * 31 + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-function isAssignedToCurrentUser(project) {
-  return hashProjectId(project?.companycam_id) % 3 === 0;
-}
-
-function formatAssignedHours(project) {
-  const totalMinutes = (hashProjectId(project?.companycam_id) % 660) + 60;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+function getProjectHoursLabel(project, projectTimeTotals) {
+  return projectTimeTotals?.[getProjectId(project)] || null;
 }
 
 function formatAddress(project) {
@@ -726,24 +738,5 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontSize: 14,
     lineHeight: 20,
-  },
-  fab: {
-    position: "absolute",
-    right: 18,
-    bottom: 18,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: COLORS.green,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: COLORS.green,
-    shadowOpacity: 0.32,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-  fabPressed: {
-    transform: [{ scale: 0.96 }],
   },
 });

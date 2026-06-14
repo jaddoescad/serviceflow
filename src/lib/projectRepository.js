@@ -5,6 +5,14 @@ export const COMPANYCAM_PROJECT_SELECT =
 
 const DEFAULT_PROJECT_PAGE_SIZE = 1000;
 
+export function escapeProjectSearchTerm(value) {
+  return String(value || "").replace(/[%_]/g, (match) => `\\${match}`);
+}
+
+export function getProjectId(project) {
+  return String(project?.companycam_id || project?.companycam_project_id || project?.id || "");
+}
+
 function activeProjectQuery(select = COMPANYCAM_PROJECT_SELECT) {
   return supabase
     .from("companycam_projects")
@@ -43,7 +51,7 @@ export async function getLatestActiveCompanyCamProject() {
 }
 
 export async function searchActiveCompanyCamProjects(query, { limit = 6 } = {}) {
-  const safeQuery = String(query || "").trim().replace(/,/g, " ");
+  const safeQuery = escapeProjectSearchTerm(String(query || "").trim().replace(/,/g, " "));
   if (!safeQuery) return { projects: [], error: null };
 
   const match = `%${safeQuery}%`;
@@ -53,6 +61,70 @@ export async function searchActiveCompanyCamProjects(query, { limit = 6 } = {}) 
     .limit(limit);
 
   return { projects: data || [], error };
+}
+
+export async function listActiveCompanyCamProjectPage({
+  page = 0,
+  pageSize = 20,
+  search = "",
+  projectIds = null,
+} = {}) {
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+  const safeSearch = escapeProjectSearchTerm(String(search || "").trim());
+
+  let query = supabase
+    .from("companycam_projects")
+    .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_lead,last_synced_at,companycam_updated_at", {
+      count: "exact",
+    })
+    .eq("is_archived", false)
+    .eq("is_lead", false)
+    .order("companycam_updated_at", { ascending: false, nullsFirst: false });
+
+  if (safeSearch) {
+    const pattern = `%${safeSearch}%`;
+    query = query.or(
+      [
+        `name.ilike.${pattern}`,
+        `formatted_address.ilike.${pattern}`,
+        `city.ilike.${pattern}`,
+        `state.ilike.${pattern}`,
+        `postal_code.ilike.${pattern}`,
+      ].join(","),
+    );
+  } else if (Array.isArray(projectIds)) {
+    const normalizedProjectIds = projectIds.map((projectId) => String(projectId)).filter(Boolean);
+    if (!normalizedProjectIds.length) {
+      return { projects: [], count: 0, error: null };
+    }
+
+    query = query.in("companycam_id", normalizedProjectIds);
+  }
+
+  const { data, error, count } = await query.range(from, to);
+  return { projects: data || [], count: count ?? null, error };
+}
+
+export async function syncCompanyCamProjects({ geocodeLimit = 12 } = {}) {
+  const { data, error } = await supabase.functions.invoke("sync-companycam-projects", {
+    body: {},
+  });
+
+  if (error) {
+    return { synced: 0, geocoded: 0, error, geocodeError: null };
+  }
+
+  const { data: geocodeData, error: geocodeError } = await supabase.functions.invoke("geocode-companycam-projects", {
+    body: { limit: geocodeLimit },
+  });
+
+  return {
+    synced: data?.synced ?? 0,
+    geocoded: geocodeData?.geocoded ?? 0,
+    error: null,
+    geocodeError,
+  };
 }
 
 export async function listActiveProjectAssignmentIds(userId) {
