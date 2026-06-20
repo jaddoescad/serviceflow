@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { getLatestActiveCompanyCamProject, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
+import { summarizeAdjustments } from "../lib/timeEntryPresenters";
 import ClockInMap, {
   findNearestProject,
   formatProjectAddress as formatAddress,
@@ -27,13 +28,21 @@ const COLORS = {
   border: "#e0e3e1",
 };
 
+function formatSignedMinutes(minutes) {
+  const value = Math.round(minutes || 0);
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  return `${sign}${Math.abs(value)}m`;
+}
+
 export default function ClockInScreen({
   painterName = "Painter",
   onViewProject,
   activeShift,
   activeElapsedMs = 0,
+  todayWorkedMs = 0,
   locationStatus,
   trackingNotice,
+  trackingPermissions,
   suggestedProject,
   projects = [],
   onClockIn,
@@ -41,7 +50,8 @@ export default function ClockInScreen({
   onSwitchProject,
   onUpdateTimeEntry,
 }) {
-  const [project, setProject] = useState(null);
+  const [defaultProject, setDefaultProject] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -49,6 +59,8 @@ export default function ClockInScreen({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [foregroundPoint, setForegroundPoint] = useState(null);
+  const [clockingIn, setClockingIn] = useState(false);
+  const [clockInError, setClockInError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +74,7 @@ export default function ClockInScreen({
       if (queryError) {
         setError(queryError.message);
       } else {
-        setProject(latestProject);
+        setDefaultProject(latestProject);
       }
       setLoading(false);
     }
@@ -73,9 +85,11 @@ export default function ClockInScreen({
     };
   }, []);
 
-  const refreshForegroundLocation = async () => {
+  const refreshForegroundLocation = async ({ request = true } = {}) => {
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
+      const permission = request
+        ? await Location.requestForegroundPermissionsAsync()
+        : await Location.getForegroundPermissionsAsync();
       if (!permission.granted) return null;
 
       const position = await Location.getCurrentPositionAsync({
@@ -90,15 +104,15 @@ export default function ClockInScreen({
   };
 
   useEffect(() => {
-    refreshForegroundLocation();
-  }, []);
+    if (trackingPermissions?.foreground) refreshForegroundLocation({ request: false });
+  }, [trackingPermissions?.foreground]);
 
   const currentPoint = locationStatus?.point || foregroundPoint;
   const nearestProject = useMemo(
     () => findNearestProject(projects, currentPoint),
     [currentPoint?.latitude, currentPoint?.longitude, projects],
   );
-  const displayProject = activeShift?.project || nearestProject?.project || project;
+  const displayProject = activeShift?.project || selectedProject || nearestProject?.project || defaultProject;
   const displayClockedInAt = activeShift?.startedAt ? new Date(activeShift.startedAt) : null;
   const isClockedIn = !!activeShift;
 
@@ -107,12 +121,11 @@ export default function ClockInScreen({
   }, [displayProject]);
 
   const workedSinceClockIn = useMemo(() => {
-    const elapsedMs = activeShift ? activeElapsedMs : 0;
-    const totalMinutes = Math.max(0, Math.floor(elapsedMs / 60000));
+    const totalMinutes = Math.max(0, Math.floor(todayWorkedMs / 60000));
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     return `${hours}H ${String(minutes).padStart(2, "0")}M`;
-  }, [activeElapsedMs, activeShift]);
+  }, [todayWorkedMs]);
 
   const activeTimer = useMemo(() => {
     const elapsedMs = activeShift ? activeElapsedMs : 0;
@@ -138,6 +151,8 @@ export default function ClockInScreen({
     () => (displayClockedInAt ? formatClockTime(displayClockedInAt) : "--"),
     [displayClockedInAt],
   );
+
+  const adjustmentSummary = useMemo(() => summarizeAdjustments(activeShift), [activeShift]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -173,16 +188,33 @@ export default function ClockInScreen({
   }, [searchQuery]);
 
   const selectProject = (nextProject) => {
-    setProject(nextProject);
+    setSelectedProject(nextProject);
     setLoading(false);
     setSearchQuery("");
     setSearchResults([]);
     setSearchError("");
+    setClockInError("");
   };
 
   const startClockIn = async () => {
-    if (!displayProject) return;
-    await onClockIn?.(displayProject);
+    if (clockingIn) return;
+    if (!displayProject) {
+      setClockInError(error || "Choose an active project before clocking in.");
+      return;
+    }
+
+    setClockingIn(true);
+    setClockInError("");
+    try {
+      const shift = await onClockIn?.(displayProject);
+      if (!shift) {
+        setClockInError("Clock in could not start. Check location permissions and try again.");
+      }
+    } catch (nextError) {
+      setClockInError(nextError?.message || "Clock in could not start. Try again.");
+    } finally {
+      setClockingIn(false);
+    }
   };
 
   const stopClockIn = async () => {
@@ -194,21 +226,20 @@ export default function ClockInScreen({
     await onSwitchProject?.(suggestedProject);
   };
 
-  const switchToSearchProject = async (nextProject) => {
-    if (!nextProject) return;
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchError("");
-    await onSwitchProject?.(nextProject);
-  };
-
   const adjustActiveStart = async (minutes) => {
     if (!activeShift?.startedAt) return;
     const currentStart = new Date(activeShift.startedAt);
     const nextStart = new Date(currentStart.getTime() + minutes * 60000);
     if (nextStart.getTime() > Date.now()) return;
-    await onUpdateTimeEntry?.(activeShift, { startedAt: nextStart.toISOString() });
+    await onUpdateTimeEntry?.(activeShift, {
+      startedAt: nextStart.toISOString(),
+      adjustmentSource: "active_start_edit",
+      skipAdjustmentHistory: true,
+    });
   };
+
+  const clockInFeedback = trackingNotice?.message || clockInError;
+  const clockInDisabled = clockingIn || !displayProject;
 
   if (isClockedIn) {
     return (
@@ -218,17 +249,11 @@ export default function ClockInScreen({
         workedSinceClockIn={workedSinceClockIn}
         activeTimer={activeTimer}
         startTimeLabel={startTimeLabel}
+        adjustmentSummary={adjustmentSummary}
         trackingNotice={trackingNotice}
         locationStatus={locationStatus}
         suggestedProject={suggestedProject}
         painterName={painterName}
-        searchQuery={searchQuery}
-        searchResults={searchResults}
-        searching={searching}
-        searchError={searchError}
-        onSearchChange={setSearchQuery}
-        onClearSearch={() => setSearchQuery("")}
-        onSelectSearchProject={switchToSearchProject}
         onAdjustStart={adjustActiveStart}
         onSwitchProject={switchSuggestedProject}
         onClockOut={stopClockIn}
@@ -243,7 +268,7 @@ export default function ClockInScreen({
         <Text style={styles.painterName}>{painterName}</Text>
         <View style={styles.timeRow}>
           <Text style={styles.timeBig}>{workedSinceClockIn}</Text>
-          <Text style={styles.timeLabel}>Worked since clock in</Text>
+          <Text style={styles.timeLabel}>Logged today</Text>
         </View>
 
         <View style={styles.searchBox}>
@@ -307,7 +332,11 @@ export default function ClockInScreen({
         />
 
         <View style={styles.projectCardWrap} pointerEvents="box-none">
-          <View style={styles.projectCard}>
+          <Pressable
+            style={({ pressed }) => [styles.projectCard, pressed && displayProject && styles.projectCardPressed]}
+            disabled={!displayProject}
+            onPress={() => displayProject && onViewProject?.(displayProject)}
+          >
             <View style={styles.projectThumb}>
               <Ionicons name="map" size={22} color={COLORS.teal} />
             </View>
@@ -334,18 +363,36 @@ export default function ClockInScreen({
                 </>
               )}
             </View>
-          </View>
+            {displayProject ? (
+              <Ionicons name="chevron-forward" size={20} color={COLORS.muted} />
+            ) : null}
+          </Pressable>
         </View>
 
         <View style={styles.clockInWrap} pointerEvents="box-none">
+          {clockInFeedback ? (
+            <View style={styles.clockInFeedback}>
+              <Ionicons name="alert-circle" size={16} color={COLORS.navy} />
+              <Text style={styles.clockInFeedbackText}>{clockInFeedback}</Text>
+            </View>
+          ) : null}
           <Pressable
-            style={({ pressed }) => [styles.clockInPill, pressed && styles.clockInPressed]}
+            disabled={clockInDisabled}
+            style={({ pressed }) => [
+              styles.clockInPill,
+              clockInDisabled && styles.clockInDisabled,
+              pressed && !clockInDisabled && styles.clockInPressed,
+            ]}
             onPress={startClockIn}
           >
             <View style={styles.playCircle}>
-              <Ionicons name="play" size={16} color={COLORS.navy} />
+              {clockingIn ? (
+                <ActivityIndicator size="small" color={COLORS.navy} />
+              ) : (
+                <Ionicons name="play" size={16} color={COLORS.navy} />
+              )}
             </View>
-            <Text style={styles.clockInText}>Clock In</Text>
+            <Text style={styles.clockInText}>{clockingIn ? "Clocking In" : "Clock In"}</Text>
           </Pressable>
         </View>
       </View>
@@ -367,21 +414,16 @@ function ActiveClockInView({
   workedSinceClockIn,
   activeTimer,
   startTimeLabel,
+  adjustmentSummary,
   trackingNotice,
   locationStatus,
   suggestedProject,
-  searchQuery,
-  searchResults,
-  searching,
-  searchError,
-  onSearchChange,
-  onClearSearch,
-  onSelectSearchProject,
   onAdjustStart,
   onSwitchProject,
   onClockOut,
   onViewProject,
 }) {
+  const [editedOpen, setEditedOpen] = useState(false);
   const distanceLabel =
     locationStatus?.activeDistance == null ? null : `${formatDistance(locationStatus.activeDistance)} from job`;
   const statusMessage = trackingNotice?.message || locationStatus?.label || null;
@@ -406,58 +448,6 @@ function ActiveClockInView({
         <View style={styles.activeProgressFill} />
       </View>
 
-      <View style={styles.activeSearchWrap}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={20} color={COLORS.muted} />
-          <TextInput
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={onSearchChange}
-            placeholder="Search to switch projects"
-            placeholderTextColor={COLORS.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
-          {searching ? (
-            <ActivityIndicator size="small" color={COLORS.teal} />
-          ) : searchQuery ? (
-            <Pressable hitSlop={8} onPress={onClearSearch}>
-              <Ionicons name="close-circle" size={20} color={COLORS.muted} />
-            </Pressable>
-          ) : null}
-        </View>
-
-        {String(searchQuery || "").trim() ? (
-          <View style={styles.searchResults}>
-            {searchResults.map((result) => (
-              <Pressable
-                key={result.companycam_id}
-                style={styles.searchResultRow}
-                onPress={() => onSelectSearchProject?.(result)}
-              >
-                <View style={styles.searchResultIcon}>
-                  <Ionicons name="swap-horizontal" size={15} color={COLORS.teal} />
-                </View>
-                <View style={styles.searchResultText}>
-                  <Text style={styles.searchResultName} numberOfLines={1}>
-                    {result.name}
-                  </Text>
-                  <Text style={styles.searchResultAddress} numberOfLines={1}>
-                    {formatAddress(result) || "No address on file"}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-            {!searching && !searchResults.length ? (
-              <Text style={styles.searchEmpty}>
-                {searchError || "No matching projects found."}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-
       <View style={styles.activeContent}>
         <View style={styles.activeTimerCard}>
           <View style={styles.activeProjectRow}>
@@ -466,9 +456,6 @@ function ActiveClockInView({
               <Text style={styles.activeProjectName} numberOfLines={1}>
                 {project?.name || "Selected Project"}
               </Text>
-            </View>
-            <View style={styles.autoPill}>
-              <Text style={styles.autoPillText}>Auto</Text>
             </View>
           </View>
 
@@ -528,6 +515,30 @@ function ActiveClockInView({
           </View>
         </View>
 
+        {adjustmentSummary ? (
+          <View style={styles.editedCard}>
+            <Pressable
+              style={styles.editedHeader}
+              onPress={() => setEditedOpen((open) => !open)}
+            >
+              <Text style={styles.editedTitle}>Edited</Text>
+              <Ionicons
+                name={editedOpen ? "chevron-up" : "chevron-down"}
+                size={18}
+                color={COLORS.muted}
+              />
+            </Pressable>
+            {editedOpen ? (
+              <View style={styles.editedDetail}>
+                <Text style={styles.editedDetailTime}>{adjustmentSummary.editedAtLabel}</Text>
+                <Text style={styles.editedDetailDelta}>
+                  {formatSignedMinutes(adjustmentSummary.netMinutes)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
         <Pressable
           style={({ pressed }) => [
             styles.viewProjectButton,
@@ -582,11 +593,6 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#70c5d8",
   },
-  activeSearchWrap: {
-    paddingHorizontal: 8,
-    paddingTop: 10,
-    backgroundColor: "#f7f7f7",
-  },
   activeContent: {
     flex: 1,
     paddingHorizontal: 8,
@@ -628,17 +634,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginLeft: 35,
     marginTop: 2,
-  },
-  autoPill: {
-    backgroundColor: "#eef8fb",
-    borderRadius: 18,
-    paddingHorizontal: 13,
-    paddingVertical: 6,
-  },
-  autoPillText: {
-    color: "#63b7cc",
-    fontSize: 12,
-    fontWeight: "900",
   },
   bigTimerRow: {
     flexDirection: "row",
@@ -721,6 +716,43 @@ const styles = StyleSheet.create({
     color: "#050505",
     fontSize: 17,
     fontWeight: "500",
+  },
+  editedCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  editedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  editedTitle: {
+    color: COLORS.ink,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  editedDetail: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 10,
+  },
+  editedDetailTime: {
+    color: COLORS.ink,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  editedDetailDelta: {
+    color: COLORS.teal,
+    fontSize: 13,
+    fontWeight: "800",
   },
   addTaskWrap: {
     flexDirection: "row",
@@ -876,6 +908,10 @@ const styles = StyleSheet.create({
     elevation: 3,
     overflow: "hidden",
   },
+  projectCardPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.99 }],
+  },
   projectThumb: {
     width: 42,
     height: 42,
@@ -921,6 +957,34 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
+  },
+  clockInFeedback: {
+    maxWidth: "86%",
+    marginBottom: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  clockInFeedbackText: {
+    flex: 1,
+    color: COLORS.ink,
+    fontSize: 12.5,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+  clockInDisabled: {
+    opacity: 0.55,
   },
   clockInPressed: {
     opacity: 0.9,

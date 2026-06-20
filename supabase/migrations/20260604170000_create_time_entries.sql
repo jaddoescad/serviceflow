@@ -8,7 +8,9 @@ create table if not exists public.time_entries (
   companycam_project_id text references public.companycam_projects(companycam_id) on delete set null,
   project_name text not null,
   project_address text,
+  original_started_at timestamptz,
   started_at timestamptz not null,
+  start_edited_at timestamptz,
   ended_at timestamptz,
   status text not null default 'active' check (status in ('active', 'complete')),
   clock_in_latitude double precision,
@@ -18,6 +20,7 @@ create table if not exists public.time_entries (
   last_distance_meters integer,
   is_on_site boolean,
   segments jsonb not null default '[]'::jsonb,
+  adjustment_history jsonb not null default '[]'::jsonb,
   notes text,
   inserted_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())

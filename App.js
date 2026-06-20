@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Dimensions,
+  Linking,
+  PanResponder,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -13,6 +17,9 @@ import ProjectsScreen from "./src/screens/ProjectsScreen";
 import ProjectDetailScreen from "./src/screens/ProjectDetailScreen";
 import ClockInScreen from "./src/screens/ClockInScreen";
 import TimesheetScreen from "./src/screens/TimesheetScreen";
+import LocationPermissionBlocker, {
+  shouldOpenSettingsAfterPermissionRequest,
+} from "./src/screens/clock-in/LocationPermissionBlocker";
 import { supabase } from "./src/lib/supabase";
 import { useTimeTracking } from "./src/lib/timeTracking";
 import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
@@ -40,6 +47,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [devBypassLocationGate, setDevBypassLocationGate] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -81,6 +89,31 @@ export default function App() {
     return <LoginScreen />;
   }
 
+  if (!tracking.trackingPermissions?.ready && !devBypassLocationGate) {
+    const openLocationSettings = () => Linking.openSettings().catch(() => {});
+    const enableLocation = async () => {
+      const nextPermissions = await tracking.requestTrackingPermissionAccess?.();
+      if (shouldOpenSettingsAfterPermissionRequest(nextPermissions)) {
+        openLocationSettings();
+      }
+    };
+
+    return (
+      <SafeAreaView style={styles.shell}>
+        <LocationPermissionBlocker
+          permissions={tracking.trackingPermissions}
+          isClockedIn={!!tracking.activeShift}
+          projectName={tracking.activeShift?.project?.name}
+          onEnable={enableLocation}
+          onOpenSettings={openLocationSettings}
+          onCheckAgain={tracking.refreshTrackingPermissions}
+          onClockOut={tracking.activeShift ? () => tracking.clockOut("manual") : null}
+          onDevBypass={__DEV__ ? () => setDevBypassLocationGate(true) : null}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.shell}>
       <View style={styles.content}>
@@ -93,8 +126,10 @@ export default function App() {
             onViewProject={setSelectedProject}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
+            todayWorkedMs={tracking.todayWorkedMs}
             locationStatus={tracking.locationStatus}
             trackingNotice={tracking.trackingNotice}
+            trackingPermissions={tracking.trackingPermissions}
             suggestedProject={tracking.suggestedProject}
             projects={tracking.resolvedProjects}
             onClockIn={tracking.clockIn}
@@ -147,12 +182,14 @@ export default function App() {
         ))}
       </View>
       {selectedProject ? (
-        <View style={styles.detailOverlay}>
+        <SwipeBackOverlay onBack={() => setSelectedProject(null)}>
           <ProjectDetailScreen
             project={selectedProject}
             onBack={() => setSelectedProject(null)}
-            entries={tracking.liveTeamEntries}
+            entries={tracking.teamEntries}
             activeShift={tracking.activeShift}
+            activeElapsedMs={tracking.activeElapsedMs}
+            trackingNotice={tracking.trackingNotice}
             projects={trackingProjects}
             user={session.user}
             onClockIn={tracking.clockIn}
@@ -161,9 +198,56 @@ export default function App() {
             onDeleteTimeEntry={tracking.deleteTimeEntry}
             onUpdateTimeEntry={tracking.updateTimeEntry}
           />
-        </View>
+        </SwipeBackOverlay>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const SWIPE_EDGE_WIDTH = 40;
+
+function SwipeBackOverlay({ onBack, children }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      // Only claim the gesture when it starts near the left edge and is clearly
+      // a rightward horizontal drag, so vertical scrolling still works.
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        gesture.x0 <= SWIPE_EDGE_WIDTH &&
+        gesture.dx > 6 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderMove: (_evt, gesture) => {
+        translateX.setValue(Math.max(0, gesture.dx));
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        const shouldDismiss = gesture.dx > SCREEN_WIDTH * 0.33 || gesture.vx > 0.35;
+        if (shouldDismiss) {
+          Animated.timing(translateX, {
+            toValue: SCREEN_WIDTH,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => onBackRef.current?.());
+        } else {
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      style={[styles.detailOverlay, { transform: [{ translateX }] }]}
+      {...panResponder.panHandlers}
+    >
+      {children}
+    </Animated.View>
   );
 }
 

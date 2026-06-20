@@ -10,7 +10,9 @@ export function shiftToEntry(shift, endedAt = new Date().toISOString(), reason =
     userEmail: shift.userEmail,
     userName: shift.userName,
     project: shift.project,
+    originalStartedAt: shift.originalStartedAt || shift.startedAt,
     startedAt: shift.startedAt,
+    startEditedAt: shift.startEditedAt || null,
     endedAt,
     durationMs,
     clockOutReason: reason,
@@ -20,6 +22,7 @@ export function shiftToEntry(shift, endedAt = new Date().toISOString(), reason =
     lastDistanceMeters: shift.lastDistanceMeters,
     onSite: shift.onSite,
     segments: shift.segments || [],
+    adjustmentHistory: shift.adjustmentHistory || [],
   };
 }
 
@@ -33,6 +36,7 @@ export function entryProjectId(entry) {
 
 export function applyEntryTimeUpdate(entry, updates = {}) {
   const startedAt = updates.startedAt || entry.startedAt;
+  const originalStartedAt = entry.originalStartedAt || entry.startedAt;
   const isActive = entry.clockOutReason === "active" || !entry.endedAt;
   const endedAt = updates.endedAt || entry.endedAt || (isActive ? null : new Date().toISOString());
   const project = updates.project ? normalizeProject(updates.project) : entry.project;
@@ -46,12 +50,43 @@ export function applyEntryTimeUpdate(entry, updates = {}) {
       }))
     : entry.segments || [];
 
+  const previousProjectId = entry.project?.companycam_id || entry.project?.id || null;
+  const nextProjectId = project?.companycam_id || project?.id || null;
+  const startChanged = startedAt !== entry.startedAt;
+  const changed =
+    startChanged ||
+    endedAt !== (entry.endedAt || null) ||
+    String(previousProjectId || "") !== String(nextProjectId || "");
+  const adjustedAt = new Date().toISOString();
+  const adjustedBy = updates.adjustedBy || {};
+  const adjustmentHistory = changed && !updates.skipAdjustmentHistory
+    ? [
+        ...(entry.adjustmentHistory || []),
+        {
+          adjustedAt,
+          adjustedByUserId: adjustedBy.id || entry.userId || null,
+          adjustedByEmail: adjustedBy.email || entry.userEmail || null,
+          adjustedByName: adjustedBy.name || entry.userName || null,
+          source: updates.adjustmentSource || "time_edit",
+          previousStartedAt: entry.startedAt || null,
+          nextStartedAt: startedAt || null,
+          previousEndedAt: entry.endedAt || null,
+          nextEndedAt: endedAt || null,
+          previousProjectId,
+          nextProjectId,
+        },
+      ]
+    : entry.adjustmentHistory || [];
+
   return {
     ...entry,
     project,
+    originalStartedAt,
     startedAt,
+    startEditedAt: startChanged ? adjustedAt : entry.startEditedAt || null,
     endedAt,
     durationMs,
     segments,
+    adjustmentHistory,
   };
 }

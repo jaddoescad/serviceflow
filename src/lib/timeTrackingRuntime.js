@@ -7,6 +7,30 @@ import { readStore, writeStore } from "./timeTrackingStorage";
 
 export const BACKGROUND_LOCATION_TASK = "ottawa-painters-background-location";
 
+function normalizePermission(response) {
+  return {
+    granted: !!response?.granted,
+    canAskAgain: response?.canAskAgain !== false,
+    status: response?.status || (response?.granted ? "granted" : "undetermined"),
+  };
+}
+
+function buildTrackingPermissions(foreground, background, notifications = null) {
+  const foregroundPermission = normalizePermission(foreground);
+  const backgroundPermission = normalizePermission(background);
+
+  return {
+    foreground: foregroundPermission.granted,
+    background: backgroundPermission.granted,
+    ready: foregroundPermission.granted && backgroundPermission.granted,
+    foregroundStatus: foregroundPermission.status,
+    backgroundStatus: backgroundPermission.status,
+    canAskForegroundAgain: foregroundPermission.canAskAgain,
+    canAskBackgroundAgain: backgroundPermission.canAskAgain,
+    notifications,
+  };
+}
+
 async function handleBackgroundLocation(location) {
   const point = toPoint(location);
   if (!point) return;
@@ -62,17 +86,36 @@ export async function requestTrackingPermissions() {
     foreground = { granted: false };
   }
 
-  let background = false;
+  let background = { granted: false };
   if (foreground.granted) {
     try {
-      const response = await Location.requestBackgroundPermissionsAsync();
-      background = !!response.granted;
+      background = await Location.requestBackgroundPermissionsAsync();
     } catch (_error) {
-      background = false;
+      background = { granted: false };
     }
   }
 
-  return { foreground: !!foreground.granted, background, notifications };
+  return buildTrackingPermissions(foreground, background, notifications);
+}
+
+export async function getTrackingPermissions() {
+  let foreground = { granted: false };
+  try {
+    foreground = await Location.getForegroundPermissionsAsync();
+  } catch (_error) {
+    foreground = { granted: false };
+  }
+
+  let background = { granted: false };
+  if (foreground.granted) {
+    try {
+      background = await Location.getBackgroundPermissionsAsync();
+    } catch (_error) {
+      background = { granted: false };
+    }
+  }
+
+  return buildTrackingPermissions(foreground, background);
 }
 
 export async function getCurrentPoint() {

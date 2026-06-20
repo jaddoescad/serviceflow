@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import MapView, { Circle, Marker, Polyline } from "react-native-maps";
+import { distanceMeters } from "../../lib/trackingModel";
 
 const COLORS = {
   green: "#173f37",
@@ -21,29 +22,67 @@ const OTTAWA_REGION = {
   longitudeDelta: 0.035,
 };
 
+const PROJECT_MARKER_SIZE = 30;
+const PROJECT_MARKER_HIT_SIZE = 44;
+const PROJECT_MARKER_STACK_WIDTH = 164;
+const PROJECT_MARKER_SCREEN_BUFFER = 28;
+const PROJECT_LABEL_MAX_DELTA = 0.18;
+const PROJECT_LABEL_HIT_TOP_OFFSET = 54;
+const PROJECT_LABEL_HIT_BOTTOM_OFFSET = 16;
+
 export default function ClockInMap({ project, projects, currentPoint, onSelectProject, onRequestLocation }) {
   const mapRef = useRef(null);
+  const didSetInitialRegionRef = useRef(false);
+  const regionFrameRef = useRef(null);
+  const pendingRegionRef = useRef(null);
+  const [mapLayout, setMapLayout] = useState(null);
+  const [visibleRegion, setVisibleRegion] = useState(null);
   const [resolvedSelectedProject, setResolvedSelectedProject] = useState(null);
-  const selectedProjectForMap = resolvedSelectedProject || project;
+  const currentProjectId = getProjectId(project);
+  const resolvedProjectId = getProjectId(resolvedSelectedProject);
+  const selectedProjectForMap =
+    currentProjectId && currentProjectId === resolvedProjectId ? resolvedSelectedProject : project;
   const projectMarkers = useMemo(() => buildProjectMarkers(projects, selectedProjectForMap), [selectedProjectForMap, projects]);
-  const markerCoordinates = useMemo(() => projectMarkers.map((marker) => marker.coordinate), [projectMarkers]);
   const selectedMarker = projectMarkers.find((marker) => marker.isSelected);
-  const siteCoordinate = selectedMarker?.coordinate || projectCoordinate(selectedProjectForMap);
-  const selectedMarkerCoordinate = selectedMarker?.coordinate || siteCoordinate;
-  const selectedMarkerProject = selectedMarker?.project || selectedProjectForMap;
-  const connectorCoordinate = selectedMarker?.coordinate || siteCoordinate;
+  const selectedJobCoordinate = selectedMarker?.coordinate || projectCoordinate(selectedProjectForMap);
   const userCoordinate = toCoordinate(currentPoint);
-  const region = buildMapRegion(siteCoordinate, userCoordinate, markerCoordinates);
-  const [visibleRegion, setVisibleRegion] = useState(region);
-  const [selectedOverlayPoint, setSelectedOverlayPoint] = useState(null);
-  const markerKey = projectMarkers.map((marker) => `${marker.id}:${coordinateKey(marker.coordinate)}`).join("|");
-  const zoomDelta = Math.max(
-    visibleRegion?.latitudeDelta ?? region.latitudeDelta,
-    visibleRegion?.longitudeDelta ?? region.longitudeDelta,
+  const region = buildMapRegion(selectedJobCoordinate, userCoordinate);
+  const showProjectLabels = shouldShowProjectLabels(visibleRegion);
+  const overlayMarkers = useMemo(
+    () => buildOverlayMarkers(projectMarkers, visibleRegion, mapLayout),
+    [mapLayout, projectMarkers, visibleRegion],
   );
-  const showProjectLabels = zoomDelta <= 0.18;
-  const showSelectedOverlay = Boolean(selectedMarkerCoordinate && zoomDelta > 0.18);
-  const showSelectedNativeMarker = Boolean(selectedMarkerCoordinate && (!showSelectedOverlay || !selectedOverlayPoint));
+
+  const updateMapLayout = ({ nativeEvent }) => {
+    const { width, height } = nativeEvent.layout || {};
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    setMapLayout((currentLayout) => {
+      if (currentLayout?.width === width && currentLayout?.height === height) return currentLayout;
+      return { width, height };
+    });
+  };
+
+  const queueVisibleRegion = (nextRegion) => {
+    pendingRegionRef.current = nextRegion;
+    if (regionFrameRef.current) return;
+
+    regionFrameRef.current = requestAnimationFrame(() => {
+      regionFrameRef.current = null;
+      setVisibleRegion(pendingRegionRef.current);
+    });
+  };
+
+  const selectOverlayMarkerFromMapPress = (event) => {
+    const marker = findPressedOverlayMarker({
+      event: event?.nativeEvent,
+      layout: mapLayout,
+      markers: overlayMarkers,
+      region: visibleRegion,
+      showLabels: showProjectLabels,
+    });
+
+    if (marker) onSelectProject?.(marker.project);
+  };
 
   const recenterMap = async () => {
     const freshCoordinate = toCoordinate(await onRequestLocation?.());
@@ -57,18 +96,26 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
         }
       : region;
 
+    setVisibleRegion(targetRegion);
     mapRef.current?.animateToRegion(targetRegion, 350);
   };
 
   useEffect(() => {
-    if (!projectMarkers.length && !userCoordinate) return;
+    if (didSetInitialRegionRef.current) return;
+    if (!selectedJobCoordinate && !userCoordinate) return;
+    didSetInitialRegionRef.current = true;
     setVisibleRegion(region);
     mapRef.current?.animateToRegion(region, 250);
-  }, [markerKey, selectedProjectForMap?.companycam_id, userCoordinate?.latitude, userCoordinate?.longitude]);
+  }, [region, selectedJobCoordinate, userCoordinate]);
+
+  useEffect(() => {
+    return () => {
+      if (regionFrameRef.current) cancelAnimationFrame(regionFrameRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const selectedId = getProjectId(project);
 
     async function resolveSelectedProjectCoordinate() {
       if (!project || projectCoordinate(project)) {
@@ -77,7 +124,7 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
       }
 
       const matchingProject = (projects || []).find(
-        (candidate) => getProjectId(candidate) === selectedId && projectCoordinate(candidate),
+        (candidate) => getProjectId(candidate) === currentProjectId && projectCoordinate(candidate),
       );
       if (matchingProject) {
         setResolvedSelectedProject(matchingProject);
@@ -105,49 +152,7 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
     return () => {
       cancelled = true;
     };
-  }, [project?.companycam_id, project?.formatted_address, project?.city, project?.state, project?.postal_code, projects]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!showSelectedOverlay || !selectedMarkerCoordinate || !mapRef.current?.pointForCoordinate) {
-      setSelectedOverlayPoint(null);
-      return undefined;
-    }
-
-    setSelectedOverlayPoint(null);
-
-    const frame = requestAnimationFrame(() => {
-      mapRef.current
-        ?.pointForCoordinate(selectedMarkerCoordinate)
-        .then((point) => {
-          if (cancelled) return;
-
-          if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
-            setSelectedOverlayPoint(null);
-            return;
-          }
-
-          setSelectedOverlayPoint(point);
-        })
-        .catch(() => {
-          if (!cancelled) setSelectedOverlayPoint(null);
-        });
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [
-    selectedMarkerCoordinate?.latitude,
-    selectedMarkerCoordinate?.longitude,
-    showSelectedOverlay,
-    visibleRegion?.latitude,
-    visibleRegion?.longitude,
-    visibleRegion?.latitudeDelta,
-    visibleRegion?.longitudeDelta,
-  ]);
+  }, [currentProjectId, project?.formatted_address, project?.city, project?.state, project?.postal_code, projects]);
 
   return (
     <>
@@ -156,15 +161,20 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
         style={StyleSheet.absoluteFill}
         initialRegion={region}
         mapType="standard"
+        rotateEnabled={false}
+        pitchEnabled={false}
         showsCompass={false}
         showsScale={false}
         showsBuildings
         loadingEnabled
+        onLayout={updateMapLayout}
+        onPress={selectOverlayMarkerFromMapPress}
+        onRegionChange={queueVisibleRegion}
         onRegionChangeComplete={setVisibleRegion}
       >
-        {siteCoordinate ? (
+        {selectedJobCoordinate ? (
           <Circle
-            center={siteCoordinate}
+            center={selectedJobCoordinate}
             radius={150}
             strokeWidth={2}
             strokeColor="rgba(47,141,127,0.55)"
@@ -172,89 +182,30 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
           />
         ) : null}
 
-        {connectorCoordinate && userCoordinate ? (
+        {selectedJobCoordinate && userCoordinate ? (
           <>
             <Polyline
-              coordinates={[userCoordinate, connectorCoordinate]}
+              coordinates={[userCoordinate, selectedJobCoordinate]}
               strokeColor="rgba(17,32,29,0.16)"
               strokeWidth={10}
               lineCap="round"
               lineJoin="round"
             />
             <Polyline
-              coordinates={[userCoordinate, connectorCoordinate]}
+              coordinates={[userCoordinate, selectedJobCoordinate]}
               strokeColor="rgba(255,255,255,0.92)"
               strokeWidth={7}
               lineCap="round"
               lineJoin="round"
             />
             <Polyline
-              coordinates={[userCoordinate, connectorCoordinate]}
+              coordinates={[userCoordinate, selectedJobCoordinate]}
               strokeColor={COLORS.teal}
               strokeWidth={4}
               lineCap="round"
               lineJoin="round"
             />
           </>
-        ) : null}
-
-        {projectMarkers.filter((marker) => !marker.isSelected).map((marker) => {
-          const showLabel = showProjectLabels;
-
-          return (
-            <Marker
-              key={`${marker.id}-${showLabel ? "label" : "pin"}`}
-              coordinate={marker.coordinate}
-              title={marker.project?.name || "Project"}
-              description={formatProjectAddress(marker.project) || undefined}
-              anchor={{ x: 0.5, y: 1 }}
-              zIndex={1}
-              tracksViewChanges
-              onPress={() => onSelectProject?.(marker.project)}
-            >
-              <View style={styles.projectMarkerStack}>
-                {showLabel ? (
-                  <View style={styles.projectMarkerLabel}>
-                    <Text style={styles.projectMarkerLabelText} numberOfLines={1}>
-                      {marker.project?.name || "Project"}
-                    </Text>
-                  </View>
-                ) : null}
-                <View style={styles.projectMapMarker}>
-                  <Ionicons name="location" size={18} color={COLORS.white} />
-                </View>
-              </View>
-            </Marker>
-          );
-        })}
-
-        {showSelectedNativeMarker ? (
-          <Marker
-            key={`selected-${getProjectId(selectedMarkerProject) || coordinateKey(selectedMarkerCoordinate)}`}
-            coordinate={selectedMarkerCoordinate}
-            title={selectedMarkerProject?.name || "Project"}
-            description={formatProjectAddress(selectedMarkerProject) || undefined}
-            anchor={{ x: 0.5, y: 1 }}
-            displayPriority="required"
-            identifier="selected-project-marker"
-            zIndex={99}
-            tracksViewChanges
-            onPress={() => onSelectProject?.(selectedMarkerProject)}
-          >
-            <View style={styles.projectMarkerStack}>
-              <View style={[styles.projectMarkerLabel, styles.projectMarkerLabelSelected]}>
-                <Text
-                  style={[styles.projectMarkerLabelText, styles.projectMarkerLabelTextSelected]}
-                  numberOfLines={1}
-                >
-                  {selectedMarkerProject?.name || "Project"}
-                </Text>
-              </View>
-              <View style={styles.siteMarker}>
-                <Ionicons name="location" size={25} color={COLORS.white} />
-              </View>
-            </View>
-          </Marker>
         ) : null}
 
         {userCoordinate ? (
@@ -266,27 +217,52 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
         ) : null}
       </MapView>
 
-      {showSelectedOverlay && selectedOverlayPoint ? (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.selectedMarkerOverlay,
-            {
-              left: selectedOverlayPoint.x - 92,
-              top: selectedOverlayPoint.y - 74,
-            },
-          ]}
-        >
-          <View style={[styles.projectMarkerLabel, styles.projectMarkerLabelSelected]}>
-            <Text style={[styles.projectMarkerLabelText, styles.projectMarkerLabelTextSelected]} numberOfLines={1}>
-              {selectedMarkerProject?.name || "Project"}
-            </Text>
-          </View>
-          <View style={styles.siteMarker}>
-            <Ionicons name="location" size={25} color={COLORS.white} />
-          </View>
-        </View>
-      ) : null}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {overlayMarkers.map((marker) => (
+          <Fragment key={`project-overlay-${marker.id}`}>
+            {showProjectLabels || marker.isSelected ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.projectMarkerLabel,
+                  marker.isSelected && styles.projectMarkerLabelSelected,
+                  {
+                    left: marker.point.x - PROJECT_MARKER_STACK_WIDTH / 2,
+                    top: marker.point.y - 50,
+                    zIndex: marker.isSelected ? 21 : 11,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="briefcase"
+                  size={11}
+                  color={marker.isSelected ? COLORS.white : COLORS.teal}
+                />
+                <Text
+                  style={[styles.projectMarkerLabelText, marker.isSelected && styles.projectMarkerLabelTextSelected]}
+                  numberOfLines={1}
+                >
+                  {marker.project?.name || "Project"}
+                </Text>
+              </View>
+            ) : null}
+            <View
+              style={[
+                styles.projectMarkerButton,
+                {
+                  left: marker.point.x - PROJECT_MARKER_HIT_SIZE / 2,
+                  top: marker.point.y - PROJECT_MARKER_HIT_SIZE / 2,
+                  zIndex: marker.isSelected ? 20 : 10,
+                },
+              ]}
+            >
+              <View style={[styles.projectMarker, marker.isSelected && styles.projectMarkerSelected]}>
+                <Ionicons name="location" size={18} color={COLORS.white} />
+              </View>
+            </View>
+          </Fragment>
+        ))}
+      </View>
 
       <View style={styles.mapControls} pointerEvents="box-none">
         <Pressable style={styles.mapButton} hitSlop={6} onPress={recenterMap}>
@@ -339,20 +315,6 @@ function projectCoordinate(project) {
   return toCoordinate(project);
 }
 
-function distanceMeters(a, b) {
-  if (!a || !b) return null;
-  const radius = 6371000;
-  const toRad = (value) => (value * Math.PI) / 180;
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLng = toRad(b.longitude - a.longitude);
-  const lat1 = toRad(a.latitude);
-  const lat2 = toRad(b.latitude);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return Math.round(radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
-}
-
 function coordinateKey(coordinate) {
   return `${coordinate.latitude.toFixed(6)},${coordinate.longitude.toFixed(6)}`;
 }
@@ -361,9 +323,8 @@ function buildProjectMarkers(projects, selectedProject) {
   const selectedProjectId = getProjectId(selectedProject);
   const seen = new Set();
   const markers = [];
-  const candidates = selectedProject ? [selectedProject, ...(projects || [])] : projects || [];
 
-  for (const rawProject of candidates) {
+  for (const rawProject of projects || []) {
     const coordinate = projectCoordinate(rawProject);
     if (!coordinate) continue;
 
@@ -379,11 +340,129 @@ function buildProjectMarkers(projects, selectedProject) {
     });
   }
 
+  const selectedCoordinate = projectCoordinate(selectedProject);
+  if (selectedProjectId && selectedCoordinate && !seen.has(selectedProjectId)) {
+    markers.push({
+      project: selectedProject,
+      coordinate: selectedCoordinate,
+      id: selectedProjectId,
+      isSelected: true,
+    });
+  }
+
   return markers;
 }
 
+function buildOverlayMarkers(markers, region, layout) {
+  if (!region || !layout) return [];
+
+  return markers
+    .map((marker) => ({
+      ...marker,
+      point: coordinateToScreenPoint(marker.coordinate, region, layout),
+    }))
+    .filter((marker) => isVisiblePoint(marker.point, layout));
+}
+
+function coordinateToScreenPoint(coordinate, region, layout) {
+  if (!coordinate || !region || !layout) return null;
+
+  const west = region.longitude - region.longitudeDelta / 2;
+  const east = region.longitude + region.longitudeDelta / 2;
+  const north = region.latitude + region.latitudeDelta / 2;
+  const south = region.latitude - region.latitudeDelta / 2;
+  const longitudeSpan = east - west;
+  const northMercator = latitudeToMercator(north);
+  const southMercator = latitudeToMercator(south);
+  const mercatorSpan = northMercator - southMercator;
+
+  if (!Number.isFinite(longitudeSpan) || !Number.isFinite(mercatorSpan) || longitudeSpan <= 0 || mercatorSpan <= 0) {
+    return null;
+  }
+
+  const x = ((coordinate.longitude - west) / longitudeSpan) * layout.width;
+  const y = ((northMercator - latitudeToMercator(coordinate.latitude)) / mercatorSpan) * layout.height;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+  return { x, y };
+}
+
+function latitudeToMercator(latitude) {
+  const clampedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
+  const radians = (clampedLatitude * Math.PI) / 180;
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
+}
+
+function isVisiblePoint(point, layout) {
+  if (!point) return false;
+  return (
+    point.x >= -PROJECT_MARKER_SCREEN_BUFFER &&
+    point.x <= layout.width + PROJECT_MARKER_SCREEN_BUFFER &&
+    point.y >= -PROJECT_MARKER_SCREEN_BUFFER &&
+    point.y <= layout.height + PROJECT_MARKER_SCREEN_BUFFER
+  );
+}
+
+function findPressedOverlayMarker({ event, markers, region, layout, showLabels }) {
+  if (!markers?.length) return null;
+  const point = toScreenPressPoint(event, region, layout);
+  if (!point) return null;
+
+  let closestMarker = null;
+  let closestDistance = Infinity;
+
+  for (const marker of markers) {
+    if (!isPointInsideMarkerTapArea(point, marker, showLabels)) continue;
+    const distance = screenDistance(point, marker.point);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestMarker = marker;
+    }
+  }
+
+  return closestMarker;
+}
+
+function toScreenPressPoint(event, region, layout) {
+  const position = event?.position;
+  if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
+    return { x: position.x, y: position.y };
+  }
+
+  return coordinateToScreenPoint(toCoordinate(event?.coordinate), region, layout);
+}
+
+function isPointInsideMarkerTapArea(point, marker, showLabels) {
+  const markerRadius = PROJECT_MARKER_HIT_SIZE / 2;
+  const inMarker =
+    Math.abs(point.x - marker.point.x) <= markerRadius &&
+    Math.abs(point.y - marker.point.y) <= markerRadius;
+  if (inMarker) return true;
+
+  if (!showLabels && !marker.isSelected) return false;
+
+  return (
+    point.x >= marker.point.x - PROJECT_MARKER_STACK_WIDTH / 2 &&
+    point.x <= marker.point.x + PROJECT_MARKER_STACK_WIDTH / 2 &&
+    point.y >= marker.point.y - PROJECT_LABEL_HIT_TOP_OFFSET &&
+    point.y <= marker.point.y - PROJECT_LABEL_HIT_BOTTOM_OFFSET
+  );
+}
+
+function screenDistance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function shouldShowProjectLabels(region) {
+  if (!region) return false;
+  const zoomDelta = Math.max(region.latitudeDelta || 0, region.longitudeDelta || 0);
+  return zoomDelta > 0 && zoomDelta <= PROJECT_LABEL_MAX_DELTA;
+}
+
 function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
-  const points = [...projectPoints, currentPoint].filter(Boolean);
+  const points = [projectPoint, currentPoint, ...projectPoints].filter(Boolean);
 
   if (points.length > 1) {
     const latitudes = points.map((point) => point.latitude);
@@ -413,63 +492,47 @@ function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
 }
 
 const styles = StyleSheet.create({
-  projectMarkerStack: {
-    alignItems: "center",
-  },
-  selectedMarkerOverlay: {
+  projectMarkerButton: {
     position: "absolute",
-    width: 184,
+    width: PROJECT_MARKER_HIT_SIZE,
+    height: PROJECT_MARKER_HIT_SIZE,
     alignItems: "center",
-    zIndex: 20,
-    elevation: 20,
+    justifyContent: "center",
   },
   projectMarkerLabel: {
+    position: "absolute",
     maxWidth: 156,
-    marginBottom: 7,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.96)",
     borderWidth: 1,
     borderColor: "rgba(224,227,225,0.95)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   projectMarkerLabelSelected: {
     backgroundColor: COLORS.navy,
-    borderColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(255,255,255,0.92)",
   },
   projectMarkerLabelText: {
     color: COLORS.ink,
     fontSize: 11.5,
     fontWeight: "900",
-    letterSpacing: -0.1,
   },
   projectMarkerLabelTextSelected: {
     color: COLORS.white,
   },
-  siteMarker: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: COLORS.teal,
-    borderWidth: 3,
-    borderColor: COLORS.white,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  projectMapMarker: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  projectMarker: {
+    width: PROJECT_MARKER_SIZE,
+    height: PROJECT_MARKER_SIZE,
+    borderRadius: PROJECT_MARKER_SIZE / 2,
     backgroundColor: COLORS.navy,
     borderWidth: 2,
     borderColor: COLORS.white,
@@ -480,6 +543,10 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
+  },
+  projectMarkerSelected: {
+    backgroundColor: COLORS.teal,
+    borderWidth: 3,
   },
   userMarkerOuter: {
     width: 24,

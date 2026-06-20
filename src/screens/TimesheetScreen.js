@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { buildTimesheetDays } from "../lib/timeTracking";
 
 const COLORS = {
   navy: "#0f2a3d",
@@ -29,118 +33,108 @@ const COLORS = {
   amber: "#e0a000",
 };
 
-const PAY_PERIODS = [
-  { id: "p1", label: "Mon, Jun 01 - Sun, Jun 07" },
-  { id: "p2", label: "Mon, May 25 - Sun, May 31" },
-  { id: "p3", label: "Mon, May 18 - Sun, May 24" },
-];
+const PAY_PERIODS = buildPayPeriods();
 
-const USER = { name: "Jad Slim", initials: "JS" };
+function startOfWeek(date) {
+  const result = new Date(date);
+  const diff = (result.getDay() + 6) % 7;
+  result.setHours(12, 0, 0, 0);
+  result.setDate(result.getDate() - diff);
+  return result;
+}
 
-const DAYS = [
-  {
-    id: "thu",
-    weekday: "Thu",
-    date: "Jun 04",
-    type: "worked",
-    total: "6h 13m",
-    totalMinutes: 373,
-    onSite: "4h 50m",
-    drive: "1h 22m",
-    jobs: ["Jon Roebuck", "Phil Anido"],
-    entries: [
-      {
-        id: "thu-1",
-        job: "Jon Roebuck",
-        address: "501 Chemin Klock",
-        start: "7:00 AM",
-        startSrc: "GPS",
-        end: "10:23 AM",
-        endSrc: "GPS",
-        duration: "3h 23m",
-        status: "On Site",
-        distance: "42 m from site",
-      },
-      {
-        id: "thu-2",
-        job: "Phil Anido",
-        address: "1160 Castle Hill Crescent",
-        start: "10:55 AM",
-        startSrc: "Auto",
-        end: "12:05 PM",
-        endSrc: "Auto",
-        duration: "1h 10m",
-        status: "On Site",
-        distance: "58 m from site",
-      },
-      {
-        id: "thu-3",
-        job: "Drive / Off Site",
-        address: "Between jobs",
-        start: "12:05 PM",
-        startSrc: "Auto",
-        end: "1:27 PM",
-        endSrc: "Auto",
-        duration: "1h 22m",
-        status: "Off Site",
-        distance: "1.4 km from site",
-      },
-    ],
-  },
-  {
-    id: "wed",
-    weekday: "Wed",
-    date: "Jun 03",
-    type: "worked",
-    total: "10h 55m",
-    totalMinutes: 655,
-    onSite: "3h 6m",
-    drive: "7h 49m",
-    jobs: ["Emma Bodoni", "Mike Ralph"],
-    entries: [
-      {
-        id: "wed-1",
-        job: "Emma Bodoni",
-        address: "2037 Woodglen Crescent",
-        start: "7:15 AM",
-        startSrc: "GPS",
-        end: "10:21 AM",
-        endSrc: "GPS",
-        duration: "3h 6m",
-        status: "On Site",
-        distance: "35 m from site",
-      },
-      {
-        id: "wed-2",
-        job: "Mike Ralph",
-        address: "2138 Repentigny Drive",
-        start: "10:24 AM",
-        startSrc: "Auto",
-        end: "6:13 PM",
-        endSrc: "GPS",
-        duration: "7h 49m",
-        status: "Off Site",
-        distance: "2.1 km from site",
-      },
-    ],
-  },
-  { id: "tue", weekday: "Tue", date: "Jun 02", type: "missing" },
-  { id: "mon", weekday: "Mon", date: "Jun 01", type: "missing" },
-];
+function addDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
 
-const WEEK_TOTAL_MIN = DAYS.reduce((s, d) => s + (d.totalMinutes || 0), 0);
-const WEEK_TOTAL = `${Math.floor(WEEK_TOTAL_MIN / 60)}h ${WEEK_TOTAL_MIN % 60}m`;
-const DAYS_WORKED = DAYS.filter((d) => d.type === "worked").length;
+function formatPeriodPart(date) {
+  return date.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "2-digit",
+  });
+}
 
-export default function TimesheetScreen() {
+function formatDayKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildPayPeriods(referenceDate = new Date()) {
+  const currentStart = startOfWeek(referenceDate);
+  return [0, 1, 2].map((offset) => {
+    const start = addDays(currentStart, -offset * 7);
+    const end = addDays(start, 6);
+    return {
+      id: formatDayKey(start),
+      label: `${formatPeriodPart(start)} - ${formatPeriodPart(end)}`,
+      start,
+      end,
+    };
+  });
+}
+
+function buildEmptyDaysForPeriod(period) {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const days = [];
+
+  for (let date = new Date(period.end); date >= period.start; date = addDays(date, -1)) {
+    if (date > today) continue;
+    days.push({
+      id: formatDayKey(date),
+      weekday: date.toLocaleDateString([], { weekday: "short" }),
+      date: date.toLocaleDateString([], { month: "short", day: "2-digit" }),
+      type: "missing",
+    });
+  }
+
+  return days;
+}
+
+function isDayInPeriod(day, period) {
+  const date = new Date(`${day.id}T12:00:00`);
+  return date >= period.start && date <= period.end;
+}
+
+function initialsForName(name) {
+  return String(name || "Painter")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "P";
+}
+
+export default function TimesheetScreen({
+  entries = [],
+  activeShift,
+  projects = [],
+  painterName = "Painter",
+  onDeleteTimeEntry,
+  onUpdateTimeEntry,
+}) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [periodId, setPeriodId] = useState(PAY_PERIODS[0].id);
   const [selectedDayId, setSelectedDayId] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
 
+  const trackedDays = useMemo(() => buildTimesheetDays(entries, activeShift), [entries, activeShift]);
   const period = PAY_PERIODS.find((p) => p.id === periodId) || PAY_PERIODS[0];
+  const periodTrackedDays = useMemo(
+    () => trackedDays.filter((day) => isDayInPeriod(day, period)),
+    [period, trackedDays],
+  );
+  const emptyDays = useMemo(() => buildEmptyDaysForPeriod(period), [period]);
+  const sourceDays = periodTrackedDays.length ? periodTrackedDays : emptyDays;
+  const weekTotalMin = sourceDays.reduce((sum, day) => sum + (day.totalMinutes || 0), 0);
+  const weekTotal = `${Math.floor(weekTotalMin / 60)}h ${weekTotalMin % 60}m`;
+  const daysWorked = sourceDays.filter((day) => day.type === "worked").length;
+  const painterInitials = initialsForName(painterName);
   const selectedDay = selectedDayId
-    ? DAYS.find((d) => d.id === selectedDayId) || null
+    ? sourceDays.find((d) => d.id === selectedDayId) || null
     : null;
 
   if (selectedEntry && selectedDay) {
@@ -148,6 +142,18 @@ export default function TimesheetScreen() {
       <EditTimeScreen
         day={selectedDay}
         entry={selectedEntry}
+        projects={projects}
+        painterName={painterName}
+        onSave={async (entryToSave, updates) => {
+          await onUpdateTimeEntry?.(entryToSave.raw || entryToSave, updates);
+          setSelectedEntry(null);
+          setSelectedDayId(null);
+        }}
+        onDelete={async (entryToDelete) => {
+          await onDeleteTimeEntry?.(entryToDelete.raw || entryToDelete);
+          setSelectedEntry(null);
+          setSelectedDayId(null);
+        }}
         onBack={() => setSelectedEntry(null)}
       />
     );
@@ -175,17 +181,22 @@ export default function TimesheetScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <WeekSummaryCard />
+        <WeekSummaryCard
+          weekTotal={weekTotal}
+          daysWorked={daysWorked}
+          painterName={painterName}
+          painterInitials={painterInitials}
+        />
 
         <Text style={styles.sectionHeader}>This Week</Text>
 
         <View style={styles.timeline}>
           <View style={styles.timelineLine} />
-          {DAYS.map((day, idx) => (
+          {sourceDays.map((day, idx) => (
             <DayRow
               key={day.id}
               day={day}
-              last={idx === DAYS.length - 1}
+              last={idx === sourceDays.length - 1}
               onPress={() => {
                 if (day.type === "worked") setSelectedDayId(day.id);
               }}
@@ -207,27 +218,27 @@ export default function TimesheetScreen() {
   );
 }
 
-function WeekSummaryCard() {
+function WeekSummaryCard({ weekTotal = "0h 0m", daysWorked = 0, painterName, painterInitials }) {
   return (
     <View style={styles.summaryCard}>
       <View style={styles.summaryHead}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{USER.initials}</Text>
+          <Text style={styles.avatarText}>{painterInitials}</Text>
         </View>
         <View style={styles.summaryHeadText}>
-          <Text style={styles.summaryName}>{USER.name}</Text>
+          <Text style={styles.summaryName}>{painterName}</Text>
           <Text style={styles.summarySubtitle}>Painter · Weekly Summary</Text>
         </View>
       </View>
 
       <View style={styles.summaryStats}>
         <View style={styles.summaryStat}>
-          <Text style={styles.summaryStatValue}>{WEEK_TOTAL}</Text>
+          <Text style={styles.summaryStatValue}>{weekTotal}</Text>
           <Text style={styles.summaryStatLabel}>Logged</Text>
         </View>
         <View style={styles.summaryStatDivider} />
         <View style={styles.summaryStat}>
-          <Text style={styles.summaryStatValue}>{DAYS_WORKED}</Text>
+          <Text style={styles.summaryStatValue}>{daysWorked}</Text>
           <Text style={styles.summaryStatLabel}>Days</Text>
         </View>
         <View style={styles.summaryStatDivider} />
@@ -381,17 +392,18 @@ function DayDetailScreen({ day, onBack, onEntryPress }) {
 
 function EntryCard({ entry, onPress }) {
   const onSite = entry.status === "On Site";
+  const mixed = entry.status === "Mixed";
   return (
     <Pressable style={styles.entryCard} onPress={onPress}>
       <View style={styles.entryTopRow}>
         <View
           style={[
             styles.entryIcon,
-            { backgroundColor: onSite ? COLORS.teal : COLORS.inkSoft },
+            { backgroundColor: onSite || mixed ? COLORS.teal : COLORS.inkSoft },
           ]}
         >
           <Ionicons
-            name={onSite ? "hammer" : "car-sport"}
+            name={mixed ? "swap-horizontal" : onSite ? "hammer" : "car-sport"}
             size={16}
             color={COLORS.white}
           />
@@ -431,30 +443,60 @@ function EntryCard({ entry, onPress }) {
       <View
         style={[
           styles.statusPill,
-          onSite ? styles.statusPillOn : styles.statusPillOff,
+          onSite || mixed ? styles.statusPillOn : styles.statusPillOff,
         ]}
       >
         <View
           style={[
             styles.statusDot,
-            { backgroundColor: onSite ? COLORS.teal : COLORS.red },
+            { backgroundColor: onSite || mixed ? COLORS.teal : COLORS.red },
           ]}
         />
         <Text
           style={[
             styles.statusText,
-            { color: onSite ? COLORS.tealInk : COLORS.redInk },
+            { color: onSite || mixed ? COLORS.tealInk : COLORS.redInk },
           ]}
         >
           {entry.status} · {entry.distance}
         </Text>
       </View>
+      {mixed ? (
+        <View style={styles.entryBreakdownRow}>
+          <Text style={styles.entryBreakdownText}>On site {entry.onSiteDuration}</Text>
+          <Text style={styles.entryBreakdownDivider}>·</Text>
+          <Text style={styles.entryBreakdownText}>Travel/off site {entry.offSiteDuration}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
-function EditTimeScreen({ day, entry, onBack }) {
+function EditTimeScreen({ day, entry, projects = [], painterName, onSave, onDelete, onBack }) {
   const onSite = entry.status === "On Site";
+  const rawEntry = entry.raw || entry;
+  const initialStart = new Date(rawEntry.startedAt || Date.now());
+  const initialEnd = new Date(rawEntry.endedAt || rawEntry.startedAt || Date.now());
+  const [startAt, setStartAt] = useState(initialStart);
+  const [endAt, setEndAt] = useState(initialEnd);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [selectedProject, setSelectedProject] = useState(null);
+  const startChanged = startAt.getTime() !== initialStart.getTime();
+  const endChanged = endAt.getTime() !== initialEnd.getTime();
+  const projectChanged = !!selectedProject;
+  const canSave = (startChanged || endChanged || projectChanged) && endAt.getTime() > startAt.getTime();
+  const durationMs = Math.max(0, endAt.getTime() - startAt.getTime());
+  const adjustedStart = formatTime(startAt);
+  const adjustedEnd = formatTime(endAt);
+  const adjustedDuration = formatDurationLabel(durationMs);
+  const displayedJob = selectedProject?.name || entry.job;
+  const displayedAddress = selectedProject ? formatProjectAddress(selectedProject) : entry.address;
+  const projectOptions = useMemo(
+    () => filterProjectOptions(projects, projectSearch),
+    [projectSearch, projects],
+  );
+
   return (
     <View style={styles.editScreen}>
       <View style={styles.editHeader}>
@@ -474,15 +516,15 @@ function EditTimeScreen({ day, entry, onBack }) {
         <View style={styles.editShiftCard}>
           <View style={styles.editShiftRow}>
             <View style={styles.editShiftText}>
-              <Text style={styles.editShiftPainter}>{USER.name}</Text>
+              <Text style={styles.editShiftPainter}>{painterName}</Text>
               <View style={styles.editShiftJobRow}>
                 <Ionicons name="briefcase" size={14} color={COLORS.teal} />
                 <Text style={styles.editShiftJob} numberOfLines={1}>
-                  {entry.job}
+                  {displayedJob}
                 </Text>
               </View>
               <Text style={styles.editShiftAddress} numberOfLines={1}>
-                {entry.address}
+                {displayedAddress}
               </Text>
             </View>
 
@@ -521,38 +563,109 @@ function EditTimeScreen({ day, entry, onBack }) {
         <View style={styles.editFormCard}>
           <FormRow label="Date" value={formatDayFull(day)} />
           <View style={styles.formDivider} />
-          <FormRow label="Clock-In Time" value={`${entry.start} · ${entry.startSrc}`} />
+          <FormRow label="Clock-In Time" value={`${adjustedStart} · ${entry.startSrc}`} />
+          <TimeAdjustRow
+            onMinus={() => setStartAt((value) => addMinutes(value, -15))}
+            onPlus={() => setStartAt((value) => addMinutes(value, 15))}
+          />
           <View style={styles.formDivider} />
-          <FormRow label="Clock-Out Time" value={`${entry.end} · ${entry.endSrc}`} />
+          <FormRow label="Clock-Out Time" value={`${adjustedEnd} · ${entry.endSrc}`} />
+          <TimeAdjustRow
+            onMinus={() => setEndAt((value) => addMinutes(value, -15))}
+            onPlus={() => setEndAt((value) => addMinutes(value, 15))}
+          />
           <View style={styles.formDivider} />
-          <FormRow label="Duration" value={entry.duration} muted />
+          <FormRow label="Duration" value={adjustedDuration} muted />
         </View>
 
-        <Pressable style={styles.editActionRow}>
+        <Pressable
+          style={styles.editActionRow}
+          onPress={() => setProjectPickerOpen((open) => !open)}
+        >
           <View style={styles.editActionLeft}>
             <View style={styles.editActionIcon}>
               <Ionicons name="swap-horizontal" size={17} color={COLORS.teal} />
             </View>
-            <Text style={styles.editActionText}>Change Project</Text>
+            <Text style={styles.editActionText}>
+              {selectedProject ? `Project: ${selectedProject.name}` : "Change Project"}
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
         </Pressable>
+
+        {projectPickerOpen ? (
+          <View style={styles.projectPicker}>
+            <TextInput
+              style={styles.projectPickerInput}
+              value={projectSearch}
+              onChangeText={setProjectSearch}
+              placeholder="Search projects"
+              placeholderTextColor={COLORS.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {projectOptions.map((project) => (
+              <Pressable
+                key={project.companycam_id}
+                style={styles.projectPickerOption}
+                onPress={() => {
+                  setSelectedProject(project);
+                  setProjectPickerOpen(false);
+                  setProjectSearch("");
+                }}
+              >
+                <Text style={styles.projectPickerName} numberOfLines={1}>
+                  {project.name}
+                </Text>
+                <Text style={styles.projectPickerAddress} numberOfLines={1}>
+                  {formatProjectAddress(project) || "No address on file"}
+                </Text>
+              </Pressable>
+            ))}
+            {!projectOptions.length ? (
+              <Text style={styles.projectPickerEmpty}>No matching projects.</Text>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
 
       <View style={styles.editFooter}>
-        <Pressable style={styles.editSaveBtn}>
+        <Pressable
+          style={[styles.editSaveBtn, !canSave && styles.editSaveBtnDisabled]}
+          disabled={!canSave}
+          onPress={() =>
+            onSave?.(entry, {
+              startedAt: startAt.toISOString(),
+              endedAt: endAt.toISOString(),
+              project: selectedProject || undefined,
+            })
+          }
+        >
           <Text style={styles.editSaveText}>Save Changes</Text>
         </Pressable>
         <View style={styles.editFooterRow}>
           <Pressable style={styles.editCancelBtn} onPress={onBack}>
             <Text style={styles.editCancelText}>Cancel</Text>
           </Pressable>
-          <Pressable style={styles.editDeleteBtn}>
+          <Pressable style={styles.editDeleteBtn} onPress={() => onDelete?.(entry)}>
             <Ionicons name="trash-outline" size={16} color={COLORS.red} />
             <Text style={styles.editDeleteText}>Delete</Text>
           </Pressable>
         </View>
       </View>
+    </View>
+  );
+}
+
+function TimeAdjustRow({ onMinus, onPlus }) {
+  return (
+    <View style={styles.timeAdjustRow}>
+      <Pressable style={styles.timeAdjustButton} onPress={onMinus}>
+        <Text style={styles.timeAdjustText}>-15m</Text>
+      </Pressable>
+      <Pressable style={styles.timeAdjustButton} onPress={onPlus}>
+        <Text style={styles.timeAdjustText}>+15m</Text>
+      </Pressable>
     </View>
   );
 }
@@ -568,16 +681,79 @@ function FormRow({ label, value, muted }) {
   );
 }
 
-function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
+function addMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60000);
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function formatDurationLabel(ms) {
+  const minutes = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}h ${mins}m`;
+}
+
+function formatProjectAddress(project) {
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+    project?.formatted_address ||
+    [project?.street_address_1, project?.city, project?.state, project?.postal_code]
+      .filter(Boolean)
+      .join(", ")
+  );
+}
+
+function filterProjectOptions(projects, query) {
+  const normalized = String(query || "").trim().toLowerCase();
+  return (projects || [])
+    .filter((project) => {
+      if (!project || project.is_archived || project.is_lead) return false;
+      if (!normalized) return true;
+      return [project.name, formatProjectAddress(project), project.city, project.postal_code]
+        .some((value) => String(value || "").toLowerCase().includes(normalized));
+    })
+    .slice(0, 6);
+}
+
+function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
+  const [mounted, setMounted] = useState(visible);
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else if (mounted) {
+      Animated.timing(progress, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
+    }
+  }, [visible, mounted, progress]);
+
+  if (!mounted) return null;
+
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [400, 0],
+  });
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View style={[styles.sheetBackdrop, { opacity: progress }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
           <View style={styles.grabber} />
           <Text style={styles.sheetTitle}>Select Pay Period</Text>
 
@@ -611,8 +787,8 @@ function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
           })}
 
           <View style={styles.sheetBottomSafe} />
-        </Pressable>
-      </Pressable>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -1279,9 +1455,12 @@ const styles = StyleSheet.create({
   editSaveBtn: {
     height: 50,
     borderRadius: 12,
-    backgroundColor: "#d7dcde",
+    backgroundColor: COLORS.teal,
     alignItems: "center",
     justifyContent: "center",
+  },
+  editSaveBtnDisabled: {
+    backgroundColor: "#d7dcde",
   },
   editSaveText: {
     color: "#f8f9f9",
@@ -1325,6 +1504,82 @@ const styles = StyleSheet.create({
     color: COLORS.red,
     fontSize: 14.5,
     fontWeight: "800",
+  },
+  timeAdjustRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingHorizontal: 2,
+    paddingBottom: 10,
+  },
+  timeAdjustButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: COLORS.surface,
+  },
+  timeAdjustText: {
+    color: COLORS.tealInk,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  projectPicker: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    overflow: "hidden",
+  },
+  projectPickerInput: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    color: COLORS.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
+  },
+  projectPickerOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
+  },
+  projectPickerName: {
+    color: COLORS.ink,
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  projectPickerAddress: {
+    marginTop: 2,
+    color: COLORS.muted,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  projectPickerEmpty: {
+    padding: 14,
+    color: COLORS.muted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  entryBreakdownRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  entryBreakdownText: {
+    color: COLORS.muted,
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  entryBreakdownDivider: {
+    color: COLORS.border,
+    fontSize: 12,
+    fontWeight: "900",
   },
 
   // --- Pay period sheet ---

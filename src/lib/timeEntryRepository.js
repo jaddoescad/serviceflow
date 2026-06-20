@@ -16,7 +16,9 @@ function supabasePayload(entry, status) {
     companycam_project_id: entryProjectId(entry) || null,
     project_name: entry.project?.name || "Project",
     project_address: entry.project?.formatted_address || entry.project?.address || null,
+    original_started_at: entry.originalStartedAt || entry.startedAt,
     started_at: entry.startedAt,
+    start_edited_at: entry.startEditedAt || null,
     ended_at: status === "active" ? null : entry.endedAt,
     status,
     clock_in_latitude: entry.startedLocation?.latitude ?? null,
@@ -26,6 +28,7 @@ function supabasePayload(entry, status) {
     last_distance_meters: entry.lastDistanceMeters ?? null,
     is_on_site: entry.onSite,
     segments: entry.segments || [],
+    adjustment_history: entry.adjustmentHistory || [],
   };
 }
 
@@ -224,7 +227,9 @@ export function entryFromSupabase(row) {
       address: row.project_address,
       formatted_address: row.project_address,
     },
+    originalStartedAt: row.original_started_at || row.started_at,
     startedAt: row.started_at,
+    startEditedAt: row.start_edited_at || null,
     endedAt,
     durationMs,
     clockOutReason: row.status === "active" ? "active" : "server",
@@ -240,6 +245,7 @@ export function entryFromSupabase(row) {
     lastDistanceMeters: row.last_distance_meters,
     onSite: row.is_on_site,
     segments: Array.isArray(row.segments) ? row.segments : [],
+    adjustmentHistory: Array.isArray(row.adjustment_history) ? row.adjustment_history : [],
   };
 }
 
@@ -252,7 +258,9 @@ export function shiftFromSupabase(row) {
     userEmail: entry.userEmail,
     userName: entry.userName,
     project: entry.project,
+    originalStartedAt: entry.originalStartedAt || entry.startedAt,
     startedAt: entry.startedAt,
+    startEditedAt: entry.startEditedAt || null,
     startedLocation: entry.startedLocation,
     lastLocation: entry.lastLocation,
     lastLocationLabel: entry.lastLocationLabel,
@@ -260,5 +268,6 @@ export function shiftFromSupabase(row) {
     onSite: entry.onSite,
     travelStartedAt: null,
     segments: entry.segments,
+    adjustmentHistory: entry.adjustmentHistory || [],
   };
 }

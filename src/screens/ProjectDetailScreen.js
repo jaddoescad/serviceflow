@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -7,12 +7,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { buildProjectClockInDays } from '../lib/timeTracking';
 
 const BRAND = '#2b8496';
 const NAVY = '#31495d';
@@ -48,6 +50,11 @@ function formatHours(value, fallback = '0.0h') {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return `${number.toFixed(1)}h`;
+}
+
+function formatMsAsHours(ms) {
+  const hours = Math.max(0, ms || 0) / 3600000;
+  return `${hours.toFixed(1)}h`;
 }
 
 function toNumericHours(value) {
@@ -109,6 +116,56 @@ function getCompanyCamProjectId(project) {
   );
 }
 
+function isSameCompanyCamProject(a, b) {
+  const aId = getCompanyCamProjectId(a);
+  const bId = getCompanyCamProjectId(b);
+  return Boolean(aId && bId && String(aId) === String(bId));
+}
+
+function getEntryDurationMs(entry) {
+  const duration = Number(entry?.durationMs);
+  if (Number.isFinite(duration)) return Math.max(0, duration);
+
+  const start = new Date(entry?.startedAt).getTime();
+  const end = entry?.endedAt ? new Date(entry.endedAt).getTime() : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.max(0, end - start);
+}
+
+function getProjectEntryTotals(entries, project, user) {
+  const projectId = getCompanyCamProjectId(project);
+  const userId = user?.id || null;
+  const userEmail = user?.email || null;
+  const seen = new Set();
+
+  return (entries || []).reduce(
+    (totals, entry) => {
+      const key = entry?.serverId || entry?.id || entry?.localId;
+      if (key) {
+        if (seen.has(key)) return totals;
+        seen.add(key);
+      }
+
+      if (!projectId || String(getCompanyCamProjectId(entry?.project)) !== String(projectId)) {
+        return totals;
+      }
+
+      const durationMs = getEntryDurationMs(entry);
+      totals.teamMs += durationMs;
+
+      if (
+        (userId && entry?.userId === userId) ||
+        (userEmail && entry?.userEmail === userEmail)
+      ) {
+        totals.yourMs += durationMs;
+      }
+
+      return totals;
+    },
+    { teamMs: 0, yourMs: 0 },
+  );
+}
+
 function formatPhotoDate(value) {
   if (!value) return 'CompanyCam';
   const date = new Date(value);
@@ -136,99 +193,6 @@ function PlayGlyph() {
   return <Ionicons name="play" size={23} color="#fff" />;
 }
 
-const SAMPLE_CLOCKIN_DAYS = [
-  {
-    id: 'today',
-    label: 'Today',
-    dateLabel: 'Jun 04, 2026',
-    painters: [
-      {
-        name: 'Jad Slim',
-        initials: 'JS',
-        isYou: true,
-        segments: [
-          { start: '7:00 AM', startSrc: 'GPS', end: '10:23 AM', endSrc: 'GPS', duration: '3h 23m', status: 'on' },
-          { start: '10:24 AM', startSrc: 'Manual', end: '10:24 AM', endSrc: 'GPS', duration: '0h 0m', status: 'on' },
-          { start: '10:55 AM', startSrc: 'Auto', end: '12:05 PM', endSrc: 'Auto', duration: '1h 10m', status: 'on' },
-          { start: '12:05 PM', startSrc: 'Auto', end: '12:55 PM', endSrc: 'Auto', duration: '0h 50m', status: 'off' },
-          { start: '12:55 PM', startSrc: 'Auto', end: '2:01 PM', endSrc: 'GPS', duration: '1h 6m', status: 'on' },
-        ],
-      },
-      {
-        name: 'Marco Rivera',
-        initials: 'MR',
-        segments: [
-          { start: '7:15 AM', startSrc: 'GPS', end: '11:30 AM', endSrc: 'GPS', duration: '4h 15m', status: 'on' },
-          { start: '11:30 AM', startSrc: 'Auto', end: '12:00 PM', endSrc: 'Auto', duration: '0h 30m', status: 'off' },
-          { start: '12:00 PM', startSrc: 'Auto', end: '3:15 PM', endSrc: 'GPS', duration: '3h 15m', status: 'on' },
-        ],
-      },
-      {
-        name: 'Emily Tran',
-        initials: 'ET',
-        segments: [
-          { start: '9:00 AM', startSrc: 'GPS', end: '11:53 AM', endSrc: 'Manual', duration: '2h 53m', status: 'on' },
-          { start: '11:53 AM', startSrc: 'Auto', end: '12:30 PM', endSrc: 'Auto', duration: '0h 37m', status: 'off' },
-          { start: '12:30 PM', startSrc: 'Auto', end: '4:10 PM', endSrc: 'GPS', duration: '3h 40m', status: 'on' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'yesterday',
-    label: 'Yesterday',
-    dateLabel: 'Jun 03, 2026',
-    painters: [
-      {
-        name: 'Jad Slim',
-        initials: 'JS',
-        isYou: true,
-        segments: [
-          { start: '7:30 AM', startSrc: 'GPS', end: '11:45 AM', endSrc: 'Auto', duration: '4h 15m', status: 'on' },
-          { start: '11:45 AM', startSrc: 'Auto', end: '12:15 PM', endSrc: 'Auto', duration: '0h 30m', status: 'off' },
-          { start: '12:15 PM', startSrc: 'Auto', end: '2:30 PM', endSrc: 'GPS', duration: '2h 15m', status: 'on' },
-        ],
-      },
-      {
-        name: 'Marco Rivera',
-        initials: 'MR',
-        segments: [
-          { start: '7:00 AM', startSrc: 'GPS', end: '2:10 PM', endSrc: 'Auto', duration: '7h 10m', status: 'on' },
-        ],
-      },
-      {
-        name: 'David Kim',
-        initials: 'DK',
-        segments: [
-          { start: '8:00 AM', startSrc: 'Manual', end: '12:00 PM', endSrc: 'GPS', duration: '4h 0m', status: 'on' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'tuesday',
-    label: 'Tuesday',
-    dateLabel: 'Jun 02, 2026',
-    painters: [
-      {
-        name: 'Jad Slim',
-        initials: 'JS',
-        isYou: true,
-        segments: [
-          { start: '8:00 AM', startSrc: 'GPS', end: '3:00 PM', endSrc: 'GPS', duration: '7h 0m', status: 'on' },
-        ],
-      },
-      {
-        name: 'Emily Tran',
-        initials: 'ET',
-        segments: [
-          { start: '8:30 AM', startSrc: 'GPS', end: '2:30 PM', endSrc: 'GPS', duration: '6h 0m', status: 'on' },
-        ],
-      },
-    ],
-  },
-];
-
 function parseDurationToMinutes(label) {
   const match = String(label).match(/(\d+)\s*h\s*(\d+)\s*m/);
   if (!match) return 0;
@@ -239,6 +203,15 @@ function formatMinutesLabel(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${hours}h ${minutes}m`;
+}
+
+function formatElapsedClock(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
 function buildPainterSummaries(days) {
@@ -504,7 +477,8 @@ function formatEditDateLabel(dateLabel) {
 }
 
 function getDistanceLabel(segment) {
-  return segment?.status === 'on' ? '42 m from job site' : '1.4 km from job site';
+  if (segment?.distanceLabel) return segment.distanceLabel;
+  return 'distance unknown';
 }
 
 function EditMapPreview({ distanceLabel, distanceVisible, onPress }) {
@@ -533,10 +507,28 @@ function EditMapPreview({ distanceLabel, distanceVisible, onPress }) {
   );
 }
 
-function EditTimeScreen({ title, address, entry, onBack }) {
+function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete, onBack }) {
   const { painter, day, segment } = entry;
   const [distanceVisible, setDistanceVisible] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
   const distanceLabel = getDistanceLabel(segment);
+  const rawEntry = segment.raw || segment;
+  const initialStart = new Date(rawEntry.startedAt || Date.now());
+  const initialEnd = new Date(rawEntry.endedAt || rawEntry.startedAt || Date.now());
+  const [startAt, setStartAt] = useState(initialStart);
+  const [endAt, setEndAt] = useState(initialEnd);
+  const startChanged = startAt.getTime() !== initialStart.getTime();
+  const endChanged = endAt.getTime() !== initialEnd.getTime();
+  const projectChanged = !!selectedProject;
+  const canSave = (startChanged || endChanged || projectChanged) && endAt.getTime() > startAt.getTime();
+  const adjustedDuration = formatEditDuration(endAt.getTime() - startAt.getTime());
+  const displayedTitle = selectedProject ? getProjectTitle(selectedProject) : title;
+  const projectOptions = useMemo(
+    () => filterProjectOptions(projects, projectSearch),
+    [projectSearch, projects],
+  );
 
   return (
     <SafeAreaView style={styles.editSafeArea}>
@@ -564,7 +556,7 @@ function EditTimeScreen({ title, address, entry, onBack }) {
               <View style={styles.editLocationRow}>
                 <Ionicons name="location" size={20} color="#4e659f" />
                 <Text style={styles.editLocationText} numberOfLines={1}>
-                  {title}
+                  {displayedTitle}
                 </Text>
               </View>
             </View>
@@ -577,12 +569,12 @@ function EditTimeScreen({ title, address, entry, onBack }) {
 
           <View style={styles.editTimeline}>
             <View style={styles.editTimeBlock}>
-              <Text style={styles.editTimeValue}>{segment.start}</Text>
+              <Text style={styles.editTimeValue}>{formatEditTime(startAt)}</Text>
               <Text style={styles.editTimeSource}>{segment.startSrc}</Text>
             </View>
             <View style={styles.editTimelineLine} />
             <View style={[styles.editTimeBlock, styles.editTimeBlockRight]}>
-              <Text style={[styles.editTimeValue, styles.editTimeEnd]}>{segment.end}</Text>
+              <Text style={[styles.editTimeValue, styles.editTimeEnd]}>{formatEditTime(endAt)}</Text>
               <Text style={styles.editTimeSource}>{segment.endSrc}</Text>
             </View>
           </View>
@@ -607,26 +599,77 @@ function EditTimeScreen({ title, address, entry, onBack }) {
           <View style={styles.editFormRow}>
             <Text style={styles.editFieldLabel}>Clock-In Time</Text>
             <View style={styles.editFieldPill}>
-              <Text style={styles.editFieldPillText}>{segment.start}</Text>
+              <Text style={styles.editFieldPillText}>{formatEditTime(startAt)}</Text>
             </View>
           </View>
+          <EditTimeAdjustRow
+            onMinus={() => setStartAt((value) => addEditMinutes(value, -15))}
+            onPlus={() => setStartAt((value) => addEditMinutes(value, 15))}
+          />
           <View style={styles.editFormRow}>
             <Text style={styles.editFieldLabel}>Clock-Out Time</Text>
             <View style={styles.editFieldPill}>
-              <Text style={styles.editFieldPillText}>{segment.end}</Text>
+              <Text style={styles.editFieldPillText}>{formatEditTime(endAt)}</Text>
+            </View>
+          </View>
+          <EditTimeAdjustRow
+            onMinus={() => setEndAt((value) => addEditMinutes(value, -15))}
+            onPlus={() => setEndAt((value) => addEditMinutes(value, 15))}
+          />
+          <View style={styles.editFormRow}>
+            <Text style={styles.editFieldLabel}>Duration</Text>
+            <View style={styles.editFieldPill}>
+              <Text style={styles.editFieldPillText}>{adjustedDuration}</Text>
             </View>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.editActionCard} activeOpacity={0.85}>
-          <Text style={styles.editActionText}>Change Project</Text>
+        <TouchableOpacity
+          style={styles.editActionCard}
+          activeOpacity={0.85}
+          onPress={() => setProjectPickerOpen((open) => !open)}
+        >
+          <Text style={styles.editActionText}>
+            {selectedProject ? `Project: ${getProjectTitle(selectedProject)}` : 'Change Project'}
+          </Text>
           <Ionicons name="location-outline" size={27} color="#77bed1" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.editActionCard} activeOpacity={0.85}>
-          <Text style={styles.editActionText}>Add Note</Text>
-          <Ionicons name="document-text-outline" size={28} color="#77bed1" />
-        </TouchableOpacity>
+        {projectPickerOpen ? (
+          <View style={styles.editProjectPicker}>
+            <TextInput
+              style={styles.editProjectPickerInput}
+              value={projectSearch}
+              onChangeText={setProjectSearch}
+              placeholder="Search projects"
+              placeholderTextColor={MUTED}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {projectOptions.map((projectOption) => (
+              <TouchableOpacity
+                key={getCompanyCamProjectId(projectOption)}
+                style={styles.editProjectPickerOption}
+                activeOpacity={0.82}
+                onPress={() => {
+                  setSelectedProject(projectOption);
+                  setProjectPickerOpen(false);
+                  setProjectSearch('');
+                }}
+              >
+                <Text style={styles.editProjectPickerName} numberOfLines={1}>
+                  {getProjectTitle(projectOption)}
+                </Text>
+                <Text style={styles.editProjectPickerAddress} numberOfLines={1}>
+                  {getProjectAddress(projectOption)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {!projectOptions.length ? (
+              <Text style={styles.editProjectPickerEmpty}>No matching projects.</Text>
+            ) : null}
+          </View>
+        ) : null}
 
         <Text style={styles.editAddressHint} numberOfLines={2}>
           Tap the map preview to show distance from the job site. {address}
@@ -634,7 +677,19 @@ function EditTimeScreen({ title, address, entry, onBack }) {
       </ScrollView>
 
       <View style={styles.editBottomActions}>
-        <TouchableOpacity style={styles.editSaveButton} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={[styles.editSaveButton, !canSave && styles.editSaveButtonDisabled]}
+          activeOpacity={0.75}
+          disabled={!canSave}
+          onPress={() =>
+            onSave?.(entry, {
+              startedAt: startAt.toISOString(),
+              endedAt: endAt.toISOString(),
+              project: selectedProject || undefined,
+              adjustmentSource: 'project_detail_edit',
+            })
+          }
+        >
           <Text style={styles.editSaveText}>Save Changes</Text>
         </TouchableOpacity>
         <View style={styles.editSplitActions}>
@@ -645,7 +700,11 @@ function EditTimeScreen({ title, address, entry, onBack }) {
           >
             <Text style={styles.editCancelText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.editDeleteButton} activeOpacity={0.75}>
+          <TouchableOpacity
+            style={styles.editDeleteButton}
+            activeOpacity={0.75}
+            onPress={() => onDelete?.(entry)}
+          >
             <Text style={styles.editDeleteText}>Delete</Text>
           </TouchableOpacity>
         </View>
@@ -654,7 +713,61 @@ function EditTimeScreen({ title, address, entry, onBack }) {
   );
 }
 
-export default function ProjectDetailScreen({ project, onBack }) {
+function EditTimeAdjustRow({ onMinus, onPlus }) {
+  return (
+    <View style={styles.editTimeAdjustRow}>
+      <TouchableOpacity style={styles.editTimeAdjustButton} activeOpacity={0.8} onPress={onMinus}>
+        <Text style={styles.editTimeAdjustText}>-15m</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.editTimeAdjustButton} activeOpacity={0.8} onPress={onPlus}>
+        <Text style={styles.editTimeAdjustText}>+15m</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function addEditMinutes(date, minutes) {
+  return new Date(date.getTime() + minutes * 60000);
+}
+
+function formatEditTime(date) {
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatEditDuration(ms) {
+  const minutes = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}h ${mins}m`;
+}
+
+function filterProjectOptions(projects, query) {
+  const normalized = String(query || '').trim().toLowerCase();
+  return (projects || [])
+    .filter((project) => {
+      if (!project || project.is_archived || project.is_lead) return false;
+      if (!normalized) return true;
+      return [getProjectTitle(project), getProjectAddress(project), project.city, project.postal_code]
+        .some((value) => String(value || '').toLowerCase().includes(normalized));
+    })
+    .slice(0, 6);
+}
+
+export default function ProjectDetailScreen({
+  project,
+  onBack,
+  entries = [],
+  activeShift,
+  activeElapsedMs = 0,
+  trackingNotice,
+  projects = [],
+  user,
+  onClockIn,
+  onClockOut,
+  onSwitchProject,
+  onDeleteTimeEntry,
+  onUpdateTimeEntry,
+}) {
   const [activeTab, setActiveTab] = useState('clock');
   const [selectedPainterId, setSelectedPainterId] = useState(null);
   const [selectedTimeEntry, setSelectedTimeEntry] = useState(null);
@@ -662,8 +775,14 @@ export default function ProjectDetailScreen({ project, onBack }) {
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photosLoaded, setPhotosLoaded] = useState(false);
   const [photosError, setPhotosError] = useState('');
+  const [clockActionPending, setClockActionPending] = useState(false);
+  const [clockActionError, setClockActionError] = useState('');
 
-  const painterSummaries = buildPainterSummaries(SAMPLE_CLOCKIN_DAYS);
+  const clockInDays = useMemo(() => {
+    const trackedDays = buildProjectClockInDays(entries, activeShift, project, user);
+    return trackedDays;
+  }, [entries, activeShift, project, user]);
+  const painterSummaries = buildPainterSummaries(clockInDays);
   const selectedPainter =
     selectedPainterId === null
       ? null
@@ -675,22 +794,58 @@ export default function ProjectDetailScreen({ project, onBack }) {
   const addedDate = formatDate(
     firstValue([project?.created_at, project?.added_at, project?.inserted_at]),
   );
-  const yourHours = formatHours(
-    firstValue([project?.your_hours, project?.user_hours, project?.my_hours], 0),
+  const projectEntryTotals = useMemo(
+    () => getProjectEntryTotals(entries, project, user),
+    [entries, project, user],
   );
-  const teamHoursRaw =
-    toNumericHours(
-      firstValue([project?.team_hours, project?.total_hours, project?.crew_hours], null),
-    ) ?? 0;
+  const fallbackYourHours = toNumericHours(firstValue([project?.your_hours, project?.user_hours, project?.my_hours], null));
+  const fallbackTeamHours = toNumericHours(firstValue([project?.team_hours, project?.total_hours, project?.crew_hours], null));
+  const yourHours = projectEntryTotals.yourMs > 0
+    ? formatMsAsHours(projectEntryTotals.yourMs)
+    : formatHours(fallbackYourHours, '0.0h');
+  const teamHoursRaw = projectEntryTotals.teamMs > 0 ? projectEntryTotals.teamMs / 3600000 : fallbackTeamHours || 0;
   const budgetHoursRaw = toNumericHours(
     firstValue(
       [project?.budgeted_hours, project?.estimated_hours, project?.budget_hours],
       null,
     ),
   );
-  const teamHours = `${teamHoursRaw.toFixed(1)}h`;
+  const teamHours = projectEntryTotals.teamMs > 0 ? formatMsAsHours(projectEntryTotals.teamMs) : `${teamHoursRaw.toFixed(1)}h`;
   const budgetedHours =
     budgetHoursRaw === null ? 'Not set' : `${budgetHoursRaw.toFixed(1)}h`;
+  const isActiveProject = isSameCompanyCamProject(activeShift?.project, project);
+  const activeStartLabel =
+    isActiveProject && activeShift?.startedAt ? formatEditTime(new Date(activeShift.startedAt)) : null;
+  const activeElapsedLabel = isActiveProject ? formatElapsedClock(activeElapsedMs) : null;
+  const primaryClockLabel = isActiveProject ? 'Clock Out' : activeShift ? 'Switch Job' : 'Clock In';
+  const primaryClockIcon = isActiveProject ? 'stop-circle-outline' : activeShift ? 'swap-horizontal' : 'play';
+  const floatingClockLabel = isActiveProject ? 'Clock Out' : activeShift ? 'Switch Job' : 'Clock In';
+  const handlePrimaryClockAction = async () => {
+    if (clockActionPending) return;
+    setClockActionPending(true);
+    setClockActionError('');
+    try {
+      if (isActiveProject) {
+        const entry = await onClockOut?.('project_detail');
+        if (!entry) setClockActionError('Clock out could not complete. Try again.');
+        return;
+      }
+
+      if (activeShift) {
+        const nextShift = await onSwitchProject?.(project);
+        if (!nextShift) setClockActionError('Switch job could not complete. Check location permissions and try again.');
+        return;
+      }
+
+      const shift = await onClockIn?.(project);
+      if (!shift) setClockActionError('Clock in could not start. Check location permissions and try again.');
+    } catch (error) {
+      setClockActionError(error?.message || 'Clock action could not complete. Try again.');
+    } finally {
+      setClockActionPending(false);
+    }
+  };
+  const clockFeedback = trackingNotice?.message || clockActionError;
 
   let budgetStatus = null;
   if (budgetHoursRaw !== null && teamHoursRaw > budgetHoursRaw) {
@@ -759,6 +914,15 @@ export default function ProjectDetailScreen({ project, onBack }) {
         title={title}
         address={address}
         entry={selectedTimeEntry}
+        projects={projects}
+        onSave={async (entryToSave, updates) => {
+          await onUpdateTimeEntry?.(entryToSave.segment?.raw || entryToSave.segment || entryToSave, updates);
+          setSelectedTimeEntry(null);
+        }}
+        onDelete={async (entryToDelete) => {
+          await onDeleteTimeEntry?.(entryToDelete.segment?.raw || entryToDelete.segment || entryToDelete);
+          setSelectedTimeEntry(null);
+        }}
         onBack={() => setSelectedTimeEntry(null)}
       />
     );
@@ -843,6 +1007,19 @@ export default function ProjectDetailScreen({ project, onBack }) {
             />
           ) : (
             <>
+              {isActiveProject ? (
+                <View style={styles.activeShiftBanner}>
+                  <View style={styles.activeShiftPulse}>
+                    <Ionicons name="time" size={18} color="#fff" />
+                  </View>
+                  <View style={styles.activeShiftText}>
+                    <Text style={styles.activeShiftLabel}>Current clock-in{activeStartLabel ? ` · since ${activeStartLabel}` : ''}</Text>
+                    <Text style={styles.activeShiftTimer}>{activeElapsedLabel}</Text>
+                  </View>
+                  <View style={styles.activeShiftLiveDot} />
+                </View>
+              ) : null}
+
               <View style={styles.hoursGrid}>
                 <View style={[styles.hourCard, styles.youCard]}>
                   <View style={[styles.hourBadge, { backgroundColor: '#eaf4f6' }]}>
@@ -857,7 +1034,7 @@ export default function ProjectDetailScreen({ project, onBack }) {
                     <View style={styles.comboStat}>
                       <Text style={styles.comboKicker}>Team</Text>
                       <Text style={[styles.hourValue, styles.comboValue]}>{teamHours}</Text>
-                      <Text style={styles.hourLabel}>Total hours</Text>
+                      <Text style={styles.hourLabel}>Team total</Text>
                     </View>
                     <View style={styles.comboDivider} />
                     <View style={styles.comboStat}>
@@ -878,11 +1055,19 @@ export default function ProjectDetailScreen({ project, onBack }) {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.clockButton} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.clockButton}
+                activeOpacity={0.9}
+                onPress={handlePrimaryClockAction}
+              >
                 <View style={styles.clockIconCircle}>
-                  <PlayGlyph />
+                  {primaryClockIcon === 'play' ? (
+                    <PlayGlyph />
+                  ) : (
+                    <Ionicons name={primaryClockIcon} size={23} color="#fff" />
+                  )}
                 </View>
-                <Text style={styles.clockButtonText}>Clock In</Text>
+                <Text style={styles.clockButtonText}>{primaryClockLabel}</Text>
               </TouchableOpacity>
 
               <View style={styles.recentHeader}>
@@ -890,13 +1075,25 @@ export default function ProjectDetailScreen({ project, onBack }) {
                 <Text style={styles.recentSeeAll}>{painterSummaries.length} crew</Text>
               </View>
 
-              {painterSummaries.map((painter) => (
-                <PainterSummaryRow
-                  key={painter.id}
-                  painter={painter}
-                  onPress={() => setSelectedPainterId(painter.id)}
-                />
-              ))}
+              {painterSummaries.length ? (
+                painterSummaries.map((painter) => (
+                  <PainterSummaryRow
+                    key={painter.id}
+                    painter={painter}
+                    onPress={() => setSelectedPainterId(painter.id)}
+                  />
+                ))
+              ) : (
+                <View style={styles.emptyState}>
+                  <View style={styles.emptyArt}>
+                    <ClockGlyph color={BRAND} size={32} />
+                  </View>
+                  <Text style={styles.emptyTitle}>No clock-ins yet</Text>
+                  <Text style={styles.emptyHint}>
+                    Time entries will appear here after painters clock into this project.
+                  </Text>
+                </View>
+              )}
             </>
           )
         ) : (
@@ -913,10 +1110,14 @@ export default function ProjectDetailScreen({ project, onBack }) {
       </ScrollView>
 
       {activeTab === 'clock' && !selectedPainter ? (
-        <TouchableOpacity style={styles.addTimeButton} activeOpacity={0.9}>
-          <Text style={styles.addTimeText}>Add Time</Text>
+        <TouchableOpacity
+          style={styles.addTimeButton}
+          activeOpacity={0.9}
+          onPress={handlePrimaryClockAction}
+        >
+          <Text style={styles.addTimeText}>{floatingClockLabel}</Text>
           <View style={styles.addDivider} />
-          <Ionicons name="time-outline" size={27} color="#fff" />
+          <Ionicons name={primaryClockIcon === 'play' ? 'time-outline' : primaryClockIcon} size={27} color="#fff" />
         </TouchableOpacity>
       ) : null}
     </SafeAreaView>
@@ -1237,6 +1438,50 @@ const styles = StyleSheet.create({
     backgroundColor: BRAND,
   },
 
+  activeShiftBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: '#eaf4f6',
+    borderWidth: 1,
+    borderColor: '#cfe6ea',
+  },
+  activeShiftPulse: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: BRAND,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeShiftText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  activeShiftLabel: {
+    color: '#4a6b72',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+  },
+  activeShiftTimer: {
+    marginTop: 2,
+    color: INK,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    fontVariant: ['tabular-nums'],
+  },
+  activeShiftLiveDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#27ae60',
+  },
   hoursGrid: {
     flexDirection: 'row',
     gap: 8,
@@ -2142,9 +2387,12 @@ const styles = StyleSheet.create({
   editSaveButton: {
     height: 54,
     borderRadius: 4,
-    backgroundColor: '#c8e7ee',
+    backgroundColor: BRAND,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  editSaveButtonDisabled: {
+    backgroundColor: '#d7dcde',
   },
   editSaveText: {
     color: '#fff',
@@ -2185,6 +2433,66 @@ const styles = StyleSheet.create({
     color: '#ef716d',
     fontSize: 20,
     fontWeight: '800',
+  },
+  editTimeAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingBottom: 10,
+  },
+  editTimeAdjustButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  editTimeAdjustText: {
+    color: BRAND,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  editProjectPicker: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  editProjectPickerInput: {
+    minHeight: 44,
+    paddingHorizontal: 14,
+    color: INK,
+    fontSize: 14,
+    fontWeight: '700',
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  editProjectPickerOption: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  editProjectPickerName: {
+    color: INK,
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  editProjectPickerAddress: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editProjectPickerEmpty: {
+    padding: 14,
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   addTimeButton: {

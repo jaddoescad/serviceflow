@@ -30,6 +30,7 @@ const COLORS = {
 const PROJECTS_PAGE_SIZE = 20;
 const EMPTY_PROJECT_TOTALS = Object.freeze({});
 const EMPTY_PROJECT_IDS = Object.freeze([]);
+const PROJECT_ID_KEY_SEPARATOR = "\0";
 
 export default function ProjectsScreen({
   onSelectProject,
@@ -52,19 +53,21 @@ export default function ProjectsScreen({
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const searchInputRef = useRef(null);
+  const activeProjectId = getProjectId(activeShift?.project);
+  const trackedProjectIdsKey = getProjectIdsKey(Object.keys(projectTimeTotals || {}));
   const trackedProjectIds = useMemo(
-    () => Object.keys(projectTimeTotals || {}).map((projectId) => String(projectId)).filter(Boolean),
-    [projectTimeTotals],
+    () => projectIdsFromKey(trackedProjectIdsKey),
+    [trackedProjectIdsKey],
   );
-  const relevantAssignedIds = useMemo(() => {
-    const ids = new Set([
-      ...assignedProjectIds.map((projectId) => String(projectId)).filter(Boolean),
-      ...trackedProjectIds,
-    ]);
-    const activeId = getProjectId(activeShift?.project);
-    if (activeId) ids.add(activeId);
-    return Array.from(ids);
-  }, [activeShift?.project, assignedProjectIds, trackedProjectIds]);
+  const relevantAssignedIdsKey = getProjectIdsKey([
+    ...(assignedProjectIds || []),
+    ...trackedProjectIds,
+    activeProjectId,
+  ]);
+  const relevantAssignedIds = useMemo(
+    () => projectIdsFromKey(relevantAssignedIdsKey),
+    [relevantAssignedIdsKey],
+  );
 
   const loadProjects = useCallback(async ({ quiet = false, pageToLoad = 0, append = false } = {}) => {
     if (!quiet && !append) setLoading(true);
@@ -175,7 +178,6 @@ export default function ProjectsScreen({
     () => (filter === "assigned" && !isSearching ? ongoing.filter((project) => assignedProjectIdSet.has(getProjectId(project))) : ongoing),
     [assignedProjectIdSet, filter, isSearching, ongoing],
   );
-  const activeProjectId = getProjectId(activeShift?.project);
   const activeProject = useMemo(() => {
     if (!activeProjectId || isSearching) return null;
 
@@ -397,7 +399,7 @@ function ProjectCard({ project, onPress, assignedHoursLabel }) {
       {assignedHoursLabel ? (
         <View style={styles.hoursBlock}>
           <Text style={styles.hoursText}>{assignedHoursLabel}</Text>
-          <Text style={styles.hoursLabel}>Total</Text>
+          <Text style={styles.hoursLabel}>Team total</Text>
         </View>
       ) : null}
     </Pressable>
@@ -406,6 +408,16 @@ function ProjectCard({ project, onPress, assignedHoursLabel }) {
 
 function getProjectHoursLabel(project, projectTimeTotals) {
   return projectTimeTotals?.[getProjectId(project)] || null;
+}
+
+function getProjectIdsKey(projectIds) {
+  return Array.from(new Set((projectIds || []).map((projectId) => String(projectId)).filter(Boolean)))
+    .sort()
+    .join(PROJECT_ID_KEY_SEPARATOR);
+}
+
+function projectIdsFromKey(key) {
+  return key ? key.split(PROJECT_ID_KEY_SEPARATOR) : [];
 }
 
 function formatAddress(project) {

@@ -92,6 +92,12 @@ function formatClock(value) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function entryIdentityKeys(entry) {
+  return [entry?.serverId, entry?.id, entry?.localId]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+}
+
 function formatDayKey(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "unknown";
@@ -106,6 +112,25 @@ function initials(name) {
     .map((part) => part[0])
     .join("")
     .toUpperCase() || "P";
+}
+
+export function summarizeAdjustments(entry) {
+  const history = Array.isArray(entry?.adjustmentHistory) ? entry.adjustmentHistory : [];
+  const last = history[history.length - 1] || null;
+  const originStart = entry?.originalStartedAt || history[0]?.previousStartedAt;
+  const currentStart = entry?.startedAt || last?.nextStartedAt;
+  const netMinutes =
+    originStart && currentStart
+      ? Math.round((new Date(currentStart).getTime() - new Date(originStart).getTime()) / 60000)
+      : 0;
+
+  if (!netMinutes) return null;
+
+  return {
+    netMinutes,
+    editedAtLabel: formatClock(entry?.startEditedAt || last?.adjustedAt),
+    editedBy: last?.adjustedByName || last?.adjustedByEmail || entry?.userName || "Painter",
+  };
 }
 
 export function getProjectTimeTotals(entries = [], activeShift = null) {
@@ -200,10 +225,10 @@ export function buildProjectClockInDays(entries = [], activeShift = null, projec
   const seenEntries = new Set();
   const all = (active ? [active, ...entries] : entries)
     .filter((entry) => {
-      const key = entry.serverId || entry.id || entry.localId;
-      if (!key) return true;
-      if (seenEntries.has(key)) return false;
-      seenEntries.add(key);
+      const keys = entryIdentityKeys(entry);
+      if (!keys.length) return true;
+      if (keys.some((key) => seenEntries.has(key))) return false;
+      keys.forEach((key) => seenEntries.add(key));
       return true;
     })
     .filter((entry) => entryProjectId(entry) === projectId);
