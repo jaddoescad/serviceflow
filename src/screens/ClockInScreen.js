@@ -424,9 +424,12 @@ function ActiveClockInView({
   onViewProject,
 }) {
   const [editedOpen, setEditedOpen] = useState(false);
-  const distanceLabel =
-    locationStatus?.activeDistance == null ? null : `${formatDistance(locationStatus.activeDistance)} from job`;
+  const distanceText =
+    locationStatus?.activeDistance == null ? null : formatDistance(locationStatus.activeDistance);
+  const distanceLabel = distanceText ? `${distanceText} from job` : null;
   const statusMessage = trackingNotice?.message || locationStatus?.label || null;
+  const showDistanceLabel =
+    distanceLabel && distanceText && !String(statusMessage).includes(distanceText);
 
   return (
     <View style={styles.activeScreen}>
@@ -472,7 +475,7 @@ function ActiveClockInView({
               />
               <Text style={styles.activeLocationText} numberOfLines={2}>
                 {statusMessage}
-                {distanceLabel && !String(statusMessage).includes("from job") ? ` (${distanceLabel})` : ""}
+                {showDistanceLabel ? ` (${distanceLabel})` : ""}
               </Text>
             </View>
           ) : null}
@@ -503,14 +506,14 @@ function ActiveClockInView({
         <View style={styles.activeRowCard}>
           <Text style={styles.activeRowLabel}>Edit Start Time</Text>
           <View style={styles.startTimeControls}>
-            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(-15)}>
-              <Text style={styles.startAdjustText}>-15m</Text>
+            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(-5)}>
+              <Text style={styles.startAdjustText}>-5m</Text>
             </Pressable>
             <View style={styles.startTimePill}>
               <Text style={styles.startTimeText}>{startTimeLabel}</Text>
             </View>
-            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(15)}>
-              <Text style={styles.startAdjustText}>+15m</Text>
+            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(5)}>
+              <Text style={styles.startAdjustText}>+5m</Text>
             </Pressable>
           </View>
         </View>

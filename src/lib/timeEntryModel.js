@@ -18,7 +18,6 @@ export function shiftToEntry(shift, endedAt = new Date().toISOString(), reason =
     clockOutReason: reason,
     startedLocation: shift.startedLocation,
     lastLocation: shift.lastLocation,
-    lastLocationLabel: shift.lastLocationLabel,
     lastDistanceMeters: shift.lastDistanceMeters,
     onSite: shift.onSite,
     segments: shift.segments || [],

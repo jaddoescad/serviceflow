@@ -241,7 +241,6 @@ export function entryFromSupabase(row) {
       row.clock_out_latitude == null || row.clock_out_longitude == null
         ? null
         : { latitude: row.clock_out_latitude, longitude: row.clock_out_longitude },
-    lastLocationLabel: null,
     lastDistanceMeters: row.last_distance_meters,
     onSite: row.is_on_site,
     segments: Array.isArray(row.segments) ? row.segments : [],
@@ -263,7 +262,6 @@ export function shiftFromSupabase(row) {
     startEditedAt: entry.startEditedAt || null,
     startedLocation: entry.startedLocation,
     lastLocation: entry.lastLocation,
-    lastLocationLabel: entry.lastLocationLabel,
     lastDistanceMeters: entry.lastDistanceMeters,
     onSite: entry.onSite,
     travelStartedAt: null,

@@ -3,18 +3,8 @@ import { formatDistance, formatDuration, normalizeProject } from "./trackingMode
 
 function formatSegmentDistanceLabel(segment, fallbackDistanceMeters = null) {
   const distanceMeters = segment?.distanceMeters ?? fallbackDistanceMeters;
-  const distanceLabel =
-    distanceMeters == null || !Number.isFinite(Number(distanceMeters))
-      ? null
-      : `${formatDistance(distanceMeters)} from site`;
-
-  if (segment?.locationLabel) {
-    return distanceLabel
-      ? `near ${segment.locationLabel} · ${distanceLabel}`
-      : `near ${segment.locationLabel}`;
-  }
-
-  return distanceLabel;
+  if (distanceMeters == null || !Number.isFinite(Number(distanceMeters))) return null;
+  return `${formatDistance(distanceMeters)} from site`;
 }
 
 function getEntrySegments(entry) {
@@ -35,7 +25,6 @@ function getEntrySegments(entry) {
     startedAt: segment.startedAt || entry?.startedAt,
     endedAt: segment.endedAt || entry?.endedAt || new Date().toISOString(),
     distanceMeters: segment.distanceMeters ?? entry?.lastDistanceMeters ?? null,
-    locationLabel: segment.locationLabel || entry?.lastLocationLabel || null,
   }));
 }
 
@@ -52,7 +41,6 @@ function summarizeSegments(entry) {
     onSiteMs: 0,
     offSiteMs: 0,
     latestDistanceMeters: entry?.lastDistanceMeters ?? null,
-    latestLocationLabel: entry?.lastLocationLabel || null,
     status: entry?.onSite === false ? "Off Site" : "On Site",
   };
 
@@ -69,10 +57,6 @@ function summarizeSegments(entry) {
 
     if (segment.distanceMeters != null) {
       summary.latestDistanceMeters = segment.distanceMeters;
-    }
-
-    if (segment.locationLabel) {
-      summary.latestLocationLabel = segment.locationLabel;
     }
   }
 
@@ -199,13 +183,9 @@ export function buildTimesheetDays(entries = [], activeShift = null) {
             duration: formatDuration(entry.durationMs),
             status: entrySummary.status,
             distance:
-              entrySummary.latestLocationLabel
-                ? formatSegmentDistanceLabel(
-                    { locationLabel: entrySummary.latestLocationLabel, distanceMeters: entrySummary.latestDistanceMeters },
-                  )
-                : entrySummary.latestDistanceMeters == null
-                  ? "distance unknown"
-                  : `${formatDistance(entrySummary.latestDistanceMeters)} from site`,
+              entrySummary.latestDistanceMeters == null
+                ? "distance unknown"
+                : `${formatDistance(entrySummary.latestDistanceMeters)} from site`,
             onSiteDuration: formatDuration(entrySummary.onSiteMs),
             offSiteDuration: formatDuration(entrySummary.offSiteMs),
             raw: entry,

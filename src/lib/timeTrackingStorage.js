@@ -3,7 +3,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const STORAGE_KEY = "ottawaPainters.timeTracking.v1";
 const WRITE_QUEUE_KEY = "ottawaPainters.timeTracking.writeQueue.v1";
 const GEOCODE_CACHE_KEY = "ottawaPainters.projectGeocodes.v1";
-const LOCATION_LABEL_CACHE_KEY = "ottawaPainters.locationLabels.v1";
 
 function parseJson(value, fallback) {
   try {
@@ -73,14 +72,4 @@ export async function readGeocodeCache() {
 
 export async function writeGeocodeCache(cache) {
   await AsyncStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
-}
-
-export async function readLocationLabelCache() {
-  const raw = await AsyncStorage.getItem(LOCATION_LABEL_CACHE_KEY);
-  const cache = parseJson(raw, {});
-  return cache && typeof cache === "object" ? cache : {};
-}
-
-export async function writeLocationLabelCache(cache) {
-  await AsyncStorage.setItem(LOCATION_LABEL_CACHE_KEY, JSON.stringify(cache));
 }

@@ -10,7 +10,6 @@ import {
 import {
   appendSegment,
   createLocationStatus,
-  enrichLocationStatus,
   geocodeProject,
   geocodeProjects,
   toPoint,
@@ -334,12 +333,11 @@ export function useTimeTracking(projects = [], user) {
     const point = toPoint(location);
     if (!shift || !point) return;
 
-    const status = await enrichLocationStatus(createLocationStatus(shift, projectsRef.current, point));
+    const status = createLocationStatus(shift, projectsRef.current, point);
     const nextShift = appendSegment(
       {
         ...shift,
         lastLocation: point,
-        lastLocationLabel: status.locationLabel || shift.lastLocationLabel || null,
         lastDistanceMeters: status.activeDistance,
         onSite: status.onSite,
         travelStartedAt: status.onSite === false && !shift.travelStartedAt ? new Date().toISOString() : shift.travelStartedAt,
@@ -355,18 +353,14 @@ export function useTimeTracking(projects = [], user) {
       status.suggestedProject
         ? {
             type: "switch_project",
-            message: status.locationLabel
-              ? `Looks like you may be at ${status.suggestedProject.name} near ${status.locationLabel}.`
-              : `Looks like you may be at ${status.suggestedProject.name}.`,
+            message: `Looks like you may be at ${status.suggestedProject.name}.`,
             suggestedProject: status.suggestedProject,
             createdAt: new Date().toISOString(),
           }
         : status.shouldPromptClockOut
           ? {
               type: "clock_out",
-              message: status.locationLabel
-                ? `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "this job"} near ${status.locationLabel}. Clock out if you are done.`
-                : `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "this job"}. Clock out if you are done.`,
+              message: `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "this job"}. Clock out if you are done.`,
               createdAt: new Date().toISOString(),
             }
           : { type: "status", message: status.label, createdAt: new Date().toISOString() },
@@ -449,11 +443,10 @@ export function useTimeTracking(projects = [], user) {
           };
 
           if (point) {
-            const status = await enrichLocationStatus(createLocationStatus(nextShift, projectsRef.current, point));
+            const status = createLocationStatus(nextShift, projectsRef.current, point);
             nextShift = appendSegment(
               {
                 ...nextShift,
-                lastLocationLabel: status.locationLabel || null,
                 lastDistanceMeters: status.activeDistance,
                 onSite: status.onSite,
               },

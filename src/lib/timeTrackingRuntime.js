@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { updateActiveLocation } from "./timeEntryRepository";
-import { appendSegment, createLocationStatus, enrichLocationStatus, toPoint } from "./timeTrackingLocation";
+import { appendSegment, createLocationStatus, toPoint } from "./timeTrackingLocation";
 import { notifyIfNeeded, requestNotificationPermissions } from "./timeTrackingNotifications";
 import { readStore, writeStore } from "./timeTrackingStorage";
 
@@ -39,12 +39,11 @@ async function handleBackgroundLocation(location) {
   const shift = store.activeShift;
   if (!shift) return;
 
-  const status = await enrichLocationStatus(createLocationStatus(shift, store.knownProjects || [], point));
+  const status = createLocationStatus(shift, store.knownProjects || [], point);
   const nextShift = appendSegment(
     {
       ...shift,
       lastLocation: point,
-      lastLocationLabel: status.locationLabel || shift.lastLocationLabel || null,
       lastDistanceMeters: status.activeDistance,
       onSite: status.onSite,
       travelStartedAt: status.onSite === false && !shift.travelStartedAt ? new Date().toISOString() : shift.travelStartedAt,

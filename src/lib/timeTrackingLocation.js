@@ -1,11 +1,6 @@
 import * as Location from "expo-location";
 import { distanceMeters, formatDistance, normalizeProject } from "./trackingModel";
-import {
-  readGeocodeCache,
-  readLocationLabelCache,
-  writeGeocodeCache,
-  writeLocationLabelCache,
-} from "./timeTrackingStorage";
+import { readGeocodeCache, writeGeocodeCache } from "./timeTrackingStorage";
 
 const SITE_RADIUS_METERS = 150;
 const CLOCK_OUT_PROMPT_METERS = 300;
@@ -29,51 +24,6 @@ function projectPoint(project) {
   const normalized = normalizeProject(project);
   if (!normalized || normalized.latitude == null || normalized.longitude == null) return null;
   return { latitude: normalized.latitude, longitude: normalized.longitude };
-}
-
-function locationLabelCacheKey(point) {
-  if (!point) return null;
-  const latitude = Number(point.latitude);
-  const longitude = Number(point.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
-}
-
-function formatReverseGeocodeLabel(result) {
-  if (!result) return null;
-  const streetName = result.street || result.name;
-  const street = [result.streetNumber, streetName].filter(Boolean).join(" ").trim();
-  const city = result.city || result.district || result.subregion;
-  const region = result.region || result.country;
-  const label = [street, city, region].filter(Boolean).join(", ");
-  return label || result.name || null;
-}
-
-async function reverseGeocodePoint(point) {
-  const cacheKey = locationLabelCacheKey(point);
-  if (!cacheKey) return null;
-
-  const cache = await readLocationLabelCache();
-  if (cache[cacheKey]?.label) return cache[cacheKey].label;
-
-  try {
-    const results = await Location.reverseGeocodeAsync({
-      latitude: point.latitude,
-      longitude: point.longitude,
-    });
-    const label = formatReverseGeocodeLabel(results?.[0]);
-    if (!label) return null;
-
-    const nextCache = {
-      ...cache,
-      [cacheKey]: { label, resolvedAt: new Date().toISOString() },
-    };
-    const trimmedEntries = Object.entries(nextCache).slice(-120);
-    await writeLocationLabelCache(Object.fromEntries(trimmedEntries));
-    return label;
-  } catch (_error) {
-    return null;
-  }
 }
 
 export async function geocodeProject(project) {
@@ -159,7 +109,6 @@ export function createLocationStatus(shift, projects, point) {
     nearestDistance,
     suggestedProject,
     shouldPromptClockOut: activeDistance != null && activeDistance >= CLOCK_OUT_PROMPT_METERS,
-    locationLabel: null,
     label:
       activeDistance == null
         ? "Location captured. Job-site distance unavailable."
@@ -169,37 +118,18 @@ export function createLocationStatus(shift, projects, point) {
   };
 }
 
-export async function enrichLocationStatus(status) {
-  if (!status || status.onSite === true) return status;
-  const locationLabel = await reverseGeocodePoint(status.point);
-  if (!locationLabel) return status;
-
-  return {
-    ...status,
-    locationLabel,
-    label:
-      status.activeDistance == null
-        ? `Location captured near ${locationLabel}. Job-site distance unavailable.`
-        : `Off site near ${locationLabel}, ${formatDistance(status.activeDistance)} from job.`,
-  };
-}
-
 export function appendSegment(shift, status) {
   const now = new Date().toISOString();
   const mode = status.onSite === false ? "off_site" : status.onSite === true ? "on_site" : "unknown";
   const segments = shift.segments || [];
   const last = segments[segments.length - 1];
-  const locationLabel =
-    mode === "off_site" || mode === "unknown"
-      ? status.locationLabel || last?.locationLabel || null
-      : null;
 
   if (last?.mode === mode) {
     return {
       ...shift,
       segments: [
         ...segments.slice(0, -1),
-        { ...last, endedAt: now, distanceMeters: status.activeDistance, location: status.point, locationLabel },
+        { ...last, endedAt: now, distanceMeters: status.activeDistance, location: status.point },
       ],
     };
   }
@@ -208,7 +138,7 @@ export function appendSegment(shift, status) {
     ...shift,
     segments: [
       ...segments,
-      { mode, startedAt: now, endedAt: now, distanceMeters: status.activeDistance, location: status.point, locationLabel },
+      { mode, startedAt: now, endedAt: now, distanceMeters: status.activeDistance, location: status.point },
     ],
   };
 }

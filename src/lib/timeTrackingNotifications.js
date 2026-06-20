@@ -13,10 +13,9 @@ export async function notifyIfNeeded(store, status, shift) {
   if (now - Number(store.lastNotificationAt || 0) < NOTIFICATION_COOLDOWN_MS) return false;
 
   const title = status.suggestedProject ? "Are you at another job?" : "Still on this job?";
-  const awayText = status.locationLabel ? ` near ${status.locationLabel}` : "";
   const body = status.suggestedProject
-    ? `You look close to ${status.suggestedProject.name}${awayText}. Switch your clock-in if this is the new job.`
-    : `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "the job"}${awayText}. Clock out if you are done.`;
+    ? `You look close to ${status.suggestedProject.name}. Switch your clock-in if this is the new job.`
+    : `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "the job"}. Clock out if you are done.`;
   const suggestedProject = status.suggestedProject ? normalizeProject(status.suggestedProject) : null;
 
   try {
