@@ -32,26 +32,57 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const projects = await fetchCompanyCamProjects(companyCamToken);
-  const projectsWithLabels = await attachProjectLabels(companyCamToken, projects);
-  const syncedAt = new Date().toISOString();
-  const existingProjects = await fetchExistingProjectMap(supabase, projectsWithLabels);
-  const rows = projectsWithLabels.map((project) => normalizeProject(project, syncedAt, existingProjects));
+  try {
+    await authorizeManager(req, supabase);
 
-  let upserted = 0;
-  for (const chunk of chunkRows(rows, 500)) {
-    const { error } = await supabase
-      .from("companycam_projects")
-      .upsert(chunk, { onConflict: "companycam_id" });
+    const projects = await fetchCompanyCamProjects(companyCamToken);
+    const projectsWithLabels = await attachProjectLabels(companyCamToken, projects);
+    const syncedAt = new Date().toISOString();
+    const existingProjects = await fetchExistingProjectMap(supabase, projectsWithLabels);
+    const rows = projectsWithLabels.map((project) => normalizeProject(project, syncedAt, existingProjects));
 
-    if (error) {
-      return json({ error: error.message }, 500);
+    let upserted = 0;
+    for (const chunk of chunkRows(rows, 500)) {
+      const { error } = await supabase
+        .from("companycam_projects")
+        .upsert(chunk, { onConflict: "companycam_id" });
+
+      if (error) {
+        throw httpError(error.message, 500);
+      }
+      upserted += chunk.length;
     }
-    upserted += chunk.length;
+
+    return json({ synced: upserted, fetched: projects.length, lastSyncedAt: syncedAt });
+  } catch (error) {
+    const status = Number(error?.status || 500);
+    return json({ error: error?.message || "CompanyCam sync failed" }, status);
+  }
+});
+
+async function authorizeManager(req: Request, supabase: ServiceClient) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw httpError("Missing manager authorization", 401);
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw httpError("Invalid manager authorization", 401);
+
+  const { data: profile, error: profileError } = await supabase
+    .from("employee_profiles")
+    .select("user_id,role,is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw httpError(profileError.message, 500);
+  const role = String(profile?.role || "");
+  if (!profile?.is_active || !["admin", "manager"].includes(role)) {
+    throw httpError("Only active admins and managers can sync CompanyCam projects", 403);
   }
 
-  return json({ synced: upserted, fetched: projects.length, lastSyncedAt: syncedAt });
-});
+  return { userId: user.id, role };
+}
 
 async function fetchCompanyCamProjects(token: string) {
   const projects: Record<string, unknown>[] = [];
@@ -116,10 +147,14 @@ async function fetchExistingProjectMap(supabase: ServiceClient, projects: Record
   const existingProjects = new Map<string, Record<string, unknown>>();
 
   for (const chunk of chunkRows(ids, 500)) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("companycam_projects")
       .select("companycam_id,latitude,longitude,geocoded_at,geocode_source,geocode_query,geocode_error")
       .in("companycam_id", chunk);
+
+    // Fail loudly: proceeding with an empty map would treat every project as
+    // brand new and wipe existing geocoded coordinates on upsert.
+    if (error) throw httpError(error.message, 500);
 
     for (const project of data || []) {
       existingProjects.set(String(project.companycam_id), project);
@@ -296,6 +331,12 @@ function chunkRows<T>(rows: T[], size: number) {
     chunks.push(rows.slice(index, index + size));
   }
   return chunks;
+}
+
+function httpError(message: string, status: number) {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
 }
 
 function json(body: unknown, status = 200) {

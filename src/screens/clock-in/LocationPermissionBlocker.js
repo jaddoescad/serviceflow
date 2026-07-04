@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
@@ -11,6 +11,7 @@ const COLORS = {
 };
 
 export function shouldOpenSettingsAfterPermissionRequest(permissions) {
+  if (Platform.OS === "web") return false;
   if (!permissions || permissions.ready) return false;
   const foregroundDenied = permissions.foregroundStatus === "denied" || !permissions.canAskForegroundAgain;
   const backgroundDenied =
@@ -30,6 +31,7 @@ export default function LocationPermissionBlocker({
   onClockOut,
   onDevBypass,
 }) {
+  const isWeb = Platform.OS === "web";
   const checking = !permissions;
   const missingForeground = permissions && !permissions.foreground;
   const missingBackground = permissions?.foreground && !permissions.background;
@@ -39,26 +41,41 @@ export default function LocationPermissionBlocker({
     missingBackground && (permissions.backgroundStatus === "denied" || !permissions.canAskBackgroundAgain);
   const canAskAgain =
     missingForeground ? permissions.canAskForegroundAgain : missingBackground ? permissions.canAskBackgroundAgain : true;
-  const shouldOpenSettings = !checking && (foregroundDenied || backgroundDenied || !canAskAgain);
-  const primaryLabel = checking ? "Checking..." : shouldOpenSettings ? "Open Settings" : "Enable location";
-  const primaryAction = checking ? onCheckAgain : shouldOpenSettings ? onOpenSettings : onEnable;
+  const deniedOrBlocked = foregroundDenied || backgroundDenied || !canAskAgain;
+  const shouldOpenSettings = !isWeb && !checking && deniedOrBlocked;
+  const shouldCheckBrowserPermissions = isWeb && !checking && deniedOrBlocked;
+  const primaryLabel = checking ? "Checking..." : shouldOpenSettings ? "Open Settings" : shouldCheckBrowserPermissions ? "Check again" : "Enable location";
+  const primaryAction = checking ? onCheckAgain : shouldOpenSettings ? onOpenSettings : shouldCheckBrowserPermissions ? onCheckAgain : onEnable;
   const foregroundReady = !!permissions?.foreground;
-  const backgroundReady = !!permissions?.background;
-  let title = "Set location to Always";
-  let message = "Shifts keep tracking even when the app is closed.";
+  const backgroundReady = isWeb ? foregroundReady : !!permissions?.background;
+  const foregroundLabel = isWeb ? "Browser location" : "Location access";
+  const backgroundLabel = isWeb ? "Session tracking" : "Always-on tracking";
+  let title = isWeb ? "Turn on browser location" : "Set location to Always";
+  let message = isWeb
+    ? "Allow location for this site when your browser asks."
+    : "Shifts keep tracking even when the app is closed.";
 
   if (checking) {
     title = "Checking access";
     message = "Confirming location access...";
   } else if (foregroundDenied) {
-    title = "Location denied";
-    message = "iOS will not show the prompt again. Turn location back on in Settings.";
+    title = isWeb ? "Location blocked" : "Location denied";
+    message = isWeb
+      ? "Allow location for this site in your browser's site settings, then check again."
+      : "Open Settings and turn location back on.";
   } else if (backgroundDenied) {
-    title = "Always location denied";
-    message = "Open Settings and set Location to Always before clocking in.";
+    title = isWeb ? "Browser location blocked" : "Always location denied";
+    message = isWeb
+      ? "Allow location for this site in your browser's site settings, then check again."
+      : "Open Settings and set Location to Always before clocking in.";
   } else if (missingForeground) {
-    title = "Turn on location";
-    message = "Ottawa Painters needs location to start a shift.";
+    title = isWeb ? "Turn on browser location" : "Turn on location";
+    message = isWeb
+      ? "ServiceFlow needs browser location access to start a shift."
+      : "ServiceFlow needs location to start a shift.";
+  } else if (isWeb && missingBackground) {
+    title = "Keep this tab open";
+    message = "Web clock-ins can track location only while this browser tab stays open.";
   }
 
   return (
@@ -86,12 +103,12 @@ export default function LocationPermissionBlocker({
 
         <View style={styles.permissionStatusList}>
           <PermissionStatusRow
-            label="Location access"
+            label={foregroundLabel}
             ready={foregroundReady}
             blocked={!checking && !foregroundReady}
           />
           <PermissionStatusRow
-            label="Always-on tracking"
+            label={backgroundLabel}
             ready={backgroundReady}
             blocked={!checking && foregroundReady && !backgroundReady}
           />
@@ -101,7 +118,7 @@ export default function LocationPermissionBlocker({
           <Text style={styles.permissionPrimaryText}>{primaryLabel}</Text>
         </Pressable>
 
-        {!checking ? (
+        {!checking && !isWeb ? (
           <Pressable
             style={styles.permissionLink}
             onPress={shouldOpenSettings ? onCheckAgain : onOpenSettings}
@@ -114,7 +131,9 @@ export default function LocationPermissionBlocker({
 
         {foregroundDenied || backgroundDenied ? (
           <Text style={styles.permissionDeniedHint}>
-            After permission is denied, use Settings to turn it back on.
+            {isWeb
+              ? "After blocking location, use your browser's site settings to allow it for this page."
+              : "After permission is denied, use Settings to turn it back on."}
           </Text>
         ) : null}
 

@@ -95,7 +95,7 @@ export function createLocationStatus(shift, projects, point) {
 
   const suggestedProject =
     nearestProject &&
-    nearestProject.companycam_id !== shift.project.companycam_id &&
+    nearestProject.companycam_id !== shift.project?.companycam_id &&
     nearestDistance != null &&
     nearestDistance <= JOB_SUGGESTION_METERS
       ? nearestProject

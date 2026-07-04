@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Easing,
   Modal,
@@ -7,10 +9,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buildTimesheetDays } from "../lib/timeTracking";
 
 const COLORS = {
@@ -33,7 +35,7 @@ const COLORS = {
   amber: "#e0a000",
 };
 
-const PAY_PERIODS = buildPayPeriods();
+const EDIT_TIME_STEP_MINUTES = 5;
 
 function startOfWeek(date) {
   const result = new Date(date);
@@ -116,19 +118,34 @@ export default function TimesheetScreen({
   onDeleteTimeEntry,
   onUpdateTimeEntry,
 }) {
+  // Recompute the pay periods per render keyed on today's date so they don't go
+  // stale across a week boundary (previously computed once at module import).
+  const todayKey = formatDayKey(new Date());
+  const payPeriods = useMemo(() => buildPayPeriods(new Date()), [todayKey]);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [periodId, setPeriodId] = useState(PAY_PERIODS[0].id);
+  const [periodId, setPeriodId] = useState(payPeriods[0].id);
   const [selectedDayId, setSelectedDayId] = useState(null);
   const [selectedEntry, setSelectedEntry] = useState(null);
 
   const trackedDays = useMemo(() => buildTimesheetDays(entries, activeShift), [entries, activeShift]);
-  const period = PAY_PERIODS.find((p) => p.id === periodId) || PAY_PERIODS[0];
+  const period = payPeriods.find((p) => p.id === periodId) || payPeriods[0];
   const periodTrackedDays = useMemo(
     () => trackedDays.filter((day) => isDayInPeriod(day, period)),
     [period, trackedDays],
   );
   const emptyDays = useMemo(() => buildEmptyDaysForPeriod(period), [period]);
-  const sourceDays = periodTrackedDays.length ? periodTrackedDays : emptyDays;
+  // Always render the full day grid for the period, merging tracked days over the
+  // empty placeholders so worked AND missing days both show.
+  const sourceDays = useMemo(() => {
+    const trackedById = new Map(periodTrackedDays.map((day) => [day.id, day]));
+    const emptyIds = new Set(emptyDays.map((day) => day.id));
+    const merged = emptyDays.map((emptyDay) => trackedById.get(emptyDay.id) || emptyDay);
+    // Keep any tracked day that isn't covered by the empty grid (edge cases like a
+    // slightly-future timestamp) so a worked day can never silently disappear.
+    const orphanTracked = periodTrackedDays.filter((day) => !emptyIds.has(day.id));
+    if (!orphanTracked.length) return merged;
+    return [...orphanTracked, ...merged].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+  }, [emptyDays, periodTrackedDays]);
   const weekTotalMin = sourceDays.reduce((sum, day) => sum + (day.totalMinutes || 0), 0);
   const weekTotal = `${Math.floor(weekTotalMin / 60)}h ${weekTotalMin % 60}m`;
   const daysWorked = sourceDays.filter((day) => day.type === "worked").length;
@@ -142,7 +159,6 @@ export default function TimesheetScreen({
       <EditTimeScreen
         day={selectedDay}
         entry={selectedEntry}
-        projects={projects}
         painterName={painterName}
         onSave={async (entryToSave, updates) => {
           await onUpdateTimeEntry?.(entryToSave.raw || entryToSave, updates);
@@ -171,25 +187,32 @@ export default function TimesheetScreen({
 
   return (
     <View style={styles.screen}>
-      <Pressable style={styles.topBar} onPress={() => setSheetOpen(true)}>
+      <Pressable
+        style={styles.topBar}
+        accessibilityRole="button"
+        accessibilityLabel={`Select pay period, currently ${period.label}`}
+        onPress={() => setSheetOpen(true)}
+      >
         <Text style={styles.topBarLabel}>{period.label}</Text>
         <Ionicons name="chevron-down" size={18} color={COLORS.ink} />
       </Pressable>
 
+      <WeekSummaryCard
+        weekTotal={weekTotal}
+        daysWorked={daysWorked}
+        painterName={painterName}
+        painterInitials={painterInitials}
+      />
+
+      <Text style={styles.sectionHeader}>This Week</Text>
+
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        style={styles.listScroll}
+        contentContainerStyle={styles.timelineContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
       >
-        <WeekSummaryCard
-          weekTotal={weekTotal}
-          daysWorked={daysWorked}
-          painterName={painterName}
-          painterInitials={painterInitials}
-        />
-
-        <Text style={styles.sectionHeader}>This Week</Text>
-
         <View style={styles.timeline}>
           <View style={styles.timelineLine} />
           {sourceDays.map((day, idx) => (
@@ -207,6 +230,7 @@ export default function TimesheetScreen({
 
       <PayPeriodSheet
         visible={sheetOpen}
+        periods={payPeriods}
         onClose={() => setSheetOpen(false)}
         periodId={periodId}
         onSelect={(id) => {
@@ -326,13 +350,14 @@ function MissingCard() {
         <Ionicons name="close-circle" size={16} color={COLORS.red} />
         <Text style={styles.missingTitle}>No clock-in</Text>
       </View>
-      <Text style={styles.missingHint}>Tap to add reason</Text>
+      <Text style={styles.missingHint}>No time logged</Text>
     </View>
   );
 }
 
 function formatDayFull(day) {
-  return `${day.date.replace(" 0", " ")}, 2026`;
+  const year = new Date(`${day.id}T12:00:00`).getFullYear();
+  return `${day.date.replace(" 0", " ")}, ${year}`;
 }
 
 function DayDetailScreen({ day, onBack, onEntryPress }) {
@@ -350,11 +375,7 @@ function DayDetailScreen({ day, onBack, onEntryPress }) {
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.detailContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={styles.detailPinnedContent}>
         <View style={styles.detailSummary}>
           <Text style={styles.detailKicker}>TOTAL TIME</Text>
           <Text style={styles.detailTotal}>{day.total}</Text>
@@ -377,7 +398,15 @@ function DayDetailScreen({ day, onBack, onEntryPress }) {
           <Text style={styles.sectionHeaderInline}>Clock-ins</Text>
           <Text style={styles.sectionCount}>{day.entries.length}</Text>
         </View>
+      </View>
 
+      <ScrollView
+        style={styles.listScroll}
+        contentContainerStyle={styles.detailListContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
+      >
         {day.entries.map((entry) => (
           <EntryCard
             key={entry.id}
@@ -472,30 +501,66 @@ function EntryCard({ entry, onPress }) {
   );
 }
 
-function EditTimeScreen({ day, entry, projects = [], painterName, onSave, onDelete, onBack }) {
+function EditTimeScreen({ day, entry, painterName, onSave, onDelete, onBack }) {
   const onSite = entry.status === "On Site";
   const rawEntry = entry.raw || entry;
+  const isActiveEntry = !rawEntry.endedAt || rawEntry.clockOutReason === "active";
   const initialStart = new Date(rawEntry.startedAt || Date.now());
   const initialEnd = new Date(rawEntry.endedAt || rawEntry.startedAt || Date.now());
   const [startAt, setStartAt] = useState(initialStart);
   const [endAt, setEndAt] = useState(initialEnd);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projectSearch, setProjectSearch] = useState("");
-  const [selectedProject, setSelectedProject] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
   const startChanged = startAt.getTime() !== initialStart.getTime();
   const endChanged = endAt.getTime() !== initialEnd.getTime();
-  const projectChanged = !!selectedProject;
-  const canSave = (startChanged || endChanged || projectChanged) && endAt.getTime() > startAt.getTime();
-  const durationMs = Math.max(0, endAt.getTime() - startAt.getTime());
+  const canSave = isActiveEntry
+    ? startChanged && !busy
+    : (startChanged || endChanged) && endAt.getTime() > startAt.getTime() && !busy;
+  const durationMs = isActiveEntry
+    ? Math.max(0, Date.now() - startAt.getTime())
+    : Math.max(0, endAt.getTime() - startAt.getTime());
   const adjustedStart = formatTime(startAt);
-  const adjustedEnd = formatTime(endAt);
+  const adjustedEnd = isActiveEntry ? "In progress" : formatTime(endAt);
   const adjustedDuration = formatDurationLabel(durationMs);
-  const displayedJob = selectedProject?.name || entry.job;
-  const displayedAddress = selectedProject ? formatProjectAddress(selectedProject) : entry.address;
-  const projectOptions = useMemo(
-    () => filterProjectOptions(projects, projectSearch),
-    [projectSearch, projects],
-  );
+  const displayedJob = entry.job;
+  const displayedAddress = entry.address;
+  const originalTimeNote = buildOriginalTimeNote(rawEntry, startAt, endAt, isActiveEntry);
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      const updates = { startedAt: startAt.toISOString() };
+      // Never send endedAt for an in-progress shift: it would close it prematurely.
+      if (!isActiveEntry) updates.endedAt = endAt.toISOString();
+      await onSave?.(entry, updates);
+    } catch (error) {
+      setActionError(error?.message || "Could not save changes. Try again.");
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (busy) return;
+    Alert.alert("Delete time entry?", "This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setBusy(true);
+          setActionError("");
+          try {
+            await onDelete?.(entry);
+          } catch (error) {
+            setActionError(error?.message || "Could not delete entry. Try again.");
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={styles.editScreen}>
@@ -506,9 +571,11 @@ function EditTimeScreen({ day, entry, projects = [], painterName, onSave, onDele
       </View>
 
       <ScrollView
-        style={styles.scroll}
+        style={styles.editScroll}
         contentContainerStyle={styles.editContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
       >
         <Text style={styles.editTitle}>Edit Time</Text>
         <Text style={styles.editSubtitle}>Adjust this clock-in entry</Text>
@@ -564,90 +631,65 @@ function EditTimeScreen({ day, entry, projects = [], painterName, onSave, onDele
           <FormRow label="Date" value={formatDayFull(day)} />
           <View style={styles.formDivider} />
           <FormRow label="Clock-In Time" value={`${adjustedStart} · ${entry.startSrc}`} />
+          {originalTimeNote ? <Text style={styles.editOriginalNote}>{originalTimeNote}</Text> : null}
           <TimeAdjustRow
-            onMinus={() => setStartAt((value) => addMinutes(value, -15))}
-            onPlus={() => setStartAt((value) => addMinutes(value, 15))}
+            label="clock-in time"
+            onMinus={() => setStartAt((value) => addMinutes(value, -EDIT_TIME_STEP_MINUTES))}
+            onPlus={() => setStartAt((value) => addMinutes(value, EDIT_TIME_STEP_MINUTES))}
           />
           <View style={styles.formDivider} />
-          <FormRow label="Clock-Out Time" value={`${adjustedEnd} · ${entry.endSrc}`} />
+          <FormRow
+            label="Clock-Out Time"
+            value={isActiveEntry ? adjustedEnd : `${adjustedEnd} · ${entry.endSrc}`}
+          />
           <TimeAdjustRow
-            onMinus={() => setEndAt((value) => addMinutes(value, -15))}
-            onPlus={() => setEndAt((value) => addMinutes(value, 15))}
+            label="clock-out time"
+            disabled={isActiveEntry}
+            onMinus={() => setEndAt((value) => addMinutes(value, -EDIT_TIME_STEP_MINUTES))}
+            onPlus={() => setEndAt((value) => addMinutes(value, EDIT_TIME_STEP_MINUTES))}
           />
           <View style={styles.formDivider} />
           <FormRow label="Duration" value={adjustedDuration} muted />
         </View>
-
-        <Pressable
-          style={styles.editActionRow}
-          onPress={() => setProjectPickerOpen((open) => !open)}
-        >
-          <View style={styles.editActionLeft}>
-            <View style={styles.editActionIcon}>
-              <Ionicons name="swap-horizontal" size={17} color={COLORS.teal} />
-            </View>
-            <Text style={styles.editActionText}>
-              {selectedProject ? `Project: ${selectedProject.name}` : "Change Project"}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={COLORS.muted} />
-        </Pressable>
-
-        {projectPickerOpen ? (
-          <View style={styles.projectPicker}>
-            <TextInput
-              style={styles.projectPickerInput}
-              value={projectSearch}
-              onChangeText={setProjectSearch}
-              placeholder="Search projects"
-              placeholderTextColor={COLORS.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {projectOptions.map((project) => (
-              <Pressable
-                key={project.companycam_id}
-                style={styles.projectPickerOption}
-                onPress={() => {
-                  setSelectedProject(project);
-                  setProjectPickerOpen(false);
-                  setProjectSearch("");
-                }}
-              >
-                <Text style={styles.projectPickerName} numberOfLines={1}>
-                  {project.name}
-                </Text>
-                <Text style={styles.projectPickerAddress} numberOfLines={1}>
-                  {formatProjectAddress(project) || "No address on file"}
-                </Text>
-              </Pressable>
-            ))}
-            {!projectOptions.length ? (
-              <Text style={styles.projectPickerEmpty}>No matching projects.</Text>
-            ) : null}
-          </View>
-        ) : null}
       </ScrollView>
 
       <View style={styles.editFooter}>
+        {actionError ? <Text style={styles.editErrorText}>{actionError}</Text> : null}
+        {isActiveEntry ? (
+          <Text style={styles.editActiveHint}>
+            This shift is still in progress. Only the start time can be changed.
+          </Text>
+        ) : null}
         <Pressable
           style={[styles.editSaveBtn, !canSave && styles.editSaveBtnDisabled]}
           disabled={!canSave}
-          onPress={() =>
-            onSave?.(entry, {
-              startedAt: startAt.toISOString(),
-              endedAt: endAt.toISOString(),
-              project: selectedProject || undefined,
-            })
-          }
+          accessibilityRole="button"
+          accessibilityLabel="Save changes"
+          onPress={handleSave}
         >
-          <Text style={styles.editSaveText}>Save Changes</Text>
+          {busy ? (
+            <ActivityIndicator color="#f8f9f9" />
+          ) : (
+            <Text style={styles.editSaveText}>Save Changes</Text>
+          )}
         </Pressable>
         <View style={styles.editFooterRow}>
-          <Pressable style={styles.editCancelBtn} onPress={onBack}>
+          <Pressable
+            style={styles.editCancelBtn}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel editing"
+            onPress={onBack}
+          >
             <Text style={styles.editCancelText}>Cancel</Text>
           </Pressable>
-          <Pressable style={styles.editDeleteBtn} onPress={() => onDelete?.(entry)}>
+          <Pressable
+            style={[styles.editDeleteBtn, busy && styles.editSaveBtnDisabled]}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Delete time entry"
+            onPress={handleDelete}
+          >
             <Ionicons name="trash-outline" size={16} color={COLORS.red} />
             <Text style={styles.editDeleteText}>Delete</Text>
           </Pressable>
@@ -657,17 +699,56 @@ function EditTimeScreen({ day, entry, projects = [], painterName, onSave, onDele
   );
 }
 
-function TimeAdjustRow({ onMinus, onPlus }) {
+function TimeAdjustRow({ onMinus, onPlus, disabled = false, label = "time" }) {
   return (
     <View style={styles.timeAdjustRow}>
-      <Pressable style={styles.timeAdjustButton} onPress={onMinus}>
-        <Text style={styles.timeAdjustText}>-15m</Text>
+      <Pressable
+        style={[styles.timeAdjustButton, disabled && styles.timeAdjustButtonDisabled]}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Subtract ${EDIT_TIME_STEP_MINUTES} minutes from ${label}`}
+        onPress={onMinus}
+      >
+        <Text style={styles.timeAdjustText}>-{EDIT_TIME_STEP_MINUTES}m</Text>
       </Pressable>
-      <Pressable style={styles.timeAdjustButton} onPress={onPlus}>
-        <Text style={styles.timeAdjustText}>+15m</Text>
+      <Pressable
+        style={[styles.timeAdjustButton, disabled && styles.timeAdjustButtonDisabled]}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${EDIT_TIME_STEP_MINUTES} minutes to ${label}`}
+        onPress={onPlus}
+      >
+        <Text style={styles.timeAdjustText}>+{EDIT_TIME_STEP_MINUTES}m</Text>
       </Pressable>
     </View>
   );
+}
+
+function buildOriginalTimeNote(rawEntry, startAt, endAt, isActiveEntry) {
+  const history = Array.isArray(rawEntry?.adjustmentHistory) ? rawEntry.adjustmentHistory : [];
+  const originalStart = rawEntry?.originalStartedAt || history[0]?.previousStartedAt;
+  const originalEnd = history.find((item) => item?.previousEndedAt)?.previousEndedAt;
+  const lastEdit = history[history.length - 1]?.adjustedAt || rawEntry?.startEditedAt;
+  const parts = [];
+
+  if (isDifferentMinute(originalStart, startAt)) {
+    parts.push(`Original in ${formatTime(new Date(originalStart))}`);
+  }
+
+  if (!isActiveEntry && isDifferentMinute(originalEnd, endAt)) {
+    parts.push(`original out ${formatTime(new Date(originalEnd))}`);
+  }
+
+  if (!parts.length) return "";
+  if (lastEdit) parts.push(`edited ${formatTime(new Date(lastEdit))}`);
+  return parts.join(" · ");
+}
+
+function isDifferentMinute(originalValue, currentDate) {
+  if (!originalValue || !currentDate) return false;
+  const original = new Date(originalValue);
+  if (Number.isNaN(original.getTime())) return false;
+  return Math.round(original.getTime() / 60000) !== Math.round(currentDate.getTime() / 60000);
 }
 
 function FormRow({ label, value, muted }) {
@@ -696,28 +777,8 @@ function formatDurationLabel(ms) {
   return `${hours}h ${mins}m`;
 }
 
-function formatProjectAddress(project) {
-  return (
-    project?.formatted_address ||
-    [project?.street_address_1, project?.city, project?.state, project?.postal_code]
-      .filter(Boolean)
-      .join(", ")
-  );
-}
-
-function filterProjectOptions(projects, query) {
-  const normalized = String(query || "").trim().toLowerCase();
-  return (projects || [])
-    .filter((project) => {
-      if (!project || project.is_archived || project.is_lead) return false;
-      if (!normalized) return true;
-      return [project.name, formatProjectAddress(project), project.city, project.postal_code]
-        .some((value) => String(value || "").toLowerCase().includes(normalized));
-    })
-    .slice(0, 6);
-}
-
-function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
+function PayPeriodSheet({ visible, periods = [], onClose, periodId, onSelect }) {
+  const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -757,11 +818,14 @@ function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
           <View style={styles.grabber} />
           <Text style={styles.sheetTitle}>Select Pay Period</Text>
 
-          {PAY_PERIODS.map((p) => {
+          {periods.map((p) => {
             const selected = p.id === periodId;
             return (
               <Pressable
                 key={p.id}
+                accessibilityRole="button"
+                accessibilityLabel={p.label}
+                accessibilityState={{ selected }}
                 style={[styles.sheetRow, selected && styles.sheetRowActive]}
                 onPress={() => onSelect(p.id)}
               >
@@ -786,7 +850,7 @@ function PayPeriodSheet({ visible, onClose, periodId, onSelect }) {
             );
           })}
 
-          <View style={styles.sheetBottomSafe} />
+          <View style={[styles.sheetBottomSafe, { height: insets.bottom + 28 }]} />
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -803,6 +867,15 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 36,
+  },
+  listScroll: {
+    flex: 1,
+  },
+  timelineContent: {
+    paddingBottom: 36,
+  },
+  editScroll: {
+    flex: 1,
   },
   topBar: {
     flexDirection: "row",
@@ -1118,6 +1191,14 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 40,
   },
+  detailPinnedContent: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+  },
+  detailListContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
   detailSummary: {
     borderRadius: 16,
     backgroundColor: COLORS.surface,
@@ -1287,7 +1368,7 @@ const styles = StyleSheet.create({
   editContent: {
     paddingHorizontal: 18,
     paddingTop: 2,
-    paddingBottom: 220,
+    paddingBottom: 14,
   },
   editTitle: {
     color: COLORS.ink,
@@ -1414,43 +1495,11 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.divider,
   },
-  editActionRow: {
-    marginTop: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  editActionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-  },
-  editActionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.tealSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  editActionText: {
-    color: COLORS.ink,
-    fontSize: 14.5,
-    fontWeight: "800",
-  },
   editFooter: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 16,
+    backgroundColor: COLORS.bg,
   },
   editSaveBtn: {
     height: 50,
@@ -1520,50 +1569,34 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     backgroundColor: COLORS.surface,
   },
+  timeAdjustButtonDisabled: {
+    opacity: 0.4,
+  },
   timeAdjustText: {
     color: COLORS.tealInk,
     fontSize: 12,
     fontWeight: "800",
   },
-  projectPicker: {
-    marginTop: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-    overflow: "hidden",
-  },
-  projectPickerInput: {
-    minHeight: 44,
-    paddingHorizontal: 14,
-    color: COLORS.ink,
-    fontSize: 14,
+  editOriginalNote: {
+    marginTop: -6,
+    marginBottom: 8,
+    color: COLORS.muted,
+    fontSize: 11.5,
     fontWeight: "700",
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
   },
-  projectPickerOption: {
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
-  },
-  projectPickerName: {
-    color: COLORS.ink,
-    fontSize: 13.5,
-    fontWeight: "800",
-  },
-  projectPickerAddress: {
-    marginTop: 2,
-    color: COLORS.muted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  projectPickerEmpty: {
-    padding: 14,
-    color: COLORS.muted,
+  editErrorText: {
+    marginBottom: 8,
+    color: COLORS.redInk,
     fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  editActiveHint: {
+    marginBottom: 8,
+    color: COLORS.muted,
+    fontSize: 12.5,
     fontWeight: "700",
+    textAlign: "center",
   },
   entryBreakdownRow: {
     marginTop: 10,

@@ -31,6 +31,13 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  try {
+    await authorizeManager(req, supabase);
+  } catch (error) {
+    const status = Number(error?.status || 500);
+    return json({ error: error?.message || "Unauthorized" }, status);
+  }
+
   const options = await parseOptions(req);
   const limit = clampNumber(options.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const includeLeads = Boolean(options.includeLeads);
@@ -40,6 +47,7 @@ Deno.serve(async (req) => {
     .select("companycam_id,name,formatted_address,street_address_1,street_address_2,city,state,postal_code,country")
     .eq("is_archived", false)
     .or("latitude.is.null,longitude.is.null")
+    .is("geocode_error", null)
     .order("companycam_updated_at", { ascending: false, nullsFirst: false })
     .limit(limit);
 
@@ -102,6 +110,36 @@ Deno.serve(async (req) => {
     results,
   });
 });
+
+async function authorizeManager(req: Request, supabase: ServiceClient) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw httpError("Missing manager authorization", 401);
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw httpError("Invalid manager authorization", 401);
+
+  const { data: profile, error: profileError } = await supabase
+    .from("employee_profiles")
+    .select("user_id,role,is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw httpError(profileError.message, 500);
+  const role = String(profile?.role || "");
+  if (!profile?.is_active || !["admin", "manager"].includes(role)) {
+    throw httpError("Only active admins and managers can geocode CompanyCam projects", 403);
+  }
+
+  return { userId: user.id, role };
+}
+
+function httpError(message: string, status: number) {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
+}
 
 async function parseOptions(req: Request) {
   if (req.method !== "POST") return {};

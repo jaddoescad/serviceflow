@@ -1,4 +1,4 @@
-import { activeEntry, entryProjectId } from "./timeEntryModel";
+import { activeEntry, entryIdentityKeys, entryProjectId } from "./timeEntryModel";
 import { formatDistance, formatDuration, normalizeProject } from "./trackingModel";
 
 function formatSegmentDistanceLabel(segment, fallbackDistanceMeters = null) {
@@ -76,16 +76,16 @@ function formatClock(value) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function entryIdentityKeys(entry) {
-  return [entry?.serverId, entry?.id, entry?.localId]
-    .map((value) => String(value || ""))
-    .filter(Boolean);
+function formatDayKey(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "unknown";
+  // Build the key from LOCAL date parts so evening entries stay on the local
+  // day instead of rolling into the next UTC day (Ottawa is UTC-4/5).
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function formatDayKey(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "unknown";
-  return date.toISOString().slice(0, 10);
+function todayDayKey() {
+  return formatDayKey(new Date());
 }
 
 function initials(name) {
@@ -254,13 +254,14 @@ export function buildProjectClockInDays(entries = [], activeShift = null, projec
     }
   }
 
+  const currentDayKey = todayDayKey();
   return Array.from(groups.entries())
     .sort(([a], [b]) => (a < b ? 1 : -1))
-    .map(([key, byPainter], index) => {
+    .map(([key, byPainter]) => {
       const date = new Date(`${key}T12:00:00`);
       return {
         id: key,
-        label: index === 0 ? "Today" : date.toLocaleDateString([], { weekday: "long" }),
+        label: key === currentDayKey ? "Today" : date.toLocaleDateString([], { weekday: "long" }),
         dateLabel: date.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }),
         painters: Array.from(byPainter.values()),
       };

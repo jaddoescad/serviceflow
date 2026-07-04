@@ -3,11 +3,14 @@ import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "r
 import { colors, radius, spacing } from "../theme";
 
 const contactRows = [
-  { label: "Phone", value: "+1 (613) 555-0183", action: () => Linking.openURL("tel:+16135550183") },
-  { label: "Email", value: "hello@ottawapainters.com", action: () => Linking.openURL("mailto:hello@ottawapainters.com") },
-  { label: "Instagram", value: "@ottawapainters", action: () => Linking.openURL("https://www.instagram.com") },
-  { label: "Facebook", value: "Ottawa Painters", action: () => Linking.openURL("https://www.facebook.com") },
-  { label: "Address", value: "123 Elgin St, Ottawa, ON", action: () => Linking.openURL("https://maps.google.com/?q=Ottawa+Paints") }
+  { label: "Phone", value: "+1 (613) 555-0183", action: () => Linking.openURL("tel:+16135550183").catch(() => {}) },
+  { label: "Email", value: "support@serviceflow.example", action: () => Linking.openURL("mailto:support@serviceflow.example").catch(() => {}) },
+  // TODO: replace with real URL
+  { label: "Instagram", value: "@serviceflow", action: () => Linking.openURL("https://www.instagram.com").catch(() => {}) },
+  // TODO: replace with real URL
+  { label: "Facebook", value: "ServiceFlow", action: () => Linking.openURL("https://www.facebook.com").catch(() => {}) },
+  // TODO: replace with real URL
+  { label: "Address", value: "Operations office", action: () => Linking.openURL("https://maps.google.com").catch(() => {}) }
 ];
 
 export default function ContactScreen() {

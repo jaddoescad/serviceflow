@@ -1,26 +1,57 @@
+// Google Maps keys are injected into the native build at prebuild time (never
+// bundled into the JS). Set GOOGLE_MAPS_API_KEY for a single shared key, or the
+// per-platform vars to use restricted keys. Without them the Google map renders
+// blank, so both platforms need a key once we switch to PROVIDER_GOOGLE.
+const googleMapsApiKeyIos = process.env.GOOGLE_MAPS_API_KEY_IOS || process.env.GOOGLE_MAPS_API_KEY;
+const googleMapsApiKeyAndroid = process.env.GOOGLE_MAPS_API_KEY_ANDROID || process.env.GOOGLE_MAPS_API_KEY;
+
 module.exports = {
   expo: {
-    name: "Ottawa Painters",
-    slug: "ottawa-painters-app",
-    version: "1.0.0",
+    name: "ServiceFlow",
+    slug: "serviceflow",
+    version: "1.0.3",
     orientation: "portrait",
+    icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
     newArchEnabled: false,
+    splash: {
+      image: "./assets/serviceflow-splash.png",
+      resizeMode: "contain",
+      backgroundColor: "#FFFFFF"
+    },
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ottawapainters.app",
+      buildNumber: "4",
+      config: googleMapsApiKeyIos
+        ? {
+            googleMapsApiKey: googleMapsApiKeyIos
+          }
+        : undefined,
       infoPlist: {
         UIBackgroundModes: ["location", "fetch"],
         NSLocationWhenInUseUsageDescription:
-          "Ottawa Painters uses your location while you are clocked in to confirm job-site time.",
+          "ServiceFlow uses your location while you are clocked in to confirm job-site time.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
-          "Ottawa Painters uses background location while you are clocked in to track job-site and travel time.",
+          "ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.",
         NSLocationAlwaysUsageDescription:
-          "Ottawa Painters uses background location while you are clocked in to track job-site and travel time."
+          "ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site."
       }
     },
     android: {
       package: "com.ottawapainters.app",
+      versionCode: 4,
+      adaptiveIcon: {
+        foregroundImage: "./assets/serviceflow-adaptive-icon.png",
+        backgroundColor: "#FFFFFF"
+      },
+      config: googleMapsApiKeyAndroid
+        ? {
+            googleMaps: {
+              apiKey: googleMapsApiKeyAndroid
+            }
+          }
+        : undefined,
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
@@ -41,9 +72,9 @@ module.exports = {
         "expo-location",
         {
           locationAlwaysAndWhenInUsePermission:
-            "Ottawa Painters uses your location while you are clocked in to track job-site and travel time.",
+            "ServiceFlow uses your location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.",
           locationWhenInUsePermission:
-            "Ottawa Painters uses your location while you are clocked in to confirm job-site time.",
+            "ServiceFlow uses your location while you are clocked in to confirm job-site time.",
           isIosBackgroundLocationEnabled: true,
           isAndroidBackgroundLocationEnabled: true
         }
@@ -52,7 +83,7 @@ module.exports = {
       "expo-notifications"
     ],
     extra: {
-      appTitle: "Ottawa Painters"
+      appTitle: "ServiceFlow"
     }
   }
 }

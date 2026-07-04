@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import { Platform } from "react-native";
 import { updateActiveLocation } from "./timeEntryRepository";
 import { appendSegment, createLocationStatus, toPoint } from "./timeTrackingLocation";
 import { notifyIfNeeded, requestNotificationPermissions } from "./timeTrackingNotifications";
@@ -137,7 +138,7 @@ export async function startBackgroundTracking() {
       showsBackgroundLocationIndicator: true,
       pausesUpdatesAutomatically: false,
       foregroundService: {
-        notificationTitle: "Ottawa Painters clock-in active",
+        notificationTitle: "ServiceFlow clock-in active",
         notificationBody: "Tracking location while you are clocked in.",
       },
     });
@@ -157,6 +158,8 @@ export async function stopBackgroundTracking() {
 }
 
 export async function watchActiveLocation(onLocation) {
+  if (Platform.OS === "web") return { remove() {} };
+
   return Location.watchPositionAsync(
     { accuracy: Location.Accuracy.Balanced, distanceInterval: 25, timeInterval: 30000 },
     onLocation,

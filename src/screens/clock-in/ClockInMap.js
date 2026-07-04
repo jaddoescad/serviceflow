@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import MapView, { Circle, Marker, Polyline } from "react-native-maps";
@@ -22,97 +22,90 @@ const OTTAWA_REGION = {
   longitudeDelta: 0.035,
 };
 
-const PROJECT_MARKER_SIZE = 30;
-const PROJECT_MARKER_HIT_SIZE = 44;
-const PROJECT_MARKER_STACK_WIDTH = 164;
-const PROJECT_MARKER_SCREEN_BUFFER = 28;
-const PROJECT_LABEL_MAX_DELTA = 0.18;
-const PROJECT_LABEL_HIT_TOP_OFFSET = 54;
-const PROJECT_LABEL_HIT_BOTTOM_OFFSET = 16;
+// Name-label overlay geometry. Labels are plain views floating above the pins,
+// not markers, so they are immune to the marker bugs. pointForCoordinate gives
+// the pin's screen point (the teardrop tip); we center the pill this far above.
+const PROJECT_LABEL_WIDTH = 168;
+const PROJECT_LABEL_OFFSET_Y = 66;
 
-export default function ClockInMap({ project, projects, currentPoint, onSelectProject, onRequestLocation }) {
+export default function ClockInMap({
+  project,
+  projects,
+  currentPoint,
+  onSelectProject,
+  onRequestLocation,
+  bottomInset = 0,
+}) {
   const mapRef = useRef(null);
   const didSetInitialRegionRef = useRef(false);
-  const regionFrameRef = useRef(null);
-  const pendingRegionRef = useRef(null);
-  const [mapLayout, setMapLayout] = useState(null);
-  const [visibleRegion, setVisibleRegion] = useState(null);
   const [resolvedSelectedProject, setResolvedSelectedProject] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const currentProjectId = getProjectId(project);
   const resolvedProjectId = getProjectId(resolvedSelectedProject);
   const selectedProjectForMap =
     currentProjectId && currentProjectId === resolvedProjectId ? resolvedSelectedProject : project;
-  const projectMarkers = useMemo(() => buildProjectMarkers(projects, selectedProjectForMap), [selectedProjectForMap, projects]);
+  const projectMarkers = buildProjectMarkers(projects, selectedProjectForMap);
   const selectedMarker = projectMarkers.find((marker) => marker.isSelected);
   const selectedJobCoordinate = selectedMarker?.coordinate || projectCoordinate(selectedProjectForMap);
   const userCoordinate = toCoordinate(currentPoint);
   const region = buildMapRegion(selectedJobCoordinate, userCoordinate);
-  const showProjectLabels = shouldShowProjectLabels(visibleRegion);
-  const overlayMarkers = useMemo(
-    () => buildOverlayMarkers(projectMarkers, visibleRegion, mapLayout),
-    [mapLayout, projectMarkers, visibleRegion],
-  );
 
-  const updateMapLayout = ({ nativeEvent }) => {
-    const { width, height } = nativeEvent.layout || {};
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-    setMapLayout((currentLayout) => {
-      if (currentLayout?.width === width && currentLayout?.height === height) return currentLayout;
-      return { width, height };
-    });
-  };
+  // A stable onPress identity so the memoized pins are never re-committed to the
+  // native map just because this callback prop got a new reference.
+  const onSelectRef = useRef(onSelectProject);
+  onSelectRef.current = onSelectProject;
+  const handleSelectProject = useCallback((selected) => {
+    onSelectRef.current?.(selected);
+  }, []);
 
-  const queueVisibleRegion = (nextRegion) => {
-    pendingRegionRef.current = nextRegion;
-    if (regionFrameRef.current) return;
-
-    regionFrameRef.current = requestAnimationFrame(() => {
-      regionFrameRef.current = null;
-      setVisibleRegion(pendingRegionRef.current);
-    });
-  };
-
-  const selectOverlayMarkerFromMapPress = (event) => {
-    const marker = findPressedOverlayMarker({
-      event: event?.nativeEvent,
-      layout: mapLayout,
-      markers: overlayMarkers,
-      region: visibleRegion,
-      showLabels: showProjectLabels,
-    });
-
-    if (marker) onSelectProject?.(marker.project);
-  };
+  // Name-label overlay state. Labels are recomputed (via the map's native
+  // projection) whenever the marker set or the settled region changes, and are
+  // hidden mid-gesture so they never lag behind the map.
+  const [mapReady, setMapReady] = useState(false);
+  const [nativeMapReady, setNativeMapReady] = useState(false);
+  const [mapUnavailable, setMapUnavailable] = useState(false);
+  const [regionTick, setRegionTick] = useState(0);
+  const [showLabels, setShowLabels] = useState(true);
+  const [labelPoints, setLabelPoints] = useState([]);
+  const selectedLabelId = selectedMarker?.id || null;
+  const markerKey = projectMarkers
+    .map((marker) => `${marker.id}:${marker.coordinate.latitude.toFixed(5)},${marker.coordinate.longitude.toFixed(5)}`)
+    .join("|");
 
   const recenterMap = async () => {
-    const freshCoordinate = toCoordinate(await onRequestLocation?.());
-    const targetCoordinate = freshCoordinate || userCoordinate;
-    const targetRegion = targetCoordinate
-      ? {
-          latitude: targetCoordinate.latitude,
-          longitude: targetCoordinate.longitude,
-          latitudeDelta: 0.012,
-          longitudeDelta: 0.012,
-        }
-      : region;
+    if (locating) return;
+    setLocating(true);
+    setLocationError("");
+    try {
+      const freshCoordinate = toCoordinate(await onRequestLocation?.());
+      const targetCoordinate = freshCoordinate || userCoordinate;
+      if (!targetCoordinate) {
+        setLocationError("Location unavailable. Enable location access and try again.");
+      }
+      const targetRegion = targetCoordinate
+        ? {
+            latitude: targetCoordinate.latitude,
+            longitude: targetCoordinate.longitude,
+            latitudeDelta: 0.012,
+            longitudeDelta: 0.012,
+          }
+        : region;
 
-    setVisibleRegion(targetRegion);
-    mapRef.current?.animateToRegion(targetRegion, 350);
+      mapRef.current?.animateToRegion(targetRegion, 350);
+    } catch (_error) {
+      setLocationError("Could not get your location. Try again.");
+    } finally {
+      setLocating(false);
+    }
   };
 
   useEffect(() => {
     if (didSetInitialRegionRef.current) return;
     if (!selectedJobCoordinate && !userCoordinate) return;
     didSetInitialRegionRef.current = true;
-    setVisibleRegion(region);
     mapRef.current?.animateToRegion(region, 250);
   }, [region, selectedJobCoordinate, userCoordinate]);
-
-  useEffect(() => {
-    return () => {
-      if (regionFrameRef.current) cancelAnimationFrame(regionFrameRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +147,53 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
     };
   }, [currentProjectId, project?.formatted_address, project?.city, project?.state, project?.postal_code, projects]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || typeof map.pointForCoordinate !== "function" || !projectMarkers.length) {
+      setLabelPoints([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const points = await Promise.all(
+          projectMarkers.map(async (marker) => {
+            try {
+              const point = await map.pointForCoordinate(marker.coordinate);
+              if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+              return { id: marker.id, name: marker.project?.name || "Project", x: point.x, y: point.y };
+            } catch (_error) {
+              return null;
+            }
+          }),
+        );
+        if (!cancelled) setLabelPoints(points.filter(Boolean));
+      } catch (_error) {
+        // Non-fatal: labels just stay as they were.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // markerKey covers the marker set; regionTick fires after each settled zoom/pan.
+  }, [markerKey, mapReady, regionTick]);
+
+  useEffect(() => {
+    // iOS Apple Maps never fires onMapReady and may not emit a region-change on
+    // first load, so force one label pass once the map has had a moment to
+    // initialize. Harmless on Android, where the effect above already fires.
+    const timeout = setTimeout(() => setRegionTick((tick) => tick + 1), 700);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (nativeMapReady) return undefined;
+    const timeout = setTimeout(() => setMapUnavailable(true), 4500);
+    return () => clearTimeout(timeout);
+  }, [nativeMapReady]);
+
   return (
     <>
       <MapView
@@ -166,11 +206,18 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
         showsCompass={false}
         showsScale={false}
         showsBuildings
-        loadingEnabled
-        onLayout={updateMapLayout}
-        onPress={selectOverlayMarkerFromMapPress}
-        onRegionChange={queueVisibleRegion}
-        onRegionChangeComplete={setVisibleRegion}
+        showsUserLocation
+        moveOnMarkerPress={false}
+        onLayout={() => setMapReady(true)}
+        onMapReady={() => {
+          setNativeMapReady(true);
+          setMapUnavailable(false);
+        }}
+        onRegionChange={() => setShowLabels(false)}
+        onRegionChangeComplete={() => {
+          setShowLabels(true);
+          setRegionTick((tick) => tick + 1);
+        }}
       >
         {selectedJobCoordinate ? (
           <Circle
@@ -208,70 +255,105 @@ export default function ClockInMap({ project, projects, currentPoint, onSelectPr
           </>
         ) : null}
 
-        {userCoordinate ? (
-          <Marker coordinate={userCoordinate} title="Your location">
-            <View style={styles.userMarkerOuter}>
-              <View style={styles.userMarkerInner} />
-            </View>
-          </Marker>
-        ) : null}
+        {/* Native platform pins, each memoized so a pin is only re-committed to
+            the native map when its OWN coordinate/color actually changes — never
+            because the parent re-rendered (GPS tick, tap, zoom). That
+            reconciliation churn is what makes react-native-maps drop markers on
+            iOS during map gestures (issue #5911). */}
+        {projectMarkers.map((marker) => (
+          <ProjectPin key={`project-${marker.id}`} marker={marker} onSelect={handleSelectProject} />
+        ))}
       </MapView>
 
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {overlayMarkers.map((marker) => (
-          <Fragment key={`project-overlay-${marker.id}`}>
-            {showProjectLabels || marker.isSelected ? (
+      {/* Always-visible name labels: a non-interactive overlay (not markers), so
+          they never hit the marker bugs. Positioned by the map's native
+          projection and hidden while a gesture is in flight so they can't lag. */}
+      {showLabels && labelPoints.length ? (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {labelPoints.map((label) => {
+            const isSelected = label.id === selectedLabelId;
+            return (
               <View
-                pointerEvents="none"
+                key={`label-${label.id}`}
                 style={[
-                  styles.projectMarkerLabel,
-                  marker.isSelected && styles.projectMarkerLabelSelected,
-                  {
-                    left: marker.point.x - PROJECT_MARKER_STACK_WIDTH / 2,
-                    top: marker.point.y - 50,
-                    zIndex: marker.isSelected ? 21 : 11,
-                  },
+                  styles.projectLabelWrap,
+                  { left: label.x - PROJECT_LABEL_WIDTH / 2, top: label.y - PROJECT_LABEL_OFFSET_Y },
                 ]}
               >
-                <Ionicons
-                  name="briefcase"
-                  size={11}
-                  color={marker.isSelected ? COLORS.white : COLORS.teal}
-                />
-                <Text
-                  style={[styles.projectMarkerLabelText, marker.isSelected && styles.projectMarkerLabelTextSelected]}
-                  numberOfLines={1}
-                >
-                  {marker.project?.name || "Project"}
-                </Text>
+                <View style={[styles.projectLabel, isSelected && styles.projectLabelSelected]}>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.projectLabelText, isSelected && styles.projectLabelTextSelected]}
+                  >
+                    {label.name}
+                  </Text>
+                </View>
               </View>
-            ) : null}
-            <View
-              style={[
-                styles.projectMarkerButton,
-                {
-                  left: marker.point.x - PROJECT_MARKER_HIT_SIZE / 2,
-                  top: marker.point.y - PROJECT_MARKER_HIT_SIZE / 2,
-                  zIndex: marker.isSelected ? 20 : 10,
-                },
-              ]}
-            >
-              <View style={[styles.projectMarker, marker.isSelected && styles.projectMarkerSelected]}>
-                <Ionicons name="location" size={18} color={COLORS.white} />
-              </View>
-            </View>
-          </Fragment>
-        ))}
-      </View>
+            );
+          })}
+        </View>
+      ) : null}
 
-      <View style={styles.mapControls} pointerEvents="box-none">
-        <Pressable style={styles.mapButton} hitSlop={6} onPress={recenterMap}>
-          <Ionicons name="locate" size={21} color={COLORS.teal} />
+      {mapUnavailable ? (
+        <View style={styles.mapUnavailable} pointerEvents="none">
+          <Ionicons name="map-outline" size={22} color={COLORS.navy} />
+          <View style={styles.mapUnavailableTextWrap}>
+            <Text style={styles.mapUnavailableTitle}>Map is taking too long</Text>
+            <Text style={styles.mapUnavailableText}>You can still choose a job and use location.</Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={[styles.mapControls, { bottom: bottomInset + 110 }]} pointerEvents="box-none">
+        {locationError ? (
+          <View style={styles.mapNotice} pointerEvents="none">
+            <Text style={styles.mapNoticeText}>{locationError}</Text>
+          </View>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Recenter map on your location"
+          disabled={locating}
+          style={[styles.mapButton, locating && styles.mapButtonDisabled]}
+          hitSlop={6}
+          onPress={recenterMap}
+        >
+          {locating ? (
+            <ActivityIndicator size="small" color={COLORS.teal} />
+          ) : (
+            <Ionicons name="locate" size={21} color={COLORS.teal} />
+          )}
         </Pressable>
       </View>
     </>
   );
 }
+
+// A native map pin that NEVER changes after it mounts. On react-native-maps
+// 1.20.1, updating any prop of a live marker (pinColor, zIndex, or even a new
+// coordinate object) makes the native layer drop that marker — on both Google
+// and Apple providers. So the pin has a constant color and the memo comparator
+// deliberately ignores selection: tapping or re-rendering never re-commits a
+// pin, so a pin can never disappear. Which job is selected is shown by the
+// radius circle, the route line, and the job card — not by mutating the pin.
+const ProjectPin = memo(
+  function ProjectPin({ marker, onSelect }) {
+    const project = marker.project;
+    return (
+      <Marker
+        coordinate={marker.coordinate}
+        pinColor={COLORS.navy}
+        title={project?.name || "Project"}
+        onPress={() => onSelect?.(project)}
+      />
+    );
+  },
+  (prev, next) =>
+    prev.onSelect === next.onSelect &&
+    prev.marker.id === next.marker.id &&
+    prev.marker.coordinate.latitude === next.marker.coordinate.latitude &&
+    prev.marker.coordinate.longitude === next.marker.coordinate.longitude,
+);
 
 export function toCoordinate(value) {
   const latitude = Number(value?.latitude ?? value?.coords?.latitude);
@@ -353,114 +435,6 @@ function buildProjectMarkers(projects, selectedProject) {
   return markers;
 }
 
-function buildOverlayMarkers(markers, region, layout) {
-  if (!region || !layout) return [];
-
-  return markers
-    .map((marker) => ({
-      ...marker,
-      point: coordinateToScreenPoint(marker.coordinate, region, layout),
-    }))
-    .filter((marker) => isVisiblePoint(marker.point, layout));
-}
-
-function coordinateToScreenPoint(coordinate, region, layout) {
-  if (!coordinate || !region || !layout) return null;
-
-  const west = region.longitude - region.longitudeDelta / 2;
-  const east = region.longitude + region.longitudeDelta / 2;
-  const north = region.latitude + region.latitudeDelta / 2;
-  const south = region.latitude - region.latitudeDelta / 2;
-  const longitudeSpan = east - west;
-  const northMercator = latitudeToMercator(north);
-  const southMercator = latitudeToMercator(south);
-  const mercatorSpan = northMercator - southMercator;
-
-  if (!Number.isFinite(longitudeSpan) || !Number.isFinite(mercatorSpan) || longitudeSpan <= 0 || mercatorSpan <= 0) {
-    return null;
-  }
-
-  const x = ((coordinate.longitude - west) / longitudeSpan) * layout.width;
-  const y = ((northMercator - latitudeToMercator(coordinate.latitude)) / mercatorSpan) * layout.height;
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-
-  return { x, y };
-}
-
-function latitudeToMercator(latitude) {
-  const clampedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
-  const radians = (clampedLatitude * Math.PI) / 180;
-  return Math.log(Math.tan(Math.PI / 4 + radians / 2));
-}
-
-function isVisiblePoint(point, layout) {
-  if (!point) return false;
-  return (
-    point.x >= -PROJECT_MARKER_SCREEN_BUFFER &&
-    point.x <= layout.width + PROJECT_MARKER_SCREEN_BUFFER &&
-    point.y >= -PROJECT_MARKER_SCREEN_BUFFER &&
-    point.y <= layout.height + PROJECT_MARKER_SCREEN_BUFFER
-  );
-}
-
-function findPressedOverlayMarker({ event, markers, region, layout, showLabels }) {
-  if (!markers?.length) return null;
-  const point = toScreenPressPoint(event, region, layout);
-  if (!point) return null;
-
-  let closestMarker = null;
-  let closestDistance = Infinity;
-
-  for (const marker of markers) {
-    if (!isPointInsideMarkerTapArea(point, marker, showLabels)) continue;
-    const distance = screenDistance(point, marker.point);
-    if (distance < closestDistance) {
-      closestDistance = distance;
-      closestMarker = marker;
-    }
-  }
-
-  return closestMarker;
-}
-
-function toScreenPressPoint(event, region, layout) {
-  const position = event?.position;
-  if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
-    return { x: position.x, y: position.y };
-  }
-
-  return coordinateToScreenPoint(toCoordinate(event?.coordinate), region, layout);
-}
-
-function isPointInsideMarkerTapArea(point, marker, showLabels) {
-  const markerRadius = PROJECT_MARKER_HIT_SIZE / 2;
-  const inMarker =
-    Math.abs(point.x - marker.point.x) <= markerRadius &&
-    Math.abs(point.y - marker.point.y) <= markerRadius;
-  if (inMarker) return true;
-
-  if (!showLabels && !marker.isSelected) return false;
-
-  return (
-    point.x >= marker.point.x - PROJECT_MARKER_STACK_WIDTH / 2 &&
-    point.x <= marker.point.x + PROJECT_MARKER_STACK_WIDTH / 2 &&
-    point.y >= marker.point.y - PROJECT_LABEL_HIT_TOP_OFFSET &&
-    point.y <= marker.point.y - PROJECT_LABEL_HIT_BOTTOM_OFFSET
-  );
-}
-
-function screenDistance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function shouldShowProjectLabels(region) {
-  if (!region) return false;
-  const zoomDelta = Math.max(region.latitudeDelta || 0, region.longitudeDelta || 0);
-  return zoomDelta > 0 && zoomDelta <= PROJECT_LABEL_MAX_DELTA;
-}
-
 function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
   const points = [projectPoint, currentPoint, ...projectPoints].filter(Boolean);
 
@@ -492,82 +466,79 @@ function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
 }
 
 const styles = StyleSheet.create({
-  projectMarkerButton: {
+  projectLabelWrap: {
     position: "absolute",
-    width: PROJECT_MARKER_HIT_SIZE,
-    height: PROJECT_MARKER_HIT_SIZE,
+    width: PROJECT_LABEL_WIDTH,
     alignItems: "center",
-    justifyContent: "center",
   },
-  projectMarkerLabel: {
-    position: "absolute",
-    maxWidth: 156,
+  projectLabel: {
+    maxWidth: PROJECT_LABEL_WIDTH,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.96)",
     borderWidth: 1,
     borderColor: "rgba(224,227,225,0.95)",
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     shadowColor: "#000",
     shadowOpacity: 0.14,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
   },
-  projectMarkerLabelSelected: {
+  projectLabelSelected: {
     backgroundColor: COLORS.navy,
     borderColor: "rgba(255,255,255,0.92)",
   },
-  projectMarkerLabelText: {
+  projectLabelText: {
     color: COLORS.ink,
     fontSize: 11.5,
-    fontWeight: "900",
+    fontWeight: "800",
   },
-  projectMarkerLabelTextSelected: {
+  projectLabelTextSelected: {
     color: COLORS.white,
-  },
-  projectMarker: {
-    width: PROJECT_MARKER_SIZE,
-    height: PROJECT_MARKER_SIZE,
-    borderRadius: PROJECT_MARKER_SIZE / 2,
-    backgroundColor: COLORS.navy,
-    borderWidth: 2,
-    borderColor: COLORS.white,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
-  projectMarkerSelected: {
-    backgroundColor: COLORS.teal,
-    borderWidth: 3,
-  },
-  userMarkerOuter: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(49,73,93,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  userMarkerInner: {
-    width: 13,
-    height: 13,
-    borderRadius: 6.5,
-    backgroundColor: COLORS.navy,
-    borderWidth: 2,
-    borderColor: COLORS.white,
   },
   mapControls: {
     position: "absolute",
     right: 14,
     bottom: 110,
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  mapUnavailable: {
+    position: "absolute",
+    left: 18,
+    right: 18,
+    top: 18,
+    minHeight: 58,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(224,227,225,0.95)",
+    backgroundColor: "rgba(255,255,255,0.96)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  mapUnavailableTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  mapUnavailableTitle: {
+    color: COLORS.ink,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  mapUnavailableText: {
+    marginTop: 2,
+    color: COLORS.muted,
+    fontSize: 11.5,
+    fontWeight: "700",
   },
   mapButton: {
     width: 42,
@@ -581,5 +552,28 @@ const styles = StyleSheet.create({
     shadowRadius: 7,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
+  },
+  mapButtonDisabled: {
+    opacity: 0.6,
+  },
+  mapNotice: {
+    maxWidth: 220,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  mapNoticeText: {
+    color: COLORS.ink,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 16,
   },
 });

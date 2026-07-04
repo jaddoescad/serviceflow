@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { formatDistance, normalizeProject } from "./trackingModel";
-import { activeEntry, applyEntryTimeUpdate, shiftToEntry } from "./timeEntryModel";
+import { activeEntry, applyEntryTimeUpdate, entryIdentityKeys, shiftToEntry } from "./timeEntryModel";
 import { getProjectTimeTotals } from "./timeEntryPresenters";
 import {
+  consumeInitialNotificationResponse,
   notifyIfNeeded,
   subscribeToTrackingNotificationResponses,
 } from "./timeTrackingNotifications";
+import { syncGeofences } from "./timeTrackingGeofence";
 import {
   appendSegment,
   createLocationStatus,
@@ -29,7 +31,6 @@ import {
   fetchTimeEntryRows,
   flushQueuedWrites,
   insertActiveEntry,
-  isUuid,
   persistUpdatedEntry,
   shiftFromSupabase,
   updateActiveLocation,
@@ -113,12 +114,6 @@ function permissionsAllowTracking(permissions) {
   return Boolean(permissions?.ready || (__DEV__ && permissions?.foreground));
 }
 
-function entryIdentityKeys(entry) {
-  return [entry?.serverId, entry?.id, entry?.localId]
-    .map((value) => String(value || ""))
-    .filter(Boolean);
-}
-
 function hasSeenEntry(seen, entry) {
   const keys = entryIdentityKeys(entry);
   if (!keys.length) return false;
@@ -147,10 +142,12 @@ export function useTimeTracking(projects = [], user) {
   const [trackingPermissions, setTrackingPermissions] = useState(null);
   const [suggestedProject, setSuggestedProject] = useState(null);
   const [tick, setTick] = useState(Date.now());
+  const [hydrated, setHydrated] = useState(false);
 
   const activeRef = useRef(null);
   const projectsRef = useRef(projects);
   const notificationRef = useRef(0);
+  const entriesRef = useRef([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +170,10 @@ export function useTimeTracking(projects = [], user) {
     activeRef.current = activeShift;
   }, [activeShift]);
 
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
   const refreshTrackingPermissions = useCallback(async ({ request = false } = {}) => {
     const permissions = request ? await requestTrackingPermissions() : await getTrackingPermissions();
     setTrackingPermissions(permissions);
@@ -193,14 +194,21 @@ export function useTimeTracking(projects = [], user) {
 
   useEffect(() => {
     let mounted = true;
-    readStore().then((store) => {
-      if (!mounted) return;
-      setActiveShift(store.activeShift || null);
-      setEntries(Array.isArray(store.entries) ? store.entries : []);
-      setTrackingNotice(store.lastNotice || null);
-      setSuggestedProject(store.lastNotice?.suggestedProject || null);
-      notificationRef.current = Number(store.lastNotificationAt || 0);
-    });
+    readStore()
+      .then((store) => {
+        if (!mounted) return;
+        setActiveShift(store.activeShift || null);
+        setEntries(Array.isArray(store.entries) ? store.entries : []);
+        setTrackingNotice(store.lastNotice || null);
+        setSuggestedProject(store.lastNotice?.suggestedProject || null);
+        notificationRef.current = Number(store.lastNotificationAt || 0);
+      })
+      .catch(() => {})
+      .finally(() => {
+        // Mark hydration complete so the persistence effect can start writing.
+        // Even on failure we allow writes so new activity is not blocked.
+        if (mounted) setHydrated(true);
+      });
     return () => {
       mounted = false;
     };
@@ -222,17 +230,27 @@ export function useTimeTracking(projects = [], user) {
 
       setTeamEntries(rows.map(entryFromSupabase));
       setEntries((current) => {
-        const localPending = current.filter((entry) => {
-          const hasServerIdentity = Boolean(entry.serverId || isUuid(entry.id));
-          return !hasServerIdentity && !entryIdentityKeys(entry).some((key) => completedKeys.has(key));
-        });
+        // Keep local entries whose identity keys are not represented in the
+        // server result (e.g. a local clock-out whose completion write is still
+        // queued). Server-completed rows replace their local counterparts.
+        const localPending = current.filter(
+          (entry) => !entryIdentityKeys(entry).some((key) => completedKeys.has(key)),
+        );
         return [...completed, ...localPending].sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
       });
 
       if (activeRow && !activeRef.current) {
         const serverShift = shiftFromSupabase(activeRow);
-        activeRef.current = serverShift;
-        setActiveShift(serverShift);
+        const serverKeys = new Set(entryIdentityKeys(serverShift));
+        // Do not resurrect a server "active" row that the user already clocked
+        // out locally (its local entry shares identity keys with the row).
+        const alreadyLocal = (entriesRef.current || []).some((entry) =>
+          entryIdentityKeys(entry).some((key) => serverKeys.has(key)),
+        );
+        if (!alreadyLocal) {
+          activeRef.current = serverShift;
+          setActiveShift(serverShift);
+        }
       }
     } catch (_error) {
       // Local clocking still works if time_entries is unavailable.
@@ -251,11 +269,41 @@ export function useTimeTracking(projects = [], user) {
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        refreshServerEntries();
-        refreshTrackingPermissions();
+    const subscription = AppState.addEventListener("change", async (state) => {
+      if (state !== "active") return;
+
+      // While backgrounded, the background location task owns read-modify-write
+      // of the persisted store. On return to foreground, re-read it and merge
+      // those fields into React state BEFORE any subsequent persistence write,
+      // otherwise stale foreground state would clobber the background updates.
+      try {
+        const store = await readStore();
+        notificationRef.current = Math.max(
+          Number(store.lastNotificationAt || 0),
+          notificationRef.current,
+        );
+        const current = activeRef.current;
+        if (store.activeShift && current && store.activeShift.localId === current.localId) {
+          const merged = {
+            ...current,
+            segments:
+              Array.isArray(store.activeShift.segments) && store.activeShift.segments.length
+                ? store.activeShift.segments
+                : current.segments,
+            lastLocation: store.activeShift.lastLocation || current.lastLocation,
+            lastDistanceMeters: store.activeShift.lastDistanceMeters ?? current.lastDistanceMeters,
+            onSite: store.activeShift.onSite ?? current.onSite,
+            travelStartedAt: store.activeShift.travelStartedAt || current.travelStartedAt,
+          };
+          activeRef.current = merged;
+          setActiveShift(merged);
+        }
+      } catch (_error) {
+        // Non-fatal; fall back to the server refresh below.
       }
+
+      refreshServerEntries();
+      refreshTrackingPermissions();
     });
     return () => subscription.remove();
   }, [refreshServerEntries, refreshTrackingPermissions, user?.id]);
@@ -269,6 +317,9 @@ export function useTimeTracking(projects = [], user) {
   }, [user?.id]);
 
   useEffect(() => {
+    // Do not persist until hydration has completed, otherwise the initial empty
+    // state would overwrite a persisted in-progress shift.
+    if (!hydrated) return;
     writeStore({
       activeShift,
       entries,
@@ -276,7 +327,7 @@ export function useTimeTracking(projects = [], user) {
       lastNotice: trackingNotice,
       lastNotificationAt: notificationRef.current,
     });
-  }, [activeShift, entries, resolvedProjects, trackingNotice]);
+  }, [hydrated, activeShift, entries, resolvedProjects, trackingNotice]);
 
   useEffect(() => {
     if (!activeShift) return undefined;
@@ -328,6 +379,21 @@ export function useTimeTracking(projects = [], user) {
     };
   }, [activeShift?.localId, activeShift?.serverId]);
 
+  useEffect(() => {
+    // Register job-site geofences so the painter is prompted to clock in on
+    // arrival, even while clocked out and with the app closed. Requires
+    // background ("Always") location; syncGeofences no-ops otherwise. Geofences
+    // intentionally persist across unmount/app-close, so there is no teardown.
+    if (!permissionsAllowTracking(trackingPermissions)) return undefined;
+    syncGeofences(resolvedProjects);
+    return undefined;
+  }, [
+    resolvedProjects,
+    trackingPermissions?.ready,
+    trackingPermissions?.foreground,
+    trackingPermissions?.background,
+  ]);
+
   const applyLocation = useCallback(async (location) => {
     const shift = activeRef.current;
     const point = toPoint(location);
@@ -369,6 +435,11 @@ export function useTimeTracking(projects = [], user) {
     const store = await readStore();
     const didNotify = await notifyIfNeeded(store, status, nextShift);
     if (didNotify) notificationRef.current = Date.now();
+
+    // If the shift has no serverId, the network write targets by client_entry_id
+    // and could resurrect a shift the user has since clocked out. Bail if the
+    // active shift no longer matches.
+    if (!nextShift.serverId && activeRef.current?.localId !== nextShift.localId) return;
     await updateActiveLocation(nextShift);
   }, []);
 
@@ -388,7 +459,7 @@ export function useTimeTracking(projects = [], user) {
       cancelled = true;
       if (watcher) watcher.remove();
     };
-  }, [activeShift?.localId, applyLocation, trackingPermissions?.ready]);
+  }, [activeShift?.localId, applyLocation, trackingPermissions?.ready, trackingPermissions?.foreground]);
 
   const clockIn = useCallback(
     async (project) => {
@@ -457,6 +528,7 @@ export function useTimeTracking(projects = [], user) {
 
           activeRef.current = nextShift;
           setActiveShift(nextShift);
+          if (!nextShift.serverId && activeRef.current?.localId !== nextShift.localId) return;
           await updateActiveLocation(nextShift);
         })
         .catch(() => {});
@@ -495,12 +567,19 @@ export function useTimeTracking(projects = [], user) {
         return null;
       }
 
+      // Resolve the next project first so we can bail (like clockIn) without
+      // leaving the user clocked out of the current job with nothing active.
+      const nextProject = await geocodeProject(project);
+      if (!nextProject) {
+        setTrackingNotice(buildPermissionNotice(permissions, "Could not resolve the selected project."));
+        return null;
+      }
+
       const completed = shiftToEntry(current, new Date().toISOString(), "switched_project");
       setEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
       setTeamEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
       await completeEntry(completed);
 
-      const nextProject = await geocodeProject(project);
       let next = createShift(nextProject, user, current.lastLocation);
       next = { ...next, travelStartedAt: current.travelStartedAt };
       activeRef.current = next;
@@ -573,15 +652,36 @@ export function useTimeTracking(projects = [], user) {
   }, [user]);
 
   useEffect(() => {
-    const subscription = subscribeToTrackingNotificationResponses({
+    // An arrival prompt fires only while clocked out, but the user may have
+    // clocked in elsewhere before tapping it: treat a tap for a different job
+    // as a switch, and ignore it if they are already on that job.
+    const clockInFromNotification = (project) => {
+      const current = activeRef.current;
+      const normalized = normalizeProject(project);
+      if (!normalized) return Promise.resolve(null);
+      if (current) {
+        if (current.project?.companycam_id === normalized.companycam_id) {
+          return Promise.resolve(current);
+        }
+        return switchProject(normalized);
+      }
+      return clockIn(normalized);
+    };
+
+    const handlers = {
+      clockIn: clockInFromNotification,
       clockOut,
       switchProject,
       setSuggestedProject,
       setTrackingNotice,
-    });
+    };
+
+    const subscription = subscribeToTrackingNotificationResponses(handlers);
+    // Handle a notification tapped to cold-launch the app.
+    consumeInitialNotificationResponse(handlers);
 
     return () => subscription.remove();
-  }, [clockOut, switchProject]);
+  }, [clockIn, clockOut, switchProject]);
 
   const activeElapsedMs = activeShift ? Math.max(0, tick - new Date(activeShift.startedAt).getTime()) : 0;
   const liveEntries = useMemo(() => {

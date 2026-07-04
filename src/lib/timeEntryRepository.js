@@ -155,18 +155,43 @@ export async function updateActiveLocation(shift) {
   }
 }
 
+// Identifies a queued operation instance uniquely so we can remove only the
+// ops that actually succeeded, even if new ops (with a fresh createdAt) were
+// enqueued for the same entry mid-flush.
+function flushOperationKey(operation) {
+  const key =
+    operation.client_entry_id ||
+    operation.payload?.client_entry_id ||
+    operation.payload?.id ||
+    operation.id ||
+    operation.createdAt;
+  return `${key || ""}::${operation.createdAt || ""}`;
+}
+
+let flushInFlight = null;
+
 export async function flushQueuedWrites() {
+  // Only one flush runs at a time; concurrent callers await the same promise.
+  if (flushInFlight) return flushInFlight;
+  flushInFlight = performFlush().finally(() => {
+    flushInFlight = null;
+  });
+  return flushInFlight;
+}
+
+async function performFlush() {
   const queue = await readWriteQueue();
   if (!queue.length) return;
 
-  const remaining = [];
+  const succeeded = new Set();
   for (const operation of queue) {
+    const opKey = flushOperationKey(operation);
     try {
       if (operation.action === "upsert") {
         const { error } = await supabase
           .from("time_entries")
           .upsert(operation.payload, { onConflict: "client_entry_id" });
-        if (error) remaining.push(operation);
+        if (!error) succeeded.add(opKey);
       } else if (operation.action === "delete") {
         let query = supabase.from("time_entries").delete();
 
@@ -175,19 +200,24 @@ export async function flushQueuedWrites() {
         } else if (operation.client_entry_id) {
           query = query.eq("client_entry_id", operation.client_entry_id);
         } else {
+          // Nothing to target; treat as done so it does not linger forever.
+          succeeded.add(opKey);
           continue;
         }
 
         const { error } = await query;
-        if (error) remaining.push(operation);
-      } else {
-        remaining.push(operation);
+        if (!error) succeeded.add(opKey);
       }
+      // Unknown actions are left in the queue untouched.
     } catch (_error) {
-      remaining.push(operation);
+      // Leave the op queued for a later retry.
     }
   }
 
+  // Re-read the queue and drop only the ops we confirmed; this preserves any
+  // ops enqueued mid-flush instead of clobbering them with a stale snapshot.
+  const latest = await readWriteQueue();
+  const remaining = latest.filter((operation) => !succeeded.has(flushOperationKey(operation)));
   await writeWriteQueue(remaining);
 }
 
@@ -210,8 +240,12 @@ export async function fetchTimeEntryRows() {
 }
 
 export function entryFromSupabase(row) {
-  const endedAt = row.ended_at || new Date().toISOString();
-  const durationMs = Math.max(0, new Date(endedAt).getTime() - new Date(row.started_at).getTime());
+  const isActive = row.status === "active" && !row.ended_at;
+  // Keep active rows open (endedAt: null) so presenters compute a live duration
+  // instead of freezing teammate timers at fetch time.
+  const endedAt = isActive ? null : row.ended_at || new Date().toISOString();
+  const durationEnd = endedAt || new Date().toISOString();
+  const durationMs = Math.max(0, new Date(durationEnd).getTime() - new Date(row.started_at).getTime());
 
   return {
     id: row.id,

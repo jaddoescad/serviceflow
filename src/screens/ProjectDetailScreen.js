@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
-  SafeAreaView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { buildProjectClockInDays } from '../lib/timeTracking';
 
@@ -25,6 +27,7 @@ const SUBTLE = '#b8bcc1';
 const BORDER = '#e6e8eb';
 const SOFT = '#f6f8f9';
 const TILE_BG = '#ffffff';
+const EDIT_TIME_STEP_MINUTES = 5;
 
 function firstValue(values, fallback = '') {
   return (
@@ -508,6 +511,7 @@ function EditMapPreview({ distanceLabel, distanceVisible, onPress }) {
 }
 
 function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete, onBack }) {
+  const insets = useSafeAreaInsets();
   const { painter, day, segment } = entry;
   const [distanceVisible, setDistanceVisible] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -515,15 +519,62 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
   const [selectedProject, setSelectedProject] = useState(null);
   const distanceLabel = getDistanceLabel(segment);
   const rawEntry = segment.raw || segment;
+  const isActiveEntry = !rawEntry.endedAt || rawEntry.clockOutReason === 'active';
   const initialStart = new Date(rawEntry.startedAt || Date.now());
   const initialEnd = new Date(rawEntry.endedAt || rawEntry.startedAt || Date.now());
   const [startAt, setStartAt] = useState(initialStart);
   const [endAt, setEndAt] = useState(initialEnd);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
   const startChanged = startAt.getTime() !== initialStart.getTime();
   const endChanged = endAt.getTime() !== initialEnd.getTime();
   const projectChanged = !!selectedProject;
-  const canSave = (startChanged || endChanged || projectChanged) && endAt.getTime() > startAt.getTime();
-  const adjustedDuration = formatEditDuration(endAt.getTime() - startAt.getTime());
+  const canSave = isActiveEntry
+    ? startChanged || projectChanged
+    : (startChanged || endChanged || projectChanged) && endAt.getTime() > startAt.getTime();
+  const adjustedDuration = isActiveEntry
+    ? formatEditDuration(Date.now() - startAt.getTime())
+    : formatEditDuration(endAt.getTime() - startAt.getTime());
+  const endDisplay = isActiveEntry ? 'In progress' : formatEditTime(endAt);
+  const originalTimeNote = buildEditOriginalTimeNote(rawEntry, startAt, endAt, isActiveEntry);
+  const handleSave = async () => {
+    if (busy || !canSave) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      const updates = {
+        startedAt: startAt.toISOString(),
+        project: selectedProject || undefined,
+        adjustmentSource: 'project_detail_edit',
+      };
+      // Never send endedAt for an active/in-progress shift: it would prematurely close it.
+      if (!isActiveEntry) updates.endedAt = endAt.toISOString();
+      await onSave?.(entry, updates);
+    } catch (error) {
+      setActionError(error?.message || 'Could not save changes. Try again.');
+      setBusy(false);
+    }
+  };
+  const handleDelete = () => {
+    if (busy) return;
+    Alert.alert('Delete time entry?', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          setActionError('');
+          try {
+            await onDelete?.(entry);
+          } catch (error) {
+            setActionError(error?.message || 'Could not delete entry. Try again.');
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  };
   const displayedTitle = selectedProject ? getProjectTitle(selectedProject) : title;
   const projectOptions = useMemo(
     () => filterProjectOptions(projects, projectSearch),
@@ -531,7 +582,7 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
   );
 
   return (
-    <SafeAreaView style={styles.editSafeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.editSafeArea}>
       <View style={styles.editHeader}>
         <TouchableOpacity
           style={styles.editBackButton}
@@ -546,8 +597,13 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
 
       <ScrollView
         style={styles.editContent}
-        contentContainerStyle={styles.editContentInner}
+        contentContainerStyle={[
+          styles.editContentInner,
+          { paddingBottom: 14 },
+        ]}
         showsVerticalScrollIndicator={false}
+        bounces={false}
+        alwaysBounceVertical={false}
       >
         <View style={styles.editShiftCard}>
           <View style={styles.editShiftTop}>
@@ -574,7 +630,7 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
             </View>
             <View style={styles.editTimelineLine} />
             <View style={[styles.editTimeBlock, styles.editTimeBlockRight]}>
-              <Text style={[styles.editTimeValue, styles.editTimeEnd]}>{formatEditTime(endAt)}</Text>
+              <Text style={[styles.editTimeValue, styles.editTimeEnd]}>{endDisplay}</Text>
               <Text style={styles.editTimeSource}>{segment.endSrc}</Text>
             </View>
           </View>
@@ -602,19 +658,23 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
               <Text style={styles.editFieldPillText}>{formatEditTime(startAt)}</Text>
             </View>
           </View>
+          {originalTimeNote ? <Text style={styles.editOriginalNote}>{originalTimeNote}</Text> : null}
           <EditTimeAdjustRow
-            onMinus={() => setStartAt((value) => addEditMinutes(value, -15))}
-            onPlus={() => setStartAt((value) => addEditMinutes(value, 15))}
+            label="clock-in time"
+            onMinus={() => setStartAt((value) => addEditMinutes(value, -EDIT_TIME_STEP_MINUTES))}
+            onPlus={() => setStartAt((value) => addEditMinutes(value, EDIT_TIME_STEP_MINUTES))}
           />
           <View style={styles.editFormRow}>
             <Text style={styles.editFieldLabel}>Clock-Out Time</Text>
             <View style={styles.editFieldPill}>
-              <Text style={styles.editFieldPillText}>{formatEditTime(endAt)}</Text>
+              <Text style={styles.editFieldPillText}>{endDisplay}</Text>
             </View>
           </View>
           <EditTimeAdjustRow
-            onMinus={() => setEndAt((value) => addEditMinutes(value, -15))}
-            onPlus={() => setEndAt((value) => addEditMinutes(value, 15))}
+            label="clock-out time"
+            disabled={isActiveEntry}
+            onMinus={() => setEndAt((value) => addEditMinutes(value, -EDIT_TIME_STEP_MINUTES))}
+            onPlus={() => setEndAt((value) => addEditMinutes(value, EDIT_TIME_STEP_MINUTES))}
           />
           <View style={styles.editFormRow}>
             <Text style={styles.editFieldLabel}>Duration</Text>
@@ -676,34 +736,43 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
         </Text>
       </ScrollView>
 
-      <View style={styles.editBottomActions}>
+      <View style={[styles.editBottomActions, { paddingBottom: insets.bottom + 16 }]}>
+        {actionError ? <Text style={styles.errorText}>{actionError}</Text> : null}
+        {isActiveEntry ? (
+          <Text style={styles.editActiveHint}>This shift is still in progress. Only the start time can be changed.</Text>
+        ) : null}
         <TouchableOpacity
-          style={[styles.editSaveButton, !canSave && styles.editSaveButtonDisabled]}
+          style={[styles.editSaveButton, (!canSave || busy) && styles.editSaveButtonDisabled]}
           activeOpacity={0.75}
-          disabled={!canSave}
-          onPress={() =>
-            onSave?.(entry, {
-              startedAt: startAt.toISOString(),
-              endedAt: endAt.toISOString(),
-              project: selectedProject || undefined,
-              adjustmentSource: 'project_detail_edit',
-            })
-          }
+          disabled={!canSave || busy}
+          accessibilityRole="button"
+          accessibilityLabel="Save changes"
+          onPress={handleSave}
         >
-          <Text style={styles.editSaveText}>Save Changes</Text>
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.editSaveText}>Save Changes</Text>
+          )}
         </TouchableOpacity>
         <View style={styles.editSplitActions}>
           <TouchableOpacity
             style={styles.editCancelButton}
             activeOpacity={0.75}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel editing"
             onPress={onBack}
           >
             <Text style={styles.editCancelText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.editDeleteButton}
+            style={[styles.editDeleteButton, busy && styles.editSaveButtonDisabled]}
             activeOpacity={0.75}
-            onPress={() => onDelete?.(entry)}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Delete time entry"
+            onPress={handleDelete}
           >
             <Text style={styles.editDeleteText}>Delete</Text>
           </TouchableOpacity>
@@ -713,14 +782,28 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
   );
 }
 
-function EditTimeAdjustRow({ onMinus, onPlus }) {
+function EditTimeAdjustRow({ onMinus, onPlus, disabled = false, label = 'time' }) {
   return (
     <View style={styles.editTimeAdjustRow}>
-      <TouchableOpacity style={styles.editTimeAdjustButton} activeOpacity={0.8} onPress={onMinus}>
-        <Text style={styles.editTimeAdjustText}>-15m</Text>
+      <TouchableOpacity
+        style={[styles.editTimeAdjustButton, disabled && styles.editTimeAdjustButtonDisabled]}
+        activeOpacity={0.8}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Subtract ${EDIT_TIME_STEP_MINUTES} minutes from ${label}`}
+        onPress={onMinus}
+      >
+        <Text style={styles.editTimeAdjustText}>-{EDIT_TIME_STEP_MINUTES}m</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.editTimeAdjustButton} activeOpacity={0.8} onPress={onPlus}>
-        <Text style={styles.editTimeAdjustText}>+15m</Text>
+      <TouchableOpacity
+        style={[styles.editTimeAdjustButton, disabled && styles.editTimeAdjustButtonDisabled]}
+        activeOpacity={0.8}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${EDIT_TIME_STEP_MINUTES} minutes to ${label}`}
+        onPress={onPlus}
+      >
+        <Text style={styles.editTimeAdjustText}>+{EDIT_TIME_STEP_MINUTES}m</Text>
       </TouchableOpacity>
     </View>
   );
@@ -739,6 +822,33 @@ function formatEditDuration(ms) {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${hours}h ${mins}m`;
+}
+
+function buildEditOriginalTimeNote(rawEntry, startAt, endAt, isActiveEntry) {
+  const history = Array.isArray(rawEntry?.adjustmentHistory) ? rawEntry.adjustmentHistory : [];
+  const originalStart = rawEntry?.originalStartedAt || history[0]?.previousStartedAt;
+  const originalEnd = history.find((item) => item?.previousEndedAt)?.previousEndedAt;
+  const lastEdit = history[history.length - 1]?.adjustedAt || rawEntry?.startEditedAt;
+  const parts = [];
+
+  if (isDifferentEditMinute(originalStart, startAt)) {
+    parts.push(`Original in ${formatEditTime(new Date(originalStart))}`);
+  }
+
+  if (!isActiveEntry && isDifferentEditMinute(originalEnd, endAt)) {
+    parts.push(`original out ${formatEditTime(new Date(originalEnd))}`);
+  }
+
+  if (!parts.length) return '';
+  if (lastEdit) parts.push(`edited ${formatEditTime(new Date(lastEdit))}`);
+  return parts.join(' · ');
+}
+
+function isDifferentEditMinute(originalValue, currentDate) {
+  if (!originalValue || !currentDate) return false;
+  const original = new Date(originalValue);
+  if (Number.isNaN(original.getTime())) return false;
+  return Math.round(original.getTime() / 60000) !== Math.round(currentDate.getTime() / 60000);
 }
 
 function filterProjectOptions(projects, query) {
@@ -762,12 +872,14 @@ export default function ProjectDetailScreen({
   trackingNotice,
   projects = [],
   user,
+  canViewTeamTime = false,
   onClockIn,
   onClockOut,
   onSwitchProject,
   onDeleteTimeEntry,
   onUpdateTimeEntry,
 }) {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState('clock');
   const [selectedPainterId, setSelectedPainterId] = useState(null);
   const [selectedTimeEntry, setSelectedTimeEntry] = useState(null);
@@ -811,6 +923,10 @@ export default function ProjectDetailScreen({
     ),
   );
   const teamHours = projectEntryTotals.teamMs > 0 ? formatMsAsHours(projectEntryTotals.teamMs) : `${teamHoursRaw.toFixed(1)}h`;
+  const visibleHoursKicker = canViewTeamTime ? 'Team' : 'Visible';
+  const visibleHoursLabel = canViewTeamTime ? 'Team total' : 'Entries shown';
+  const recentTitle = canViewTeamTime ? 'Hours by Painter' : 'Your Clock-ins';
+  const recentCount = canViewTeamTime ? `${painterSummaries.length} crew` : `${clockInDays.length} day${clockInDays.length === 1 ? '' : 's'}`;
   const budgetedHours =
     budgetHoursRaw === null ? 'Not set' : `${budgetHoursRaw.toFixed(1)}h`;
   const isActiveProject = isSameCompanyCamProject(activeShift?.project, project);
@@ -848,7 +964,7 @@ export default function ProjectDetailScreen({
   const clockFeedback = trackingNotice?.message || clockActionError;
 
   let budgetStatus = null;
-  if (budgetHoursRaw !== null && teamHoursRaw > budgetHoursRaw) {
+  if (canViewTeamTime && budgetHoursRaw !== null && teamHoursRaw > budgetHoursRaw) {
     budgetStatus = {
       kind: 'over',
       label: `Over by ${(teamHoursRaw - budgetHoursRaw).toFixed(1)}h`,
@@ -856,7 +972,7 @@ export default function ProjectDetailScreen({
       color: '#c0432b',
       dot: '#d7553b',
     };
-  } else if (budgetHoursRaw !== null) {
+  } else if (canViewTeamTime && budgetHoursRaw !== null) {
     budgetStatus = {
       kind: 'under',
       label: `${(budgetHoursRaw - teamHoursRaw).toFixed(1)}h remaining`,
@@ -929,7 +1045,7 @@ export default function ProjectDetailScreen({
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -954,6 +1070,9 @@ export default function ProjectDetailScreen({
         <TouchableOpacity
           style={[styles.tab, activeTab === 'clock' && styles.activeTab]}
           activeOpacity={0.85}
+          accessibilityRole="tab"
+          accessibilityLabel="Clock Ins"
+          accessibilityState={{ selected: activeTab === 'clock' }}
           onPress={() => setActiveTab('clock')}
         >
           <ClockGlyph color={activeTab === 'clock' ? '#fff' : BRAND} size={14} />
@@ -964,6 +1083,9 @@ export default function ProjectDetailScreen({
         <TouchableOpacity
           style={[styles.tab, activeTab === 'photos' && styles.activeTab]}
           activeOpacity={0.85}
+          accessibilityRole="tab"
+          accessibilityLabel="Photos"
+          accessibilityState={{ selected: activeTab === 'photos' }}
           onPress={() => setActiveTab('photos')}
         >
           <CameraGlyph color={activeTab === 'photos' ? '#fff' : BRAND} />
@@ -975,7 +1097,10 @@ export default function ProjectDetailScreen({
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.contentInner}
+        contentContainerStyle={[
+          styles.contentInner,
+          { paddingBottom: insets.bottom + 120 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {activeTab === 'clock' && !selectedPainter ? (
@@ -1032,9 +1157,9 @@ export default function ProjectDetailScreen({
                 <View style={[styles.hourCard, styles.comboCard]}>
                   <View style={styles.comboStats}>
                     <View style={styles.comboStat}>
-                      <Text style={styles.comboKicker}>Team</Text>
+                      <Text style={styles.comboKicker}>{visibleHoursKicker}</Text>
                       <Text style={[styles.hourValue, styles.comboValue]}>{teamHours}</Text>
-                      <Text style={styles.hourLabel}>Team total</Text>
+                      <Text style={styles.hourLabel}>{visibleHoursLabel}</Text>
                     </View>
                     <View style={styles.comboDivider} />
                     <View style={styles.comboStat}>
@@ -1056,23 +1181,34 @@ export default function ProjectDetailScreen({
               </View>
 
               <TouchableOpacity
-                style={styles.clockButton}
+                style={[styles.clockButton, clockActionPending && styles.clockButtonPending]}
                 activeOpacity={0.9}
+                disabled={clockActionPending}
+                accessibilityRole="button"
+                accessibilityLabel={primaryClockLabel}
                 onPress={handlePrimaryClockAction}
               >
                 <View style={styles.clockIconCircle}>
-                  {primaryClockIcon === 'play' ? (
+                  {clockActionPending ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : primaryClockIcon === 'play' ? (
                     <PlayGlyph />
                   ) : (
                     <Ionicons name={primaryClockIcon} size={23} color="#fff" />
                   )}
                 </View>
-                <Text style={styles.clockButtonText}>{primaryClockLabel}</Text>
+                <Text style={styles.clockButtonText}>
+                  {clockActionPending ? 'Working…' : primaryClockLabel}
+                </Text>
               </TouchableOpacity>
 
+              {clockFeedback ? (
+                <Text style={styles.errorText}>{clockFeedback}</Text>
+              ) : null}
+
               <View style={styles.recentHeader}>
-                <Text style={styles.recentTitle}>Hours by Painter</Text>
-                <Text style={styles.recentSeeAll}>{painterSummaries.length} crew</Text>
+                <Text style={styles.recentTitle}>{recentTitle}</Text>
+                <Text style={styles.recentSeeAll}>{recentCount}</Text>
               </View>
 
               {painterSummaries.length ? (
@@ -1111,13 +1247,24 @@ export default function ProjectDetailScreen({
 
       {activeTab === 'clock' && !selectedPainter ? (
         <TouchableOpacity
-          style={styles.addTimeButton}
+          style={[
+            styles.addTimeButton,
+            { bottom: insets.bottom + 22 },
+            clockActionPending && styles.clockButtonPending,
+          ]}
           activeOpacity={0.9}
+          disabled={clockActionPending}
+          accessibilityRole="button"
+          accessibilityLabel={floatingClockLabel}
           onPress={handlePrimaryClockAction}
         >
-          <Text style={styles.addTimeText}>{floatingClockLabel}</Text>
+          <Text style={styles.addTimeText}>{clockActionPending ? 'Working…' : floatingClockLabel}</Text>
           <View style={styles.addDivider} />
-          <Ionicons name={primaryClockIcon === 'play' ? 'time-outline' : primaryClockIcon} size={27} color="#fff" />
+          {clockActionPending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name={primaryClockIcon === 'play' ? 'time-outline' : primaryClockIcon} size={27} color="#fff" />
+          )}
         </TouchableOpacity>
       ) : null}
     </SafeAreaView>
@@ -1368,10 +1515,15 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     borderRadius: 14,
     backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    ...Platform.select({
+      web: { boxShadow: '0 2px 6px rgba(0,0,0,0.03)' },
+      default: {
+        shadowColor: '#000',
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+      },
+    }),
   },
   avatar: {
     width: 42,
@@ -1612,6 +1764,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.1,
+  },
+  clockButtonPending: {
+    opacity: 0.6,
+  },
+  errorText: {
+    marginTop: 10,
+    color: '#c0432b',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  editActiveHint: {
+    marginBottom: 10,
+    color: MUTED,
+    fontSize: 12.5,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  editTimeAdjustButtonDisabled: {
+    opacity: 0.4,
   },
 
   glyphCenter: {
@@ -2141,7 +2313,7 @@ const styles = StyleSheet.create({
   editContentInner: {
     paddingHorizontal: 18,
     paddingTop: 24,
-    paddingBottom: 220,
+    paddingBottom: 14,
   },
   editShiftCard: {
     borderWidth: 1.2,
@@ -2353,6 +2525,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: -0.2,
   },
+  editOriginalNote: {
+    marginTop: -2,
+    marginBottom: 8,
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   editActionCard: {
     minHeight: 72,
     marginTop: 12,
@@ -2379,10 +2558,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   editBottomActions: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 16,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    backgroundColor: '#f6f6f6',
   },
   editSaveButton: {
     height: 54,
@@ -2506,10 +2684,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: NAVY,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+    ...Platform.select({
+      web: { boxShadow: '0 6px 14px rgba(0,0,0,0.18)' },
+      default: {
+        shadowColor: '#000',
+        shadowOpacity: 0.18,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 6 },
+      },
+    }),
   },
   addTimeText: {
     color: '#fff',

@@ -68,7 +68,7 @@ async function authorizeRequest(req: Request, supabase: ServiceClient) {
   const configuredAdminToken = Deno.env.get("ASSIGNMENT_ADMIN_TOKEN");
   const suppliedAdminToken = req.headers.get("x-admin-token");
 
-  if (configuredAdminToken && suppliedAdminToken === configuredAdminToken) {
+  if (configuredAdminToken && suppliedAdminToken && timingSafeEqual(suppliedAdminToken, configuredAdminToken)) {
     return { mode: "admin-token", userId: null, role: "admin" };
   }
 
@@ -87,7 +87,7 @@ async function authorizeRequest(req: Request, supabase: ServiceClient) {
     .maybeSingle();
 
   if (profileError) throw httpError(profileError.message, 500);
-  const role = String(profile.role || "");
+  const role = String(profile?.role || "");
   if (!profile?.is_active || !["admin", "manager"].includes(role)) {
     throw httpError("Only active admins and managers can manage project assignments", 403);
   }
@@ -163,7 +163,12 @@ async function createEmployee(
     .select("user_id,email,full_name,role,is_active")
     .single();
 
-  if (profileError) throw httpError(profileError.message, 500);
+  if (profileError) {
+    // The auth user was created but the profile row failed to persist. Roll the
+    // auth user back (best-effort) so we don't leave an orphaned login behind.
+    await supabase.auth.admin.deleteUser(user.id).catch(() => {});
+    throw httpError(profileError.message, 500);
+  }
 
   return {
     employee: profile,
@@ -272,6 +277,22 @@ function generatePassword() {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
   return btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "").slice(0, 24);
+}
+
+function timingSafeEqual(a: string, b: string) {
+  // Compare in constant time to avoid leaking the admin token via response
+  // timing. Length differences short-circuit (the length itself is not secret),
+  // but for equal-length inputs every byte is always compared.
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+
+  let mismatch = 0;
+  for (let index = 0; index < aBytes.length; index += 1) {
+    mismatch |= aBytes[index] ^ bBytes[index];
+  }
+  return mismatch === 0;
 }
 
 function httpError(message: string, status: number) {

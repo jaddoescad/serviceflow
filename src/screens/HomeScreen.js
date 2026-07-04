@@ -16,13 +16,15 @@ const services = [
 ];
 
 export default function HomeScreen() {
-  const openWebsite = () => Linking.openURL("https://ottawapainters.example.com");
+  // TODO: replace with real URL
+  const openWebsite = () =>
+    Linking.openURL("https://serviceflow.example.com").catch(() => {});
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <Text style={styles.title}>Ottawa Painters</Text>
-        <Text style={styles.subtitle}>Professional painting and refinishing for homes and businesses in the Ottawa area.</Text>
+        <Text style={styles.title}>ServiceFlow</Text>
+        <Text style={styles.subtitle}>Field-service assignments, clock-ins, and job-site updates for mobile teams.</Text>
         <TouchableOpacity style={styles.cta} onPress={openWebsite} activeOpacity={0.8}>
           <Text style={styles.ctaText}>Get a free quote</Text>
         </TouchableOpacity>
@@ -47,7 +49,7 @@ export default function HomeScreen() {
 
       <View style={styles.badgeCard}>
         <Text style={styles.badgeTitle}>Service area</Text>
-        <Text style={styles.badgeText}>Serving Ottawa, Kanata, Nepean, and nearby neighbourhoods.</Text>
+        <Text style={styles.badgeText}>Built for field crews, dispatchers, and operations teams.</Text>
       </View>
 
       <Image

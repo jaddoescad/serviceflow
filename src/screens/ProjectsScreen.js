@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,17 +16,7 @@ import {
   listActiveCompanyCamProjectPage,
   syncCompanyCamProjects,
 } from "../lib/projectRepository";
-
-const COLORS = {
-  green: "#173f37",
-  teal: "#2f8d7f",
-  brown: "#7c5127",
-  white: "#ffffff",
-  surface: "#f7f8f7",
-  border: "#e0e3e1",
-  muted: "#8b9692",
-  ink: "#11201d",
-};
+import { palette as COLORS } from "../theme";
 
 const PROJECTS_PAGE_SIZE = 20;
 const EMPTY_PROJECT_TOTALS = Object.freeze({});
@@ -37,6 +28,8 @@ export default function ProjectsScreen({
   activeShift,
   projectTimeTotals = EMPTY_PROJECT_TOTALS,
   assignedProjectIds = EMPTY_PROJECT_IDS,
+  canManageProjects = false,
+  canViewTeamTime = false,
   onProjectsChanged,
 }) {
   const [projects, setProjects] = useState([]);
@@ -53,6 +46,10 @@ export default function ProjectsScreen({
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState("active");
   const searchInputRef = useRef(null);
+  // Guards against out-of-order responses (stale) and against multiple page
+  // fetches being kicked off within the same frame (synchronous flag).
+  const requestIdRef = useRef(0);
+  const isFetchingRef = useRef(false);
   const activeProjectId = getProjectId(activeShift?.project);
   const trackedProjectIdsKey = getProjectIdsKey(Object.keys(projectTimeTotals || {}));
   const trackedProjectIds = useMemo(
@@ -70,6 +67,8 @@ export default function ProjectsScreen({
   );
 
   const loadProjects = useCallback(async ({ quiet = false, pageToLoad = 0, append = false } = {}) => {
+    const requestId = ++requestIdRef.current;
+    isFetchingRef.current = true;
     if (!quiet && !append) setLoading(true);
     if (append) setLoadingMore(true);
     setError("");
@@ -89,6 +88,10 @@ export default function ProjectsScreen({
       projectIds: assignedProjectIdsForQuery,
     });
 
+    // A newer request superseded this one; ignore its (stale) results so we don't
+    // clobber fresher data or flip loading flags the newer request owns.
+    if (requestId !== requestIdRef.current) return;
+
     if (queryError) {
       setError(queryError.message);
     } else {
@@ -107,6 +110,7 @@ export default function ProjectsScreen({
 
     if (!quiet && !append) setLoading(false);
     if (append) setLoadingMore(false);
+    isFetchingRef.current = false;
   }, [filter, relevantAssignedIds, searchQuery]);
 
   const refreshProjects = useCallback(async () => {
@@ -116,6 +120,11 @@ export default function ProjectsScreen({
   }, [loadProjects]);
 
   const syncProjects = useCallback(async () => {
+    if (!canManageProjects) {
+      setError("Only managers can sync CompanyCam projects.");
+      return;
+    }
+
     setSyncing(true);
     setError("");
     setMessage("");
@@ -142,10 +151,12 @@ export default function ProjectsScreen({
     await loadProjects({ quiet: true, pageToLoad: 0 });
     await onProjectsChanged?.();
     setSyncing(false);
-  }, [loadProjects, onProjectsChanged]);
+  }, [canManageProjects, loadProjects, onProjectsChanged]);
 
   const loadMoreProjects = useCallback(async () => {
-    if (loading || loadingMore || !hasMore) return;
+    // isFetchingRef is synchronous, so overlapping scroll events in one frame
+    // can't each start a page fetch (state updates lag a frame behind).
+    if (loading || loadingMore || !hasMore || isFetchingRef.current) return;
     await loadProjects({ quiet: true, pageToLoad: page + 1, append: true });
   }, [hasMore, loadProjects, loading, loadingMore, page]);
 
@@ -189,6 +200,7 @@ export default function ProjectsScreen({
   const remaining = featured
     ? filtered.filter((project) => getProjectId(project) !== getProjectId(featured))
     : filtered;
+  const totalLabel = canViewTeamTime ? "Team total" : "Your total";
 
   return (
     <View style={styles.screen}>
@@ -203,25 +215,27 @@ export default function ProjectsScreen({
       >
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.kicker}>Ottawa Painters</Text>
+            <Text style={styles.kicker}>ServiceFlow</Text>
             <Text style={styles.headline}>Projects</Text>
           </View>
-          <Pressable
-            onPress={syncProjects}
-            disabled={syncing}
-            style={({ pressed }) => [
-              styles.headerSyncButton,
-              pressed && styles.headerSyncPressed,
-              syncing && styles.headerSyncDisabled,
-            ]}
-          >
-            {syncing ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <Ionicons name="sync" size={18} color={COLORS.white} />
-            )}
-            <Text style={styles.headerSyncText}>{syncing ? "Syncing" : "Sync"}</Text>
-          </Pressable>
+          {canManageProjects ? (
+            <Pressable
+              onPress={syncProjects}
+              disabled={syncing}
+              style={({ pressed }) => [
+                styles.headerSyncButton,
+                pressed && styles.headerSyncPressed,
+                syncing && styles.headerSyncDisabled,
+              ]}
+            >
+              {syncing ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Ionicons name="sync" size={18} color={COLORS.white} />
+              )}
+              <Text style={styles.headerSyncText}>{syncing ? "Syncing" : "Sync"}</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Pressable style={styles.searchBar} onPress={() => searchInputRef.current?.focus()}>
@@ -266,6 +280,7 @@ export default function ProjectsScreen({
                 project={featured}
                 statusLabel={featuredStatusLabel}
                 assignedHoursLabel={getProjectHoursLabel(featured, projectTimeTotals)}
+                hoursLabel={totalLabel}
                 onPress={() => onSelectProject?.(featured)}
               />
             ) : null}
@@ -316,7 +331,9 @@ export default function ProjectsScreen({
                     ? "Try another name, address, city, or postal code."
                     : filter === "assigned"
                       ? "Assignments can be created from the office/backend."
-                      : "Tap the sync button to pull projects from CompanyCam."}
+                      : canManageProjects
+                        ? "Tap the sync button to pull projects from CompanyCam."
+                        : "Ask a manager to sync projects from CompanyCam."}
                 </Text>
               </View>
             ) : (
@@ -330,6 +347,7 @@ export default function ProjectsScreen({
                       key={p.companycam_id}
                       project={p}
                       assignedHoursLabel={hoursLabel || (assigned && !tracked ? "0h 0m" : null)}
+                      hoursLabel={totalLabel}
                       onPress={() => onSelectProject?.(p)}
                     />
                   );
@@ -351,7 +369,7 @@ export default function ProjectsScreen({
   );
 }
 
-function CurrentProjectCard({ project, onPress, assignedHoursLabel, statusLabel }) {
+function CurrentProjectCard({ project, onPress, assignedHoursLabel, hoursLabel = "Team total", statusLabel }) {
   const address = formatAddress(project);
   return (
     <Pressable
@@ -373,13 +391,13 @@ function CurrentProjectCard({ project, onPress, assignedHoursLabel, statusLabel 
       </View>
       <View style={styles.timerBlock}>
         <Text style={styles.timer}>{assignedHoursLabel || "00:00"}</Text>
-        <Text style={styles.timerLabel}>{assignedHoursLabel ? "Total" : "Today"}</Text>
+        <Text style={styles.timerLabel}>{assignedHoursLabel ? hoursLabel : "Today"}</Text>
       </View>
     </Pressable>
   );
 }
 
-function ProjectCard({ project, onPress, assignedHoursLabel }) {
+function ProjectCard({ project, onPress, assignedHoursLabel, hoursLabel = "Team total" }) {
   const address = formatAddress(project);
   return (
     <Pressable
@@ -399,7 +417,7 @@ function ProjectCard({ project, onPress, assignedHoursLabel }) {
       {assignedHoursLabel ? (
         <View style={styles.hoursBlock}>
           <Text style={styles.hoursText}>{assignedHoursLabel}</Text>
-          <Text style={styles.hoursLabel}>Team total</Text>
+          <Text style={styles.hoursLabel}>{hoursLabel}</Text>
         </View>
       ) : null}
     </Pressable>
@@ -582,11 +600,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    shadowColor: COLORS.green,
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+    ...Platform.select({
+      web: { boxShadow: "0 10px 18px rgba(23,63,55,0.18)" },
+      default: {
+        shadowColor: COLORS.green,
+        shadowOpacity: 0.18,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 4,
+      },
+    }),
   },
   currentInfo: {
     flex: 1,

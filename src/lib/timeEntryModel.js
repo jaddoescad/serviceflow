@@ -33,11 +33,25 @@ export function entryProjectId(entry) {
   return String(entry?.project?.companycam_id || entry?.companycam_project_id || "");
 }
 
+export function entryIdentityKeys(entry) {
+  return [entry?.serverId, entry?.id, entry?.localId]
+    .map((value) => String(value || ""))
+    .filter(Boolean);
+}
+
 export function applyEntryTimeUpdate(entry, updates = {}) {
   const startedAt = updates.startedAt || entry.startedAt;
   const originalStartedAt = entry.originalStartedAt || entry.startedAt;
   const isActive = entry.clockOutReason === "active" || !entry.endedAt;
-  const endedAt = updates.endedAt || entry.endedAt || (isActive ? null : new Date().toISOString());
+  // Defensive: editing an active shift must not silently clock it out. Only set
+  // an endedAt when the caller explicitly clocks out.
+  const explicitClockOut = Boolean(
+    updates.clockOut || (updates.clockOutReason && updates.clockOutReason !== "active"),
+  );
+  const endedAt =
+    isActive && !explicitClockOut
+      ? null
+      : updates.endedAt || entry.endedAt || (isActive ? null : new Date().toISOString());
   const project = updates.project ? normalizeProject(updates.project) : entry.project;
   const durationEnd = endedAt || new Date().toISOString();
   const durationMs = Math.max(0, new Date(durationEnd).getTime() - new Date(startedAt).getTime());

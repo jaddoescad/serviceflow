@@ -3,5 +3,11 @@ project_id = "bwbckdkouqghdadpkjvn"
 [functions.sync-companycam-projects]
 verify_jwt = true
 
+[functions.companycam-project-photos]
+verify_jwt = true
+
+[functions.geocode-companycam-projects]
+verify_jwt = true
+
 [functions.project-assignments]
 verify_jwt = false

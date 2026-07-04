@@ -12,7 +12,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme";
 
-const logo = require("../../assets/ottawa-painters-logo.png");
+const logo = require("../../assets/serviceflow-logo.png");
 
 export default function LoginScreen() {
   const [email, setEmail] = React.useState("");
@@ -20,21 +20,10 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [session, setSession] = React.useState(null);
+  const passwordRef = React.useRef(null);
 
-  React.useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-    });
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-    });
-
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, []);
+  // Auth session ownership lives in App.js (getSession + onAuthStateChange).
+  // This screen only handles the sign-in form.
 
   const canSubmit = email.trim().length > 0 && password.trim().length > 0 && !loading;
 
@@ -59,13 +48,6 @@ export default function LoginScreen() {
     }
   };
 
-  const signOut = async () => {
-    setError("");
-    setLoading(true);
-    await supabase.auth.signOut();
-    setLoading(false);
-  };
-
   const updateEmail = (value) => {
     setEmail(value);
     if (error) setError("");
@@ -85,35 +67,32 @@ export default function LoginScreen() {
         <Image source={logo} resizeMode="contain" style={styles.logo} />
 
         <View style={styles.form}>
-          {session ? (
-            <View style={styles.sessionBox}>
-              <Text style={styles.sessionText}>Signed in as {session.user.email}</Text>
-              <Pressable accessibilityRole="button" onPress={signOut}>
-                <Text style={styles.signOutText}>Sign out</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
           <Text style={styles.label}>Email Address</Text>
           <TextInput
             autoCapitalize="none"
+            autoComplete="email"
             autoCorrect={false}
+            blurOnSubmit={false}
             keyboardType="email-address"
             onChangeText={updateEmail}
-            placeholder="name@paintersottawa.com"
+            onSubmitEditing={() => passwordRef.current?.focus()}
+            placeholder="name@company.com"
             placeholderTextColor="#9AA7A3"
             returnKeyType="next"
             style={styles.input}
-            textContentType="username"
+            textContentType="emailAddress"
             value={email}
           />
 
           <Text style={styles.label}>Password</Text>
           <View style={styles.passwordRow}>
             <TextInput
+              ref={passwordRef}
               autoCapitalize="none"
+              autoComplete="password"
               autoCorrect={false}
               onChangeText={updatePassword}
+              onSubmitEditing={submit}
               placeholder="Password"
               placeholderTextColor="#9AA7A3"
               returnKeyType="done"
@@ -166,36 +145,13 @@ const styles = StyleSheet.create({
     paddingTop: Platform.select({ ios: 92, android: 62, default: 76 })
   },
   logo: {
-    alignSelf: "flex-start",
-    height: 112,
-    marginBottom: 66,
-    width: 284
+    alignSelf: "center",
+    height: 180,
+    marginBottom: 34,
+    width: 320
   },
   form: {
     width: "100%"
-  },
-  sessionBox: {
-    alignItems: "center",
-    backgroundColor: colors.field,
-    borderColor: colors.fieldBorder,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12
-  },
-  sessionText: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  signOutText: {
-    color: colors.brand,
-    fontSize: 13,
-    fontWeight: "800"
   },
   label: {
     color: colors.brandDeep,

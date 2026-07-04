@@ -1,3 +1,7 @@
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+type ServiceClient = SupabaseClient;
+
 const COMPANYCAM_API_BASE = "https://api.companycam.com/v2";
 const DEFAULT_PER_PAGE = 30;
 const MAX_PER_PAGE = 100;
@@ -18,45 +22,84 @@ Deno.serve(async (req) => {
   }
 
   const companyCamToken = Deno.env.get("COMPANYCAM_API_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
   if (!companyCamToken) return json({ error: "Missing COMPANYCAM_API_KEY secret" }, 500);
+  if (!supabaseUrl || !serviceRoleKey) return json({ error: "Missing Supabase service environment" }, 500);
 
-  const input = await readInput(req);
-  const projectId = String(input.projectId ?? input.project_id ?? input.id ?? "").trim();
-  if (!projectId) return json({ error: "Missing CompanyCam projectId" }, 400);
-
-  const page = clampNumber(input.page, 1, 1, 500);
-  const perPage = clampNumber(input.perPage ?? input.per_page, DEFAULT_PER_PAGE, 1, MAX_PER_PAGE);
-
-  const url = new URL(`${COMPANYCAM_API_BASE}/projects/${encodeURIComponent(projectId)}/photos`);
-  url.searchParams.set("page", String(page));
-  url.searchParams.set("per_page", String(perPage));
-
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      Authorization: `Bearer ${companyCamToken}`,
-    },
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  if (!response.ok) {
-    const message = await response.text();
-    return json({ error: `CompanyCam returned ${response.status}: ${message}` }, response.status);
+  try {
+    await authorizeEmployee(req, supabase);
+
+    const input = await readInput(req);
+    const projectId = String(input.projectId ?? input.project_id ?? input.id ?? "").trim();
+    if (!projectId) throw httpError("Missing CompanyCam projectId", 400);
+
+    const page = clampNumber(input.page, 1, 1, 500);
+    const perPage = clampNumber(input.perPage ?? input.per_page, DEFAULT_PER_PAGE, 1, MAX_PER_PAGE);
+
+    const url = new URL(`${COMPANYCAM_API_BASE}/projects/${encodeURIComponent(projectId)}/photos`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per_page", String(perPage));
+
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        Authorization: `Bearer ${companyCamToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      // Log the real upstream detail server-side, but return a generic 502 so we
+      // don't forward CompanyCam's status codes or response body to the client.
+      const message = await response.text();
+      console.error(`CompanyCam returned ${response.status}: ${message}`);
+      throw httpError("Upstream CompanyCam request failed", 502);
+    }
+
+    const payload = await response.json();
+    const rawPhotos = extractPhotos(payload);
+    const photos = rawPhotos.map(normalizePhoto).filter((photo) => photo.thumbnailUrl || photo.url);
+
+    return json({
+      projectId,
+      page,
+      perPage,
+      count: photos.length,
+      nextCursor: response.headers.get("X-Next-Cursor"),
+      prevCursor: response.headers.get("X-Prev-Cursor"),
+      photos,
+    });
+  } catch (error) {
+    const status = Number(error?.status || 500);
+    return json({ error: error?.message || "CompanyCam photos request failed" }, status);
   }
-
-  const payload = await response.json();
-  const rawPhotos = extractPhotos(payload);
-  const photos = rawPhotos.map(normalizePhoto).filter((photo) => photo.thumbnailUrl || photo.url);
-
-  return json({
-    projectId,
-    page,
-    perPage,
-    count: photos.length,
-    nextCursor: response.headers.get("X-Next-Cursor"),
-    prevCursor: response.headers.get("X-Prev-Cursor"),
-    photos,
-  });
 });
+
+async function authorizeEmployee(req: Request, supabase: ServiceClient) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw httpError("Missing employee authorization", 401);
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw httpError("Invalid employee authorization", 401);
+
+  const { data: profile, error: profileError } = await supabase
+    .from("employee_profiles")
+    .select("user_id,is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw httpError(profileError.message, 500);
+  if (!profile?.is_active) throw httpError("Only active employees can view CompanyCam photos", 403);
+
+  return { userId: user.id };
+}
 
 async function readInput(req: Request) {
   const url = new URL(req.url);
@@ -195,6 +238,12 @@ function toIsoDate(value: unknown) {
   if (!value) return null;
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function httpError(message: string, status: number) {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
 }
 
 function json(body: unknown, status = 200) {

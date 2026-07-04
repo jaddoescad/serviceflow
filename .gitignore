@@ -2,6 +2,7 @@
 .expo/
 web-build/
 build/
+qa-artifacts/
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -18,3 +19,7 @@ ios/build/
 ios/DerivedData/
 ios/*.xcworkspace/xcuserdata/
 ios/**/xcuserdata/
+
+# Android release signing
+android/keystore.properties
+android/app/*.jks

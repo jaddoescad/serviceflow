@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getLatestActiveCompanyCamProject, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
@@ -27,6 +29,9 @@ const COLORS = {
   muted: "#8b9692",
   border: "#e0e3e1",
 };
+const BOX_NONE_PROPS = Platform.OS === "web" ? {} : { pointerEvents: "box-none" };
+// Don't auto-target a "nearest" project for clock-in if it's unreasonably far away.
+const NEAREST_PROJECT_RADIUS_METERS = 2000;
 
 function formatSignedMinutes(minutes) {
   const value = Math.round(minutes || 0);
@@ -50,6 +55,7 @@ export default function ClockInScreen({
   onSwitchProject,
   onUpdateTimeEntry,
 }) {
+  const insets = useSafeAreaInsets();
   const [defaultProject, setDefaultProject] = useState(null);
   const [selectedProject, setSelectedProject] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +66,9 @@ export default function ClockInScreen({
   const [searchError, setSearchError] = useState("");
   const [foregroundPoint, setForegroundPoint] = useState(null);
   const [clockingIn, setClockingIn] = useState(false);
+  const [clockingOut, setClockingOut] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [adjustingStart, setAdjustingStart] = useState(false);
   const [clockInError, setClockInError] = useState("");
 
   useEffect(() => {
@@ -112,7 +121,11 @@ export default function ClockInScreen({
     () => findNearestProject(projects, currentPoint),
     [currentPoint?.latitude, currentPoint?.longitude, projects],
   );
-  const displayProject = activeShift?.project || selectedProject || nearestProject?.project || defaultProject;
+  const nearestWithinRadius =
+    nearestProject && nearestProject.distanceMeters <= NEAREST_PROJECT_RADIUS_METERS
+      ? nearestProject.project
+      : null;
+  const displayProject = activeShift?.project || selectedProject || nearestWithinRadius || defaultProject;
   const displayClockedInAt = activeShift?.startedAt ? new Date(activeShift.startedAt) : null;
   const isClockedIn = !!activeShift;
 
@@ -218,24 +231,56 @@ export default function ClockInScreen({
   };
 
   const stopClockIn = async () => {
-    await onClockOut?.("manual");
+    if (clockingOut) return;
+    setClockingOut(true);
+    setClockInError("");
+    try {
+      const entry = await onClockOut?.("manual");
+      if (!entry) setClockInError("Clock out could not complete. Try again.");
+    } catch (nextError) {
+      setClockInError(nextError?.message || "Clock out could not complete. Try again.");
+    } finally {
+      setClockingOut(false);
+    }
   };
 
   const switchSuggestedProject = async () => {
-    if (!suggestedProject) return;
-    await onSwitchProject?.(suggestedProject);
+    if (!suggestedProject || switching) return;
+    setSwitching(true);
+    setClockInError("");
+    try {
+      const shift = await onSwitchProject?.(suggestedProject);
+      if (!shift) {
+        setClockInError("Switch could not complete. Check location permissions and try again.");
+      }
+    } catch (nextError) {
+      setClockInError(nextError?.message || "Switch could not complete. Try again.");
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const adjustActiveStart = async (minutes) => {
-    if (!activeShift?.startedAt) return;
+    if (!activeShift?.startedAt || adjustingStart) return;
     const currentStart = new Date(activeShift.startedAt);
     const nextStart = new Date(currentStart.getTime() + minutes * 60000);
-    if (nextStart.getTime() > Date.now()) return;
-    await onUpdateTimeEntry?.(activeShift, {
-      startedAt: nextStart.toISOString(),
-      adjustmentSource: "active_start_edit",
-      skipAdjustmentHistory: true,
-    });
+    if (nextStart.getTime() > Date.now()) {
+      setClockInError("Start time can't be later than now.");
+      return;
+    }
+    setAdjustingStart(true);
+    setClockInError("");
+    try {
+      await onUpdateTimeEntry?.(activeShift, {
+        startedAt: nextStart.toISOString(),
+        adjustmentSource: "active_start_edit",
+        skipAdjustmentHistory: true,
+      });
+    } catch (nextError) {
+      setClockInError(nextError?.message || "Could not adjust start time. Try again.");
+    } finally {
+      setAdjustingStart(false);
+    }
   };
 
   const clockInFeedback = trackingNotice?.message || clockInError;
@@ -254,6 +299,10 @@ export default function ClockInScreen({
         locationStatus={locationStatus}
         suggestedProject={suggestedProject}
         painterName={painterName}
+        clockingOut={clockingOut}
+        switching={switching}
+        adjustingStart={adjustingStart}
+        actionError={clockInError}
         onAdjustStart={adjustActiveStart}
         onSwitchProject={switchSuggestedProject}
         onClockOut={stopClockIn}
@@ -276,7 +325,13 @@ export default function ClockInScreen({
           <TextInput
             style={styles.searchInput}
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(text) => {
+              setSearchQuery(text);
+              // Flip to the pending/searching state synchronously so the
+              // "No matching projects found." empty state doesn't flash during
+              // the 250ms debounce before the query has actually run.
+              if (text.trim()) setSearching(true);
+            }}
             placeholder="Search projects"
             placeholderTextColor={COLORS.muted}
             autoCapitalize="none"
@@ -329,9 +384,10 @@ export default function ClockInScreen({
           currentPoint={currentPoint}
           onSelectProject={selectProject}
           onRequestLocation={refreshForegroundLocation}
+          bottomInset={insets.bottom}
         />
 
-        <View style={styles.projectCardWrap} pointerEvents="box-none">
+        <View style={styles.projectCardWrap} {...BOX_NONE_PROPS}>
           <Pressable
             style={({ pressed }) => [styles.projectCard, pressed && displayProject && styles.projectCardPressed]}
             disabled={!displayProject}
@@ -369,7 +425,7 @@ export default function ClockInScreen({
           </Pressable>
         </View>
 
-        <View style={styles.clockInWrap} pointerEvents="box-none">
+        <View style={[styles.clockInWrap, { bottom: insets.bottom + 22 }]} {...BOX_NONE_PROPS}>
           {clockInFeedback ? (
             <View style={styles.clockInFeedback}>
               <Ionicons name="alert-circle" size={16} color={COLORS.navy} />
@@ -377,6 +433,8 @@ export default function ClockInScreen({
             </View>
           ) : null}
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Start clock in"
             disabled={clockInDisabled}
             style={({ pressed }) => [
               styles.clockInPill,
@@ -418,6 +476,10 @@ function ActiveClockInView({
   trackingNotice,
   locationStatus,
   suggestedProject,
+  clockingOut = false,
+  switching = false,
+  adjustingStart = false,
+  actionError = "",
   onAdjustStart,
   onSwitchProject,
   onClockOut,
@@ -481,10 +543,24 @@ function ActiveClockInView({
           ) : null}
 
           {suggestedProject ? (
-            <Pressable style={styles.switchProjectButton} onPress={onSwitchProject}>
-              <Ionicons name="swap-horizontal" size={17} color={COLORS.white} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${suggestedProject.name}`}
+              disabled={switching}
+              style={({ pressed }) => [
+                styles.switchProjectButton,
+                switching && styles.buttonBusy,
+                pressed && !switching && styles.clockOutPressed,
+              ]}
+              onPress={onSwitchProject}
+            >
+              {switching ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Ionicons name="swap-horizontal" size={17} color={COLORS.white} />
+              )}
               <Text style={styles.switchProjectText} numberOfLines={1}>
-                Switch to {suggestedProject.name}
+                {switching ? "Switching…" : `Switch to ${suggestedProject.name}`}
               </Text>
             </Pressable>
           ) : null}
@@ -495,24 +571,49 @@ function ActiveClockInView({
           </View>
 
           <Pressable
-            style={({ pressed }) => [styles.clockOutButton, pressed && styles.clockOutPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Clock out current shift"
+            disabled={clockingOut}
+            style={({ pressed }) => [
+              styles.clockOutButton,
+              clockingOut && styles.buttonBusy,
+              pressed && !clockingOut && styles.clockOutPressed,
+            ]}
             onPress={onClockOut}
           >
-            <Ionicons name="stop-circle-outline" size={20} color={COLORS.white} />
-            <Text style={styles.clockOutText}>Clock Out</Text>
+            {clockingOut ? (
+              <ActivityIndicator size="small" color={COLORS.white} />
+            ) : (
+              <Ionicons name="stop-circle-outline" size={20} color={COLORS.white} />
+            )}
+            <Text style={styles.clockOutText}>{clockingOut ? "Clocking Out" : "Clock Out"}</Text>
           </Pressable>
+
+          {actionError ? <Text style={styles.activeErrorText}>{actionError}</Text> : null}
         </View>
 
         <View style={styles.activeRowCard}>
           <Text style={styles.activeRowLabel}>Edit Start Time</Text>
           <View style={styles.startTimeControls}>
-            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(-5)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Move start time 5 minutes earlier"
+              disabled={adjustingStart}
+              style={[styles.startAdjustButton, adjustingStart && styles.buttonBusy]}
+              onPress={() => onAdjustStart?.(-5)}
+            >
               <Text style={styles.startAdjustText}>-5m</Text>
             </Pressable>
             <View style={styles.startTimePill}>
               <Text style={styles.startTimeText}>{startTimeLabel}</Text>
             </View>
-            <Pressable style={styles.startAdjustButton} onPress={() => onAdjustStart?.(5)}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Move start time 5 minutes later"
+              disabled={adjustingStart}
+              style={[styles.startAdjustButton, adjustingStart && styles.buttonBusy]}
+              onPress={() => onAdjustStart?.(5)}
+            >
               <Text style={styles.startAdjustText}>+5m</Text>
             </Pressable>
           </View>
@@ -668,6 +769,16 @@ const styles = StyleSheet.create({
   },
   clockOutPressed: {
     opacity: 0.88,
+  },
+  buttonBusy: {
+    opacity: 0.6,
+  },
+  activeErrorText: {
+    marginTop: 10,
+    color: "#b42318",
+    fontSize: 12.5,
+    fontWeight: "800",
+    textAlign: "center",
   },
   clockOutText: {
     color: COLORS.white,
@@ -840,11 +951,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    ...Platform.select({
+      web: { boxShadow: "0 4px 10px rgba(0,0,0,0.08)" },
+      default: {
+        shadowColor: "#000",
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 4,
+      },
+    }),
   },
   searchResultRow: {
     flexDirection: "row",
@@ -904,11 +1020,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    ...Platform.select({
+      web: { boxShadow: "0 4px 10px rgba(0,0,0,0.08)" },
+      default: {
+        shadowColor: "#000",
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 3,
+      },
+    }),
     overflow: "hidden",
   },
   projectCardPressed: {
@@ -955,11 +1076,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 32,
     gap: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    ...Platform.select({
+      web: { boxShadow: "0 6px 12px rgba(0,0,0,0.2)" },
+      default: {
+        shadowColor: "#000",
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
+      },
+    }),
   },
   clockInFeedback: {
     maxWidth: "86%",
@@ -973,11 +1099,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    ...Platform.select({
+      web: { boxShadow: "0 4px 8px rgba(0,0,0,0.12)" },
+      default: {
+        shadowColor: "#000",
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 3,
+      },
+    }),
   },
   clockInFeedbackText: {
     flex: 1,

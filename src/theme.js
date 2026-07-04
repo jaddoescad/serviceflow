@@ -19,6 +19,20 @@ export const colors = {
   border: "#e2e8f0"
 };
 
+// Shared operational-UI palette used by App.js and ProjectsScreen (previously
+// duplicated as identical local COLORS objects). ProjectDetailScreen keeps its
+// own distinct brand palette on purpose, so it is intentionally not consolidated here.
+export const palette = {
+  green: "#173f37",
+  teal: "#2f8d7f",
+  brown: "#7c5127",
+  white: "#ffffff",
+  surface: "#f7f8f7",
+  border: "#e0e3e1",
+  muted: "#8b9692",
+  ink: "#11201d"
+};
+
 export const radius = {
   card: 14,
   button: 12
