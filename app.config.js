@@ -22,7 +22,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ottawapainters.app",
-      buildNumber: "4",
+      buildNumber: "5",
       config: googleMapsApiKeyIos
         ? {
             googleMapsApiKey: googleMapsApiKeyIos
