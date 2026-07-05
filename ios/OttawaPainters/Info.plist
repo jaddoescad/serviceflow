@@ -7,7 +7,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>Ottawa Painters</string>
+    <string>ServiceFlow</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -19,7 +19,7 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.3</string>
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleURLTypes</key>
@@ -32,7 +32,9 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>4</string>
+    <key>GMSApiKey</key>
+    <string>AIzaSyDINaaGARjrPxhPBUDi8vcoVqq5RQV0WdI</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
@@ -45,11 +47,13 @@
       <true/>
     </dict>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Ottawa Painters uses your location while you are clocked in to track job-site and travel time.</string>
+    <string>ServiceFlow uses your location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.</string>
     <key>NSLocationAlwaysUsageDescription</key>
-    <string>Ottawa Painters uses background location while you are clocked in to track job-site and travel time.</string>
+    <string>ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Ottawa Painters uses your location while you are clocked in to confirm job-site time.</string>
+    <string>ServiceFlow uses your location while you are clocked in to confirm job-site time.</string>
+    <key>RCTNewArchEnabled</key>
+    <false/>
     <key>UIBackgroundModes</key>
     <array>
       <string>location</string>

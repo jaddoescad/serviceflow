@@ -29,6 +29,7 @@ module.exports = {
           }
         : undefined,
       infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
         UIBackgroundModes: ["location", "fetch"],
         NSLocationWhenInUseUsageDescription:
           "ServiceFlow uses your location while you are clocked in to confirm job-site time.",

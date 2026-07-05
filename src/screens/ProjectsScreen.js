@@ -50,6 +50,7 @@ export default function ProjectsScreen({
   // fetches being kicked off within the same frame (synchronous flag).
   const requestIdRef = useRef(0);
   const isFetchingRef = useRef(false);
+  const hasLoadedProjectsRef = useRef(false);
   const activeProjectId = getProjectId(activeShift?.project);
   const trackedProjectIdsKey = getProjectIdsKey(Object.keys(projectTimeTotals || {}));
   const trackedProjectIds = useMemo(
@@ -69,7 +70,8 @@ export default function ProjectsScreen({
   const loadProjects = useCallback(async ({ quiet = false, pageToLoad = 0, append = false } = {}) => {
     const requestId = ++requestIdRef.current;
     isFetchingRef.current = true;
-    if (!quiet && !append) setLoading(true);
+    const shouldShowInitialLoader = !quiet && !append && !hasLoadedProjectsRef.current;
+    if (shouldShowInitialLoader) setLoading(true);
     if (append) setLoadingMore(true);
     setError("");
 
@@ -108,7 +110,8 @@ export default function ProjectsScreen({
       setHasMore(count == null ? nextProjects.length === PROJECTS_PAGE_SIZE : loadedThrough < count);
     }
 
-    if (!quiet && !append) setLoading(false);
+    hasLoadedProjectsRef.current = true;
+    if (shouldShowInitialLoader) setLoading(false);
     if (append) setLoadingMore(false);
     isFetchingRef.current = false;
   }, [filter, relevantAssignedIds, searchQuery]);

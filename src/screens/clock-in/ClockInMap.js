@@ -33,6 +33,7 @@ export default function ClockInMap({
   projects,
   currentPoint,
   onSelectProject,
+  onDismissSearch,
   onRequestLocation,
   bottomInset = 0,
 }) {
@@ -55,7 +56,10 @@ export default function ClockInMap({
   // native map just because this callback prop got a new reference.
   const onSelectRef = useRef(onSelectProject);
   onSelectRef.current = onSelectProject;
+  const onDismissSearchRef = useRef(onDismissSearch);
+  onDismissSearchRef.current = onDismissSearch;
   const handleSelectProject = useCallback((selected) => {
+    onDismissSearchRef.current?.();
     onSelectRef.current?.(selected);
   }, []);
 
@@ -208,6 +212,7 @@ export default function ClockInMap({
         showsBuildings
         showsUserLocation
         moveOnMarkerPress={false}
+        onPress={() => onDismissSearchRef.current?.()}
         onLayout={() => setMapReady(true)}
         onMapReady={() => {
           setNativeMapReady(true);

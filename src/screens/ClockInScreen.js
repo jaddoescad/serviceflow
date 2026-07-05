@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
@@ -201,6 +202,7 @@ export default function ClockInScreen({
   }, [searchQuery]);
 
   const selectProject = (nextProject) => {
+    Keyboard.dismiss();
     setSelectedProject(nextProject);
     setLoading(false);
     setSearchQuery("");
@@ -337,6 +339,8 @@ export default function ClockInScreen({
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
           />
           {searching ? (
             <ActivityIndicator size="small" color={COLORS.teal} />
@@ -383,6 +387,7 @@ export default function ClockInScreen({
           projects={projects}
           currentPoint={currentPoint}
           onSelectProject={selectProject}
+          onDismissSearch={Keyboard.dismiss}
           onRequestLocation={refreshForegroundLocation}
           bottomInset={insets.bottom}
         />
@@ -391,7 +396,10 @@ export default function ClockInScreen({
           <Pressable
             style={({ pressed }) => [styles.projectCard, pressed && displayProject && styles.projectCardPressed]}
             disabled={!displayProject}
-            onPress={() => displayProject && onViewProject?.(displayProject)}
+            onPress={() => {
+              Keyboard.dismiss();
+              if (displayProject) onViewProject?.(displayProject);
+            }}
           >
             <View style={styles.projectThumb}>
               <Ionicons name="map" size={22} color={COLORS.teal} />
@@ -441,7 +449,10 @@ export default function ClockInScreen({
               clockInDisabled && styles.clockInDisabled,
               pressed && !clockInDisabled && styles.clockInPressed,
             ]}
-            onPress={startClockIn}
+            onPress={() => {
+              Keyboard.dismiss();
+              startClockIn();
+            }}
           >
             <View style={styles.playCircle}>
               {clockingIn ? (
