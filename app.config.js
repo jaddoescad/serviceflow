@@ -5,12 +5,15 @@
 const googleMapsApiKeyIos = process.env.GOOGLE_MAPS_API_KEY_IOS || process.env.GOOGLE_MAPS_API_KEY;
 const googleMapsApiKeyAndroid = process.env.GOOGLE_MAPS_API_KEY_ANDROID || process.env.GOOGLE_MAPS_API_KEY;
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || "93638a9a-d605-4fee-800e-6449ca444429";
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabasePublishableKey =
+  process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 module.exports = {
   expo: {
     name: "ServiceFlow",
     slug: "serviceflow",
-    version: "1.0.5",
+    version: "1.0.6",
     orientation: "portrait",
     icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
@@ -42,7 +45,7 @@ module.exports = {
     },
     android: {
       package: "com.ottawapainters.app",
-      versionCode: 6,
+      versionCode: 7,
       adaptiveIcon: {
         foregroundImage: "./assets/serviceflow-adaptive-icon.png",
         backgroundColor: "#FFFFFF"
@@ -86,6 +89,8 @@ module.exports = {
     ],
     extra: {
       appTitle: "ServiceFlow",
+      supabaseUrl,
+      supabasePublishableKey,
       expoProjectId: easProjectId,
       eas: easProjectId
         ? {
