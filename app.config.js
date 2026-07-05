@@ -4,6 +4,7 @@
 // blank, so both platforms need a key once we switch to PROVIDER_GOOGLE.
 const googleMapsApiKeyIos = process.env.GOOGLE_MAPS_API_KEY_IOS || process.env.GOOGLE_MAPS_API_KEY;
 const googleMapsApiKeyAndroid = process.env.GOOGLE_MAPS_API_KEY_ANDROID || process.env.GOOGLE_MAPS_API_KEY;
+const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || "93638a9a-d605-4fee-800e-6449ca444429";
 
 module.exports = {
   expo: {
@@ -84,7 +85,13 @@ module.exports = {
       "expo-notifications"
     ],
     extra: {
-      appTitle: "ServiceFlow"
+      appTitle: "ServiceFlow",
+      expoProjectId: easProjectId,
+      eas: easProjectId
+        ? {
+            projectId: easProjectId
+          }
+        : undefined
     }
   }
 }

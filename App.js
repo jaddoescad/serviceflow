@@ -28,6 +28,7 @@ import LocationPermissionBlocker, {
 import { supabase } from "./src/lib/supabase";
 import { useTimeTracking } from "./src/lib/timeTracking";
 import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
+import { registerPushToken } from "./src/lib/pushTokenRegistration";
 import { palette as COLORS } from "./src/theme";
 
 const TABS = [
@@ -82,6 +83,11 @@ function AppRoot() {
 
   const canManageProjects = ["admin", "manager"].includes(employeeProfile?.role);
   const tracking = useTimeTracking(trackingProjects, sessionUser);
+
+  useEffect(() => {
+    if (!sessionUser?.id) return;
+    registerPushToken(sessionUser).catch(() => {});
+  }, [sessionUser?.id]);
 
   if (loading) {
     return (
