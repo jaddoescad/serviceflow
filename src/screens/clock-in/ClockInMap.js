@@ -27,6 +27,7 @@ const OTTAWA_REGION = {
 // the pin's screen point (the teardrop tip); we center the pill this far above.
 const PROJECT_LABEL_WIDTH = 168;
 const PROJECT_LABEL_OFFSET_Y = 66;
+const PROJECT_LABEL_MAX_LATITUDE_DELTA = 0.018;
 
 export default function ClockInMap({
   project,
@@ -39,6 +40,7 @@ export default function ClockInMap({
 }) {
   const mapRef = useRef(null);
   const didSetInitialRegionRef = useRef(false);
+  const lastCenteredProjectIdRef = useRef("");
   const [resolvedSelectedProject, setResolvedSelectedProject] = useState(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
@@ -49,6 +51,7 @@ export default function ClockInMap({
   const projectMarkers = buildProjectMarkers(projects, selectedProjectForMap);
   const selectedMarker = projectMarkers.find((marker) => marker.isSelected);
   const selectedJobCoordinate = selectedMarker?.coordinate || projectCoordinate(selectedProjectForMap);
+  const selectedProjectIdForMap = getProjectId(selectedProjectForMap);
   const userCoordinate = toCoordinate(currentPoint);
   const region = buildMapRegion(selectedJobCoordinate, userCoordinate);
 
@@ -71,6 +74,9 @@ export default function ClockInMap({
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [regionTick, setRegionTick] = useState(0);
   const [showLabels, setShowLabels] = useState(true);
+  const [labelsAllowedByZoom, setLabelsAllowedByZoom] = useState(
+    region.latitudeDelta <= PROJECT_LABEL_MAX_LATITUDE_DELTA,
+  );
   const [labelPoints, setLabelPoints] = useState([]);
   const selectedLabelId = selectedMarker?.id || null;
   const markerKey = projectMarkers
@@ -110,6 +116,23 @@ export default function ClockInMap({
     didSetInitialRegionRef.current = true;
     mapRef.current?.animateToRegion(region, 250);
   }, [region, selectedJobCoordinate, userCoordinate]);
+
+  useEffect(() => {
+    const selectedProjectId = selectedProjectIdForMap;
+    if (!selectedProjectId || !selectedJobCoordinate) return;
+    if (lastCenteredProjectIdRef.current === selectedProjectId) return;
+
+    lastCenteredProjectIdRef.current = selectedProjectId;
+    mapRef.current?.animateToRegion(
+      {
+        latitude: selectedJobCoordinate.latitude,
+        longitude: selectedJobCoordinate.longitude,
+        latitudeDelta: 0.012,
+        longitudeDelta: 0.012,
+      },
+      350,
+    );
+  }, [selectedJobCoordinate?.latitude, selectedJobCoordinate?.longitude, selectedProjectIdForMap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +242,8 @@ export default function ClockInMap({
           setMapUnavailable(false);
         }}
         onRegionChange={() => setShowLabels(false)}
-        onRegionChangeComplete={() => {
+        onRegionChangeComplete={(nextRegion) => {
+          setLabelsAllowedByZoom(nextRegion?.latitudeDelta <= PROJECT_LABEL_MAX_LATITUDE_DELTA);
           setShowLabels(true);
           setRegionTick((tick) => tick + 1);
         }}
@@ -277,6 +301,7 @@ export default function ClockInMap({
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {labelPoints.map((label) => {
             const isSelected = label.id === selectedLabelId;
+            if (!isSelected && !labelsAllowedByZoom) return null;
             return (
               <View
                 key={`label-${label.id}`}
@@ -373,7 +398,7 @@ export function findNearestProject(projects, currentPoint) {
 
   let nearest = null;
   for (const rawProject of projects || []) {
-    if (!rawProject || rawProject.is_archived || rawProject.is_lead) continue;
+    if (!isMappableProject(rawProject)) continue;
     const coordinate = projectCoordinate(rawProject);
     if (!coordinate) continue;
     const distance = distanceMeters(userCoordinate, coordinate);
@@ -412,6 +437,7 @@ function buildProjectMarkers(projects, selectedProject) {
   const markers = [];
 
   for (const rawProject of projects || []) {
+    if (!isMappableProject(rawProject)) continue;
     const coordinate = projectCoordinate(rawProject);
     if (!coordinate) continue;
 
@@ -468,6 +494,10 @@ function buildMapRegion(projectPoint, currentPoint, projectPoints = []) {
     latitudeDelta: 0.012,
     longitudeDelta: 0.012,
   };
+}
+
+function isMappableProject(project) {
+  return project && !project.is_archived;
 }
 
 const styles = StyleSheet.create({

@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
   });
 
   try {
-    await authorizeManager(req, supabase);
+    await authorizeSyncRequest(req, supabase);
 
     const projects = await fetchCompanyCamProjects(companyCamToken);
     const projectsWithLabels = await attachProjectLabels(companyCamToken, projects);
@@ -60,9 +60,19 @@ Deno.serve(async (req) => {
   }
 });
 
-async function authorizeManager(req: Request, supabase: ServiceClient) {
+async function authorizeSyncRequest(req: Request, supabase: ServiceClient) {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const cronSecret = Deno.env.get("COMPANYCAM_SYNC_CRON_SECRET");
+
+  if (cronSecret && token && token === cronSecret) {
+    return { userId: "companycam-sync-cron", role: "cron" };
+  }
+
+  return authorizeManagerToken(token, supabase);
+}
+
+async function authorizeManagerToken(token: string, supabase: ServiceClient) {
   if (!token) throw httpError("Missing manager authorization", 401);
 
   const { data: userData, error: userError } = await supabase.auth.getUser(token);
@@ -241,7 +251,7 @@ function normalizeProject(
     companycam_id: companycamId,
     name: toText(project.name ?? project.title ?? `CompanyCam Project ${companycamId}`),
     labels,
-    is_lead: hasLeadLabel(labels),
+    is_lead: isLeadOnlyProject(labels),
     street_address_1: toNullableText(address.street_address_1 ?? address.line_1 ?? address.address_1),
     street_address_2: toNullableText(address.street_address_2 ?? address.line_2 ?? address.address_2),
     city: toNullableText(address.city),
@@ -289,22 +299,26 @@ function toIsoDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-function hasLeadLabel(labels: unknown[]) {
-  return labels.some((label) => {
-    const labelObject = asObject(label);
-    const text = toNullableText(
-      labelObject.value ??
-      labelObject.display_value ??
-      labelObject.name ??
-      labelObject.title ??
-      label,
-    );
+function normalizeLabelText(label: unknown) {
+  const labelObject = asObject(label);
+  const text = toNullableText(
+    labelObject.value ??
+    labelObject.display_value ??
+    labelObject.name ??
+    labelObject.title ??
+    label,
+  );
 
-    if (!text) return false;
+  return text?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() || "";
+}
 
-    const normalized = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    return normalized === "lead" || normalized === "leads";
-  });
+function isLeadOnlyProject(labels: unknown[]) {
+  const normalizedLabels = labels
+    .map(normalizeLabelText)
+    .filter(Boolean);
+
+  return normalizedLabels.some((label) => label === "lead" || label === "leads") &&
+    !normalizedLabels.some((label) => label !== "lead" && label !== "leads");
 }
 
 function isArchivedProject(project: Record<string, unknown>) {

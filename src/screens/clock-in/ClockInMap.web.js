@@ -123,7 +123,7 @@ export function findNearestProject(projects, currentPoint) {
 
   let nearest = null;
   for (const rawProject of projects || []) {
-    if (!rawProject || rawProject.is_archived || rawProject.is_lead) continue;
+    if (!isMappableProject(rawProject)) continue;
     const coordinate = toCoordinate(rawProject);
     if (!coordinate) continue;
     const distance = distanceMeters(userCoordinate, coordinate);
@@ -153,7 +153,7 @@ function buildNearbyProjects(projects, userCoordinate, selectedProjectId) {
   const ranked = [];
 
   for (const candidate of projects || []) {
-    if (!candidate || candidate.is_archived || candidate.is_lead) continue;
+    if (!isMappableProject(candidate)) continue;
     const id = getProjectId(candidate);
     if (!id || seen.has(id)) continue;
     seen.add(id);
@@ -178,6 +178,10 @@ function buildNearbyProjects(projects, userCoordinate, selectedProjectId) {
       return a.distanceMeters - b.distanceMeters;
     })
     .slice(0, 6);
+}
+
+function isMappableProject(project) {
+  return project && !project.is_archived;
 }
 
 const styles = StyleSheet.create({

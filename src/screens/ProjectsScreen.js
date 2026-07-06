@@ -186,18 +186,21 @@ export default function ProjectsScreen({
 
   const assignedProjectIdSet = useMemo(() => new Set(relevantAssignedIds), [relevantAssignedIds]);
   const trackedProjectIdSet = useMemo(() => new Set(trackedProjectIds), [trackedProjectIds]);
-  const ongoing = useMemo(() => projects.filter((p) => !p.is_archived), [projects]);
   const isSearching = searchQuery.length > 0;
+  const visibleProjects = useMemo(
+    () => (isSearching ? projects : projects.filter((p) => !p.is_archived)),
+    [isSearching, projects],
+  );
   const filtered = useMemo(
-    () => (filter === "assigned" && !isSearching ? ongoing.filter((project) => assignedProjectIdSet.has(getProjectId(project))) : ongoing),
-    [assignedProjectIdSet, filter, isSearching, ongoing],
+    () => (filter === "assigned" && !isSearching ? visibleProjects.filter((project) => assignedProjectIdSet.has(getProjectId(project))) : visibleProjects),
+    [assignedProjectIdSet, filter, isSearching, visibleProjects],
   );
   const activeProject = useMemo(() => {
     if (!activeProjectId || isSearching) return null;
 
-    const loadedProject = ongoing.find((project) => getProjectId(project) === activeProjectId);
+    const loadedProject = visibleProjects.find((project) => getProjectId(project) === activeProjectId);
     return loadedProject || activeShift.project;
-  }, [activeProjectId, activeShift?.project, isSearching, ongoing]);
+  }, [activeProjectId, activeShift?.project, isSearching, visibleProjects]);
   const featured = activeProject;
   const featuredStatusLabel = activeShift?.onSite === false ? "Off site" : "Clocked in";
   const remaining = featured
@@ -316,7 +319,7 @@ export default function ProjectsScreen({
                     : "Active Projects"}
               </Text>
               <Text style={styles.sectionCount}>
-                ({filter === "assigned" || isSearching ? filtered.length : (totalProjects ?? ongoing.length)})
+                ({filter === "assigned" || isSearching ? filtered.length : (totalProjects ?? visibleProjects.length)})
               </Text>
             </View>
 
