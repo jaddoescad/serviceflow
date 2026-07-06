@@ -27,7 +27,7 @@ const OTTAWA_REGION = {
 // the pin's screen point (the teardrop tip); we center the pill this far above.
 const PROJECT_LABEL_WIDTH = 168;
 const PROJECT_LABEL_OFFSET_Y = 66;
-const PROJECT_LABEL_MAX_LATITUDE_DELTA = 0.018;
+const PROJECT_LABEL_MAX_LATITUDE_DELTA = 0.12;
 
 export default function ClockInMap({
   project,
@@ -74,11 +74,10 @@ export default function ClockInMap({
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [regionTick, setRegionTick] = useState(0);
   const [showLabels, setShowLabels] = useState(true);
-  const [labelsAllowedByZoom, setLabelsAllowedByZoom] = useState(
-    region.latitudeDelta <= PROJECT_LABEL_MAX_LATITUDE_DELTA,
-  );
+  const [currentLatitudeDelta, setCurrentLatitudeDelta] = useState(region.latitudeDelta);
   const [labelPoints, setLabelPoints] = useState([]);
   const selectedLabelId = selectedMarker?.id || null;
+  const labelsAllowedByZoom = currentLatitudeDelta <= PROJECT_LABEL_MAX_LATITUDE_DELTA;
   const markerKey = projectMarkers
     .map((marker) => `${marker.id}:${marker.coordinate.latitude.toFixed(5)},${marker.coordinate.longitude.toFixed(5)}`)
     .join("|");
@@ -102,6 +101,7 @@ export default function ClockInMap({
           }
         : region;
 
+      setCurrentLatitudeDelta(targetRegion.latitudeDelta);
       mapRef.current?.animateToRegion(targetRegion, 350);
     } catch (_error) {
       setLocationError("Could not get your location. Try again.");
@@ -123,6 +123,7 @@ export default function ClockInMap({
     if (lastCenteredProjectIdRef.current === selectedProjectId) return;
 
     lastCenteredProjectIdRef.current = selectedProjectId;
+    setCurrentLatitudeDelta(0.012);
     mapRef.current?.animateToRegion(
       {
         latitude: selectedJobCoordinate.latitude,
@@ -243,7 +244,9 @@ export default function ClockInMap({
         }}
         onRegionChange={() => setShowLabels(false)}
         onRegionChangeComplete={(nextRegion) => {
-          setLabelsAllowedByZoom(nextRegion?.latitudeDelta <= PROJECT_LABEL_MAX_LATITUDE_DELTA);
+          if (Number.isFinite(nextRegion?.latitudeDelta)) {
+            setCurrentLatitudeDelta(nextRegion.latitudeDelta);
+          }
           setShowLabels(true);
           setRegionTick((tick) => tick + 1);
         }}

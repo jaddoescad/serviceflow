@@ -11,6 +11,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "office": "node scripts/office.cjs",
+    "deploy:android:closed": "eas build --platform android --profile production --auto-submit --non-interactive",
+    "submit:android:closed": "eas submit --platform android --profile production --latest --non-interactive",
     "web": "expo start --web",
     "qa:node": "node scripts/qa-node-version.cjs",
     "qa:doctor": "expo-doctor",
