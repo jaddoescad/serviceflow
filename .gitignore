@@ -24,3 +24,4 @@ ios/**/xcuserdata/
 # Android release signing
 android/keystore.properties
 android/app/*.jks
+credentials.json
