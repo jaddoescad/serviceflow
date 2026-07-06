@@ -13,7 +13,7 @@ module.exports = {
   expo: {
     name: "ServiceFlow",
     slug: "serviceflow",
-    version: "1.0.7",
+    version: "1.0.8",
     orientation: "portrait",
     icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
@@ -45,7 +45,8 @@ module.exports = {
     },
     android: {
       package: "com.ottawapainters.app",
-      versionCode: 8,
+      versionCode: 9,
+      googleServicesFile: "./android/app/google-services.json",
       adaptiveIcon: {
         foregroundImage: "./assets/serviceflow-adaptive-icon.png",
         backgroundColor: "#FFFFFF"
