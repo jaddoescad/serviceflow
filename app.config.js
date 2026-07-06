@@ -13,7 +13,7 @@ module.exports = {
   expo: {
     name: "ServiceFlow",
     slug: "serviceflow",
-    version: "1.0.8",
+    version: "1.0.9",
     orientation: "portrait",
     icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
