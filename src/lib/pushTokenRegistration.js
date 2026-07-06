@@ -13,12 +13,28 @@ function getExpoProjectId() {
   );
 }
 
+async function configureAndroidNotificationChannel() {
+  if (Platform.OS !== "android") return;
+
+  await Notifications.setNotificationChannelAsync("default", {
+    name: "Default",
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: "#2F8D7F",
+  });
+}
+
 export async function registerPushToken(user) {
   if (Platform.OS === "web" || !user?.id) return { token: null, error: null };
 
   try {
-    const permission = await Notifications.requestPermissionsAsync();
-    if (!permission.granted) return { token: null, error: null };
+    await configureAndroidNotificationChannel();
+
+    const existingPermission = await Notifications.getPermissionsAsync();
+    const permission = existingPermission.granted
+      ? existingPermission
+      : await Notifications.requestPermissionsAsync();
+    if (!permission.granted) return { token: null, error: null, permission };
 
     const projectId = getExpoProjectId();
     const tokenResponse = projectId

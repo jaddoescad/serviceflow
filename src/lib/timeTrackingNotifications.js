@@ -116,6 +116,15 @@ export async function requestNotificationPermissions() {
   if (Platform.OS === "web") return false;
 
   try {
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Default",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#2F8D7F",
+      });
+    }
+
     const response = await Notifications.requestPermissionsAsync();
     const granted = !!response.granted;
     if (granted) await configureNotificationActions();
