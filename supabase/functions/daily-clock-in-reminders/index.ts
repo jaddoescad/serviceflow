@@ -5,6 +5,18 @@ type ServiceClient = SupabaseClient;
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const EXPO_RECEIPT_URL = "https://exp.host/--/api/v2/push/getReceipts";
 const BATCH_SIZE = 100;
+const REMINDERS = {
+  clock_in: {
+    title: "Don't forget to clock in",
+    body: "Clock in before you start work today.",
+    dataType: "daily_clock_in_reminder",
+  },
+  clock_out: {
+    title: "Don't forget to clock out",
+    body: "Clock out before you leave for the day.",
+    dataType: "daily_clock_out_reminder",
+  },
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +52,8 @@ Deno.serve(async (req) => {
   });
 
   try {
+    const requestBody = await req.json().catch(() => ({}));
+    const reminder = getReminder(requestBody?.reminder_type);
     const tokens = await fetchActiveTokens(supabase);
     let sent = 0;
     const receiptTickets: { id: string; token: string }[] = [];
@@ -49,9 +63,9 @@ Deno.serve(async (req) => {
       const messages = batch.map((row) => ({
         to: row.expo_push_token,
         sound: "default",
-        title: "Don't forget to clock in",
-        body: "Clock in before you start work today.",
-        data: { type: "daily_clock_in_reminder" },
+        title: reminder.title,
+        body: reminder.body,
+        data: { type: reminder.dataType },
       }));
 
       const tickets = await sendExpoBatch(messages);
@@ -79,11 +93,16 @@ Deno.serve(async (req) => {
       sent,
       deactivated,
       receiptsChecked: receiptTickets.length,
+      reminderType: reminder.dataType,
     });
   } catch (error) {
     return json({ error: error?.message || "Daily reminder send failed" }, 500);
   }
 });
+
+function getReminder(value: unknown) {
+  return value === "clock_out" ? REMINDERS.clock_out : REMINDERS.clock_in;
+}
 
 async function fetchActiveTokens(supabase: ServiceClient) {
   const { data, error } = await supabase
