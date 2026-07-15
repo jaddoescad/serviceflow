@@ -7,7 +7,7 @@ function formatSegmentDistanceLabel(segment, fallbackDistanceMeters = null) {
   return `${formatDistance(distanceMeters)} from site`;
 }
 
-function getEntrySegments(entry) {
+function getEntrySegments(entry, nowIso = new Date().toISOString()) {
   const segments = Array.isArray(entry?.segments) && entry.segments.length
     ? entry.segments
     : [
@@ -19,13 +19,20 @@ function getEntrySegments(entry) {
         },
       ];
 
-  return segments.map((segment) => ({
-    ...segment,
-    mode: segment.mode || (entry?.onSite === false ? "off_site" : "on_site"),
-    startedAt: segment.startedAt || entry?.startedAt,
-    endedAt: segment.endedAt || entry?.endedAt || new Date().toISOString(),
-    distanceMeters: segment.distanceMeters ?? entry?.lastDistanceMeters ?? null,
-  }));
+  const isActive = entry?.clockOutReason === "active" || !entry?.endedAt;
+
+  return segments.map((segment, index) => {
+    const isOpenSegment = isActive && index === segments.length - 1;
+    return {
+      ...segment,
+      mode: segment.mode || (entry?.onSite === false ? "off_site" : "on_site"),
+      startedAt: segment.startedAt || entry?.startedAt,
+      // While a shift is active, the final segment's endedAt is only the most
+      // recent GPS checkpoint. It is not a clock-out time, so keep it running.
+      endedAt: isOpenSegment ? nowIso : segment.endedAt || entry?.endedAt || nowIso,
+      distanceMeters: segment.distanceMeters ?? entry?.lastDistanceMeters ?? null,
+    };
+  });
 }
 
 function getSegmentDurationMs(segment) {
@@ -195,7 +202,13 @@ export function buildTimesheetDays(entries = [], activeShift = null) {
     });
 }
 
-export function buildProjectClockInDays(entries = [], activeShift = null, project, user = null) {
+export function buildProjectClockInDays(
+  entries = [],
+  activeShift = null,
+  project,
+  user = null,
+  nowMs = Date.now(),
+) {
   const projectId = normalizeProject(project)?.companycam_id;
   if (!projectId) return [];
   const currentUserId = user?.id || null;
@@ -231,7 +244,7 @@ export function buildProjectClockInDays(entries = [], activeShift = null, projec
       });
     }
 
-    const sourceSegments = getEntrySegments(entry);
+    const sourceSegments = getEntrySegments(entry, new Date(nowMs).toISOString());
     const isCurrentUser = Boolean(
       (currentUserId && entry.userId === currentUserId) ||
       (currentUserEmail && entry.userEmail === currentUserEmail),

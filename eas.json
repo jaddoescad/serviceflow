@@ -12,8 +12,13 @@
       "distribution": "internal"
     },
     "production": {
-      "credentialsSource": "local",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "android": {
+        "credentialsSource": "local"
+      },
+      "ios": {
+        "credentialsSource": "remote"
+      }
     }
   },
   "submit": {

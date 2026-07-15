@@ -8,12 +8,17 @@ const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID || "93638a9a-d605-4f
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabasePublishableKey =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const locationTrackingEnabled = process.env.EXPO_PUBLIC_LOCATION_TRACKING_ENABLED !== "0";
+const locationTrackingPilotEmails = (process.env.EXPO_PUBLIC_LOCATION_TRACKING_PILOT_EMAILS || "")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 module.exports = {
   expo: {
     name: "ServiceFlow",
     slug: "serviceflow",
-    version: "1.0.9",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
@@ -26,7 +31,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ottawapainters.app",
-      buildNumber: "5",
+      buildNumber: "15",
       config: googleMapsApiKeyIos
         ? {
             googleMapsApiKey: googleMapsApiKeyIos
@@ -92,6 +97,8 @@ module.exports = {
       appTitle: "ServiceFlow",
       supabaseUrl,
       supabasePublishableKey,
+      locationTrackingEnabled,
+      locationTrackingPilotEmails,
       expoProjectId: easProjectId,
       eas: easProjectId
         ? {

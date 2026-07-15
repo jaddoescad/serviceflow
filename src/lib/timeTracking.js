@@ -1,29 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { formatDistance, normalizeProject } from "./trackingModel";
+import { normalizeProject } from "./trackingModel";
 import { activeEntry, applyEntryTimeUpdate, entryIdentityKeys, shiftToEntry } from "./timeEntryModel";
 import { getProjectTimeTotals } from "./timeEntryPresenters";
 import {
   consumeInitialNotificationResponse,
-  notifyIfNeeded,
   subscribeToTrackingNotificationResponses,
 } from "./timeTrackingNotifications";
 import { syncGeofences } from "./timeTrackingGeofence";
 import {
-  appendSegment,
-  createLocationStatus,
   geocodeProject,
   geocodeProjects,
-  toPoint,
 } from "./timeTrackingLocation";
 import {
+  configureAdaptiveTracking,
+  finishTrackingSession,
   getCurrentPoint,
   getTrackingPermissions,
+  recordShiftLocation,
   requestTrackingPermissions,
-  startBackgroundTracking,
   stopBackgroundTracking,
-  watchActiveLocation,
 } from "./timeTrackingRuntime";
+import { syncPendingLocationData } from "./locationTrackingRepository";
 import {
   completeEntry,
   deleteServerEntry,
@@ -33,11 +31,18 @@ import {
   insertActiveEntry,
   persistUpdatedEntry,
   shiftFromSupabase,
+  switchEntry,
   updateActiveLocation,
 } from "./timeEntryRepository";
 import {
+  closeStoredShift,
+  persistCompletedEntry,
+  persistStoreFields,
   readStore,
-  writeStore,
+  readTrackingRuntimeState,
+  startStoredShift,
+  switchStoredShift,
+  updateStoredActiveShift,
 } from "./timeTrackingStorage";
 
 export { distanceMeters, formatAddress, formatDistance, formatDuration, normalizeProject } from "./trackingModel";
@@ -140,6 +145,7 @@ export function useTimeTracking(projects = [], user) {
   const [locationStatus, setLocationStatus] = useState(null);
   const [trackingNotice, setTrackingNotice] = useState(null);
   const [trackingPermissions, setTrackingPermissions] = useState(null);
+  const [trackingDiagnostic, setTrackingDiagnostic] = useState(null);
   const [suggestedProject, setSuggestedProject] = useState(null);
   const [tick, setTick] = useState(Date.now());
   const [hydrated, setHydrated] = useState(false);
@@ -194,14 +200,15 @@ export function useTimeTracking(projects = [], user) {
 
   useEffect(() => {
     let mounted = true;
-    readStore()
-      .then((store) => {
+    Promise.all([readStore(), readTrackingRuntimeState()])
+      .then(([store, runtime]) => {
         if (!mounted) return;
         setActiveShift(store.activeShift || null);
         setEntries(Array.isArray(store.entries) ? store.entries : []);
         setTrackingNotice(store.lastNotice || null);
         setSuggestedProject(store.lastNotice?.suggestedProject || null);
         notificationRef.current = Number(store.lastNotificationAt || 0);
+        setTrackingDiagnostic(runtime || null);
       })
       .catch(() => {})
       .finally(() => {
@@ -239,6 +246,20 @@ export function useTimeTracking(projects = [], user) {
         return [...completed, ...localPending].sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
       });
 
+      const localActive = activeRef.current;
+      const completedActive = localActive
+        ? completed.find((entry) => isSameEntry(entry, localActive))
+        : null;
+      if (localActive && completedActive) {
+        // Server completion is authoritative. A stale local snapshot must be
+        // cleared, never clocked out a second time with a newer end timestamp.
+        await closeStoredShift(localActive, completedActive);
+        activeRef.current = null;
+        setActiveShift(null);
+        setLocationStatus(null);
+        await stopBackgroundTracking();
+      }
+
       if (activeRow && !activeRef.current) {
         const serverShift = shiftFromSupabase(activeRow);
         const serverKeys = new Set(entryIdentityKeys(serverShift));
@@ -248,8 +269,11 @@ export function useTimeTracking(projects = [], user) {
           entryIdentityKeys(entry).some((key) => serverKeys.has(key)),
         );
         if (!alreadyLocal) {
-          activeRef.current = serverShift;
-          setActiveShift(serverShift);
+          const transition = await startStoredShift(serverShift);
+          if (transition.applied) {
+            activeRef.current = serverShift;
+            setActiveShift(serverShift);
+          }
         }
       }
     } catch (_error) {
@@ -277,7 +301,8 @@ export function useTimeTracking(projects = [], user) {
       // those fields into React state BEFORE any subsequent persistence write,
       // otherwise stale foreground state would clobber the background updates.
       try {
-        const store = await readStore();
+        const [store, runtime] = await Promise.all([readStore(), readTrackingRuntimeState()]);
+        setTrackingDiagnostic(runtime || null);
         notificationRef.current = Math.max(
           Number(store.lastNotificationAt || 0),
           notificationRef.current,
@@ -312,6 +337,7 @@ export function useTimeTracking(projects = [], user) {
     if (!user?.id) return undefined;
     const interval = setInterval(() => {
       flushQueuedWrites();
+      syncPendingLocationData();
     }, 60_000);
     return () => clearInterval(interval);
   }, [user?.id]);
@@ -320,14 +346,13 @@ export function useTimeTracking(projects = [], user) {
     // Do not persist until hydration has completed, otherwise the initial empty
     // state would overwrite a persisted in-progress shift.
     if (!hydrated) return;
-    writeStore({
-      activeShift,
+    persistStoreFields({
       entries,
       knownProjects: resolvedProjects || [],
       lastNotice: trackingNotice,
       lastNotificationAt: notificationRef.current,
     });
-  }, [hydrated, activeShift, entries, resolvedProjects, trackingNotice]);
+  }, [hydrated, entries, resolvedProjects, trackingNotice]);
 
   useEffect(() => {
     if (!activeShift) return undefined;
@@ -341,6 +366,7 @@ export function useTimeTracking(projects = [], user) {
     async function syncBackgroundTrackingState() {
       if (!activeShift) {
         await stopBackgroundTracking();
+        setTrackingDiagnostic(await readTrackingRuntimeState());
         return;
       }
 
@@ -357,8 +383,10 @@ export function useTimeTracking(projects = [], user) {
       // above keeps the active shift updated during development.
       if (__DEV__ && !permissions.ready) return;
 
-      const started = await startBackgroundTracking();
-      if (!cancelled && !started) {
+      const result = await configureAdaptiveTracking(activeShift, projectsRef.current, {
+        permissions,
+      });
+      if (!cancelled && !result.started) {
         setTrackingNotice({
           type: "permission",
           message: "Background location could not start. Reopen the app or check location settings.",
@@ -369,6 +397,7 @@ export function useTimeTracking(projects = [], user) {
 
       if (!cancelled) {
         setTrackingNotice((current) => (current?.type === "permission" ? null : current));
+        setTrackingDiagnostic(await readTrackingRuntimeState());
       }
     }
 
@@ -377,7 +406,7 @@ export function useTimeTracking(projects = [], user) {
     return () => {
       cancelled = true;
     };
-  }, [activeShift?.localId, activeShift?.serverId]);
+  }, [activeShift?.localId, activeShift?.serverId, activeShift?.onSite]);
 
   useEffect(() => {
     // Register job-site geofences so the painter is prompted to clock in on
@@ -385,81 +414,16 @@ export function useTimeTracking(projects = [], user) {
     // background ("Always") location; syncGeofences no-ops otherwise. Geofences
     // intentionally persist across unmount/app-close, so there is no teardown.
     if (!permissionsAllowTracking(trackingPermissions)) return undefined;
-    syncGeofences(resolvedProjects);
+    syncGeofences(resolvedProjects, activeShift);
     return undefined;
   }, [
     resolvedProjects,
     trackingPermissions?.ready,
     trackingPermissions?.foreground,
     trackingPermissions?.background,
+    activeShift?.localId,
+    activeShift?.serverId,
   ]);
-
-  const applyLocation = useCallback(async (location) => {
-    const shift = activeRef.current;
-    const point = toPoint(location);
-    if (!shift || !point) return;
-
-    const status = createLocationStatus(shift, projectsRef.current, point);
-    const nextShift = appendSegment(
-      {
-        ...shift,
-        lastLocation: point,
-        lastDistanceMeters: status.activeDistance,
-        onSite: status.onSite,
-        travelStartedAt: status.onSite === false && !shift.travelStartedAt ? new Date().toISOString() : shift.travelStartedAt,
-      },
-      status,
-    );
-
-    activeRef.current = nextShift;
-    setActiveShift(nextShift);
-    setLocationStatus(status);
-    setSuggestedProject(status.suggestedProject);
-    setTrackingNotice(
-      status.suggestedProject
-        ? {
-            type: "switch_project",
-            message: `Looks like you may be at ${status.suggestedProject.name}.`,
-            suggestedProject: status.suggestedProject,
-            createdAt: new Date().toISOString(),
-          }
-        : status.shouldPromptClockOut
-          ? {
-              type: "clock_out",
-              message: `You are ${formatDistance(status.activeDistance)} from ${shift.project?.name || "this job"}. Clock out if you are done.`,
-              createdAt: new Date().toISOString(),
-            }
-          : { type: "status", message: status.label, createdAt: new Date().toISOString() },
-    );
-
-    const store = await readStore();
-    const didNotify = await notifyIfNeeded(store, status, nextShift);
-    if (didNotify) notificationRef.current = Date.now();
-
-    // If the shift has no serverId, the network write targets by client_entry_id
-    // and could resurrect a shift the user has since clocked out. Bail if the
-    // active shift no longer matches.
-    if (!nextShift.serverId && activeRef.current?.localId !== nextShift.localId) return;
-    await updateActiveLocation(nextShift);
-  }, []);
-
-  useEffect(() => {
-    if (!activeShift || !permissionsAllowTracking(trackingPermissions)) return undefined;
-    let watcher;
-    let cancelled = false;
-
-    watchActiveLocation(applyLocation)
-      .then((subscription) => {
-        if (cancelled) subscription.remove();
-        else watcher = subscription;
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (watcher) watcher.remove();
-    };
-  }, [activeShift?.localId, applyLocation, trackingPermissions?.ready, trackingPermissions?.foreground]);
 
   const clockIn = useCallback(
     async (project) => {
@@ -473,28 +437,29 @@ export function useTimeTracking(projects = [], user) {
         return null;
       }
 
-      const backgroundStarted = await startBackgroundTracking();
-      if (!backgroundStarted && !__DEV__) {
-        setTrackingNotice(
-          buildPermissionNotice(permissions, "Background location could not start. Open Settings and confirm Location is set to Always."),
-        );
+      const shift = createShift(baseProject, user, null);
+      const started = await startStoredShift(shift, { lastNotice: null });
+      if (!started.applied) {
+        if (started.store.activeShift) {
+          activeRef.current = started.store.activeShift;
+          setActiveShift(started.store.activeShift);
+        }
         return null;
       }
-
-      const shift = createShift(baseProject, user, null);
       activeRef.current = shift;
       setActiveShift(shift);
       setTrackingNotice(null);
       setSuggestedProject(null);
 
-      insertActiveEntry(shift).then((serverId) => {
+      insertActiveEntry(shift).then(async (serverId) => {
         if (!serverId) return;
-        setActiveShift((current) => {
-          if (!current || current.localId !== shift.localId) return current;
-          const next = { ...current, serverId };
-          activeRef.current = next;
-          return next;
-        });
+        const current = activeRef.current;
+        if (!current || current.localId !== shift.localId) return;
+        const next = { ...current, serverId };
+        const transition = await updateStoredActiveShift(current, next);
+        if (!transition.applied || activeRef.current?.localId !== shift.localId) return;
+        activeRef.current = next;
+        setActiveShift(next);
       });
 
       Promise.resolve()
@@ -512,24 +477,34 @@ export function useTimeTracking(projects = [], user) {
             startedLocation: current.startedLocation || point,
             lastLocation: point || current.lastLocation,
           };
+          let nextLocationStatus = null;
 
           if (point) {
-            const status = createLocationStatus(nextShift, projectsRef.current, point);
-            nextShift = appendSegment(
-              {
-                ...nextShift,
-                lastDistanceMeters: status.activeDistance,
-                onSite: status.onSite,
-              },
-              status,
-            );
-            setLocationStatus(status);
+            const recorded = await recordShiftLocation(nextShift, projectsRef.current, point, {
+              eventType: "clock_in",
+              permissions,
+            });
+            if (recorded.stale) return;
+            nextShift = recorded.shift;
+            nextLocationStatus = recorded.status;
+          } else {
+            const tracking = await configureAdaptiveTracking(nextShift, projectsRef.current, { permissions });
+            if (tracking.stale) return;
           }
 
+          const latest = activeRef.current;
+          if (!latest || latest.localId !== shift.localId) return;
+          nextShift = {
+            ...nextShift,
+            serverId: latest.serverId || nextShift.serverId,
+          };
+          const transition = await updateStoredActiveShift(latest, nextShift);
+          if (!transition.applied || activeRef.current?.localId !== shift.localId) return;
           activeRef.current = nextShift;
           setActiveShift(nextShift);
-          if (!nextShift.serverId && activeRef.current?.localId !== nextShift.localId) return;
-          await updateActiveLocation(nextShift);
+          if (nextLocationStatus) setLocationStatus(nextLocationStatus);
+          if (!point) await updateActiveLocation(nextShift);
+          setTrackingDiagnostic(await readTrackingRuntimeState());
         })
         .catch(() => {});
 
@@ -542,7 +517,12 @@ export function useTimeTracking(projects = [], user) {
     const shift = activeRef.current;
     if (!shift) return null;
 
-    const entry = shiftToEntry(shift, new Date().toISOString(), reason);
+    const endedAt = new Date().toISOString();
+    let entry = shiftToEntry(shift, endedAt, reason);
+    // Persist the terminal local transition before any network or tracking
+    // cleanup. Background work finishing later will see the tombstone and is
+    // unable to restore this shift.
+    await closeStoredShift(shift, entry, { lastNotice: null });
     setEntries((current) => [entry, ...current.filter((item) => item.localId !== entry.localId)]);
     setTeamEntries((current) => [entry, ...current.filter((item) => (item.serverId || item.localId) !== (entry.serverId || entry.localId))]);
     setActiveShift(null);
@@ -550,10 +530,23 @@ export function useTimeTracking(projects = [], user) {
     setLocationStatus(null);
     setTrackingNotice(null);
     setSuggestedProject(null);
-    await completeEntry(entry);
-    await stopBackgroundTracking();
+    const savedRow = await completeEntry(entry);
+    if (savedRow?.status === "complete" && savedRow.ended_at) {
+      // A concurrent/earlier completion wins. Reflect its canonical end time
+      // instead of ever extending an already-completed shift.
+      entry = entryFromSupabase(savedRow);
+      setEntries((current) => [entry, ...current.filter((item) => !isSameEntry(item, entry))]);
+      setTeamEntries((current) => [entry, ...current.filter((item) => !isSameEntry(item, entry))]);
+      await persistCompletedEntry(entry);
+    }
+    await finishTrackingSession(shift, projectsRef.current, {
+      permissions: trackingPermissions,
+      reason,
+      endedAt,
+    });
+    setTrackingDiagnostic(await readTrackingRuntimeState());
     return entry;
-  }, []);
+  }, [trackingPermissions]);
 
   const switchProject = useCallback(
     async (project) => {
@@ -575,26 +568,70 @@ export function useTimeTracking(projects = [], user) {
         return null;
       }
 
-      const completed = shiftToEntry(current, new Date().toISOString(), "switched_project");
-      setEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
-      setTeamEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
-      await completeEntry(completed);
-
+      let completed = shiftToEntry(current, new Date().toISOString(), "switched_project");
       let next = createShift(nextProject, user, current.lastLocation);
       next = { ...next, travelStartedAt: current.travelStartedAt };
+      const switched = await switchStoredShift(current, next, completed, {
+        lastNotice: null,
+      });
+      if (!switched.applied) return null;
+
+      setEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
+      setTeamEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
       activeRef.current = next;
       setActiveShift(next);
       setTrackingNotice(null);
       setSuggestedProject(null);
-      insertActiveEntry(next).then((serverId) => {
-        if (!serverId) return;
-        setActiveShift((activeNow) => {
-          if (!activeNow || activeNow.localId !== next.localId) return activeNow;
-          const updated = { ...activeNow, serverId };
-          activeRef.current = updated;
-          return updated;
+
+      const serverSwitch = await switchEntry(completed, next);
+      if (serverSwitch?.completedRow?.status === "complete" && serverSwitch.completedRow.ended_at) {
+        completed = entryFromSupabase(serverSwitch.completedRow);
+        setEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
+        setTeamEntries((entriesNow) => [completed, ...entriesNow.filter((item) => !isSameEntry(item, completed))]);
+        await persistCompletedEntry(completed);
+      }
+
+      const activeRow = serverSwitch?.activeRow;
+      if (
+        activeRow?.status === "active" &&
+        !activeRow.ended_at &&
+        activeRow.client_entry_id === next.localId
+      ) {
+        const activeNow = activeRef.current;
+        if (activeNow?.localId === next.localId) {
+          const updated = { ...activeNow, serverId: activeRow.id };
+          const transition = await updateStoredActiveShift(activeNow, updated);
+          if (transition.applied && activeRef.current?.localId === next.localId) {
+            activeRef.current = updated;
+            setActiveShift(updated);
+            next = updated;
+          }
+        }
+      }
+
+      if (current.lastLocation) {
+        const latestNext = activeRef.current?.localId === next.localId ? activeRef.current : next;
+        const recorded = await recordShiftLocation(latestNext, projectsRef.current, current.lastLocation, {
+          eventType: "project_switch",
+          permissions,
         });
-      });
+        if (recorded.stale) return null;
+        const activeNow = activeRef.current;
+        if (!activeNow || activeNow.localId !== next.localId) return null;
+        next = {
+          ...recorded.shift,
+          serverId: activeNow.serverId || recorded.shift.serverId,
+        };
+        const transition = await updateStoredActiveShift(activeNow, next);
+        if (!transition.applied || activeRef.current?.localId !== next.localId) return null;
+        activeRef.current = next;
+        setActiveShift(next);
+        setLocationStatus(recorded.status);
+      } else {
+        const tracking = await configureAdaptiveTracking(next, projectsRef.current, { permissions });
+        if (tracking.stale) return null;
+      }
+      setTrackingDiagnostic(await readTrackingRuntimeState());
       return next;
     },
     [clockIn, user],
@@ -604,6 +641,7 @@ export function useTimeTracking(projects = [], user) {
     if (!entryIdentityKeys(entry).length) return false;
 
     if (isSameEntry(activeRef.current, entry)) {
+      await closeStoredShift(entry, null, { lastNotice: null });
       setActiveShift(null);
       activeRef.current = null;
       setLocationStatus(null);
@@ -626,12 +664,14 @@ export function useTimeTracking(projects = [], user) {
   const updateTimeEntry = useCallback(async (entry, updates) => {
     if (!entryIdentityKeys(entry).length) return null;
 
-    const updated = applyEntryTimeUpdate(entry, {
+    let updated = applyEntryTimeUpdate(entry, {
       ...updates,
       adjustedBy: compactUser(user),
     });
 
     if (isSameEntry(activeRef.current, entry)) {
+      const transition = await updateStoredActiveShift(entry, updated);
+      if (!transition.applied) return null;
       activeRef.current = updated;
       setActiveShift(updated);
     }
@@ -647,7 +687,35 @@ export function useTimeTracking(projects = [], user) {
       ),
     );
 
-    await persistUpdatedEntry(updated);
+    const savedRow = await persistUpdatedEntry(updated);
+    if (savedRow) {
+      if (savedRow.status === "active" && !savedRow.ended_at) {
+        const activeNow = activeRef.current;
+        if (activeNow && isSameEntry(activeNow, updated)) {
+          const serverShift = shiftFromSupabase(savedRow);
+          const canonicalShift = {
+            ...activeNow,
+            serverId: serverShift.serverId,
+            project: serverShift.project,
+            originalStartedAt: serverShift.originalStartedAt,
+            startedAt: serverShift.startedAt,
+            startEditedAt: serverShift.startEditedAt,
+            adjustmentHistory: serverShift.adjustmentHistory,
+          };
+          const transition = await updateStoredActiveShift(activeNow, canonicalShift);
+          if (transition.applied && activeRef.current?.localId === canonicalShift.localId) {
+            activeRef.current = canonicalShift;
+            setActiveShift(canonicalShift);
+            updated = canonicalShift;
+          }
+        }
+      } else {
+        updated = entryFromSupabase(savedRow);
+        setEntries((current) => [updated, ...current.filter((item) => !isSameEntry(item, updated))]);
+        setTeamEntries((current) => [updated, ...current.filter((item) => !isSameEntry(item, updated))]);
+        await persistCompletedEntry(updated);
+      }
+    }
     return updated;
   }, [user]);
 
@@ -720,6 +788,7 @@ export function useTimeTracking(projects = [], user) {
     locationStatus,
     trackingNotice,
     trackingPermissions,
+    trackingDiagnostic,
     suggestedProject,
     resolvedProjects,
     projectTimeTotals,

@@ -16,6 +16,9 @@ export function toPoint(location) {
     latitude,
     longitude,
     accuracy: Number(coords.accuracy || 0) || null,
+    speed: Number.isFinite(Number(coords.speed)) ? Number(coords.speed) : null,
+    heading: Number.isFinite(Number(coords.heading)) ? Number(coords.heading) : null,
+    mocked: typeof coords.mocked === "boolean" ? coords.mocked : null,
     capturedAt: new Date(location?.timestamp || Date.now()).toISOString(),
   };
 }

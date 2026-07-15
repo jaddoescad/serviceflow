@@ -246,6 +246,7 @@ function normalizeProject(
     : Array.isArray(project.project_labels)
       ? project.project_labels
       : [];
+  const companyCamStatus = normalizeCompanyCamStatus(project.status);
 
   return {
     companycam_id: companycamId,
@@ -266,6 +267,8 @@ function normalizeProject(
     geocode_query: hasCompanyCamCoordinates ? null : existingProject.geocode_query ?? null,
     geocode_error: hasCompanyCamCoordinates ? null : existingProject.geocode_error ?? null,
     is_archived: isArchivedProject(project),
+    is_deleted: companyCamStatus === "deleted",
+    companycam_status: companyCamStatus,
     companycam_created_at: toIsoDate(project.created_at ?? project.inserted_at),
     companycam_updated_at: toIsoDate(project.updated_at ?? project.modified_at ?? project.last_activity_at),
     raw: project,
@@ -322,8 +325,12 @@ function isLeadOnlyProject(labels: unknown[]) {
 }
 
 function isArchivedProject(project: Record<string, unknown>) {
-  const status = toNullableText(project.status);
-  return Boolean(project.archived ?? project.is_archived ?? false) || status?.toLowerCase() === "deleted";
+  return Boolean(project.archived ?? project.is_archived ?? false);
+}
+
+function normalizeCompanyCamStatus(value: unknown) {
+  const status = toNullableText(value);
+  return status ? status.toLowerCase() : null;
 }
 
 function formatAddress(address: Record<string, unknown>) {

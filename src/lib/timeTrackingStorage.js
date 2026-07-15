@@ -1,4 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  chooseQueuedWrite,
+  closeShiftInStore,
+  isShiftActiveInStore,
+  mergeCompletedEntryInStore,
+  mergeStoreFields,
+  normalizeTimeTrackingStore,
+  queuedWriteGroup,
+  startShiftInStore,
+  switchShiftInStore,
+  updateActiveShiftInStore,
+} from "./timeTrackingState";
 
 const STORAGE_KEY = "ottawaPainters.timeTracking.v1";
 const WRITE_QUEUE_KEY = "ottawaPainters.timeTracking.writeQueue.v1";
@@ -8,6 +20,14 @@ const GEOCODE_CACHE_KEY = "ottawaPainters.projectGeocodes.v1";
 // written from the background geofence task.
 const ARRIVAL_PROMPTS_KEY = "ottawaPainters.arrivalPrompts.v1";
 const LAST_NOTIFICATION_RESPONSE_KEY = "ottawaPainters.lastHandledNotification.v1";
+const LOCATION_QUEUE_KEY = "ottawaPainters.locationPointQueue.v1";
+const TRACKING_STATUS_KEY = "ottawaPainters.pendingTrackingStatus.v1";
+const TRACKING_RUNTIME_KEY = "ottawaPainters.trackingRuntime.v1";
+const MAX_LOCATION_QUEUE_SIZE = 2000;
+
+let locationQueueMutation = Promise.resolve();
+let trackingStateMutation = Promise.resolve();
+let writeQueueMutation = Promise.resolve();
 
 function parseJson(value, fallback) {
   try {
@@ -17,56 +37,170 @@ function parseJson(value, fallback) {
   }
 }
 
-export async function readStore() {
+async function readStoreSnapshot() {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return parseJson(raw, { activeShift: null, entries: [], knownProjects: [], lastNotificationAt: 0 });
+    return normalizeTimeTrackingStore(parseJson(raw, null));
   } catch (_error) {
-    return { activeShift: null, entries: [], knownProjects: [], lastNotificationAt: 0 };
+    return normalizeTimeTrackingStore(null);
   }
 }
 
-export async function writeStore(store) {
+async function writeStoreSnapshot(store) {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
 
-export async function readWriteQueue() {
+function runTrackingStateMutation(work) {
+  const next = trackingStateMutation.catch(() => {}).then(work);
+  trackingStateMutation = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+export async function readStore() {
+  await trackingStateMutation;
+  return readStoreSnapshot();
+}
+
+export function persistStoreFields(fields) {
+  return runTrackingStateMutation(async () => {
+    const next = mergeStoreFields(await readStoreSnapshot(), fields);
+    await writeStoreSnapshot(next);
+    return next;
+  });
+}
+
+export function startStoredShift(shift, fields = {}) {
+  return runTrackingStateMutation(async () => {
+    const transition = startShiftInStore(await readStoreSnapshot(), shift, fields);
+    if (transition.applied) await writeStoreSnapshot(transition.store);
+    return transition;
+  });
+}
+
+export function updateStoredActiveShift(expectedShift, nextShift, fields = {}) {
+  return runTrackingStateMutation(async () => {
+    const transition = updateActiveShiftInStore(
+      await readStoreSnapshot(),
+      expectedShift,
+      nextShift,
+      fields,
+    );
+    if (transition.applied) await writeStoreSnapshot(transition.store);
+    return transition;
+  });
+}
+
+export function closeStoredShift(shift, completedEntry = null, fields = {}) {
+  return runTrackingStateMutation(async () => {
+    const transition = closeShiftInStore(
+      await readStoreSnapshot(),
+      shift,
+      completedEntry,
+      fields,
+    );
+    if (transition.applied) await writeStoreSnapshot(transition.store);
+    return transition;
+  });
+}
+
+export function switchStoredShift(
+  expectedShift,
+  nextShift,
+  completedEntry = null,
+  fields = {},
+) {
+  return runTrackingStateMutation(async () => {
+    const transition = switchShiftInStore(
+      await readStoreSnapshot(),
+      expectedShift,
+      nextShift,
+      completedEntry,
+      fields,
+    );
+    if (transition.applied) await writeStoreSnapshot(transition.store);
+    return transition;
+  });
+}
+
+export function persistCompletedEntry(entry) {
+  return runTrackingStateMutation(async () => {
+    const next = mergeCompletedEntryInStore(await readStoreSnapshot(), entry);
+    await writeStoreSnapshot(next);
+    return next;
+  });
+}
+
+export async function isStoredShiftActive(shift) {
+  return isShiftActiveInStore(await readStore(), shift);
+}
+
+async function readWriteQueueSnapshot() {
   const raw = await AsyncStorage.getItem(WRITE_QUEUE_KEY);
   const queue = parseJson(raw, []);
   return Array.isArray(queue) ? queue : [];
 }
 
-export async function writeWriteQueue(queue) {
-  await AsyncStorage.setItem(WRITE_QUEUE_KEY, JSON.stringify(queue));
+function runWriteQueueMutation(work) {
+  const next = writeQueueMutation.catch(() => {}).then(async () => {
+    const queue = await readWriteQueueSnapshot();
+    const updated = await work(queue);
+    if (updated !== queue) {
+      await AsyncStorage.setItem(WRITE_QUEUE_KEY, JSON.stringify(updated));
+    }
+    return updated;
+  });
+  writeQueueMutation = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+export async function readWriteQueue() {
+  await writeQueueMutation;
+  return readWriteQueueSnapshot();
 }
 
 function queueKey(operation) {
-  return (
+  const identity = (
     operation.client_entry_id ||
     operation.payload?.client_entry_id ||
     operation.payload?.id ||
     operation.id ||
     operation.createdAt
   );
+  return identity ? `${identity}::${queuedWriteGroup(operation)}` : null;
 }
 
 export async function enqueueWrite(operation) {
-  const queue = await readWriteQueue();
-  const key = queueKey(operation);
+  const incoming = {
+    ...operation,
+    createdAt: operation.createdAt || new Date().toISOString(),
+  };
 
-  // A straggling upsert must not cancel an already-queued delete for the same
-  // entry. Keep the delete and drop the incoming upsert.
-  if (key && operation.action === "upsert") {
-    const hasQueuedDelete = queue.some(
-      (item) => item.action === "delete" && queueKey(item) === key,
-    );
-    if (hasQueuedDelete) return;
-  }
+  return runWriteQueueMutation(async (queue) => {
+    const key = queueKey(incoming);
+    if (!key) return [...queue, incoming];
+    const existing = queue.find((item) => queueKey(item) === key);
+    const winner = chooseQueuedWrite(existing, incoming);
+    if (winner === existing) return queue;
+    return [...queue.filter((item) => queueKey(item) !== key), winner];
+  });
+}
 
-  const withoutDuplicate = key
-    ? queue.filter((item) => queueKey(item) !== key)
-    : queue;
-  await writeWriteQueue([...withoutDuplicate, { ...operation, createdAt: operation.createdAt || new Date().toISOString() }]);
+export function queuedWriteInstanceKey(operation) {
+  return `${queueKey(operation) || ""}::${operation?.createdAt || ""}`;
+}
+
+export function removeQueuedWrites(instanceKeys) {
+  const completed = new Set(instanceKeys || []);
+  if (!completed.size) return Promise.resolve();
+  return runWriteQueueMutation(async (queue) =>
+    queue.filter((operation) => !completed.has(queuedWriteInstanceKey(operation))),
+  );
 }
 
 export async function readQueuedDeleteKeys() {
@@ -76,8 +210,11 @@ export async function readQueuedDeleteKeys() {
 
   for (const operation of queue) {
     if (operation.action !== "delete") continue;
-    if (operation.id) ids.add(String(operation.id));
-    if (operation.client_entry_id) clientEntryIds.add(String(operation.client_entry_id));
+    const id = operation.payload?.server_id || operation.id;
+    const clientEntryId =
+      operation.payload?.client_entry_id || operation.client_entry_id;
+    if (id) ids.add(String(id));
+    if (clientEntryId) clientEntryIds.add(String(clientEntryId));
   }
 
   return { ids, clientEntryIds };
@@ -125,4 +262,117 @@ export async function readGeocodeCache() {
 
 export async function writeGeocodeCache(cache) {
   await AsyncStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+}
+
+export async function readLocationQueue() {
+  try {
+    const raw = await AsyncStorage.getItem(LOCATION_QUEUE_KEY);
+    const queue = parseJson(raw, []);
+    return Array.isArray(queue) ? queue : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+export async function enqueueLocationPoints(points) {
+  const additions = (Array.isArray(points) ? points : [points]).filter(Boolean);
+  if (!additions.length) return;
+
+  locationQueueMutation = locationQueueMutation.then(async () => {
+    const current = await readLocationQueue();
+    const byEventId = new Map();
+    [...current, ...additions].forEach((point) => {
+      if (point?.client_event_id) byEventId.set(point.client_event_id, point);
+    });
+    const next = Array.from(byEventId.values()).slice(-MAX_LOCATION_QUEUE_SIZE);
+    await AsyncStorage.setItem(LOCATION_QUEUE_KEY, JSON.stringify(next));
+  });
+
+  return locationQueueMutation;
+}
+
+export async function removeLocationPoints(clientEventIds) {
+  const completed = new Set((clientEventIds || []).map(String));
+  if (!completed.size) return;
+
+  locationQueueMutation = locationQueueMutation.then(async () => {
+    const current = await readLocationQueue();
+    const next = current.filter((point) => !completed.has(String(point?.client_event_id || "")));
+    await AsyncStorage.setItem(LOCATION_QUEUE_KEY, JSON.stringify(next));
+  });
+
+  return locationQueueMutation;
+}
+
+export async function readPendingTrackingStatus() {
+  try {
+    const raw = await AsyncStorage.getItem(TRACKING_STATUS_KEY);
+    const status = parseJson(raw, null);
+    return status && typeof status === "object" ? status : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+export function writePendingTrackingStatus(status, options = {}) {
+  return runTrackingStateMutation(async () => {
+    if (
+      options.expectedActiveShift &&
+      !isShiftActiveInStore(await readStoreSnapshot(), options.expectedActiveShift)
+    ) {
+      return false;
+    }
+    if (options.expectedStatus) {
+      const current = parseJson(await AsyncStorage.getItem(TRACKING_STATUS_KEY), null);
+      if (trackingStatusKey(current) !== trackingStatusKey(options.expectedStatus)) {
+        return false;
+      }
+    }
+    if (!status) {
+      await AsyncStorage.removeItem(TRACKING_STATUS_KEY);
+      return true;
+    }
+    await AsyncStorage.setItem(TRACKING_STATUS_KEY, JSON.stringify(status));
+    return true;
+  });
+}
+
+function trackingStatusKey(status) {
+  if (!status) return "";
+  return [
+    status.client_entry_id || "",
+    status.tracking_mode || "",
+    status.task_status || "",
+    status.last_sync_at || "",
+  ].join("::");
+}
+
+async function readTrackingRuntimeSnapshot() {
+  try {
+    const raw = await AsyncStorage.getItem(TRACKING_RUNTIME_KEY);
+    const state = parseJson(raw, {});
+    return state && typeof state === "object" ? state : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+export async function readTrackingRuntimeState() {
+  await trackingStateMutation;
+  return readTrackingRuntimeSnapshot();
+}
+
+export function mergeTrackingRuntimeState(updates, options = {}) {
+  return runTrackingStateMutation(async () => {
+    if (
+      options.expectedActiveShift &&
+      !isShiftActiveInStore(await readStoreSnapshot(), options.expectedActiveShift)
+    ) {
+      return null;
+    }
+    const current = await readTrackingRuntimeSnapshot();
+    const next = { ...current, ...(updates || {}), updatedAt: new Date().toISOString() };
+    await AsyncStorage.setItem(TRACKING_RUNTIME_KEY, JSON.stringify(next));
+    return next;
+  });
 }

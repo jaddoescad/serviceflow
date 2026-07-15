@@ -22,6 +22,7 @@ import ProjectsScreen from "./src/screens/ProjectsScreen";
 import ProjectDetailScreen from "./src/screens/ProjectDetailScreen";
 import ClockInScreen from "./src/screens/ClockInScreen";
 import TimesheetScreen from "./src/screens/TimesheetScreen";
+import TeamMapScreen from "./src/screens/TeamMapScreen";
 import LocationPermissionBlocker, {
   shouldOpenSettingsAfterPermissionRequest,
 } from "./src/screens/clock-in/LocationPermissionBlocker";
@@ -29,13 +30,13 @@ import { supabase } from "./src/lib/supabase";
 import { useTimeTracking } from "./src/lib/timeTracking";
 import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
 import { registerPushToken } from "./src/lib/pushTokenRegistration";
+import { isLocationTrackingFeatureEnabled } from "./src/lib/locationTrackingFeature";
 import { palette as COLORS } from "./src/theme";
 
-const TABS = [
+const BASE_TABS = [
   { key: "clock", label: "Clock In", icon: "clock" },
   { key: "projects", label: "Projects", icon: "projects" },
   { key: "timesheet", label: "Timesheet", icon: "timesheet" },
-  { key: "more", label: "More", icon: "more" },
 ];
 
 export default function App() {
@@ -82,7 +83,11 @@ function AppRoot() {
   } = useEmployeeProjectContext(session);
 
   const canManageProjects = ["admin", "manager"].includes(employeeProfile?.role);
+  const canViewTeamMap = canManageProjects && isLocationTrackingFeatureEnabled();
   const tracking = useTimeTracking(trackingProjects, sessionUser);
+  const tabs = canViewTeamMap
+    ? [...BASE_TABS, { key: "teamMap", label: "Team Map", icon: "map" }, { key: "more", label: "More", icon: "more" }]
+    : [...BASE_TABS, { key: "more", label: "More", icon: "more" }];
 
   useEffect(() => {
     if (!sessionUser?.id) return;
@@ -175,13 +180,26 @@ function AppRoot() {
           />
         </View>
         <View
+          style={[styles.tabScene, activeTab !== "teamMap" && styles.hiddenScene]}
+        >
+          {canViewTeamMap ? (
+            <TeamMapScreen projects={tracking.resolvedProjects} enabled={activeTab === "teamMap"} />
+          ) : null}
+        </View>
+        <View
           style={[styles.tabScene, activeTab !== "more" && styles.hiddenScene]}
         >
-          <MoreScreen userEmail={session.user?.email} profile={employeeProfile} />
+          <MoreScreen
+            userEmail={session.user?.email}
+            profile={employeeProfile}
+            activeShift={tracking.activeShift}
+            trackingPermissions={tracking.trackingPermissions}
+            trackingDiagnostic={tracking.trackingDiagnostic}
+          />
         </View>
       </View>
       <View style={[styles.tabBar, { paddingBottom: insets.bottom + 10 }]}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <TabButton
             key={t.key}
             icon={t.icon}
@@ -288,13 +306,15 @@ function TabIcon({ name, color }) {
     clock: "time-outline",
     projects: "folder",
     timesheet: "reader-outline",
+    map: "map-outline",
     more: "ellipsis-horizontal",
   };
 
   return <Ionicons name={iconNames[name] || "ellipse-outline"} size={27} color={color} />;
 }
 
-function MoreScreen({ userEmail }) {
+function MoreScreen({ userEmail, activeShift, trackingPermissions, trackingDiagnostic }) {
+  const lastLocationAt = trackingDiagnostic?.lastLocationAt || activeShift?.lastLocation?.capturedAt;
   return (
     <View style={styles.moreScreen}>
       <Text style={styles.placeholderKicker}>ServiceFlow</Text>
@@ -303,11 +323,56 @@ function MoreScreen({ userEmail }) {
         <Text style={styles.moreLabel}>Signed in as</Text>
         <Text style={styles.moreEmail}>{userEmail}</Text>
       </View>
+      <View style={styles.moreCard}>
+        <Text style={styles.moreLabel}>Location tracking</Text>
+        <View style={styles.diagnosticRow}>
+          <View style={[
+            styles.diagnosticDot,
+            { backgroundColor: activeShift ? COLORS.teal : COLORS.muted },
+          ]} />
+          <Text style={styles.diagnosticValue}>
+            {activeShift ? trackingModeLabel(trackingDiagnostic?.mode) : "Off while clocked out"}
+          </Text>
+        </View>
+        {activeShift ? (
+          <>
+            <Text style={styles.diagnosticText}>
+              Last location: {formatDiagnosticTime(lastLocationAt)}
+            </Text>
+            <Text style={styles.diagnosticText}>
+              Last upload: {formatDiagnosticTime(trackingDiagnostic?.lastSyncAt)}
+            </Text>
+            <Text style={styles.diagnosticText}>
+              Background permission: {trackingPermissions?.background ? "Allowed" : "Needs attention"}
+            </Text>
+            {trackingDiagnostic?.lastErrorCode ? (
+              <Text style={styles.diagnosticError}>Issue: {trackingDiagnostic.lastErrorCode}</Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={styles.diagnosticText}>ServiceFlow records work locations only while you are clocked in.</Text>
+        )}
+      </View>
       <Pressable style={styles.signOutButton} onPress={() => supabase.auth.signOut()}>
         <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
     </View>
   );
+}
+
+function trackingModeLabel(mode) {
+  return ({
+    painting: "Painting mode · low power",
+    stationary: "Stationary · low power",
+    travel: "Travel tracking active",
+    unavailable: "Tracking unavailable",
+  })[mode] || "Preparing location tracking";
+}
+
+function formatDiagnosticTime(value) {
+  const date = new Date(value || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return "Not received yet";
+  return date.toLocaleString([], { hour: "numeric", minute: "2-digit", month: "short", day: "numeric" });
 }
 
 const styles = StyleSheet.create({
@@ -404,6 +469,34 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     fontSize: 16,
     fontWeight: "700",
+  },
+  diagnosticRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginBottom: 8,
+  },
+  diagnosticDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  diagnosticValue: {
+    color: COLORS.ink,
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  diagnosticText: {
+    color: COLORS.muted,
+    fontSize: 12.5,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  diagnosticError: {
+    color: "#a45623",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 7,
   },
   signOutButton: {
     height: 54,

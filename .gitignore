@@ -3,6 +3,8 @@
 web-build/
 build/
 qa-artifacts/
+outputs/
+tmp/
 node_modules/
 npm-debug.log*
 yarn-debug.log*

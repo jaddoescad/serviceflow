@@ -14,6 +14,20 @@ const SWITCH_PROJECT_NOTIFICATION_ACTION = "switch_project";
 const CLOCK_IN_NOTIFICATION_ACTION = "clock_in";
 const NOTIFICATION_COOLDOWN_MS = 10 * 60 * 1000;
 
+// Expo suppresses notifications received while the app is foregrounded unless
+// a handler explicitly opts into presenting them. Keep foreground behavior
+// consistent with background delivery without changing the app badge.
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
+
 export async function notifyIfNeeded(store, status, shift) {
   if (Platform.OS === "web") return false;
   if (!status.shouldPromptClockOut && !status.suggestedProject) return false;

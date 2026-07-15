@@ -2,6 +2,13 @@ import { normalizeProject } from "./trackingModel";
 
 export function shiftToEntry(shift, endedAt = new Date().toISOString(), reason = "manual") {
   const durationMs = Math.max(0, new Date(endedAt).getTime() - new Date(shift.startedAt).getTime());
+  const segments = Array.isArray(shift.segments)
+    ? shift.segments.map((segment, index, list) =>
+        reason !== "active" && index === list.length - 1
+          ? { ...segment, endedAt }
+          : segment,
+      )
+    : [];
   return {
     id: shift.serverId || shift.localId,
     localId: shift.localId,
@@ -20,7 +27,7 @@ export function shiftToEntry(shift, endedAt = new Date().toISOString(), reason =
     lastLocation: shift.lastLocation,
     lastDistanceMeters: shift.lastDistanceMeters,
     onSite: shift.onSite,
-    segments: shift.segments || [],
+    segments,
     adjustmentHistory: shift.adjustmentHistory || [],
   };
 }

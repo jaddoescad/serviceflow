@@ -49,6 +49,14 @@ Deno.serve(async (req) => {
       return json(await removeAssignment(supabase, body, actor));
     }
 
+    if (action === "setRole") {
+      return json(await setEmployeeRole(supabase, body, actor));
+    }
+
+    if (action === "setActive") {
+      return json(await setEmployeeActive(supabase, body, actor));
+    }
+
     return json({ error: `Unsupported action: ${action}` }, 400);
   } catch (error) {
     const status = Number(error?.status || 500);
@@ -104,6 +112,7 @@ async function listAssignmentContext(supabase: ServiceClient) {
     supabase
       .from("companycam_projects")
       .select("companycam_id,name,formatted_address,city,state,postal_code,companycam_updated_at")
+      .eq("is_deleted", false)
       .eq("is_archived", false)
       .eq("is_lead", false)
       .order("companycam_updated_at", { ascending: false, nullsFirst: false })
@@ -229,6 +238,55 @@ async function removeAssignment(
   return { assignment: data };
 }
 
+async function setEmployeeRole(
+  supabase: ServiceClient,
+  body: Record<string, unknown>,
+  actor: { userId: string | null; role: string },
+) {
+  if (actor.role !== "admin") throw httpError("Only admins can change roles", 403);
+  const userId = requiredText(body.userId ?? body.user_id, "userId");
+  const role = toNullableText(body.role);
+  if (!role || !["admin", "manager", "painter"].includes(role)) throw httpError("Invalid role", 400);
+  if (actor.userId && userId === actor.userId && role !== "admin") {
+    throw httpError("You can't remove your own admin role", 400);
+  }
+
+  const { data, error } = await supabase
+    .from("employee_profiles")
+    .update({ role })
+    .eq("user_id", userId)
+    .select("user_id,email,full_name,role,is_active")
+    .maybeSingle();
+
+  if (error) throw httpError(error.message, 500);
+  if (!data) throw httpError("Employee not found", 404);
+  return { employee: data };
+}
+
+async function setEmployeeActive(
+  supabase: ServiceClient,
+  body: Record<string, unknown>,
+  actor: { userId: string | null; role: string },
+) {
+  if (actor.role !== "admin") throw httpError("Only admins can activate or deactivate employees", 403);
+  const userId = requiredText(body.userId ?? body.user_id, "userId");
+  const isActive = body.isActive === true || body.is_active === true;
+  if (actor.userId && userId === actor.userId && !isActive) {
+    throw httpError("You can't deactivate yourself", 400);
+  }
+
+  const { data, error } = await supabase
+    .from("employee_profiles")
+    .update({ is_active: isActive })
+    .eq("user_id", userId)
+    .select("user_id,email,full_name,role,is_active")
+    .maybeSingle();
+
+  if (error) throw httpError(error.message, 500);
+  if (!data) throw httpError("Employee not found", 404);
+  return { employee: data };
+}
+
 async function ensureAssignableEmployee(supabase: ServiceClient, userId: string) {
   const { data, error } = await supabase
     .from("employee_profiles")
@@ -243,12 +301,13 @@ async function ensureAssignableEmployee(supabase: ServiceClient, userId: string)
 async function ensureAssignableProject(supabase: ServiceClient, projectId: string) {
   const { data, error } = await supabase
     .from("companycam_projects")
-    .select("companycam_id,is_archived,is_lead")
+    .select("companycam_id,is_archived,is_deleted,is_lead")
     .eq("companycam_id", projectId)
     .maybeSingle();
 
   if (error) throw httpError(error.message, 500);
   if (!data) throw httpError("Project does not exist", 404);
+  if (data.is_deleted) throw httpError("Deleted projects cannot be assigned", 400);
   if (data.is_archived) throw httpError("Archived projects cannot be assigned", 400);
   if (data.is_lead) throw httpError("Lead projects cannot be assigned", 400);
 }

@@ -70,6 +70,49 @@ async function main() {
     throw new Error("RLS select check failed: another QA user can read the owner's project assignments.");
   }
 
+  const crossUserTrackingStatus = await restSelect(other.access_token, "employee_tracking_status", {
+    select: "user_id,last_location_at,tracking_mode",
+    user_id: `eq.${owner.user.id}`,
+  });
+
+  if (crossUserTrackingStatus.length) {
+    throw new Error("RLS select check failed: another painter can read the owner's tracking status.");
+  }
+
+  const crossUserLocationPoints = await restSelect(other.access_token, "employee_location_points", {
+    select: "id,user_id,captured_at",
+    user_id: `eq.${owner.user.id}`,
+    limit: "1",
+  });
+
+  if (crossUserLocationPoints.length) {
+    throw new Error("RLS select check failed: another painter can read the owner's location history.");
+  }
+
+  const spoofedLocationResponse = await restFetch(other.access_token, "employee_location_points", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      client_event_id: `rls-spoof-${Date.now()}`,
+      user_id: owner.user.id,
+      client_entry_id: "rls-spoof",
+      latitude: 45.4215,
+      longitude: -75.6972,
+      tracking_mode: "unknown",
+      event_type: "location",
+      captured_at: new Date().toISOString(),
+    }),
+  });
+
+  if (spoofedLocationResponse.ok) {
+    const payload = await spoofedLocationResponse.json().catch(() => []);
+    if (Array.isArray(payload) && payload.length) {
+      throw new Error("RLS insert check failed: another painter inserted a location for the owner.");
+    }
+  } else if (![401, 403].includes(spoofedLocationResponse.status)) {
+    throw new Error(`Unexpected location RLS insert response: ${spoofedLocationResponse.status}`);
+  }
+
   const visibleProjects = await restSelect(other.access_token, "companycam_projects", {
     select: "companycam_id",
     limit: "1",
@@ -106,7 +149,7 @@ async function main() {
     throw new Error("RLS update check failed: owner time entry changed unexpectedly.");
   }
 
-  console.log("RLS checks passed: painters can read projects but cannot read/update another painter's operational rows.");
+  console.log("RLS checks passed: painters can read projects but cannot access or spoof another painter's operational/location rows.");
 }
 
 function requireEnv() {

@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 
 export const COMPANYCAM_PROJECT_SELECT =
-  "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,country,formatted_address,latitude,longitude,is_archived,is_lead,companycam_updated_at,last_synced_at";
+  "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,country,formatted_address,latitude,longitude,is_archived,is_deleted,companycam_status,is_lead,companycam_updated_at,last_synced_at";
 
 const DEFAULT_PROJECT_PAGE_SIZE = 1000;
 const QA_PROJECT_IDS = new Set(["qa-web-smoke-project"]);
@@ -21,13 +21,14 @@ export function isQaProject(project) {
 }
 
 function filterVisibleProjects(projects = []) {
-  return projects.filter((project) => !isQaProject(project));
+  return projects.filter((project) => !project?.is_deleted && !isQaProject(project));
 }
 
 function activeProjectQuery(select = COMPANYCAM_PROJECT_SELECT) {
   return supabase
     .from("companycam_projects")
     .select(select)
+    .eq("is_deleted", false)
     .eq("is_archived", false)
     .eq("is_lead", false)
     .neq("companycam_id", "qa-web-smoke-project");
@@ -62,6 +63,7 @@ export async function listMappedCompanyCamProjects({ pageSize = DEFAULT_PROJECT_
     const { data, error } = await supabase
       .from("companycam_projects")
       .select(COMPANYCAM_PROJECT_SELECT)
+      .eq("is_deleted", false)
       .eq("is_archived", false)
       .not("latitude", "is", null)
       .not("longitude", "is", null)
@@ -97,6 +99,7 @@ export async function searchActiveCompanyCamProjects(query, { limit = 6 } = {}) 
   const { data, error } = await supabase
     .from("companycam_projects")
     .select("*")
+    .eq("is_deleted", false)
     .neq("companycam_id", "qa-web-smoke-project")
     .or(`name.ilike.${match},formatted_address.ilike.${match},city.ilike.${match},state.ilike.${match},postal_code.ilike.${match}`)
     .order("companycam_updated_at", { ascending: false, nullsFirst: false })
@@ -117,9 +120,10 @@ export async function listActiveCompanyCamProjectPage({
 
   let query = supabase
     .from("companycam_projects")
-    .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_lead,last_synced_at,companycam_updated_at", {
+    .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_deleted,companycam_status,is_lead,last_synced_at,companycam_updated_at", {
       count: "exact",
     })
+    .eq("is_deleted", false)
     .order("companycam_updated_at", { ascending: false, nullsFirst: false });
 
   if (safeSearch) {

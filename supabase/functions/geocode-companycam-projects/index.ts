@@ -45,6 +45,7 @@ Deno.serve(async (req) => {
   let query = supabase
     .from("companycam_projects")
     .select("companycam_id,name,formatted_address,street_address_1,street_address_2,city,state,postal_code,country")
+    .eq("is_deleted", false)
     .eq("is_archived", false)
     .or("latitude.is.null,longitude.is.null")
     .is("geocode_error", null)

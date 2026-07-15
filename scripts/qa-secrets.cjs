@@ -7,7 +7,7 @@ const path = require("path");
 const ROOT = process.cwd();
 const INCLUDE_LOCAL_ENV = process.env.QA_SCAN_LOCAL_ENV === "1";
 const SAFE_EMPTY_OR_PLACEHOLDER =
-  /^(|your[_-].*|replace_me|change.?me|example.*|placeholder.*|todo|<.*>)$/i;
+  /^(|your[_-].*|replace_me|replace_with_.*|change.?me|example.*|placeholder.*|todo|<.*>)$/i;
 const SENSITIVE_KEY =
   /(?:SECRET|TOKEN|PASSWORD|PRIVATE_KEY|SERVICE_ROLE|ADMIN_TOKEN|API_KEY|CLIENT_SECRET)/i;
 const PUBLIC_KEY = /^(EXPO_PUBLIC_|SUPABASE_PUBLISHABLE_KEY$|SUPABASE_ANON_KEY$)/i;
@@ -104,7 +104,7 @@ function isTrackedEnvFile(filePath) {
 function scanTextFile(filePath, text, findings) {
   const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => {
-    const assignment = line.match(/^\s*([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE_KEY|SERVICE_ROLE|ADMIN_TOKEN|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)\s*=\s*['"]?([^'"#\s]+)?/i);
+    const assignment = line.match(/^\s*([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PRIVATE_KEY|SERVICE_ROLE|ADMIN_TOKEN|API_KEY|CLIENT_SECRET)[A-Z0-9_]*)\s*=\s*['"]?([^'"#\s]+)?/);
     if (!assignment) return;
 
     const key = assignment[1];

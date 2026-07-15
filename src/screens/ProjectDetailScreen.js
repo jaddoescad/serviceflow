@@ -125,17 +125,23 @@ function isSameCompanyCamProject(a, b) {
   return Boolean(aId && bId && String(aId) === String(bId));
 }
 
-function getEntryDurationMs(entry) {
+function getEntryDurationMs(entry, nowMs = Date.now()) {
+  const isActive = entry?.clockOutReason === 'active' || !entry?.endedAt;
+  if (isActive) {
+    const start = new Date(entry?.startedAt).getTime();
+    return Number.isFinite(start) ? Math.max(0, nowMs - start) : 0;
+  }
+
   const duration = Number(entry?.durationMs);
   if (Number.isFinite(duration)) return Math.max(0, duration);
 
   const start = new Date(entry?.startedAt).getTime();
-  const end = entry?.endedAt ? new Date(entry.endedAt).getTime() : Date.now();
+  const end = new Date(entry?.endedAt).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
   return Math.max(0, end - start);
 }
 
-function getProjectEntryTotals(entries, project, user) {
+function getProjectEntryTotals(entries, project, user, nowMs = Date.now()) {
   const projectId = getCompanyCamProjectId(project);
   const userId = user?.id || null;
   const userEmail = user?.email || null;
@@ -153,7 +159,7 @@ function getProjectEntryTotals(entries, project, user) {
         return totals;
       }
 
-      const durationMs = getEntryDurationMs(entry);
+      const durationMs = getEntryDurationMs(entry, nowMs);
       totals.teamMs += durationMs;
 
       if (
@@ -889,11 +895,24 @@ export default function ProjectDetailScreen({
   const [photosError, setPhotosError] = useState('');
   const [clockActionPending, setClockActionPending] = useState(false);
   const [clockActionError, setClockActionError] = useState('');
+  const [liveNowMs, setLiveNowMs] = useState(Date.now);
+  const hasActiveProjectEntry = useMemo(
+    () => Boolean(activeShift) ||
+      (entries || []).some((entry) => entry?.clockOutReason === 'active' || !entry?.endedAt),
+    [activeShift, entries],
+  );
+
+  useEffect(() => {
+    if (!hasActiveProjectEntry) return undefined;
+    setLiveNowMs(Date.now());
+    const interval = setInterval(() => setLiveNowMs(Date.now()), 15_000);
+    return () => clearInterval(interval);
+  }, [hasActiveProjectEntry]);
 
   const clockInDays = useMemo(() => {
-    const trackedDays = buildProjectClockInDays(entries, activeShift, project, user);
+    const trackedDays = buildProjectClockInDays(entries, activeShift, project, user, liveNowMs);
     return trackedDays;
-  }, [entries, activeShift, project, user]);
+  }, [entries, activeShift, project, user, liveNowMs]);
   const painterSummaries = buildPainterSummaries(clockInDays);
   const selectedPainter =
     selectedPainterId === null
@@ -907,8 +926,8 @@ export default function ProjectDetailScreen({
     firstValue([project?.created_at, project?.added_at, project?.inserted_at]),
   );
   const projectEntryTotals = useMemo(
-    () => getProjectEntryTotals(entries, project, user),
-    [entries, project, user],
+    () => getProjectEntryTotals(entries, project, user, liveNowMs),
+    [entries, project, user, liveNowMs],
   );
   const fallbackYourHours = toNumericHours(firstValue([project?.your_hours, project?.user_hours, project?.my_hours], null));
   const fallbackTeamHours = toNumericHours(firstValue([project?.team_hours, project?.total_hours, project?.crew_hours], null));
