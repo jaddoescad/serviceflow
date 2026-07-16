@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,7 +15,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getLatestActiveCompanyCamProject, searchActiveCompanyCamProjects } from "../lib/projectRepository";
+import { useProjectBudgetProgress } from "../lib/projectBudget";
+import ActiveClockInBody from "./clock-in/ActiveClockInBody";
+import { getLatestActiveCompanyCamProject, getProjectId, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
 import ClockInMap, {
@@ -41,11 +46,14 @@ function formatSignedMinutes(minutes) {
 }
 
 export default function ClockInScreen({
+  enabled = true,
   painterName = "Painter",
   onViewProject,
   activeShift,
   activeElapsedMs = 0,
   todayWorkedMs = 0,
+  projectTimeTotals = {},
+  canViewTeamTime = false,
   locationStatus,
   trackingNotice,
   trackingPermissions,
@@ -69,6 +77,7 @@ export default function ClockInScreen({
   const [clockingIn, setClockingIn] = useState(false);
   const [clockingOut, setClockingOut] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
   const [adjustingStart, setAdjustingStart] = useState(false);
   const [clockInError, setClockInError] = useState("");
 
@@ -129,6 +138,22 @@ export default function ClockInScreen({
   const displayProject = activeShift?.project || selectedProject || nearestWithinRadius || defaultProject;
   const displayClockedInAt = activeShift?.startedAt ? new Date(activeShift.startedAt) : null;
   const isClockedIn = !!activeShift;
+  const budgetProjects = useMemo(
+    () => (isClockedIn && displayProject ? [displayProject] : []),
+    [displayProject, isClockedIn],
+  );
+  const {
+    progressByProjectId,
+    error: budgetProgressError,
+    refresh: refreshBudgetProgress,
+  } = useProjectBudgetProgress(budgetProjects, { enabled: enabled && isClockedIn });
+  const budgetProgress =
+    progressByProjectId[getProjectId(displayProject)] ||
+    (budgetProgressError ? { status: "unavailable" } : null);
+  const projectHoursUsed = projectTimeTotals?.[getProjectId(displayProject)] || "0h 0m";
+  const projectHoursLabel = canViewTeamTime
+    ? "Team hours · This job"
+    : "Your hours · This job";
 
   const address = useMemo(() => {
     return formatAddress(displayProject);
@@ -167,6 +192,21 @@ export default function ClockInScreen({
   );
 
   const adjustmentSummary = useMemo(() => summarizeAdjustments(activeShift), [activeShift]);
+  const switchProjects = useMemo(() => {
+    const currentProjectId = getProjectId(activeShift?.project);
+    const source = searchQuery.trim() ? searchResults : projects;
+    const seen = new Set();
+    return (source || [])
+      .filter((project) => {
+        const projectId = getProjectId(project);
+        if (!projectId || projectId === currentProjectId || project?.is_archived || seen.has(projectId)) {
+          return false;
+        }
+        seen.add(projectId);
+        return true;
+      })
+      .slice(0, searchQuery.trim() ? 12 : 40);
+  }, [activeShift?.project, projects, searchQuery, searchResults]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -246,14 +286,43 @@ export default function ClockInScreen({
     }
   };
 
-  const switchSuggestedProject = async () => {
-    if (!suggestedProject || switching) return;
+  const closeProjectSwitcher = () => {
+    if (switching) return;
+    Keyboard.dismiss();
+    setProjectSwitcherOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+  };
+
+  const openProjectSwitcher = () => {
+    if (switching) return;
+    setClockInError("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+    setProjectSwitcherOpen(true);
+  };
+
+  const switchToProject = async (nextProject) => {
+    if (!nextProject || switching) return;
+    if (getProjectId(nextProject) === getProjectId(activeShift?.project)) {
+      closeProjectSwitcher();
+      return;
+    }
     setSwitching(true);
     setClockInError("");
     try {
-      const shift = await onSwitchProject?.(suggestedProject);
+      const shift = await onSwitchProject?.(nextProject);
       if (!shift) {
         setClockInError("Switch could not complete. Check location permissions and try again.");
+      } else {
+        Keyboard.dismiss();
+        setProjectSwitcherOpen(false);
+        setSearchQuery("");
+        setSearchResults([]);
+        setSearchError("");
+        await refreshBudgetProgress();
       }
     } catch (nextError) {
       setClockInError(nextError?.message || "Switch could not complete. Try again.");
@@ -261,6 +330,8 @@ export default function ClockInScreen({
       setSwitching(false);
     }
   };
+
+  const switchSuggestedProject = () => switchToProject(suggestedProject);
 
   const adjustActiveStart = async (minutes) => {
     if (!activeShift?.startedAt || adjustingStart) return;
@@ -278,6 +349,7 @@ export default function ClockInScreen({
         adjustmentSource: "active_start_edit",
         skipAdjustmentHistory: true,
       });
+      await refreshBudgetProgress();
     } catch (nextError) {
       setClockInError(nextError?.message || "Could not adjust start time. Try again.");
     } finally {
@@ -290,26 +362,49 @@ export default function ClockInScreen({
 
   if (isClockedIn) {
     return (
-      <ActiveClockInView
-        project={displayProject}
-        address={address}
-        workedSinceClockIn={workedSinceClockIn}
-        activeTimer={activeTimer}
-        startTimeLabel={startTimeLabel}
-        adjustmentSummary={adjustmentSummary}
-        trackingNotice={trackingNotice}
-        locationStatus={locationStatus}
-        suggestedProject={suggestedProject}
-        painterName={painterName}
-        clockingOut={clockingOut}
-        switching={switching}
-        adjustingStart={adjustingStart}
-        actionError={clockInError}
-        onAdjustStart={adjustActiveStart}
-        onSwitchProject={switchSuggestedProject}
-        onClockOut={stopClockIn}
-        onViewProject={displayProject ? () => onViewProject?.(displayProject) : null}
-      />
+      <View style={styles.activeScreen}>
+        <ActiveClockInView
+          project={displayProject}
+          address={address}
+          workedSinceClockIn={workedSinceClockIn}
+          projectHoursUsed={projectHoursUsed}
+          projectHoursLabel={projectHoursLabel}
+          activeTimer={activeTimer}
+          startTimeLabel={startTimeLabel}
+          adjustmentSummary={adjustmentSummary}
+          budgetProgress={budgetProgress}
+          trackingNotice={trackingNotice}
+          locationStatus={locationStatus}
+          suggestedProject={suggestedProject}
+          painterName={painterName}
+          clockingOut={clockingOut}
+          switching={switching}
+          adjustingStart={adjustingStart}
+          actionError={clockInError}
+          onAdjustStart={adjustActiveStart}
+          onChangeJob={openProjectSwitcher}
+          onSwitchProject={switchSuggestedProject}
+          onClockOut={stopClockIn}
+          onViewProject={displayProject ? () => onViewProject?.(displayProject) : null}
+        />
+        <ProjectSwitcherModal
+          visible={projectSwitcherOpen}
+          currentProject={displayProject}
+          projects={switchProjects}
+          query={searchQuery}
+          searching={searching}
+          searchError={searchError}
+          switching={switching}
+          actionError={clockInError}
+          bottomInset={insets.bottom}
+          onChangeQuery={(text) => {
+            setSearchQuery(text);
+            if (text.trim()) setSearching(true);
+          }}
+          onClose={closeProjectSwitcher}
+          onSelectProject={switchToProject}
+        />
+      </View>
     );
   }
 
@@ -319,7 +414,7 @@ export default function ClockInScreen({
         <Text style={styles.painterName}>{painterName}</Text>
         <View style={styles.timeRow}>
           <Text style={styles.timeBig}>{workedSinceClockIn}</Text>
-          <Text style={styles.timeLabel}>Logged today</Text>
+          <Text style={styles.timeLabel}>Hours used today</Text>
         </View>
 
         <View style={styles.searchBox}>
@@ -476,14 +571,156 @@ function formatClockTime(date) {
   });
 }
 
+function ProjectSwitcherModal({
+  visible,
+  currentProject,
+  projects,
+  query,
+  searching,
+  searchError,
+  switching,
+  actionError,
+  bottomInset,
+  onChangeQuery,
+  onClose,
+  onSelectProject,
+}) {
+  const hasQuery = Boolean(query.trim());
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.switcherBackdrop}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close job selector"
+          disabled={switching}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
+          style={styles.switcherKeyboardAvoider}
+        >
+          <View style={[styles.switcherSheet, { paddingBottom: Math.max(18, bottomInset + 10) }]}>
+          <View style={styles.switcherHandle} />
+          <View style={styles.switcherHeader}>
+            <View style={styles.switcherTitleWrap}>
+              <Text style={styles.switcherTitle}>Change Job</Text>
+              <Text style={styles.switcherSubtitle} numberOfLines={1}>
+                Currently at {currentProject?.name || "selected job"}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close job selector"
+              disabled={switching}
+              hitSlop={8}
+              style={styles.switcherClose}
+              onPress={onClose}
+            >
+              <Ionicons name="close" size={22} color={COLORS.navy} />
+            </Pressable>
+          </View>
+
+          <View style={styles.switcherSearchBox}>
+            <Ionicons name="search" size={19} color={COLORS.muted} />
+            <TextInput
+              autoFocus={Platform.OS !== "web"}
+              style={styles.switcherSearchInput}
+              value={query}
+              editable={!switching}
+              onChangeText={onChangeQuery}
+              placeholder="Search active projects"
+              placeholderTextColor={COLORS.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {searching ? (
+              <ActivityIndicator size="small" color={COLORS.teal} />
+            ) : query ? (
+              <Pressable hitSlop={8} disabled={switching} onPress={() => onChangeQuery("")}>
+                <Ionicons name="close-circle" size={20} color={COLORS.muted} />
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Text style={styles.switcherSectionLabel}>
+            {hasQuery ? "Search results" : "Active projects"}
+          </Text>
+          <ScrollView
+            style={styles.switcherList}
+            contentContainerStyle={styles.switcherListContent}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            keyboardShouldPersistTaps="handled"
+          >
+            {projects.map((project) => (
+              <Pressable
+                key={getProjectId(project)}
+                accessibilityRole="button"
+                accessibilityLabel={`Switch to ${project.name || "project"}`}
+                disabled={switching}
+                style={({ pressed }) => [
+                  styles.switcherProjectRow,
+                  switching && styles.switcherDisabled,
+                  pressed && !switching && styles.projectCardPressed,
+                ]}
+                onPress={() => onSelectProject(project)}
+              >
+                <View style={styles.switcherProjectIcon}>
+                  {switching ? (
+                    <Ionicons name="location" size={18} color={COLORS.teal} />
+                  ) : (
+                    <Ionicons name="briefcase-outline" size={18} color={COLORS.teal} />
+                  )}
+                </View>
+                <View style={styles.switcherProjectText}>
+                  <Text style={styles.switcherProjectName} numberOfLines={1}>
+                    {project.name || "Project"}
+                  </Text>
+                  <Text style={styles.switcherProjectAddress} numberOfLines={1}>
+                    {formatAddress(project) || "No address on file"}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={19} color={COLORS.muted} />
+              </Pressable>
+            ))}
+            {!searching && !projects.length ? (
+              <Text style={styles.switcherEmpty}>
+                {searchError || (hasQuery ? "No matching active projects found." : "No other active projects are available.")}
+              </Text>
+            ) : null}
+          </ScrollView>
+          {switching ? (
+            <View style={styles.switcherProgress}>
+              <ActivityIndicator size="small" color={COLORS.teal} />
+              <Text style={styles.switcherProgressText}>Changing jobs…</Text>
+            </View>
+          ) : actionError ? (
+            <Text style={styles.switcherError}>{actionError}</Text>
+          ) : null}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+}
+
 function ActiveClockInView({
   painterName,
   project,
   address,
   workedSinceClockIn,
+  projectHoursUsed,
+  projectHoursLabel,
   activeTimer,
   startTimeLabel,
   adjustmentSummary,
+  budgetProgress,
   trackingNotice,
   locationStatus,
   suggestedProject,
@@ -492,181 +729,46 @@ function ActiveClockInView({
   adjustingStart = false,
   actionError = "",
   onAdjustStart,
+  onChangeJob,
   onSwitchProject,
   onClockOut,
   onViewProject,
 }) {
-  const [editedOpen, setEditedOpen] = useState(false);
   const distanceText =
     locationStatus?.activeDistance == null ? null : formatDistance(locationStatus.activeDistance);
   const distanceLabel = distanceText ? `${distanceText} from job` : null;
-  const statusMessage = trackingNotice?.message || locationStatus?.label || null;
-  const showDistanceLabel =
-    distanceLabel && distanceText && !String(statusMessage).includes(distanceText);
+  const baseMessage = trackingNotice?.message || locationStatus?.label || null;
+  const statusMessage =
+    baseMessage && distanceLabel && !String(baseMessage).includes(distanceText)
+      ? `${baseMessage} (${distanceLabel})`
+      : baseMessage;
 
   return (
     <View style={styles.activeScreen}>
-      <View style={styles.activeTopBar}>
-        <View style={styles.activeTopText}>
-          <Text style={styles.painterName}>{painterName}</Text>
-          <View style={styles.timeRow}>
-            <Text style={styles.timeBig}>{workedSinceClockIn}</Text>
-            <Text style={styles.timeLabel}>Logged Today</Text>
-          </View>
-          <View style={styles.timeRow}>
-            <Text style={styles.activeScheduleTime}>On this job</Text>
-            <Text style={styles.timeLabel}>Active shift</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.activeProgressTrack}>
-        <View style={styles.activeProgressFill} />
-      </View>
-
-      <View style={styles.activeContent}>
-        <View style={styles.activeTimerCard}>
-          <View style={styles.activeProjectRow}>
-            <View style={styles.activeProjectTitleWrap}>
-              <Ionicons name="location" size={25} color="#70c5d8" />
-              <Text style={styles.activeProjectName} numberOfLines={1}>
-                {project?.name || "Selected Project"}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.activeProjectAddress} numberOfLines={1}>
-            {address || "No address on file"}
-          </Text>
-
-          {statusMessage ? (
-            <View style={styles.activeLocationNotice}>
-              <Ionicons
-                name={locationStatus?.onSite === false ? "warning-outline" : "navigate-outline"}
-                size={16}
-                color={locationStatus?.onSite === false ? "#b56025" : COLORS.teal}
-              />
-              <Text style={styles.activeLocationText} numberOfLines={2}>
-                {statusMessage}
-                {showDistanceLabel ? ` (${distanceLabel})` : ""}
-              </Text>
-            </View>
-          ) : null}
-
-          {suggestedProject ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${suggestedProject.name}`}
-              disabled={switching}
-              style={({ pressed }) => [
-                styles.switchProjectButton,
-                switching && styles.buttonBusy,
-                pressed && !switching && styles.clockOutPressed,
-              ]}
-              onPress={onSwitchProject}
-            >
-              {switching ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Ionicons name="swap-horizontal" size={17} color={COLORS.white} />
-              )}
-              <Text style={styles.switchProjectText} numberOfLines={1}>
-                {switching ? "Switching…" : `Switch to ${suggestedProject.name}`}
-              </Text>
-            </Pressable>
-          ) : null}
-
-          <View style={styles.bigTimerRow}>
-            <Text style={styles.bigTimerMain}>{activeTimer.main}</Text>
-            <Text style={styles.bigTimerSeconds}>{activeTimer.seconds}</Text>
-          </View>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Clock out current shift"
-            disabled={clockingOut}
-            style={({ pressed }) => [
-              styles.clockOutButton,
-              clockingOut && styles.buttonBusy,
-              pressed && !clockingOut && styles.clockOutPressed,
-            ]}
-            onPress={onClockOut}
-          >
-            {clockingOut ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <Ionicons name="stop-circle-outline" size={20} color={COLORS.white} />
-            )}
-            <Text style={styles.clockOutText}>{clockingOut ? "Clocking Out" : "Clock Out"}</Text>
-          </Pressable>
-
-          {actionError ? <Text style={styles.activeErrorText}>{actionError}</Text> : null}
-        </View>
-
-        <View style={styles.activeRowCard}>
-          <Text style={styles.activeRowLabel}>Edit Start Time</Text>
-          <View style={styles.startTimeControls}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Move start time 5 minutes earlier"
-              disabled={adjustingStart}
-              style={[styles.startAdjustButton, adjustingStart && styles.buttonBusy]}
-              onPress={() => onAdjustStart?.(-5)}
-            >
-              <Text style={styles.startAdjustText}>-5m</Text>
-            </Pressable>
-            <View style={styles.startTimePill}>
-              <Text style={styles.startTimeText}>{startTimeLabel}</Text>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Move start time 5 minutes later"
-              disabled={adjustingStart}
-              style={[styles.startAdjustButton, adjustingStart && styles.buttonBusy]}
-              onPress={() => onAdjustStart?.(5)}
-            >
-              <Text style={styles.startAdjustText}>+5m</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {adjustmentSummary ? (
-          <View style={styles.editedCard}>
-            <Pressable
-              style={styles.editedHeader}
-              onPress={() => setEditedOpen((open) => !open)}
-            >
-              <Text style={styles.editedTitle}>Edited</Text>
-              <Ionicons
-                name={editedOpen ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={COLORS.muted}
-              />
-            </Pressable>
-            {editedOpen ? (
-              <View style={styles.editedDetail}>
-                <Text style={styles.editedDetailTime}>{adjustmentSummary.editedAtLabel}</Text>
-                <Text style={styles.editedDetailDelta}>
-                  {formatSignedMinutes(adjustmentSummary.netMinutes)}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.viewProjectButton,
-            !onViewProject && styles.viewProjectDisabled,
-            pressed && onViewProject && styles.viewProjectPressed,
-          ]}
-          disabled={!onViewProject}
-          onPress={onViewProject}
-        >
-          <Ionicons name="folder-open" size={20} color={COLORS.white} />
-          <Text style={styles.viewProjectText}>View Project</Text>
-        </Pressable>
-      </View>
+      <ActiveClockInBody
+        painterName={painterName}
+        project={project}
+        address={address}
+        workedSinceClockIn={workedSinceClockIn}
+        projectHoursUsed={projectHoursUsed}
+        projectHoursLabel={projectHoursLabel}
+        activeTimer={activeTimer}
+        startTimeLabel={startTimeLabel}
+        adjustmentSummary={adjustmentSummary}
+        budgetProgress={budgetProgress}
+        statusMessage={statusMessage}
+        offSite={locationStatus?.onSite === false}
+        suggestedProject={suggestedProject}
+        clockingOut={clockingOut}
+        switching={switching}
+        adjustingStart={adjustingStart}
+        actionError={actionError}
+        onAdjustStart={onAdjustStart}
+        onChangeJob={onChangeJob}
+        onSwitchProject={onSwitchProject}
+        onClockOut={onClockOut}
+        onViewProject={onViewProject}
+      />
     </View>
   );
 }
@@ -680,231 +782,102 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f7f7f7",
   },
-  activeTopBar: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+  switcherBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(17, 32, 29, 0.42)",
+  },
+  switcherKeyboardAvoider: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  switcherSheet: {
+    width: "100%",
+    maxHeight: "82%",
+    alignSelf: "center",
     backgroundColor: COLORS.white,
-  },
-  activeTopText: {
-    flex: 1,
-    gap: 6,
-  },
-  activeScheduleTime: {
-    color: COLORS.ink,
-    fontSize: 14.5,
-    fontWeight: "900",
-    letterSpacing: 0.1,
-  },
-  activeProgressTrack: {
-    height: 6,
-    backgroundColor: "#dfe3e4",
-  },
-  activeProgressFill: {
-    width: "32%",
-    height: "100%",
-    backgroundColor: "#70c5d8",
-  },
-  activeContent: {
-    flex: 1,
-    paddingHorizontal: 8,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 18,
     paddingTop: 10,
-    gap: 10,
+    ...Platform.select({
+      web: { maxWidth: 620 },
+      default: {},
+    }),
   },
-  activeTimerCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-  },
-  activeProjectRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  activeProjectTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  activeProjectName: {
-    flex: 1,
-    minWidth: 0,
-    color: "#70c5d8",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  activeProjectAddress: {
-    color: COLORS.muted,
-    fontSize: 12,
-    fontWeight: "700",
-    marginLeft: 35,
-    marginTop: 2,
-  },
-  bigTimerRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    justifyContent: "center",
-    marginTop: 32,
-    marginBottom: 28,
-  },
-  bigTimerMain: {
-    color: "#202124",
-    fontSize: 50,
-    fontWeight: "400",
-    letterSpacing: -1,
-  },
-  bigTimerSeconds: {
-    color: "#202124",
-    fontSize: 29,
-    fontWeight: "400",
-    marginLeft: 7,
-  },
-  clockOutButton: {
-    height: 50,
-    borderRadius: 4,
-    backgroundColor: "#f26666",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  clockOutPressed: {
-    opacity: 0.88,
-  },
-  buttonBusy: {
-    opacity: 0.6,
-  },
-  activeErrorText: {
-    marginTop: 10,
-    color: "#b42318",
-    fontSize: 12.5,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  clockOutText: {
-    color: COLORS.white,
-    fontSize: 19,
-    fontWeight: "800",
-  },
-  activeRowCard: {
-    minHeight: 66,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  activeRowLabel: {
-    color: "#70c5d8",
-    fontSize: 17,
-    fontWeight: "800",
-  },
-  startTimePill: {
-    backgroundColor: "#eeeeef",
-    borderRadius: 22,
-    paddingHorizontal: 15,
-    paddingVertical: 9,
-  },
-  startTimeControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-  startAdjustButton: {
+  switcherHandle: {
+    width: 42,
+    height: 5,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    backgroundColor: COLORS.white,
+    backgroundColor: "#d7ddda",
+    alignSelf: "center",
+    marginBottom: 12,
   },
-  startAdjustText: {
-    color: COLORS.teal,
-    fontSize: 11.5,
-    fontWeight: "900",
-  },
-  startTimeText: {
-    color: "#050505",
-    fontSize: 17,
-    fontWeight: "500",
-  },
-  editedCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  editedHeader: {
+  switcherHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 12,
   },
-  editedTitle: {
-    color: COLORS.ink,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  editedDetail: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 10,
-  },
-  editedDetailTime: {
-    color: COLORS.ink,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  editedDetailDelta: {
-    color: COLORS.teal,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  addTaskWrap: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  viewProjectButton: {
-    minHeight: 56,
-    borderRadius: 16,
-    backgroundColor: COLORS.navy,
-    flexDirection: "row",
+  switcherTitleWrap: { flex: 1, minWidth: 0 },
+  switcherTitle: { color: COLORS.ink, fontSize: 22, fontWeight: "900", letterSpacing: -0.4 },
+  switcherSubtitle: { color: COLORS.muted, fontSize: 12.5, fontWeight: "600", marginTop: 2 },
+  switcherClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#edf2ef",
+  },
+  switcherSearchBox: {
+    height: 48,
+    marginTop: 16,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#dfe7e3",
+    backgroundColor: "#f4f7f5",
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 9,
   },
-  viewProjectPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
-  },
-  viewProjectDisabled: {
-    opacity: 0.5,
-  },
-  viewProjectText: {
-    color: COLORS.white,
-    fontSize: 17,
+  switcherSearchInput: { flex: 1, height: "100%", color: COLORS.ink, fontSize: 15, fontWeight: "700" },
+  switcherSectionLabel: {
+    color: COLORS.muted,
+    fontSize: 11,
     fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginTop: 16,
+    marginBottom: 7,
   },
+  switcherList: { flexGrow: 0 },
+  switcherListContent: { paddingBottom: 4 },
+  switcherProjectRow: {
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: "#edf0ee",
+    paddingVertical: 9,
+  },
+  switcherProjectIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#e9f3ee",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  switcherProjectText: { flex: 1, minWidth: 0 },
+  switcherProjectName: { color: COLORS.ink, fontSize: 14.5, fontWeight: "900" },
+  switcherProjectAddress: { color: COLORS.muted, fontSize: 12, fontWeight: "600", marginTop: 2 },
+  switcherEmpty: { color: COLORS.muted, fontSize: 13, fontWeight: "700", textAlign: "center", paddingVertical: 24 },
+  switcherDisabled: { opacity: 0.6 },
+  switcherProgress: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 12 },
+  switcherProgressText: { color: COLORS.navy, fontSize: 13, fontWeight: "800" },
+  switcherError: { color: "#c0432b", fontSize: 12.5, fontWeight: "700", paddingTop: 10 },
   header: {
     paddingHorizontal: 22,
     paddingTop: 14,
@@ -1149,39 +1122,5 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.3,
   },
-  activeLocationNotice: {
-    marginTop: 12,
-    borderRadius: 14,
-    backgroundColor: "#f5f8f6",
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  activeLocationText: {
-    flex: 1,
-    color: COLORS.ink,
-    fontSize: 12.5,
-    fontWeight: "800",
-    lineHeight: 17,
-  },
-  switchProjectButton: {
-    marginTop: 10,
-    minHeight: 42,
-    borderRadius: 14,
-    backgroundColor: COLORS.green,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  switchProjectText: {
-    color: COLORS.white,
-    fontSize: 13.5,
-    fontWeight: "900",
-  },
+
 });

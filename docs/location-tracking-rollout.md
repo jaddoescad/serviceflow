@@ -2,7 +2,8 @@
 
 ## What ships
 
-- Low-power painting/stationary mode backed by geofences.
+- Low-power painting/stationary background updates backed by geofences, plus a
+  four-minute foreground heartbeat while the app is open.
 - Balanced-accuracy travel mode with 100 m filtering and deferred 2-minute/250 m batches.
 - Offline location queue with idempotent Supabase synchronization.
 - Append-only daily route history and current tracking diagnostics.
@@ -43,7 +44,8 @@ Leave `EXPO_PUBLIC_LOCATION_TRACKING_PILOT_EMAILS` empty after the pilot to enab
 Use signed builds on at least two iPhones and one Android device. For each device, verify:
 
 - Clock in at a mapped job, lock the screen, and leave the phone stationary for at least one hour.
-- Confirm the app reports painting mode and does not create repetitive route points.
+- With the app open and stationary, confirm the manager status advances at least once within five minutes.
+- Confirm the app reports painting mode and does not create repetitive route points while stationary.
 - Leave the 160 m job geofence and drive at least 2 km with the screen locked.
 - Confirm travel points appear on the manager map within five minutes and route gaps are labeled.
 - Stop for more than three minutes, then drive again and confirm tracking resumes after leaving the stop geofence.

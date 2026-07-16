@@ -57,6 +57,48 @@ async function main() {
     return;
   }
 
+  if (command === "set-budget") {
+    const context = await request("list");
+    const project = resolveProject(context.projects || [], args);
+    const amountBeforeTax = parsePositiveNumber(
+      args.amountBeforeTax ?? args.amount,
+      "--amount-before-tax",
+    );
+    const allocationPercent = parsePercent(args.allocation ?? 39, "--allocation");
+    await request("setBudget", {
+      projectId: project.companycam_id,
+      amountBeforeTax,
+      allocationPercent,
+      notes: args.notes,
+    });
+
+    console.log(`Budget saved: ${project.name}`);
+    console.log(`Pre-tax job value: $${amountBeforeTax.toFixed(2)}`);
+    console.log(`Labour allocation: ${allocationPercent.toFixed(2)}%`);
+    return;
+  }
+
+  if (command === "set-actual-labour") {
+    const context = await request("list");
+    const project = resolveProject(context.projects || [], args);
+    const clear = args.clear === true;
+    if (clear && (args.amount !== undefined || args.actualLabourCost !== undefined)) {
+      throw new Error("Use either --amount or --clear, not both.");
+    }
+    const actualLabourCost = clear
+      ? null
+      : parsePositiveNumber(args.amount ?? args.actualLabourCost, "--amount");
+
+    await request("setActualLabourCost", {
+      projectId: project.companycam_id,
+      actualLabourCost,
+    });
+
+    console.log(`Actual labour cost ${clear ? "cleared" : "saved"}: ${project.name}`);
+    if (!clear) console.log(`Complete labour cost: $${actualLabourCost.toFixed(2)}`);
+    return;
+  }
+
   if (command === "projects") {
     const context = await request("list");
     const search = String(args.search || args.s || "").toLowerCase();
@@ -206,6 +248,22 @@ function formatProject(project) {
   return `${project.companycam_id} | ${project.name} | ${project.formatted_address || ""}`;
 }
 
+function parsePositiveNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new Error(`${label} must be a number greater than zero.`);
+  }
+  return Math.round(number * 100) / 100;
+}
+
+function parsePercent(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0 || number > 100) {
+    throw new Error(`${label} must be greater than zero and at most 100.`);
+  }
+  return Math.round(number * 100) / 100;
+}
+
 function parseArgs(argv) {
   const parsed = { _: [] };
 
@@ -270,6 +328,9 @@ Usage:
   npm run office -- assign --email painter@example.com --project "Tyler Duncan"
   npm run office -- remove --email painter@example.com --project "Tyler Duncan"
   npm run office -- projects --search "Duncan"
+  npm run office -- set-budget --project "Tyler Duncan" --amount-before-tax 10000 [--allocation 39] [--notes "Original contract"]
+  npm run office -- set-actual-labour --project "Sheila McSwiggan" --amount 450
+  npm run office -- set-actual-labour --project "Sheila McSwiggan" --clear
 
 Environment:
   ASSIGNMENT_ADMIN_TOKEN       Backend token configured in Supabase secrets

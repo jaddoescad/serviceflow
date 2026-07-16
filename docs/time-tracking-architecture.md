@@ -17,7 +17,9 @@
 ## Invariants
 
 1. A shift session has one immutable `localId`.
-2. Clock-out is written locally before network or location cleanup begins.
+2. Clock-out locks foreground location writes, serializes any in-flight write,
+   stops continuous updates, and makes one bounded fresh-location attempt before
+   the local terminal transition.
 3. Clock-out adds the session to a bounded `closedShiftIds` tombstone list.
 4. A background task may update a shift only when its `localId` still matches
    the active slot and is not tombstoned.
@@ -40,16 +42,21 @@
 
 ## Clock-out order
 
-1. Capture one `endedAt` timestamp.
-2. Atomically clear and tombstone the local active session.
-3. Update React state.
-4. Complete the Supabase row only if it is still active.
-5. Use the row already in Supabase if another completion won.
-6. Stop tracking and record the terminal tracking status.
+1. Lock foreground location capture and capture one `endedAt` timestamp.
+2. Wait for any foreground location mutation, then stop continuous background updates.
+3. Attempt one fresh location capture with a bounded timeout. Record a
+   `clock_out` point only when that capture succeeds; never re-timestamp a stale
+   point as the clock-out location.
+4. Atomically clear and tombstone the local active session.
+5. Update React state and complete the Supabase row only if it is still active.
+6. Use the row already in Supabase if another completion won.
+7. Record terminal tracking status, remove geofences, and flush pending location data.
 
-This order makes late background callbacks harmless: they can retain append-only
-location evidence, but they cannot restore the session, reopen the database row,
-or replace the original clock-out time.
+This order obtains the best available end-of-shift evidence without allowing a
+stale point to masquerade as the clock-out location. The foreground lock,
+serialized sensor shutdown, and local tombstone make late callbacks harmless:
+they cannot restore the session, reopen the database row, or replace the
+original clock-out time.
 
 ## Backend command boundary
 

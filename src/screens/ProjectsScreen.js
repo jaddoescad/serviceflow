@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { BudgetProgressBadge } from "../components/BudgetProgress";
 import {
   getProjectId,
   listActiveCompanyCamProjectPage,
@@ -19,17 +20,20 @@ import {
 import { palette as COLORS } from "../theme";
 
 const PROJECTS_PAGE_SIZE = 20;
+const PROJECT_FEED_REFRESH_MS = 45_000;
 const EMPTY_PROJECT_TOTALS = Object.freeze({});
 const EMPTY_PROJECT_IDS = Object.freeze([]);
 const PROJECT_ID_KEY_SEPARATOR = "\0";
 
 export default function ProjectsScreen({
+  enabled = true,
   onSelectProject,
   activeShift,
   projectTimeTotals = EMPTY_PROJECT_TOTALS,
+  myProjectTimeTotals = EMPTY_PROJECT_TOTALS,
+  projectLatestActivity = EMPTY_PROJECT_TOTALS,
   assignedProjectIds = EMPTY_PROJECT_IDS,
   canManageProjects = false,
-  canViewTeamTime = false,
   onProjectsChanged,
 }) {
   const [projects, setProjects] = useState([]);
@@ -79,16 +83,39 @@ export default function ProjectsScreen({
     const assignedProjectIdsForQuery =
       !trimmedSearch && filter === "assigned" ? relevantAssignedIds : null;
 
-    const {
-      projects: nextProjects,
-      error: queryError,
-      count,
-    } = await listActiveCompanyCamProjectPage({
+    const result = await listActiveCompanyCamProjectPage({
       page: pageToLoad,
       pageSize: PROJECTS_PAGE_SIZE,
       search: trimmedSearch,
       projectIds: assignedProjectIdsForQuery,
     });
+    let nextProjects = result.projects;
+    const pageProjectCount = result.projects.length;
+    let queryError = result.error;
+    const count = result.count;
+
+    if (
+      !queryError &&
+      pageToLoad === 0 &&
+      !trimmedSearch &&
+      filter === "active" &&
+      trackedProjectIds.length
+    ) {
+      const activityResult = await listActiveCompanyCamProjectPage({
+        page: 0,
+        pageSize: Math.max(PROJECTS_PAGE_SIZE, trackedProjectIds.length),
+        projectIds: trackedProjectIds,
+      });
+      queryError = activityResult.error;
+
+      if (!queryError) {
+        const seenIds = new Set(nextProjects.map(getProjectId));
+        const additionalProjects = activityResult.projects.filter(
+          (project) => !seenIds.has(getProjectId(project)),
+        );
+        nextProjects = [...nextProjects, ...additionalProjects];
+      }
+    }
 
     // A newer request superseded this one; ignore its (stale) results so we don't
     // clobber fresher data or flip loading flags the newer request owns.
@@ -106,15 +133,15 @@ export default function ProjectsScreen({
       });
       setPage(pageToLoad);
       setTotalProjects(count ?? null);
-      const loadedThrough = pageToLoad * PROJECTS_PAGE_SIZE + nextProjects.length;
-      setHasMore(count == null ? nextProjects.length === PROJECTS_PAGE_SIZE : loadedThrough < count);
+      const loadedThrough = pageToLoad * PROJECTS_PAGE_SIZE + pageProjectCount;
+      setHasMore(count == null ? pageProjectCount === PROJECTS_PAGE_SIZE : loadedThrough < count);
     }
 
     hasLoadedProjectsRef.current = true;
     if (shouldShowInitialLoader) setLoading(false);
     if (append) setLoadingMore(false);
     isFetchingRef.current = false;
-  }, [filter, relevantAssignedIds, searchQuery]);
+  }, [filter, relevantAssignedIds, searchQuery, trackedProjectIds]);
 
   const refreshProjects = useCallback(async () => {
     setRefreshing(true);
@@ -177,6 +204,21 @@ export default function ProjectsScreen({
   }, [loadProjects]);
 
   useEffect(() => {
+    if (enabled && hasLoadedProjectsRef.current) {
+      loadProjects({ quiet: true, pageToLoad: 0 });
+    }
+  }, [enabled, loadProjects]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const interval = setInterval(
+      () => loadProjects({ quiet: true, pageToLoad: 0 }),
+      PROJECT_FEED_REFRESH_MS,
+    );
+    return () => clearInterval(interval);
+  }, [enabled, loadProjects]);
+
+  useEffect(() => {
     const timeout = setTimeout(() => {
       setSearchQuery(searchText.trim());
     }, 250);
@@ -185,7 +227,6 @@ export default function ProjectsScreen({
   }, [searchText]);
 
   const assignedProjectIdSet = useMemo(() => new Set(relevantAssignedIds), [relevantAssignedIds]);
-  const trackedProjectIdSet = useMemo(() => new Set(trackedProjectIds), [trackedProjectIds]);
   const isSearching = searchQuery.length > 0;
   const visibleProjects = useMemo(
     () => (isSearching ? projects : projects.filter((p) => !p.is_archived)),
@@ -194,6 +235,10 @@ export default function ProjectsScreen({
   const filtered = useMemo(
     () => (filter === "assigned" && !isSearching ? visibleProjects.filter((project) => assignedProjectIdSet.has(getProjectId(project))) : visibleProjects),
     [assignedProjectIdSet, filter, isSearching, visibleProjects],
+  );
+  const sortedFiltered = useMemo(
+    () => [...filtered].sort((left, right) => compareProjectActivity(left, right, projectLatestActivity)),
+    [filtered, projectLatestActivity],
   );
   const activeProject = useMemo(() => {
     if (!activeProjectId || isSearching) return null;
@@ -204,9 +249,9 @@ export default function ProjectsScreen({
   const featured = activeProject;
   const featuredStatusLabel = activeShift?.onSite === false ? "Off site" : "Clocked in";
   const remaining = featured
-    ? filtered.filter((project) => getProjectId(project) !== getProjectId(featured))
-    : filtered;
-  const totalLabel = canViewTeamTime ? "Team total" : "Your total";
+    ? sortedFiltered.filter((project) => getProjectId(project) !== getProjectId(featured))
+    : sortedFiltered;
+  const getBudgetProgress = (project) => project?.budgetProgress || null;
 
   return (
     <View style={styles.screen}>
@@ -285,8 +330,8 @@ export default function ProjectsScreen({
               <CurrentProjectCard
                 project={featured}
                 statusLabel={featuredStatusLabel}
-                assignedHoursLabel={getProjectHoursLabel(featured, projectTimeTotals)}
-                hoursLabel={totalLabel}
+                budgetProgress={getBudgetProgress(featured)}
+                myHoursLabel={myProjectTimeTotals?.[getProjectId(featured)] || null}
                 onPress={() => onSelectProject?.(featured)}
               />
             ) : null}
@@ -345,15 +390,12 @@ export default function ProjectsScreen({
             ) : (
               <>
                 {remaining.map((p) => {
-                  const assigned = assignedProjectIdSet.has(getProjectId(p));
-                  const tracked = trackedProjectIdSet.has(getProjectId(p));
-                  const hoursLabel = getProjectHoursLabel(p, projectTimeTotals);
                   return (
                     <ProjectCard
                       key={p.companycam_id}
                       project={p}
-                      assignedHoursLabel={hoursLabel || (assigned && !tracked ? "0h 0m" : null)}
-                      hoursLabel={totalLabel}
+                      budgetProgress={getBudgetProgress(p)}
+                      myHoursLabel={myProjectTimeTotals?.[getProjectId(p)] || null}
                       onPress={() => onSelectProject?.(p)}
                     />
                   );
@@ -375,7 +417,13 @@ export default function ProjectsScreen({
   );
 }
 
-function CurrentProjectCard({ project, onPress, assignedHoursLabel, hoursLabel = "Team total", statusLabel }) {
+function CurrentProjectCard({
+  project,
+  onPress,
+  statusLabel,
+  budgetProgress,
+  myHoursLabel,
+}) {
   const address = formatAddress(project);
   return (
     <Pressable
@@ -394,16 +442,19 @@ function CurrentProjectCard({ project, onPress, assignedHoursLabel, hoursLabel =
         <Text style={styles.currentAddress} numberOfLines={1}>
           {address || "No address on file"}
         </Text>
+        <BudgetProgressBadge progress={budgetProgress} dark />
       </View>
-      <View style={styles.timerBlock}>
-        <Text style={styles.timer}>{assignedHoursLabel || "00:00"}</Text>
-        <Text style={styles.timerLabel}>{assignedHoursLabel ? hoursLabel : "Today"}</Text>
-      </View>
+      {myHoursLabel ? (
+        <View style={styles.timerBlock}>
+          <Text style={styles.timer}>{myHoursLabel}</Text>
+          <Text style={styles.timerLabel}>Your hours</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
-function ProjectCard({ project, onPress, assignedHoursLabel, hoursLabel = "Team total" }) {
+function ProjectCard({ project, onPress, budgetProgress, myHoursLabel }) {
   const address = formatAddress(project);
   return (
     <Pressable
@@ -418,20 +469,34 @@ function ProjectCard({ project, onPress, assignedHoursLabel, hoursLabel = "Team 
         <Text style={styles.cardAddress} numberOfLines={1}>
           {address || "No address on file"}
         </Text>
-        <Text style={styles.cardDate}>{formatDate(project.last_synced_at)}</Text>
+        <BudgetProgressBadge progress={budgetProgress} />
       </View>
-      {assignedHoursLabel ? (
+      {myHoursLabel ? (
         <View style={styles.hoursBlock}>
-          <Text style={styles.hoursText}>{assignedHoursLabel}</Text>
-          <Text style={styles.hoursLabel}>{hoursLabel}</Text>
+          <Text style={styles.hoursText}>{myHoursLabel}</Text>
+          <Text style={styles.hoursLabel}>Your hours</Text>
         </View>
       ) : null}
     </Pressable>
   );
 }
 
-function getProjectHoursLabel(project, projectTimeTotals) {
-  return projectTimeTotals?.[getProjectId(project)] || null;
+function compareProjectActivity(left, right, projectLatestActivity) {
+  const leftActivity = Number(projectLatestActivity?.[getProjectId(left)] || 0);
+  const rightActivity = Number(projectLatestActivity?.[getProjectId(right)] || 0);
+
+  if (leftActivity !== rightActivity) return rightActivity - leftActivity;
+
+  const leftUpdated = getProjectUpdatedTimestamp(left);
+  const rightUpdated = getProjectUpdatedTimestamp(right);
+  if (leftUpdated !== rightUpdated) return rightUpdated - leftUpdated;
+
+  return String(left?.name || "").localeCompare(String(right?.name || ""));
+}
+
+function getProjectUpdatedTimestamp(project) {
+  const value = new Date(project?.companycam_updated_at || project?.last_synced_at || 0).getTime();
+  return Number.isFinite(value) ? value : 0;
 }
 
 function getProjectIdsKey(projectIds) {
@@ -449,16 +514,6 @@ function formatAddress(project) {
     project.formatted_address ||
     [project.city, project.state, project.postal_code].filter(Boolean).join(", ")
   );
-}
-
-function formatDate(value) {
-  if (!value) return "Not synced";
-  return new Intl.DateTimeFormat("en-CA", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 function MapThumb({ tone = "light" }) {
@@ -717,12 +772,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
     fontWeight: "500",
-  },
-  cardDate: {
-    color: COLORS.muted,
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 6,
   },
   hoursBlock: {
     alignItems: "flex-end",

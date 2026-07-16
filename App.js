@@ -138,11 +138,14 @@ function AppRoot() {
           style={[styles.tabScene, activeTab !== "clock" && styles.hiddenScene]}
         >
           <ClockInScreen
+            enabled={activeTab === "clock" && !selectedProject}
             painterName={painterName}
             onViewProject={setSelectedProject}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
             todayWorkedMs={tracking.todayWorkedMs}
+            projectTimeTotals={tracking.projectTimeTotals}
+            canViewTeamTime={canManageProjects}
             locationStatus={tracking.locationStatus}
             trackingNotice={tracking.trackingNotice}
             trackingPermissions={tracking.trackingPermissions}
@@ -158,9 +161,12 @@ function AppRoot() {
           style={[styles.tabScene, activeTab !== "projects" && styles.hiddenScene]}
         >
           <ProjectsScreen
+            enabled={activeTab === "projects" && !selectedProject}
             onSelectProject={setSelectedProject}
             activeShift={tracking.activeShift}
             projectTimeTotals={tracking.projectTimeTotals}
+            myProjectTimeTotals={tracking.myProjectTimeTotals}
+            projectLatestActivity={tracking.projectLatestActivity}
             assignedProjectIds={assignedProjectIds}
             canManageProjects={canManageProjects}
             canViewTeamTime={canManageProjects}
@@ -224,6 +230,10 @@ function AppRoot() {
             onClockIn={tracking.clockIn}
             onClockOut={tracking.clockOut}
             onSwitchProject={tracking.switchProject}
+            onOpenActiveClock={() => {
+              setSelectedProject(null);
+              setActiveTab("clock");
+            }}
             onDeleteTimeEntry={tracking.deleteTimeEntry}
             onUpdateTimeEntry={tracking.updateTimeEntry}
           />

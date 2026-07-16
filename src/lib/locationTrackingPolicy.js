@@ -7,6 +7,11 @@ export const TRACKING_MODE = Object.freeze({
   UNKNOWN: "unknown",
 });
 
+export const TRACKING_PROFILE = Object.freeze({
+  LOW_POWER: "low_power",
+  TRAVEL: "travel",
+});
+
 export const TRACKING_POLICY = Object.freeze({
   travelDistanceMeters: 100,
   travelMaximumGapMs: 3 * 60 * 1000,
@@ -19,6 +24,12 @@ export const TRACKING_POLICY = Object.freeze({
   staleAfterMs: 15 * 60 * 1000,
   maximumAcceptedAccuracyMeters: 250,
 });
+
+export function trackingProfileForMode(mode) {
+  return mode === TRACKING_MODE.PAINTING || mode === TRACKING_MODE.STATIONARY
+    ? TRACKING_PROFILE.LOW_POWER
+    : TRACKING_PROFILE.TRAVEL;
+}
 
 export function pointDistanceMeters(a, b) {
   if (!a || !b) return null;

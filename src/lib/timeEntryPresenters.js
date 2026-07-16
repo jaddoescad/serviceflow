@@ -7,12 +7,24 @@ function formatSegmentDistanceLabel(segment, fallbackDistanceMeters = null) {
   return `${formatDistance(distanceMeters)} from site`;
 }
 
+function entryLocationMode(entry) {
+  if (entry?.onSite === true) return "on_site";
+  if (entry?.onSite === false) return "off_site";
+  return "unknown";
+}
+
+function normalizedSegmentMode(segment, entry) {
+  if (segment?.mode === "on_site" || segment?.mode === "off_site") return segment.mode;
+  if (segment?.mode === "unknown") return "unknown";
+  return entryLocationMode(entry);
+}
+
 function getEntrySegments(entry, nowIso = new Date().toISOString()) {
   const segments = Array.isArray(entry?.segments) && entry.segments.length
     ? entry.segments
     : [
         {
-          mode: entry?.onSite === false ? "off_site" : "on_site",
+          mode: entryLocationMode(entry),
           startedAt: entry?.startedAt,
           endedAt: entry?.endedAt,
           distanceMeters: entry?.lastDistanceMeters,
@@ -25,7 +37,7 @@ function getEntrySegments(entry, nowIso = new Date().toISOString()) {
     const isOpenSegment = isActive && index === segments.length - 1;
     return {
       ...segment,
-      mode: segment.mode || (entry?.onSite === false ? "off_site" : "on_site"),
+      mode: normalizedSegmentMode(segment, entry),
       startedAt: segment.startedAt || entry?.startedAt,
       // While a shift is active, the final segment's endedAt is only the most
       // recent GPS checkpoint. It is not a clock-out time, so keep it running.
@@ -47,8 +59,14 @@ function summarizeSegments(entry) {
     totalMs: 0,
     onSiteMs: 0,
     offSiteMs: 0,
+    unknownMs: 0,
     latestDistanceMeters: entry?.lastDistanceMeters ?? null,
-    status: entry?.onSite === false ? "Off Site" : "On Site",
+    status:
+      entry?.onSite === true
+        ? "On Site"
+        : entry?.onSite === false
+          ? "Off Site"
+          : "Location unavailable",
   };
 
   for (const segment of getEntrySegments(entry)) {
@@ -58,8 +76,10 @@ function summarizeSegments(entry) {
     if (segment.mode === "off_site") {
       summary.offSiteMs += durationMs;
       summary.status = "Off Site";
-    } else {
+    } else if (segment.mode === "on_site") {
       summary.onSiteMs += durationMs;
+    } else {
+      summary.unknownMs += durationMs;
     }
 
     if (segment.distanceMeters != null) {
@@ -68,10 +88,14 @@ function summarizeSegments(entry) {
   }
 
   if (summary.onSiteMs > 0 && summary.offSiteMs > 0) summary.status = "Mixed";
+  else if (summary.onSiteMs > 0) summary.status = "On Site";
+  else if (summary.offSiteMs > 0) summary.status = "Off Site";
+  else summary.status = "Location unavailable";
   if (summary.totalMs === 0) summary.totalMs = entry?.durationMs || 0;
-  if (summary.onSiteMs === 0 && summary.offSiteMs === 0) {
-    if (entry?.onSite === false) summary.offSiteMs = summary.totalMs;
-    else summary.onSiteMs = summary.totalMs;
+  if (summary.onSiteMs === 0 && summary.offSiteMs === 0 && summary.unknownMs === 0) {
+    if (entry?.onSite === true) summary.onSiteMs = summary.totalMs;
+    else if (entry?.onSite === false) summary.offSiteMs = summary.totalMs;
+    else summary.unknownMs = summary.totalMs;
   }
 
   return summary;
@@ -138,6 +162,24 @@ export function getProjectTimeTotals(entries = [], activeShift = null) {
   return Object.fromEntries(Object.entries(totals).map(([id, ms]) => [id, formatDuration(ms)]));
 }
 
+export function getProjectLatestActivity(entries = [], activeShift = null) {
+  const active = activeEntry(activeShift);
+  const all = active ? [active, ...entries] : entries;
+  const latestByProjectId = {};
+
+  for (const entry of all) {
+    const id = entryProjectId(entry);
+    if (!id) continue;
+
+    const activityAt = new Date(entry.endedAt || entry.startedAt).getTime();
+    if (!Number.isFinite(activityAt)) continue;
+
+    latestByProjectId[id] = Math.max(latestByProjectId[id] || 0, activityAt);
+  }
+
+  return latestByProjectId;
+}
+
 export function buildTimesheetDays(entries = [], activeShift = null) {
   const active = activeEntry(activeShift);
   const all = active ? [active, ...entries] : entries;
@@ -160,12 +202,14 @@ export function buildTimesheetDays(entries = [], activeShift = null) {
           return {
             onSiteMs: summary.onSiteMs + entrySummary.onSiteMs,
             offSiteMs: summary.offSiteMs + entrySummary.offSiteMs,
+            unknownMs: summary.unknownMs + entrySummary.unknownMs,
           };
         },
-        { onSiteMs: 0, offSiteMs: 0 },
+        { onSiteMs: 0, offSiteMs: 0, unknownMs: 0 },
       );
       const onSiteMinutes = Math.floor(segmentSummary.onSiteMs / 60000);
       const driveMinutes = Math.floor(segmentSummary.offSiteMs / 60000);
+      const unknownLocationMinutes = Math.floor(segmentSummary.unknownMs / 60000);
 
       return {
         id: key,
@@ -176,6 +220,7 @@ export function buildTimesheetDays(entries = [], activeShift = null) {
         totalMinutes,
         onSite: formatDuration(onSiteMinutes * 60000),
         drive: formatDuration(driveMinutes * 60000),
+        locationUnavailable: formatDuration(unknownLocationMinutes * 60000),
         jobs: Array.from(new Set(dayEntries.map((entry) => entry.project?.name || "Project"))).slice(0, 4),
         entries: dayEntries.map((entry) => {
           const entrySummary = summarizeSegments(entry);
@@ -195,6 +240,7 @@ export function buildTimesheetDays(entries = [], activeShift = null) {
                 : `${formatDistance(entrySummary.latestDistanceMeters)} from site`,
             onSiteDuration: formatDuration(entrySummary.onSiteMs),
             offSiteDuration: formatDuration(entrySummary.offSiteMs),
+            unknownLocationDuration: formatDuration(entrySummary.unknownMs),
             raw: entry,
           };
         }),
@@ -245,6 +291,9 @@ export function buildProjectClockInDays(
     }
 
     const sourceSegments = getEntrySegments(entry, new Date(nowMs).toISOString());
+    const entryId =
+      entryIdentityKeys(entry)[0] || `${dayKey}:${userName}:${String(entry.startedAt || "")}`;
+    const entryIsActive = entry.clockOutReason === "active" || !entry.endedAt;
     const isCurrentUser = Boolean(
       (currentUserId && entry.userId === currentUserId) ||
       (currentUserEmail && entry.userEmail === currentUserEmail),
@@ -259,8 +308,19 @@ export function buildProjectClockInDays(
         end: entry.clockOutReason === "active" ? "Now" : formatClock(end),
         endSrc: entry.lastLocation ? "GPS" : "Manual",
         duration: formatDuration(durationMs),
-        status: segment.mode === "off_site" ? "off" : "on",
+        durationMs,
+        status:
+          segment.mode === "on_site"
+            ? "on"
+            : segment.mode === "off_site"
+              ? "off"
+              : "unknown",
         distanceLabel: formatSegmentDistanceLabel(segment),
+        entryId,
+        entryStart: formatClock(entry.startedAt),
+        entryStartSrc: entry.startedLocation ? "GPS" : "Manual",
+        entryEnd: entryIsActive ? "Now" : formatClock(entry.endedAt),
+        entryEndSrc: entry.lastLocation ? "GPS" : "Manual",
         raw: entry,
         isCurrentUser,
       });

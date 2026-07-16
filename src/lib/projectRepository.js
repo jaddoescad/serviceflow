@@ -114,49 +114,58 @@ export async function listActiveCompanyCamProjectPage({
   search = "",
   projectIds = null,
 } = {}) {
-  const from = page * pageSize;
-  const to = from + pageSize - 1;
-  const safeSearch = escapeProjectSearchTerm(String(search || "").trim());
+  const normalizedProjectIds = Array.isArray(projectIds)
+    ? projectIds
+        .map((projectId) => String(projectId))
+        .filter((projectId) => projectId && !QA_PROJECT_IDS.has(projectId))
+    : null;
 
-  let query = supabase
-    .from("companycam_projects")
-    .select("companycam_id,name,formatted_address,city,state,postal_code,is_archived,is_deleted,companycam_status,is_lead,last_synced_at,companycam_updated_at", {
-      count: "exact",
-    })
-    .eq("is_deleted", false)
-    .order("companycam_updated_at", { ascending: false, nullsFirst: false });
-
-  if (safeSearch) {
-    const pattern = `%${safeSearch}%`;
-    query = query.or(
-      [
-        `name.ilike.${pattern}`,
-        `formatted_address.ilike.${pattern}`,
-        `city.ilike.${pattern}`,
-        `state.ilike.${pattern}`,
-        `postal_code.ilike.${pattern}`,
-      ].join(","),
-    );
-  } else if (Array.isArray(projectIds)) {
-    const normalizedProjectIds = projectIds
-      .map((projectId) => String(projectId))
-      .filter((projectId) => projectId && !QA_PROJECT_IDS.has(projectId));
-    if (!normalizedProjectIds.length) {
-      return { projects: [], count: 0, error: null };
-    }
-
-    query = query
-      .in("companycam_id", normalizedProjectIds)
-      .eq("is_archived", false)
-      .eq("is_lead", false);
-  } else {
-    query = query
-      .eq("is_archived", false)
-      .eq("is_lead", false);
+  if (normalizedProjectIds && !normalizedProjectIds.length) {
+    return { projects: [], count: 0, error: null };
   }
 
-  const { data, error, count } = await query.range(from, to);
-  return { projects: filterVisibleProjects(data || []), count: count ?? null, error };
+  const { data, error } = await supabase.rpc("list_project_feed", {
+    requested_page: page,
+    requested_page_size: pageSize,
+    requested_search: String(search || "").trim(),
+    requested_project_ids: normalizedProjectIds,
+  });
+
+  if (error) return { projects: [], count: null, error };
+
+  const rows = data || [];
+  const count = rows.length ? Number(rows[0].total_count) : 0;
+  return {
+    projects: filterVisibleProjects(rows.map(normalizeProjectFeedRow)),
+    count: Number.isFinite(count) ? count : null,
+    error: null,
+  };
+}
+
+function normalizeProjectFeedRow(row) {
+  const {
+    budget_percent_used: budgetPercentUsed,
+    budget_hours_used: budgetHoursUsed,
+    budget_status: budgetStatus,
+    budget_is_complete: budgetIsComplete,
+    budget_calculated_at: budgetCalculatedAt,
+    total_count: _totalCount,
+    ...project
+  } = row;
+  const percentUsed = budgetPercentUsed == null ? null : Number(budgetPercentUsed);
+  const hoursUsed = budgetHoursUsed == null ? null : Number(budgetHoursUsed);
+
+  return {
+    ...project,
+    budgetProgress: {
+      companycamProjectId: String(row.companycam_id || ""),
+      percentUsed: Number.isFinite(percentUsed) ? percentUsed : null,
+      hoursUsed: Number.isFinite(hoursUsed) ? hoursUsed : null,
+      status: String(budgetStatus || "not_configured"),
+      isComplete: budgetIsComplete === true,
+      calculatedAt: budgetCalculatedAt || null,
+    },
+  };
 }
 
 export async function syncCompanyCamProjects({ geocodeLimit = 12 } = {}) {

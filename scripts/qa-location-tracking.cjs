@@ -18,12 +18,21 @@ async function main() {
   const state = await import(
     `data:text/javascript;base64,${Buffer.from(stateSource).toString("base64")}`
   );
+  const trackingModelSource = fs.readFileSync(
+    path.join(__dirname, "../src/lib/trackingModel.js"),
+    "utf8",
+  );
+  const trackingModel = await import(
+    `data:text/javascript;base64,${Buffer.from(trackingModelSource).toString("base64")}`
+  );
   const {
     TRACKING_MODE,
+    TRACKING_PROFILE,
     freshnessForTimestamp,
     freshnessForTrackingStatus,
     shouldRecordLocation,
     splitRouteSegments,
+    trackingProfileForMode,
     trackingEventId,
     updateStationaryState,
   } = policy;
@@ -35,6 +44,34 @@ async function main() {
     accuracy,
     capturedAt: new Date(baseTime + elapsedMs).toISOString(),
   });
+
+  const missingProjectCoordinates = trackingModel.normalizeProject({
+    companycam_id: "job-without-coordinates",
+    name: "Missing coordinates",
+    latitude: null,
+    longitude: undefined,
+  });
+  assert.equal(missingProjectCoordinates.latitude, null);
+  assert.equal(missingProjectCoordinates.longitude, null);
+  const zeroProjectCoordinates = trackingModel.normalizeProject({
+    companycam_id: "job-at-zero-zero",
+    name: "Invalid project coordinates",
+    latitude: 0,
+    longitude: 0,
+  });
+  assert.equal(zeroProjectCoordinates.latitude, null);
+  assert.equal(zeroProjectCoordinates.longitude, null);
+  const greggProject = trackingModel.normalizeProject({
+    companycam_id: "98894646",
+    name: "Gregg Alexander",
+    latitude: 45.4576891781006,
+    longitude: -75.6091136299074,
+  });
+  assert.equal(
+    trackingModel.distanceMeters(point(45.4230031481971, -75.8518392055602), greggProject),
+    19326,
+    "Gregg Alexander should resolve near Ottawa instead of the Gulf of Guinea",
+  );
 
   assert.equal(
     shouldRecordLocation(point(45.42, -75.69), point(45.42005, -75.69, 30_000), TRACKING_MODE.TRAVEL),
@@ -60,6 +97,20 @@ async function main() {
     shouldRecordLocation(point(45.42, -75.69), point(45.42, -75.69, 1_000, 400), TRACKING_MODE.TRAVEL, "clock_out"),
     true,
     "explicit lifecycle events should be retained",
+  );
+  assert.equal(
+    trackingProfileForMode(TRACKING_MODE.PAINTING),
+    TRACKING_PROFILE.LOW_POWER,
+    "painting must retain a low-power location service instead of stopping GPS",
+  );
+  assert.equal(
+    trackingProfileForMode(TRACKING_MODE.STATIONARY),
+    TRACKING_PROFILE.LOW_POWER,
+    "stationary travel stops must retain a low-power location service",
+  );
+  assert.equal(
+    trackingProfileForMode(TRACKING_MODE.TRAVEL),
+    TRACKING_PROFILE.TRAVEL,
   );
 
   let stationary = updateStationaryState(null, point(45.42, -75.69), TRACKING_MODE.TRAVEL);
@@ -200,6 +251,70 @@ async function main() {
   ]) {
     assert.match(repositorySource, new RegExp(`rpc\\(["']${rpcName}["']`));
   }
+
+  const runtimeSource = fs.readFileSync(
+    path.join(__dirname, "../src/lib/timeTrackingRuntime.js"),
+    "utf8",
+  );
+  assert.match(runtimeSource, /export async function watchActiveLocation/);
+  assert.match(runtimeSource, /startLowPowerTracking/);
+  assert.doesNotMatch(
+    runtimeSource,
+    /stopContinuousTracking\(["']geofence["']/,
+    "painting mode must not turn off continuous location delivery",
+  );
+  assert.doesNotMatch(
+    runtimeSource.slice(
+      runtimeSource.indexOf("export async function finishTrackingSession"),
+      runtimeSource.indexOf("async function handleBackgroundLocations"),
+    ),
+    /capturedAt:\s*options\.endedAt/,
+    "clock-out cleanup must not re-timestamp a stale point as fresh",
+  );
+
+  const hookSource = fs.readFileSync(
+    path.join(__dirname, "../src/lib/timeTracking.js"),
+    "utf8",
+  );
+  assert.match(hookSource, /FOREGROUND_LOCATION_HEARTBEAT_MS/);
+  assert.match(hookSource, /watchActiveLocation\(/);
+  assert.match(hookSource, /eventType:\s*["']clock_out["']/);
+  assert.match(hookSource, /getCurrentPoint\(\{ timeoutMs: CLOCK_OUT_LOCATION_TIMEOUT_MS \}\)/);
+  assert.match(
+    hookSource,
+    /shiftToEntry\(current, switchedAt, ["']switched_project["']\)/,
+    "a project switch should close the previous job at the shared switch timestamp",
+  );
+  assert.match(
+    hookSource,
+    /startedAt:\s*switchedAt/,
+    "the next job should start at the same timestamp used to close the previous job",
+  );
+
+  const clockInScreenSource = fs.readFileSync(
+    path.join(__dirname, "../src/screens/ClockInScreen.js"),
+    "utf8",
+  );
+  const activeClockInBodySource = fs.readFileSync(
+    path.join(__dirname, "../src/screens/clock-in/ActiveClockInBody.js"),
+    "utf8",
+  );
+  assert.match(clockInScreenSource, /function ProjectSwitcherModal/);
+  assert.match(clockInScreenSource, /onSelectProject=\{switchToProject\}/);
+  assert.match(activeClockInBodySource, />Change Job<\/Text>/);
+
+  const appSource = fs.readFileSync(path.join(__dirname, "../App.js"), "utf8");
+  const projectDetailSource = fs.readFileSync(
+    path.join(__dirname, "../src/screens/ProjectDetailScreen.js"),
+    "utf8",
+  );
+  assert.match(appSource, /onOpenActiveClock=\{\(\) => \{/);
+  assert.match(appSource, /setActiveTab\(["']clock["']\)/);
+  assert.match(
+    projectDetailSource,
+    /await refreshBudgetProgress\(\);\s*onOpenActiveClock\?\.\(\);/,
+    "a successful project-page clock action should open the active Clock In page",
+  );
 
   const migrationSource = fs.readFileSync(
     path.join(

@@ -8,11 +8,14 @@ import {
 } from "./locationTrackingRepository";
 import {
   TRACKING_MODE,
+  TRACKING_PROFILE,
   modeForLocationStatus,
+  trackingProfileForMode,
   updateStationaryState,
 } from "./locationTrackingPolicy";
 import { updateActiveLocation } from "./timeEntryRepository";
 import { appendSegment, createLocationStatus, toPoint } from "./timeTrackingLocation";
+import { normalizeProject } from "./trackingModel";
 import { notifyIfNeeded, requestNotificationPermissions } from "./timeTrackingNotifications";
 import {
   isActiveProjectRegion,
@@ -31,8 +34,11 @@ import {
 
 export { BACKGROUND_LOCATION_TASK };
 
-const TRACKING_CONFIG_VERSION = 2;
+const TRACKING_CONFIG_VERSION = 3;
+const CURRENT_LOCATION_TIMEOUT_MS = 12 * 1000;
+const LOW_POWER_UPDATE_INTERVAL_MS = 4 * 60 * 1000;
 let backgroundLocationMutation = Promise.resolve();
+let continuousTrackingMutation = Promise.resolve();
 
 function normalizePermission(response) {
   return {
@@ -97,13 +103,38 @@ export async function getTrackingPermissions() {
   return buildTrackingPermissions(foreground, background);
 }
 
-export async function getCurrentPoint() {
+export async function getCurrentPoint(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || CURRENT_LOCATION_TIMEOUT_MS);
+  let timeout;
   try {
-    const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const location = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise((resolve) => {
+        timeout = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
     return toPoint(location);
   } catch (_error) {
     return null;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
+}
+
+export async function watchActiveLocation(onPoint, onError) {
+  if (Platform.OS === "web") return { remove() {} };
+  return Location.watchPositionAsync(
+    {
+      accuracy: Location.Accuracy.Balanced,
+      distanceInterval: 25,
+      timeInterval: 30 * 1000,
+    },
+    (location) => {
+      const point = toPoint(location);
+      if (point) onPoint(point);
+    },
+    onError,
+  );
 }
 
 async function getRecentPoint() {
@@ -118,76 +149,136 @@ async function getRecentPoint() {
   }
 }
 
-export async function startTravelTracking(expectedShift = null) {
+function backgroundTrackingOptions(profile) {
+  if (profile === TRACKING_PROFILE.LOW_POWER) {
+    return {
+      accuracy: Location.Accuracy.Balanced,
+      distanceInterval: 25,
+      timeInterval: LOW_POWER_UPDATE_INTERVAL_MS,
+      deferredUpdatesDistance: 60,
+      deferredUpdatesInterval: LOW_POWER_UPDATE_INTERVAL_MS,
+      deferredUpdatesTimeout: 5 * 60 * 1000,
+      activityType: Location.ActivityType.Other,
+      showsBackgroundLocationIndicator: true,
+      pausesUpdatesAutomatically: false,
+      foregroundService: {
+        notificationTitle: "ServiceFlow clock-in active",
+        notificationBody: "Recording work location while you are clocked in.",
+        killServiceOnDestroy: false,
+      },
+    };
+  }
+
+  return {
+    accuracy: Location.Accuracy.Balanced,
+    distanceInterval: 100,
+    timeInterval: 2 * 60 * 1000,
+    deferredUpdatesDistance: 250,
+    deferredUpdatesInterval: 2 * 60 * 1000,
+    deferredUpdatesTimeout: 3 * 60 * 1000,
+    activityType: Location.ActivityType.AutomotiveNavigation,
+    showsBackgroundLocationIndicator: true,
+    pausesUpdatesAutomatically: false,
+    foregroundService: {
+      notificationTitle: "ServiceFlow travel tracking",
+      notificationBody: "Recording work travel while you are clocked in.",
+      killServiceOnDestroy: false,
+    },
+  };
+}
+
+async function startContinuousTracking(mode, expectedShift = null) {
   if (Platform.OS === "web") return false;
-  try {
-    if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
-    const runtime = await readTrackingRuntimeState();
-    const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-    if (started && runtime.configVersion === TRACKING_CONFIG_VERSION) {
+  return runContinuousTrackingMutation(async () => {
+    const profile = trackingProfileForMode(mode);
+    const errorCode = profile === TRACKING_PROFILE.LOW_POWER
+      ? "low_power_tracking_start_failed"
+      : "travel_tracking_start_failed";
+    try {
+      if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
+      const runtime = await readTrackingRuntimeState();
+      const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (
+        started &&
+        runtime.configVersion === TRACKING_CONFIG_VERSION &&
+        runtime.trackingProfile === profile
+      ) {
+        await mergeTrackingRuntimeState(
+          { mode, taskStatus: "running", lastErrorCode: null },
+          { expectedActiveShift: expectedShift },
+        );
+        return true;
+      }
+      if (started) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
+
+      await Location.startLocationUpdatesAsync(
+        BACKGROUND_LOCATION_TASK,
+        backgroundTrackingOptions(profile),
+      );
       await mergeTrackingRuntimeState(
-        { mode: TRACKING_MODE.TRAVEL, taskStatus: "running" },
+        {
+          mode,
+          taskStatus: "running",
+          configVersion: TRACKING_CONFIG_VERSION,
+          trackingProfile: profile,
+          lastErrorCode: null,
+        },
         { expectedActiveShift: expectedShift },
       );
       return true;
+    } catch (_error) {
+      await mergeTrackingRuntimeState(
+        {
+          mode: TRACKING_MODE.UNAVAILABLE,
+          taskStatus: "error",
+          trackingProfile: profile,
+          lastErrorCode: errorCode,
+        },
+        { expectedActiveShift: expectedShift },
+      );
+      return false;
     }
-    if (started) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-    if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
+  });
+}
 
-    await Location.startLocationUpdatesAsync(BACKGROUND_LOCATION_TASK, {
-      accuracy: Location.Accuracy.Balanced,
-      distanceInterval: 100,
-      timeInterval: 2 * 60 * 1000,
-      deferredUpdatesDistance: 250,
-      deferredUpdatesInterval: 2 * 60 * 1000,
-      deferredUpdatesTimeout: 3 * 60 * 1000,
-      activityType: Location.ActivityType.AutomotiveNavigation,
-      showsBackgroundLocationIndicator: true,
-      pausesUpdatesAutomatically: true,
-      foregroundService: {
-        notificationTitle: "ServiceFlow travel tracking",
-        notificationBody: "Recording work travel while you are clocked in.",
-        killServiceOnDestroy: true,
-      },
-    });
+export function startTravelTracking(expectedShift = null) {
+  return startContinuousTracking(TRACKING_MODE.TRAVEL, expectedShift);
+}
+
+export function startLowPowerTracking(mode, expectedShift = null) {
+  const lowPowerMode = mode === TRACKING_MODE.STATIONARY
+    ? TRACKING_MODE.STATIONARY
+    : TRACKING_MODE.PAINTING;
+  return startContinuousTracking(lowPowerMode, expectedShift);
+}
+
+async function stopContinuousTracking(taskStatus = "stopped", expectedShift = null) {
+  return runContinuousTrackingMutation(async () => {
+    if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
+    if (Platform.OS !== "web") {
+      try {
+        const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        if (started) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      } catch (_error) {
+        // Non-fatal; status below still explains the desired state.
+      }
+    }
     await mergeTrackingRuntimeState(
-      {
-        mode: TRACKING_MODE.TRAVEL,
-        taskStatus: "running",
-        configVersion: TRACKING_CONFIG_VERSION,
-        lastErrorCode: null,
-      },
+      { taskStatus, trackingProfile: null },
       { expectedActiveShift: expectedShift },
     );
     return true;
-  } catch (_error) {
-    await mergeTrackingRuntimeState(
-      {
-        mode: TRACKING_MODE.UNAVAILABLE,
-        taskStatus: "error",
-        lastErrorCode: "travel_tracking_start_failed",
-      },
-      { expectedActiveShift: expectedShift },
-    );
-    return false;
-  }
+  });
 }
 
-async function stopContinuousTracking(taskStatus = "geofence", expectedShift = null) {
-  if (expectedShift && !(await isStoredShiftActive(expectedShift))) return false;
-  if (Platform.OS !== "web") {
-    try {
-      const started = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-      if (started) await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
-    } catch (_error) {
-      // Non-fatal; status below still explains the desired state.
-    }
-  }
-  await mergeTrackingRuntimeState(
-    { taskStatus },
-    { expectedActiveShift: expectedShift },
+function runContinuousTrackingMutation(work) {
+  const next = continuousTrackingMutation.catch(() => {}).then(work);
+  continuousTrackingMutation = next.then(
+    () => undefined,
+    () => undefined,
   );
-  return true;
+  return next;
 }
 
 export async function stopBackgroundTracking() {
@@ -196,6 +287,28 @@ export async function stopBackgroundTracking() {
 
 // Kept as a compatibility alias for code paths from older local state.
 export const startBackgroundTracking = startTravelTracking;
+
+export async function reportTrackingIssue(shift, errorCode, permissions = null) {
+  if (!shift || !(await isStoredShiftActive(shift))) return false;
+  const runtime = await readTrackingRuntimeState();
+  const mode = runtime.mode && runtime.mode !== TRACKING_MODE.CLOCKED_OUT
+    ? runtime.mode
+    : TRACKING_MODE.UNAVAILABLE;
+  const taskStatus = runtime.taskStatus || "error";
+  await mergeTrackingRuntimeState(
+    { lastErrorCode: errorCode },
+    { expectedActiveShift: shift },
+  );
+  await queueTrackingStatus(shift, {
+    mode,
+    taskStatus,
+    permissions: permissions || runtime.permissions,
+    errorCode,
+    reason: errorCode,
+  });
+  await syncPendingLocationData();
+  return true;
+}
 
 export async function configureAdaptiveTracking(shift, projects, options = {}) {
   if (!shift) {
@@ -237,15 +350,18 @@ export async function configureAdaptiveTracking(shift, projects, options = {}) {
     return { mode: TRACKING_MODE.CLOCKED_OUT, started: false, stale: true };
   }
 
-  let started = true;
-  let taskStatus = "geofence";
-  if (mode === TRACKING_MODE.TRAVEL) {
-    started = await startTravelTracking(shift);
-    taskStatus = started ? "running" : "error";
-    if (!started) mode = TRACKING_MODE.UNAVAILABLE;
-  } else {
-    await stopContinuousTracking("geofence", shift);
-  }
+  const requestedMode = mode;
+  const expectedErrorCode = trackingProfileForMode(requestedMode) === TRACKING_PROFILE.LOW_POWER
+    ? "low_power_tracking_start_failed"
+    : "travel_tracking_start_failed";
+  const foregroundOnlyDevelopment = Boolean(
+    __DEV__ && knownPermissions?.foreground && !knownPermissions?.background,
+  );
+  const started = foregroundOnlyDevelopment
+    ? true
+    : await startContinuousTracking(requestedMode, shift);
+  const taskStatus = started ? "running" : "error";
+  if (!started) mode = TRACKING_MODE.UNAVAILABLE;
 
   if (!(await isStoredShiftActive(shift))) {
     return { mode: TRACKING_MODE.CLOCKED_OUT, started: false, stale: true };
@@ -258,7 +374,7 @@ export async function configureAdaptiveTracking(shift, projects, options = {}) {
       taskStatus,
       stationaryPoint,
       permissions: knownPermissions,
-      lastErrorCode: started ? null : "travel_tracking_start_failed",
+      lastErrorCode: started ? null : expectedErrorCode,
     },
     { expectedActiveShift: shift },
   );
@@ -266,7 +382,7 @@ export async function configureAdaptiveTracking(shift, projects, options = {}) {
     mode,
     taskStatus,
     permissions: knownPermissions,
-    errorCode: started ? null : "travel_tracking_start_failed",
+    errorCode: started ? null : expectedErrorCode,
   });
   await syncPendingLocationData();
   return { mode, started };
@@ -277,7 +393,8 @@ export async function recordShiftLocation(shift, projects, point, options = {}) 
   if (!(await isStoredShiftActive(shift))) {
     return { shift, status: null, mode: TRACKING_MODE.CLOCKED_OUT, stale: true };
   }
-  const rawStatus = createLocationStatus(shift, projects || [], point);
+  const locatedShift = resolveShiftProjectCoordinates(shift, projects || []);
+  const rawStatus = createLocationStatus(locatedShift, projects || [], point);
   const accuracy = Number(point.accuracy);
   const reliable = !Number.isFinite(accuracy) || accuracy <= 250;
   const status = reliable
@@ -292,6 +409,7 @@ export async function recordShiftLocation(shift, projects, point, options = {}) 
   const nextShift = appendSegment(
     {
       ...shift,
+      ...locatedShift,
       startedLocation: shift.startedLocation || point,
       lastLocation: point,
       lastDistanceMeters: status.activeDistance,
@@ -315,11 +433,13 @@ export async function recordShiftLocation(shift, projects, point, options = {}) 
     return { shift: nextShift, status, mode: TRACKING_MODE.CLOCKED_OUT, stale: true };
   }
   await updateActiveLocation(nextShift);
-  const tracking = await configureAdaptiveTracking(nextShift, projects, {
-    mode,
-    permissions: options.permissions,
-    stationaryPoint: mode === TRACKING_MODE.STATIONARY ? point : null,
-  });
+  const tracking = options.skipTrackingReconfigure
+    ? { mode, started: true, stale: false }
+    : await configureAdaptiveTracking(nextShift, projects, {
+        mode,
+        permissions: options.permissions,
+        stationaryPoint: mode === TRACKING_MODE.STATIONARY ? point : null,
+      });
   if (!tracking.stale) {
     await mergeTrackingRuntimeState(
       {
@@ -332,21 +452,31 @@ export async function recordShiftLocation(shift, projects, point, options = {}) 
   return { shift: nextShift, status, mode, stale: Boolean(tracking.stale) };
 }
 
-export async function finishTrackingSession(shift, projects, options = {}) {
-  if (shift?.lastLocation) {
-    const clockOutPoint = {
-      ...shift.lastLocation,
-      capturedAt: options.endedAt || new Date().toISOString(),
-    };
-    await queueLocationSample(shift, clockOutPoint, {
-      mode: shift.onSite === true ? TRACKING_MODE.PAINTING : TRACKING_MODE.TRAVEL,
-      eventType: "clock_out",
-      status: {
-        onSite: shift.onSite,
-        activeDistance: shift.lastDistanceMeters,
-      },
-    });
+function resolveShiftProjectCoordinates(shift, projects) {
+  const currentProject = normalizeProject(shift?.project);
+  if (!currentProject) return shift;
+  if (currentProject.latitude != null && currentProject.longitude != null) {
+    return currentProject === shift.project ? shift : { ...shift, project: currentProject };
   }
+
+  const replacement = (projects || [])
+    .map(normalizeProject)
+    .find(
+      (project) =>
+        project?.companycam_id === currentProject.companycam_id &&
+        project.latitude != null &&
+        project.longitude != null,
+    );
+  if (!replacement) return { ...shift, project: currentProject };
+  return {
+    ...shift,
+    project: { ...currentProject, ...replacement },
+  };
+}
+
+export async function finishTrackingSession(shift, projects, options = {}) {
+  // The clock-out caller records a fresh point before closing the local shift.
+  // Never manufacture a clock-out event by re-timestamping an older location.
   if (shift?.userId) {
     await queueTrackingStatus(shift, {
       mode: TRACKING_MODE.CLOCKED_OUT,
@@ -363,6 +493,7 @@ export async function finishTrackingSession(shift, projects, options = {}) {
     taskStatus: "stopped",
     stationaryPoint: null,
     stationaryState: null,
+    trackingProfile: null,
   });
   await syncPendingLocationData();
 }
@@ -434,34 +565,38 @@ async function handleBackgroundLocations(locations) {
   });
   if (!transition.applied) return;
   await updateActiveLocation(shift);
-  await queueTrackingStatus(shift, {
-    mode: latestMode,
-    taskStatus: latestMode === TRACKING_MODE.TRAVEL ? "running" : "geofence",
-    permissions: runtime.permissions,
-  });
-  await mergeTrackingRuntimeState(
-    {
-      clientEntryId: shift.localId,
-      mode: latestMode,
-      taskStatus: latestMode === TRACKING_MODE.TRAVEL ? "running" : "geofence",
-      stationaryState,
-      stationaryPoint:
-        latestMode === TRACKING_MODE.STATIONARY ? shift.lastLocation : null,
-      lastLocationAt: shift.lastLocation?.capturedAt || null,
-      lastRecordedPoint,
-    },
-    { expectedActiveShift: shift },
-  );
-  await syncPendingLocationData();
-
+  let trackingStarted = true;
   if (latestMode === TRACKING_MODE.PAINTING || latestMode === TRACKING_MODE.STATIONARY) {
     await syncGeofences(
       store.knownProjects || [],
       shift,
       latestMode === TRACKING_MODE.STATIONARY ? shift.lastLocation : null,
     );
-    await stopContinuousTracking("geofence", shift);
+    trackingStarted = await startLowPowerTracking(latestMode, shift);
   }
+  const taskStatus = trackingStarted ? "running" : "error";
+  const statusMode = trackingStarted ? latestMode : TRACKING_MODE.UNAVAILABLE;
+  await queueTrackingStatus(shift, {
+    mode: statusMode,
+    taskStatus,
+    permissions: runtime.permissions,
+    errorCode: trackingStarted ? null : "low_power_tracking_start_failed",
+  });
+  await mergeTrackingRuntimeState(
+    {
+      clientEntryId: shift.localId,
+      mode: statusMode,
+      taskStatus,
+      stationaryState,
+      stationaryPoint:
+        latestMode === TRACKING_MODE.STATIONARY ? shift.lastLocation : null,
+      lastLocationAt: shift.lastLocation?.capturedAt || null,
+      lastRecordedPoint,
+      lastErrorCode: trackingStarted ? null : "low_power_tracking_start_failed",
+    },
+    { expectedActiveShift: shift },
+  );
+  await syncPendingLocationData();
 }
 
 export async function handleGeofenceTransition({ eventType, region, store: providedStore }) {
@@ -531,25 +666,38 @@ export async function handleGeofenceTransition({ eventType, region, store: provi
   const transition = await updateStoredActiveShift(initialShift, shift);
   if (!transition.applied) return;
   await syncGeofences(store.knownProjects || [], shift, stationaryPoint);
-  await stopContinuousTracking("geofence", shift);
+  const trackingStarted = await startLowPowerTracking(mode, shift);
+  const taskStatus = trackingStarted ? "running" : "error";
+  const statusMode = trackingStarted ? mode : TRACKING_MODE.UNAVAILABLE;
   await mergeTrackingRuntimeState(
     {
       clientEntryId: shift.localId,
-      mode,
-      taskStatus: "geofence",
+      mode: statusMode,
+      taskStatus,
       stationaryPoint,
       stationaryState: null,
+      lastErrorCode: trackingStarted ? null : "low_power_tracking_start_failed",
     },
     { expectedActiveShift: shift },
   );
-  await queueTrackingStatus(shift, { mode, taskStatus: "geofence", permissions: runtime.permissions });
+  await queueTrackingStatus(shift, {
+    mode: statusMode,
+    taskStatus,
+    permissions: runtime.permissions,
+    errorCode: trackingStarted ? null : "low_power_tracking_start_failed",
+  });
   await syncPendingLocationData();
 }
 
 if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
   TaskManager.defineTask(BACKGROUND_LOCATION_TASK, async ({ data, error }) => {
     if (error) {
-      await mergeTrackingRuntimeState({ taskStatus: "error", lastErrorCode: "background_task_error" });
+      const store = await readStore();
+      if (store.activeShift) {
+        await reportTrackingIssue(store.activeShift, "background_task_error");
+      } else {
+        await mergeTrackingRuntimeState({ taskStatus: "error", lastErrorCode: "background_task_error" });
+      }
       return;
     }
     const next = backgroundLocationMutation

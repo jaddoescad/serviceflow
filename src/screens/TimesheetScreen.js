@@ -338,6 +338,14 @@ function WorkedCard({ day, onPress }) {
             Drive <Text style={styles.metaStrong}>{day.drive}</Text>
           </Text>
         </View>
+        {day.locationUnavailable && day.locationUnavailable !== "0h 0m" ? (
+          <View style={styles.metaItem}>
+            <Ionicons name="help-circle-outline" size={14} color={COLORS.muted} />
+            <Text style={styles.metaText}>
+              No GPS <Text style={styles.metaStrong}>{day.locationUnavailable}</Text>
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -391,6 +399,14 @@ function DayDetailScreen({ day, onBack, onEntryPress }) {
                 {day.drive} drive
               </Text>
             </View>
+            {day.locationUnavailable && day.locationUnavailable !== "0h 0m" ? (
+              <View style={[styles.detailChip, styles.detailChipDrive]}>
+                <Ionicons name="help-circle-outline" size={15} color={COLORS.inkSoft} />
+                <Text style={[styles.detailChipText, styles.detailChipTextDrive]}>
+                  {day.locationUnavailable} no GPS
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -422,17 +438,28 @@ function DayDetailScreen({ day, onBack, onEntryPress }) {
 function EntryCard({ entry, onPress }) {
   const onSite = entry.status === "On Site";
   const mixed = entry.status === "Mixed";
+  const locationUnavailable = entry.status === "Location unavailable";
+  const statusColor = locationUnavailable
+    ? COLORS.muted
+    : onSite || mixed
+      ? COLORS.teal
+      : COLORS.red;
+  const statusTextColor = locationUnavailable
+    ? COLORS.inkSoft
+    : onSite || mixed
+      ? COLORS.tealInk
+      : COLORS.redInk;
   return (
     <Pressable style={styles.entryCard} onPress={onPress}>
       <View style={styles.entryTopRow}>
         <View
           style={[
             styles.entryIcon,
-            { backgroundColor: onSite || mixed ? COLORS.teal : COLORS.inkSoft },
+            { backgroundColor: locationUnavailable ? COLORS.muted : onSite || mixed ? COLORS.teal : COLORS.inkSoft },
           ]}
         >
           <Ionicons
-            name={mixed ? "swap-horizontal" : onSite ? "hammer" : "car-sport"}
+            name={locationUnavailable ? "help" : mixed ? "swap-horizontal" : onSite ? "hammer" : "car-sport"}
             size={16}
             color={COLORS.white}
           />
@@ -472,19 +499,23 @@ function EntryCard({ entry, onPress }) {
       <View
         style={[
           styles.statusPill,
-          onSite || mixed ? styles.statusPillOn : styles.statusPillOff,
+          locationUnavailable
+            ? styles.statusPillUnknown
+            : onSite || mixed
+              ? styles.statusPillOn
+              : styles.statusPillOff,
         ]}
       >
         <View
           style={[
             styles.statusDot,
-            { backgroundColor: onSite || mixed ? COLORS.teal : COLORS.red },
+            { backgroundColor: statusColor },
           ]}
         />
         <Text
           style={[
             styles.statusText,
-            { color: onSite || mixed ? COLORS.tealInk : COLORS.redInk },
+            { color: statusTextColor },
           ]}
         >
           {entry.status} · {entry.distance}
@@ -503,6 +534,13 @@ function EntryCard({ entry, onPress }) {
 
 function EditTimeScreen({ day, entry, painterName, onSave, onDelete, onBack }) {
   const onSite = entry.status === "On Site";
+  const locationUnavailable = entry.status === "Location unavailable";
+  const locationColor = locationUnavailable ? COLORS.muted : onSite ? COLORS.teal : COLORS.red;
+  const locationTextColor = locationUnavailable
+    ? COLORS.inkSoft
+    : onSite
+      ? COLORS.tealInk
+      : COLORS.redInk;
   const rawEntry = entry.raw || entry;
   const isActiveEntry = !rawEntry.endedAt || rawEntry.clockOutReason === "active";
   const initialStart = new Date(rawEntry.startedAt || Date.now());
@@ -599,7 +637,7 @@ function EditTimeScreen({ day, entry, painterName, onSave, onDelete, onBack }) {
               <Ionicons
                 name="location-sharp"
                 size={22}
-                color={onSite ? COLORS.teal : COLORS.red}
+                color={locationColor}
               />
               <Text style={styles.editMapDistance}>{entry.distance}</Text>
             </View>
@@ -608,21 +646,29 @@ function EditTimeScreen({ day, entry, painterName, onSave, onDelete, onBack }) {
           <View
             style={[
               styles.editShiftStatus,
-              onSite ? styles.editShiftStatusOn : styles.editShiftStatusOff,
+              locationUnavailable
+                ? styles.editShiftStatusUnknown
+                : onSite
+                  ? styles.editShiftStatusOn
+                  : styles.editShiftStatusOff,
             ]}
           >
             <Ionicons
-              name={onSite ? "checkmark-circle" : "alert-circle"}
+              name={locationUnavailable ? "help-circle" : onSite ? "checkmark-circle" : "alert-circle"}
               size={15}
-              color={onSite ? COLORS.tealInk : COLORS.redInk}
+              color={locationTextColor}
             />
             <Text
               style={[
                 styles.editShiftStatusText,
-                { color: onSite ? COLORS.tealInk : COLORS.redInk },
+                { color: locationTextColor },
               ]}
             >
-              {onSite ? "On site during clock-in" : "Off site during clock-in"}
+              {locationUnavailable
+                ? "Location was not recorded for this clock-in"
+                : onSite
+                  ? "On site during clock-in"
+                  : "Off site during clock-in"}
             </Text>
           </View>
         </View>
@@ -1343,6 +1389,9 @@ const styles = StyleSheet.create({
   statusPillOff: {
     backgroundColor: COLORS.redBg,
   },
+  statusPillUnknown: {
+    backgroundColor: "#eef1ef",
+  },
   statusDot: {
     width: 6,
     height: 6,
@@ -1455,6 +1504,9 @@ const styles = StyleSheet.create({
   },
   editShiftStatusOff: {
     backgroundColor: COLORS.redBg,
+  },
+  editShiftStatusUnknown: {
+    backgroundColor: "#eef1ef",
   },
   editShiftStatusText: {
     fontSize: 12,

@@ -49,6 +49,14 @@ Deno.serve(async (req) => {
       return json(await removeAssignment(supabase, body, actor));
     }
 
+    if (action === "setBudget") {
+      return json(await setProjectBudget(supabase, body, actor));
+    }
+
+    if (action === "setActualLabourCost") {
+      return json(await setActualLabourCost(supabase, body, actor));
+    }
+
     if (action === "setRole") {
       return json(await setEmployeeRole(supabase, body, actor));
     }
@@ -97,7 +105,7 @@ async function authorizeRequest(req: Request, supabase: ServiceClient) {
   if (profileError) throw httpError(profileError.message, 500);
   const role = String(profile?.role || "");
   if (!profile?.is_active || !["admin", "manager"].includes(role)) {
-    throw httpError("Only active admins and managers can manage project assignments", 403);
+    throw httpError("Only active admins and managers can manage office data", 403);
   }
 
   return { mode: "user", userId: user.id, role };
@@ -238,6 +246,88 @@ async function removeAssignment(
   return { assignment: data };
 }
 
+async function setProjectBudget(
+  supabase: ServiceClient,
+  body: Record<string, unknown>,
+  actor: { userId: string | null },
+) {
+  const projectId = requiredText(
+    body.projectId ?? body.companycamProjectId ?? body.companycam_project_id,
+    "projectId",
+  );
+  const amountBeforeTax = requiredPositiveNumber(
+    body.amountBeforeTax ?? body.amount_before_tax,
+    "amountBeforeTax",
+  );
+  const allocationPercent = optionalPercent(
+    body.allocationPercent ?? body.allocation_percent,
+    39,
+  );
+  const notes = toNullableText(body.notes);
+
+  await ensureAssignableProject(supabase, projectId);
+
+  // project_budgets retains its existing tax-inclusive storage contract. The
+  // painter-facing progress RPC removes Ontario HST before applying this
+  // allocation percentage.
+  const amountIncludingTax = Math.round(amountBeforeTax * 1.13 * 100) / 100;
+  const { data, error } = await supabase
+    .from("project_budgets")
+    .upsert(
+      {
+        companycam_project_id: projectId,
+        amount_including_tax: amountIncludingTax,
+        labour_allocation_percent: allocationPercent,
+        notes,
+        updated_by: actor.userId,
+      },
+      { onConflict: "companycam_project_id" },
+    )
+    .select("companycam_project_id,amount_including_tax,labour_allocation_percent,notes,updated_at")
+    .single();
+
+  if (error) throw httpError(error.message, 500);
+  return {
+    budget: {
+      ...data,
+      amount_before_tax: amountBeforeTax,
+    },
+  };
+}
+
+async function setActualLabourCost(
+  supabase: ServiceClient,
+  body: Record<string, unknown>,
+  actor: { userId: string | null },
+) {
+  const projectId = requiredText(
+    body.projectId ?? body.companycamProjectId ?? body.companycam_project_id,
+    "projectId",
+  );
+  const rawActualLabourCost = Object.prototype.hasOwnProperty.call(body, "actualLabourCost")
+    ? body.actualLabourCost
+    : body.actual_labour_cost ?? body.actualLabourCostOverride;
+  const actualLabourCost = rawActualLabourCost === null
+    ? null
+    : requiredPositiveNumber(rawActualLabourCost, "actualLabourCost");
+
+  await ensureAssignableProject(supabase, projectId);
+
+  const { data, error } = await supabase
+    .from("project_budgets")
+    .update({
+      actual_labour_cost_override: actualLabourCost,
+      updated_by: actor.userId,
+    })
+    .eq("companycam_project_id", projectId)
+    .select("companycam_project_id,actual_labour_cost_override,updated_at")
+    .maybeSingle();
+
+  if (error) throw httpError(error.message, 500);
+  if (!data) throw httpError("Set the project budget before setting actual labour cost", 404);
+  return { actualLabourCost: data };
+}
+
 async function setEmployeeRole(
   supabase: ServiceClient,
   body: Record<string, unknown>,
@@ -325,6 +415,23 @@ function requiredText(value: unknown, label: string) {
   const text = toNullableText(value);
   if (!text) throw httpError(`Missing ${label}`, 400);
   return text;
+}
+
+function requiredPositiveNumber(value: unknown, label: string) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw httpError(`${label} must be greater than zero`, 400);
+  }
+  return Math.round(number * 100) / 100;
+}
+
+function optionalPercent(value: unknown, fallback: number) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0 || number > 100) {
+    throw httpError("allocationPercent must be greater than zero and at most 100", 400);
+  }
+  return Math.round(number * 100) / 100;
 }
 
 function toNullableText(value: unknown) {

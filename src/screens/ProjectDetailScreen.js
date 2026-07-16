@@ -15,7 +15,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BudgetHoursPanel } from '../components/BudgetProgress';
+import {
+  getBudgetProgressPresentation,
+  useProjectBudgetProgress,
+} from '../lib/projectBudget';
 import { supabase } from '../lib/supabase';
+import { buildPainterClockInSummaries } from '../lib/projectClockInSummary';
 import { buildProjectClockInDays } from '../lib/timeTracking';
 
 const BRAND = '#2b8496';
@@ -202,12 +208,6 @@ function PlayGlyph() {
   return <Ionicons name="play" size={23} color="#fff" />;
 }
 
-function parseDurationToMinutes(label) {
-  const match = String(label).match(/(\d+)\s*h\s*(\d+)\s*m/);
-  if (!match) return 0;
-  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-}
-
 function formatMinutesLabel(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -223,68 +223,28 @@ function formatElapsedClock(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-function buildPainterSummaries(days) {
-  const byName = new Map();
-  for (const day of days) {
-    for (const painter of day.painters) {
-      const key = painter.name;
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: key.toLowerCase().replace(/\s+/g, '-'),
-          name: painter.name,
-          initials: painter.initials,
-          isYou: !!painter.isYou,
-          totalMinutes: 0,
-          segmentCount: 0,
-          onSiteCount: 0,
-          offSiteCount: 0,
-          days: [],
-        });
-      }
-      const entry = byName.get(key);
-      entry.days.push({
-        dayId: day.id,
-        label: day.label,
-        dateLabel: day.dateLabel,
-        segments: painter.segments,
-      });
-      for (const segment of painter.segments) {
-        entry.totalMinutes += parseDurationToMinutes(segment.duration);
-        entry.segmentCount += 1;
-        if (segment.status === 'on') entry.onSiteCount += 1;
-        else entry.offSiteCount += 1;
-      }
-    }
-  }
-  return Array.from(byName.values()).sort((a, b) => {
-    if (a.isYou && !b.isYou) return -1;
-    if (!a.isYou && b.isYou) return 1;
-    return b.totalMinutes - a.totalMinutes;
-  });
-}
-
 function StatusPill({ status, distanceLabel }) {
-  const onSite = status === 'on';
+  const presentation = getLocationStatusPresentation(status);
   return (
     <View
       style={[
         styles.segStatusPill,
-        { backgroundColor: onSite ? '#e6f2f4' : '#fbecea' },
+        { backgroundColor: presentation.backgroundColor },
       ]}
     >
       <View
         style={[
           styles.segStatusDot,
-          { backgroundColor: onSite ? BRAND : '#c0432b' },
+          { backgroundColor: presentation.color },
         ]}
       />
       <Text
         style={[
           styles.segStatusText,
-          { color: onSite ? BRAND : '#c0432b' },
+          { color: presentation.color },
         ]}
       >
-        {onSite ? 'On Site' : 'Off Site'}
+        {presentation.label}
       </Text>
       {distanceLabel ? (
         <>
@@ -292,7 +252,7 @@ function StatusPill({ status, distanceLabel }) {
             style={[
               styles.segStatusText,
               styles.segStatusDistanceDivider,
-              { color: onSite ? BRAND : '#c0432b' },
+              { color: presentation.color },
             ]}
           >
             -
@@ -300,7 +260,7 @@ function StatusPill({ status, distanceLabel }) {
           <Text
             style={[
               styles.segStatusText,
-              { color: onSite ? BRAND : '#c0432b' },
+              { color: presentation.color },
             ]}
           >
             {distanceLabel}
@@ -309,6 +269,48 @@ function StatusPill({ status, distanceLabel }) {
       ) : null}
     </View>
   );
+}
+
+function getLocationStatusPresentation(status) {
+  if (status === 'on') {
+    return { label: 'On Site', color: BRAND, backgroundColor: '#e6f2f4' };
+  }
+  if (status === 'off') {
+    return { label: 'Off Site', color: '#c0432b', backgroundColor: '#fbecea' };
+  }
+  if (status === 'mixed') {
+    return { label: 'Mixed location', color: '#9a611f', backgroundColor: '#fff3df' };
+  }
+  return { label: 'Location unavailable', color: '#6f7774', backgroundColor: '#eef1ef' };
+}
+
+function getPainterClockInMeta(painter) {
+  const parts = [
+    `${painter.clockInCount} ${painter.clockInCount === 1 ? 'clock-in' : 'clock-ins'}`,
+  ];
+  if (painter.onSiteCount > 0) parts.push(`${painter.onSiteCount} on site`);
+  if (painter.offSiteCount > 0) parts.push(`${painter.offSiteCount} off site`);
+  if (painter.mixedCount > 0) parts.push(`${painter.mixedCount} mixed`);
+  if (painter.unknownLocationCount > 0) {
+    parts.push(`${painter.unknownLocationCount} location unavailable`);
+  }
+  return parts.join(' · ');
+}
+
+function getLocationBreakdownLabel(clockIn) {
+  const breakdown = clockIn?.locationBreakdown;
+  if (!breakdown) return null;
+  const parts = [];
+  if (breakdown.onSiteMs > 0) {
+    parts.push(`${formatMinutesLabel(Math.floor(breakdown.onSiteMs / 60000))} on site`);
+  }
+  if (breakdown.offSiteMs > 0) {
+    parts.push(`${formatMinutesLabel(Math.floor(breakdown.offSiteMs / 60000))} off site`);
+  }
+  if (breakdown.unknownMs > 0) {
+    parts.push(`${formatMinutesLabel(Math.floor(breakdown.unknownMs / 60000))} location unavailable`);
+  }
+  return parts.length > 1 ? `GPS breakdown · ${parts.join(' · ')}` : null;
 }
 
 function PainterSummaryRow({ painter, onPress }) {
@@ -342,15 +344,19 @@ function PainterSummaryRow({ painter, onPress }) {
         </View>
         <View style={styles.painterSummaryMetaRow}>
           <Text style={styles.painterMetaText}>
-            {painter.segmentCount} {painter.segmentCount === 1 ? 'clock-in' : 'clock-ins'}
+            {painter.clockInCount} {painter.clockInCount === 1 ? 'clock-in' : 'clock-ins'}
           </Text>
-          <View style={styles.painterMetaDivider} />
-          <View style={styles.painterStatusInline}>
-            <View style={[styles.segStatusDot, { backgroundColor: BRAND }]} />
-            <Text style={[styles.painterMetaText, styles.painterMetaOn]}>
-              {painter.onSiteCount} On Site
-            </Text>
-          </View>
+          {painter.onSiteCount > 0 ? (
+            <>
+              <View style={styles.painterMetaDivider} />
+              <View style={styles.painterStatusInline}>
+                <View style={[styles.segStatusDot, { backgroundColor: BRAND }]} />
+                <Text style={[styles.painterMetaText, styles.painterMetaOn]}>
+                  {painter.onSiteCount} On Site
+                </Text>
+              </View>
+            </>
+          ) : null}
           {painter.offSiteCount > 0 ? (
             <>
               <View style={styles.painterMetaDivider} />
@@ -360,6 +366,22 @@ function PainterSummaryRow({ painter, onPress }) {
                   {painter.offSiteCount} Off Site
                 </Text>
               </View>
+            </>
+          ) : null}
+          {painter.mixedCount > 0 ? (
+            <>
+              <View style={styles.painterMetaDivider} />
+              <Text style={[styles.painterMetaText, styles.painterMetaMixed]}>
+                {painter.mixedCount} Mixed
+              </Text>
+            </>
+          ) : null}
+          {painter.unknownLocationCount > 0 ? (
+            <>
+              <View style={styles.painterMetaDivider} />
+              <Text style={styles.painterMetaText}>
+                {painter.unknownLocationCount} Location unavailable
+              </Text>
             </>
           ) : null}
         </View>
@@ -406,7 +428,7 @@ function PainterDetailView({ painter, onBack, onSegmentPress }) {
             {painter.isYou ? ' (You)' : ''}
           </Text>
           <Text style={styles.detailHeaderMeta} numberOfLines={1}>
-            {painter.segmentCount} clock-ins · {painter.onSiteCount} on site · {painter.offSiteCount} off site
+            {getPainterClockInMeta(painter)}
           </Text>
         </View>
         <Text style={styles.detailHeaderTotal}>
@@ -415,8 +437,8 @@ function PainterDetailView({ painter, onBack, onSegmentPress }) {
       </View>
 
       {painter.days.map((day) => {
-        const dayMinutes = day.segments.reduce(
-          (acc, segment) => acc + parseDurationToMinutes(segment.duration),
+        const dayMinutes = day.clockIns.reduce(
+          (acc, clockIn) => acc + clockIn.durationMinutes,
           0,
         );
         return (
@@ -429,8 +451,9 @@ function PainterDetailView({ painter, onBack, onSegmentPress }) {
               <Text style={styles.dayTotal}>{formatMinutesLabel(dayMinutes)}</Text>
             </View>
             <View style={styles.segmentListCard}>
-              {day.segments.map((segment, index) => {
+              {day.clockIns.map((clockIn, index) => {
                 const canEdit = painter.isYou;
+                const breakdownLabel = getLocationBreakdownLabel(clockIn);
                 const RowComponent = canEdit ? TouchableOpacity : View;
                 const rowProps = canEdit
                   ? {
@@ -439,7 +462,7 @@ function PainterDetailView({ painter, onBack, onSegmentPress }) {
                         onSegmentPress?.({
                           painter,
                           day,
-                          segment,
+                          segment: clockIn,
                           index,
                         }),
                     }
@@ -447,25 +470,28 @@ function PainterDetailView({ painter, onBack, onSegmentPress }) {
 
                 return (
                   <RowComponent
-                    key={`${day.dayId}-${index}`}
+                    key={clockIn.id}
                     style={[styles.segmentRow, index > 0 && styles.segmentRowBorder]}
                     {...rowProps}
                   >
                     <View style={styles.segmentLeft}>
                       <Text style={styles.segmentTime} numberOfLines={1}>
-                        <Text style={styles.segmentTimeStrong}>{segment.start}</Text>
-                        <Text style={styles.segmentSrc}> {segment.startSrc}</Text>
+                        <Text style={styles.segmentTimeStrong}>{clockIn.start}</Text>
+                        <Text style={styles.segmentSrc}> {clockIn.startSrc}</Text>
                         <Text style={styles.segmentDash}>  -  </Text>
-                        <Text style={styles.segmentTimeStrong}>{segment.end}</Text>
-                        <Text style={styles.segmentSrc}> {segment.endSrc}</Text>
+                        <Text style={styles.segmentTimeStrong}>{clockIn.end}</Text>
+                        <Text style={styles.segmentSrc}> {clockIn.endSrc}</Text>
                       </Text>
-                    <StatusPill
-                      status={segment.status}
-                      distanceLabel={getDistanceLabel(segment)}
-                    />
-                  </View>
+                      <StatusPill
+                        status={clockIn.status}
+                        distanceLabel={clockIn.distanceLabel}
+                      />
+                      {breakdownLabel ? (
+                        <Text style={styles.locationBreakdownText}>{breakdownLabel}</Text>
+                      ) : null}
+                    </View>
                     <View style={styles.segmentRight}>
-                      <Text style={styles.segmentDuration}>{segment.duration}</Text>
+                      <Text style={styles.segmentDuration}>{clockIn.duration}</Text>
                       {canEdit ? (
                         <Ionicons name="chevron-forward" size={16} color={SUBTLE} />
                       ) : null}
@@ -882,6 +908,7 @@ export default function ProjectDetailScreen({
   onClockIn,
   onClockOut,
   onSwitchProject,
+  onOpenActiveClock,
   onDeleteTimeEntry,
   onUpdateTimeEntry,
 }) {
@@ -913,7 +940,7 @@ export default function ProjectDetailScreen({
     const trackedDays = buildProjectClockInDays(entries, activeShift, project, user, liveNowMs);
     return trackedDays;
   }, [entries, activeShift, project, user, liveNowMs]);
-  const painterSummaries = buildPainterSummaries(clockInDays);
+  const painterSummaries = buildPainterClockInSummaries(clockInDays);
   const selectedPainter =
     selectedPainterId === null
       ? null
@@ -921,6 +948,16 @@ export default function ProjectDetailScreen({
 
   const title = getProjectTitle(project);
   const companyCamProjectId = getCompanyCamProjectId(project);
+  const budgetProjects = useMemo(() => (project ? [project] : []), [project]);
+  const {
+    progressByProjectId,
+    error: budgetProgressError,
+    refresh: refreshBudgetProgress,
+  } = useProjectBudgetProgress(budgetProjects);
+  const budgetProgress =
+    progressByProjectId[String(companyCamProjectId || '')] ||
+    (budgetProgressError ? { status: 'unavailable' } : null);
+  const budgetPresentation = getBudgetProgressPresentation(budgetProgress);
   const address = getProjectAddress(project);
   const addedDate = formatDate(
     firstValue([project?.created_at, project?.added_at, project?.inserted_at]),
@@ -935,19 +972,11 @@ export default function ProjectDetailScreen({
     ? formatMsAsHours(projectEntryTotals.yourMs)
     : formatHours(fallbackYourHours, '0.0h');
   const teamHoursRaw = projectEntryTotals.teamMs > 0 ? projectEntryTotals.teamMs / 3600000 : fallbackTeamHours || 0;
-  const budgetHoursRaw = toNumericHours(
-    firstValue(
-      [project?.budgeted_hours, project?.estimated_hours, project?.budget_hours],
-      null,
-    ),
-  );
   const teamHours = projectEntryTotals.teamMs > 0 ? formatMsAsHours(projectEntryTotals.teamMs) : `${teamHoursRaw.toFixed(1)}h`;
   const visibleHoursKicker = canViewTeamTime ? 'Team' : 'Visible';
   const visibleHoursLabel = canViewTeamTime ? 'Team total' : 'Entries shown';
   const recentTitle = canViewTeamTime ? 'Hours by Painter' : 'Your Clock-ins';
   const recentCount = canViewTeamTime ? `${painterSummaries.length} crew` : `${clockInDays.length} day${clockInDays.length === 1 ? '' : 's'}`;
-  const budgetedHours =
-    budgetHoursRaw === null ? 'Not set' : `${budgetHoursRaw.toFixed(1)}h`;
   const isActiveProject = isSameCompanyCamProject(activeShift?.project, project);
   const activeStartLabel =
     isActiveProject && activeShift?.startedAt ? formatEditTime(new Date(activeShift.startedAt)) : null;
@@ -962,18 +991,32 @@ export default function ProjectDetailScreen({
     try {
       if (isActiveProject) {
         const entry = await onClockOut?.('project_detail');
-        if (!entry) setClockActionError('Clock out could not complete. Try again.');
+        if (!entry) {
+          setClockActionError('Clock out could not complete. Try again.');
+        } else {
+          await refreshBudgetProgress();
+        }
         return;
       }
 
       if (activeShift) {
         const nextShift = await onSwitchProject?.(project);
-        if (!nextShift) setClockActionError('Switch job could not complete. Check location permissions and try again.');
+        if (!nextShift) {
+          setClockActionError('Switch job could not complete. Check location permissions and try again.');
+        } else {
+          await refreshBudgetProgress();
+          onOpenActiveClock?.();
+        }
         return;
       }
 
       const shift = await onClockIn?.(project);
-      if (!shift) setClockActionError('Clock in could not start. Check location permissions and try again.');
+      if (!shift) {
+        setClockActionError('Clock in could not start. Check location permissions and try again.');
+      } else {
+        await refreshBudgetProgress();
+        onOpenActiveClock?.();
+      }
     } catch (error) {
       setClockActionError(error?.message || 'Clock action could not complete. Try again.');
     } finally {
@@ -981,25 +1024,6 @@ export default function ProjectDetailScreen({
     }
   };
   const clockFeedback = trackingNotice?.message || clockActionError;
-
-  let budgetStatus = null;
-  if (canViewTeamTime && budgetHoursRaw !== null && teamHoursRaw > budgetHoursRaw) {
-    budgetStatus = {
-      kind: 'over',
-      label: `Over by ${(teamHoursRaw - budgetHoursRaw).toFixed(1)}h`,
-      bg: '#fdecea',
-      color: '#c0432b',
-      dot: '#d7553b',
-    };
-  } else if (canViewTeamTime && budgetHoursRaw !== null) {
-    budgetStatus = {
-      kind: 'under',
-      label: `${(budgetHoursRaw - teamHoursRaw).toFixed(1)}h remaining`,
-      bg: '#e6f2f4',
-      color: BRAND,
-      dot: BRAND,
-    };
-  }
 
   useEffect(() => {
     if (activeTab !== 'photos' || photosLoaded) return;
@@ -1052,10 +1076,12 @@ export default function ProjectDetailScreen({
         projects={projects}
         onSave={async (entryToSave, updates) => {
           await onUpdateTimeEntry?.(entryToSave.segment?.raw || entryToSave.segment || entryToSave, updates);
+          await refreshBudgetProgress();
           setSelectedTimeEntry(null);
         }}
         onDelete={async (entryToDelete) => {
           await onDeleteTimeEntry?.(entryToDelete.segment?.raw || entryToDelete.segment || entryToDelete);
+          await refreshBudgetProgress();
           setSelectedTimeEntry(null);
         }}
         onBack={() => setSelectedTimeEntry(null)}
@@ -1164,39 +1190,15 @@ export default function ProjectDetailScreen({
                 </View>
               ) : null}
 
-              <View style={styles.hoursGrid}>
-                <View style={[styles.hourCard, styles.youCard]}>
-                  <View style={[styles.hourBadge, { backgroundColor: '#eaf4f6' }]}>
-                    <Text style={[styles.hourBadgeText, { color: BRAND }]}>You</Text>
-                  </View>
-                  <Text style={styles.hourValue}>{yourHours}</Text>
-                  <Text style={styles.hourLabel}>Your hours</Text>
-                </View>
-
-                <View style={[styles.hourCard, styles.comboCard]}>
-                  <View style={styles.comboStats}>
-                    <View style={styles.comboStat}>
-                      <Text style={styles.comboKicker}>{visibleHoursKicker}</Text>
-                      <Text style={[styles.hourValue, styles.comboValue]}>{teamHours}</Text>
-                      <Text style={styles.hourLabel}>{visibleHoursLabel}</Text>
-                    </View>
-                    <View style={styles.comboDivider} />
-                    <View style={styles.comboStat}>
-                      <Text style={styles.comboKicker}>Budget</Text>
-                      <Text style={[styles.hourValue, styles.comboValue]}>{budgetedHours}</Text>
-                      <Text style={styles.hourLabel}>Budgeted</Text>
-                    </View>
-                  </View>
-
-                  {budgetStatus ? (
-                    <View style={[styles.statusPill, { backgroundColor: budgetStatus.bg }]}>
-                      <View style={[styles.statusDot, { backgroundColor: budgetStatus.dot }]} />
-                      <Text style={[styles.statusText, { color: budgetStatus.color }]}>
-                        {budgetStatus.label}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+              <View style={styles.hoursPanelCard}>
+                <BudgetHoursPanel
+                  progress={budgetProgress}
+                  primaryLabel="Your hours"
+                  primaryValue={yourHours}
+                  primaryCaption="you"
+                  fallbackSecondaryLabel={visibleHoursLabel}
+                  fallbackSecondaryValue={teamHours}
+                />
               </View>
 
               <TouchableOpacity
@@ -1653,11 +1655,14 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: '#27ae60',
   },
-  hoursGrid: {
-    flexDirection: 'row',
-    gap: 8,
+  hoursPanelCard: {
     marginTop: 12,
-    alignItems: 'stretch',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: TILE_BG,
   },
   hourCard: {
     paddingVertical: 12,
@@ -1702,25 +1707,8 @@ const styles = StyleSheet.create({
     backgroundColor: BORDER,
     marginHorizontal: 10,
   },
-  statusPill: {
+  detailBudgetProgress: {
     marginTop: 10,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.1,
   },
   hourBadge: {
     alignSelf: 'flex-start',
@@ -2170,6 +2158,10 @@ const styles = StyleSheet.create({
     color: '#c0432b',
     fontWeight: '800',
   },
+  painterMetaMixed: {
+    color: '#9a611f',
+    fontWeight: '800',
+  },
   painterMetaDivider: {
     width: 3,
     height: 3,
@@ -2274,6 +2266,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: -0.1,
+  },
+  locationBreakdownText: {
+    marginTop: 5,
+    color: MUTED,
+    fontSize: 10.5,
+    fontWeight: '600',
   },
   segStatusPill: {
     alignSelf: 'flex-start',

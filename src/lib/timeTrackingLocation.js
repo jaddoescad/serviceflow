@@ -31,7 +31,7 @@ function projectPoint(project) {
 
 export async function geocodeProject(project) {
   const normalized = normalizeProject(project);
-  if (!normalized || normalized.latitude != null || normalized.longitude != null) return normalized;
+  if (!normalized || (normalized.latitude != null && normalized.longitude != null)) return normalized;
 
   const address = normalized.formatted_address || normalized.address;
   if (!address) return normalized;
@@ -67,7 +67,7 @@ export async function geocodeProjects(projects, limit = 80) {
     const normalized = normalizeProject(project);
     if (!normalized) continue;
 
-    if (normalized.latitude == null && normalized.longitude == null && resolvedCount < limit) {
+    if ((normalized.latitude == null || normalized.longitude == null) && resolvedCount < limit) {
       output.push(await geocodeProject(normalized));
       resolvedCount += 1;
     } else {

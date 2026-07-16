@@ -12,8 +12,14 @@ export function normalizeProject(project) {
   const id = String(project.companycam_id || project.companycam_project_id || project.projectId || project.id || "");
   if (!id) return null;
 
-  const latitude = Number(project.latitude);
-  const longitude = Number(project.longitude);
+  let latitude = normalizeCoordinate(project.latitude, -90, 90);
+  let longitude = normalizeCoordinate(project.longitude, -180, 180);
+  // Missing database coordinates previously became Number(null) === 0, which
+  // placed Ottawa jobs in the Gulf of Guinea and produced ~8,900 km distances.
+  if (latitude === 0 && longitude === 0) {
+    latitude = null;
+    longitude = null;
+  }
   const address = formatAddress(project);
 
   return {
@@ -23,9 +29,17 @@ export function normalizeProject(project) {
     name: project.name || project.project_name || "Project",
     address,
     formatted_address: project.formatted_address || address,
-    latitude: Number.isFinite(latitude) ? latitude : null,
-    longitude: Number.isFinite(longitude) ? longitude : null,
+    latitude,
+    longitude,
   };
+}
+
+function normalizeCoordinate(value, minimum, maximum) {
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) && coordinate >= minimum && coordinate <= maximum
+    ? coordinate
+    : null;
 }
 
 export function distanceMeters(a, b) {
