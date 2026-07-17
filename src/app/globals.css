@@ -1,0 +1,432 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Theme system. Every color/type/shape token is driven by the
+   [data-design] attribute on <html>, so the whole app re-skins
+   live from the floating switcher. Default = Design 1 (Daylight).
+   ============================================================ */
+
+:root,
+[data-design="1"] {
+  /* Daylight — clean operational SaaS, light */
+  --color-bg: #eef1f6;
+  --color-surface: #ffffff;
+  --color-surface-2: #f4f6fa;
+  --color-border: #e3e8f0;
+  --color-text: #26303f;
+  --color-heading: #101725;
+  --color-muted: #6b7688;
+  --color-brand: #2f6bff;
+  --color-brand-ink: #ffffff;
+  --color-brand-soft: #e7eeff;
+  --color-brand-strong: #2456d8;
+  --color-good: #17935a;
+  --color-good-soft: #e2f5ec;
+  --color-warn: #b7770f;
+  --color-warn-soft: #fbf1dd;
+  --color-bad: #d3453e;
+  --color-bad-soft: #fbe6e5;
+  --color-chip-muted: #eef1f6;
+  --chart-grid: #e6ebf3;
+  --chart-axis: #93a0b4;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(16, 23, 37, 0.05), 0 1px 3px rgba(16, 23, 37, 0.04);
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display-space: -0.02em;
+}
+
+[data-design="2"] {
+  /* Slate Pro — refined dark control room */
+  --color-bg: #080d18;
+  --color-surface: #101a2e;
+  --color-surface-2: #16223c;
+  --color-border: #1e2b45;
+  --color-text: #d3ddf1;
+  --color-heading: #f2f6ff;
+  --color-muted: #8496b9;
+  --color-brand: #6d8bff;
+  --color-brand-ink: #0a1020;
+  --color-brand-soft: #1a2846;
+  --color-brand-strong: #a9bbff;
+  --color-good: #34d399;
+  --color-good-soft: #103028;
+  --color-warn: #fbbf5b;
+  --color-warn-soft: #33280f;
+  --color-bad: #f77066;
+  --color-bad-soft: #341718;
+  --color-chip-muted: #17233c;
+  --chart-grid: #17223a;
+  --chart-axis: #6b7ea0;
+  --radius: 16px;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display-space: -0.02em;
+}
+
+[data-design="3"] {
+  /* Jobsite — warm industrial brand, heavy type */
+  --color-bg: #efe9dd;
+  --color-surface: #fbf7ef;
+  --color-surface-2: #f3ecdf;
+  --color-border: #ded3bf;
+  --color-text: #241f18;
+  --color-heading: #14110c;
+  --color-muted: #6f6656;
+  --color-brand: #e0561a;
+  --color-brand-ink: #ffffff;
+  --color-brand-soft: #f8e4d5;
+  --color-brand-strong: #b93f0d;
+  --color-good: #3d7a3a;
+  --color-good-soft: #e4efdd;
+  --color-warn: #a9760d;
+  --color-warn-soft: #f6ead0;
+  --color-bad: #b83228;
+  --color-bad-soft: #f4dcd7;
+  --color-chip-muted: #ece3d2;
+  --chart-grid: #e6dccb;
+  --chart-axis: #9c9179;
+  --radius: 7px;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.05), 3px 3px 0 rgba(20, 17, 12, 0.05);
+  --font-display: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-body: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --display-space: -0.01em;
+}
+
+[data-design="4"] {
+  /* Terminal — data-dense monospace ops */
+  --color-bg: #0a0b0e;
+  --color-surface: #101216;
+  --color-surface-2: #16191e;
+  --color-border: #23272f;
+  --color-text: #c4ccd6;
+  --color-heading: #eef2f7;
+  --color-muted: #737e8d;
+  --color-brand: #4ee08a;
+  --color-brand-ink: #06120a;
+  --color-brand-soft: #10241a;
+  --color-brand-strong: #6fe9a0;
+  --color-good: #4ee08a;
+  --color-good-soft: #10241a;
+  --color-warn: #eebb4d;
+  --color-warn-soft: #2a2210;
+  --color-bad: #f76e6e;
+  --color-bad-soft: #2a1414;
+  --color-chip-muted: #191d23;
+  --chart-grid: #191d23;
+  --chart-axis: #6a7482;
+  --radius: 5px;
+  --shadow: none;
+  --font-display: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --font-body: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --display-space: 0;
+}
+
+[data-design="5"] {
+  /* Editorial — minimal, spacious, serif headings */
+  --color-bg: #f7f6f1;
+  --color-surface: #fffefb;
+  --color-surface-2: #f1f0ea;
+  --color-border: #e7e5db;
+  --color-text: #33322a;
+  --color-heading: #16150f;
+  --color-muted: #928f81;
+  --color-brand: #2f5d47;
+  --color-brand-ink: #ffffff;
+  --color-brand-soft: #e6ede9;
+  --color-brand-strong: #2f5d47;
+  --color-good: #3a7a52;
+  --color-good-soft: #e6efe8;
+  --color-warn: #a5731f;
+  --color-warn-soft: #f3ecdb;
+  --color-bad: #b0483a;
+  --color-bad-soft: #f2e2de;
+  --color-chip-muted: #efeee7;
+  --chart-grid: #edece4;
+  --chart-axis: #a6a396;
+  --radius: 6px;
+  --shadow: none;
+  --font-display: ui-serif, Georgia, "Times New Roman", serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display-space: -0.01em;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: var(--display-space);
+}
+
+::selection {
+  background: var(--color-brand-soft);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 80%, var(--color-muted));
+  border-radius: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Crew operations map ---------------------------------------------------- */
+.leaflet-container {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+.leaflet-control-attribution,
+.leaflet-control-scale-line,
+.leaflet-bar a {
+  border-color: var(--color-border) !important;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent) !important;
+  color: var(--color-muted) !important;
+}
+
+.leaflet-bar a:hover {
+  background: var(--color-surface-2) !important;
+  color: var(--color-heading) !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.leaflet-popup-content-wrapper {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px;
+}
+
+.crew-map-popup {
+  display: grid;
+  min-width: 170px;
+  gap: 3px;
+}
+
+.crew-map-popup strong {
+  color: var(--color-heading);
+  font-size: 13px;
+}
+
+.crew-map-popup span {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.crew-map-popup small {
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+  padding-top: 5px;
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.crew-map-person-marker {
+  position: relative;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 3px solid var(--color-surface);
+  border-radius: 999px;
+  background: var(--crew-color, var(--color-brand));
+  box-shadow: 0 2px 9px rgba(16, 23, 37, 0.28);
+  color: var(--color-brand-ink);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.crew-map-person-marker--clocked-out {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+.crew-map-person-marker--freshness-historical {
+  box-shadow: 0 2px 7px rgba(16, 23, 37, 0.2);
+  filter: saturate(0.72);
+}
+
+.crew-map-person-marker--on_site {
+  background: var(--crew-color, var(--color-good));
+}
+
+.crew-map-person-marker--off_site {
+  background: var(--crew-color, var(--color-warn));
+}
+
+.crew-map-person-marker--unknown {
+  background: var(--crew-color, var(--color-muted));
+}
+
+.crew-map-person-marker--estimate {
+  outline: 2px dashed color-mix(in srgb, var(--color-heading) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.crew-map-person-marker--freshness-fresh {
+  box-shadow: 0 2px 9px rgba(16, 23, 37, 0.28), 0 0 0 4px var(--color-good-soft);
+}
+
+.crew-map-person-marker--freshness-aging {
+  outline: 3px solid var(--color-warn-soft);
+  outline-offset: 1px;
+}
+
+.crew-map-person-marker--freshness-stale {
+  opacity: 0.68;
+  filter: saturate(0.45);
+}
+
+.crew-map-person-marker--dimmed {
+  opacity: 0.28;
+  filter: saturate(0.25);
+}
+
+.crew-map-trail {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.crew-map-trail-point {
+  filter: drop-shadow(0 1px 2px rgba(16, 23, 37, 0.25));
+}
+
+.crew-map-accuracy {
+  stroke-dasharray: 3 3;
+}
+
+.crew-map-assignment-line {
+  stroke: var(--color-brand);
+}
+
+.crew-map-job-radius {
+  fill: var(--color-brand-soft);
+  stroke: var(--color-brand);
+  stroke-dasharray: 5 5;
+}
+
+.crew-map-job-marker {
+  display: flex;
+  width: max-content;
+  max-width: 240px;
+  align-items: center;
+  gap: 7px;
+  filter: drop-shadow(0 2px 4px rgba(16, 23, 37, 0.22));
+}
+
+.crew-map-job-marker-pin {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  transform: rotate(45deg);
+  border: 3px solid var(--color-surface);
+  border-radius: 5px 5px 5px 1px;
+  background: var(--color-heading);
+  box-shadow: 0 1px 5px rgba(16, 23, 37, 0.28);
+}
+
+.crew-map-job-marker-label {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+  padding: 4px 7px;
+  color: var(--color-heading);
+  line-height: 1.15;
+}
+
+.crew-map-job-marker-label strong {
+  max-width: 190px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crew-map-job-marker-label small {
+  color: var(--color-muted);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.crew-map-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  padding: 5px 9px;
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.crew-map-legend-person,
+.crew-map-legend-trail,
+.crew-map-legend-complete,
+.crew-map-legend-job {
+  display: block;
+  width: 8px;
+  height: 8px;
+  background: var(--color-brand);
+}
+
+.crew-map-legend-person {
+  border-radius: 999px;
+}
+
+.crew-map-legend-trail {
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--color-brand);
+}
+
+.crew-map-legend-complete {
+  border: 2px dashed var(--color-muted);
+  border-radius: 999px;
+  background: transparent;
+}
+
+.crew-map-legend-job {
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: var(--color-heading);
+}
+
+[data-design="2"] .leaflet-tile-pane,
+[data-design="4"] .leaflet-tile-pane {
+  filter: brightness(0.72) saturate(0.75) contrast(1.12);
+}
