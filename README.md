@@ -14,10 +14,19 @@ app.
   `admin-time-entries` edge function with the user's JWT.
 - **Employee create / role / active / assignments** call the existing
   `project-assignments` edge function.
-- **Budgets** are stored in `project_budgets` (migration
+- **Financial budgets** are stored in `project_budgets` (migration
   `20260707190000`) and written directly via RLS (admin/manager only).
-
-No new backend was added beyond the `project_budgets` table.
+- **Calculator labour budgets** are versioned in `project_labour_budgets`.
+  The first calculator is the default automatically. Opening another quote
+  does not change it; selecting **Make default** explicitly publishes that
+  quote and materializes its rooms/exterior lines as
+  `project_labour_tasks`. Replacing the selection keeps older task and timer
+  history inactive instead of deleting it.
+- **Painter task time** is stored separately in
+  `project_labour_task_time_entries`, with offline-safe client IDs and an
+  optional link to the painter's existing whole-shift `time_entries` row.
+  Assigned painters can read the safe task payload and aggregate hours through
+  `list_project_labour_tasks`; calculator prices and rates remain staff-only.
 
 ## Access
 
@@ -50,11 +59,43 @@ Environment variables (`.env.local`):
   clock-in position is used when there are no later updates; employees with no
   recorded coordinates are not placed at the job address.
 - `/timesheets` — filter, edit, approve, and delete time entries.
-- `/projects` — Jobs & Budgets: set hour/rate budgets, track burn, assign crew.
+  Active shifts have a dedicated **Clock out** action with Now, 5:00 PM, and
+  6:00 PM shortcuts. **Fix time** provides an Ottawa-time editor, duration
+  preview, correction notes, and a clear warning when a completed shift would
+  be reopened.
+- `/projects` — Jobs & Budgets: set job amounts, track labour, assign crew,
+  build multiple calculator options, and publish one option as the painter
+  task budget.
   “Last active” uses the latest crew time or verified contractor invoice date;
   logged hours use the higher verified total so invoices do not double-count
   clocked labour.
 - `/employees` — Crew: create members, set roles, activate/deactivate.
+
+## Clock-out CLI
+
+Use the CLI when you already know the painter and end time:
+
+```bash
+# Review the matched active shift, then confirm interactively.
+npm run clock-out -- "Michael Matambo" 6pm
+
+# Skip the prompt when using the command in a trusted admin workflow.
+npm run clock-out -- --employee "Michael Matambo" --at 18:00 --yes
+
+# Inspect the match without changing production data.
+npm run clock-out -- "Michael" now --dry-run
+```
+
+The command accepts `now`, friendly times such as `6pm`, 24-hour times such as
+`18:00`, and ISO timestamps. Time-only values use `America/Toronto`; add
+`--date YYYY-MM-DD` for another day or `--project` to disambiguate a name.
+
+The CLI needs `SUPABASE_URL` and the server-only
+`SUPABASE_SERVICE_ROLE_KEY`. It loads normal environment variables and local
+`.env.local` files, including the adjacent mobile-app `.env.local` in this
+workspace. Set `TIME_ENTRY_ADMIN_EMAIL` (or pass `--actor-email`) to choose the
+admin/manager recorded in the audit history. The service-role key is never
+used by the dashboard's browser bundle.
 
 ## Deploy
 

@@ -31,6 +31,28 @@ export async function updateEntry(input: {
   }
 }
 
+export async function clockOutEntry(input: {
+  id: string;
+  endedAt: string;
+  notes?: string | null;
+}): Promise<ActionResult> {
+  await requireStaff();
+  const endedAt = new Date(input.endedAt);
+  if (Number.isNaN(endedAt.getTime())) return fail(new Error("Choose a valid clock-out time"));
+
+  try {
+    await callEdge("admin-time-entries", {
+      action: "updateEntry",
+      id: input.id,
+      endedAt: endedAt.toISOString(),
+      notes: input.notes,
+    });
+    return ok();
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 export async function approveEntry(id: string): Promise<ActionResult> {
   await requireStaff();
   try {

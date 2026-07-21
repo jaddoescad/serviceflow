@@ -1,15 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
 import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
-import { assignProject, removeAssignment } from "@/lib/actions/employees";
 import { amountBeforeTax, LABOUR_ALERT_PERCENT, LABOUR_MAX_PERCENT, LABOUR_MIN_PERCENT } from "@/lib/metrics";
 import type { BudgetStatus, ProjectDetail, ProjectRollup } from "@/lib/metrics";
-
-type CrewMember = { userId: string; name: string };
 
 const statusTone: Record<BudgetStatus, "good" | "warn" | "bad" | "neutral"> = {
   under: "good",
@@ -37,20 +35,15 @@ function UsageBar({ percent, status }: { percent: number | null; status: BudgetS
 export function ProjectsTable({
   rows,
   detailsByProject,
-  crew,
-  assignmentsByProject,
   canManage,
 }: {
   rows: ProjectRollup[];
   detailsByProject: Record<string, ProjectDetail>;
-  crew: CrewMember[];
-  assignmentsByProject: Record<string, string[]>;
   canManage: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [budgetFor, setBudgetFor] = useState<ProjectRollup | null>(null);
-  const [crewFor, setCrewFor] = useState<ProjectRollup | null>(null);
   const [detailsFor, setDetailsFor] = useState<ProjectRollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -138,7 +131,7 @@ export function ProjectsTable({
                   <th className="px-4 py-2.5 text-right font-medium">Painter budget</th>
                   <th className="px-4 py-2.5 font-medium">Used by painters</th>
                   <th className="px-4 py-2.5 font-medium">Last active ↓</th>
-                  {canManage ? <th className="px-4 py-2.5 text-right font-medium">Manage</th> : null}
+                  <th className="px-4 py-2.5 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,7 +156,29 @@ export function ProjectsTable({
                       </button>
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
-                      {fmtMoney(r.amountBeforeTax)}
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>{fmtMoney(r.amountBeforeTax)}</span>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            onClick={() => setBudgetFor(r)}
+                            disabled={pending}
+                            aria-label={`Edit amount for ${r.name}`}
+                            title="Edit amount"
+                            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
+                              <path
+                                d="M13.75 3.75a1.768 1.768 0 0 1 2.5 2.5l-8.5 8.5-3.25.75.75-3.25 8.5-8.5Z"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium tabular-nums">
                       {r.labourExcluded ? "—" : fmtMoney(r.wageCost)}
@@ -172,18 +187,26 @@ export function ProjectsTable({
                       <UsageBar percent={r.wageSharePercent} status={r.status} />
                     </td>
                     <td className="px-4 py-2.5 text-[var(--color-muted)]">{fmtDate(r.lastActivity)}</td>
-                    {canManage ? (
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="subtle" size="sm" onClick={() => setBudgetFor(r)} disabled={pending}>
-                            {r.amountIncludingTax != null ? "Amount" : "Set amount"}
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setCrewFor(r)} disabled={pending}>
-                            Crew
-                          </Button>
-                        </div>
-                      </td>
-                    ) : null}
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/projects/${encodeURIComponent(r.projectId)}/calculator?name=${encodeURIComponent(r.name)}`}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                        >
+                          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
+                            <rect x="4" y="2.75" width="12" height="14.5" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                            <path d="M6.75 5.5h6.5v2.25h-6.5z" stroke="currentColor" strokeWidth="1.25" />
+                            <path
+                              d="M7 10.5h.01M10 10.5h.01M13 10.5h.01M7 13.5h.01M10 13.5h.01M13 13.5h.01"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          Calculator
+                        </Link>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -209,17 +232,6 @@ export function ProjectsTable({
         />
       ) : null}
 
-      {crewFor ? (
-        <CrewDialog
-          project={crewFor}
-          crew={crew}
-          assignedIds={assignmentsByProject[crewFor.projectId] ?? []}
-          pending={pending}
-          onClose={() => setCrewFor(null)}
-          onAssign={(userId) => run(() => assignProject({ userId, projectId: crewFor.projectId }))}
-          onRemove={(userId) => run(() => removeAssignment({ userId, projectId: crewFor.projectId }))}
-        />
-      ) : null}
     </>
   );
 }
@@ -525,87 +537,6 @@ function AmountDialog({
               }
             >
               {pending ? "Saving…" : "Save amount"}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function CrewDialog({
-  project,
-  crew,
-  assignedIds,
-  pending,
-  onClose,
-  onAssign,
-  onRemove,
-}: {
-  project: ProjectRollup;
-  crew: CrewMember[];
-  assignedIds: string[];
-  pending: boolean;
-  onClose: () => void;
-  onAssign: (userId: string) => void;
-  onRemove: (userId: string) => void;
-}) {
-  const assigned = new Set(assignedIds);
-  const [add, setAdd] = useState("");
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5">
-        <div onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-sm font-semibold">Crew · {project.name}</h3>
-          <p className="mb-4 text-xs text-[var(--color-muted)]">Assign painters to this job.</p>
-
-          <div className="mb-4 flex gap-2">
-            <Select value={add} onChange={(e) => setAdd(e.target.value)} className="flex-1">
-              <option value="">Add a crew member…</option>
-              {crew
-                .filter((c) => !assigned.has(c.userId))
-                .map((c) => (
-                  <option key={c.userId} value={c.userId}>
-                    {c.name}
-                  </option>
-                ))}
-            </Select>
-            <Button
-              disabled={pending || !add}
-              onClick={() => {
-                if (add) onAssign(add);
-                setAdd("");
-              }}
-            >
-              Assign
-            </Button>
-          </div>
-
-          <div className="max-h-64 space-y-1 overflow-y-auto">
-            {assignedIds.length === 0 ? (
-              <p className="py-4 text-center text-sm text-[var(--color-muted)]">No one assigned yet.</p>
-            ) : (
-              assignedIds.map((id) => {
-                const member = crew.find((c) => c.userId === id);
-                return (
-                  <div
-                    key={id}
-                    className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2"
-                  >
-                    <span className="text-sm">{member?.name ?? "Unknown"}</span>
-                    <Button variant="danger" size="sm" disabled={pending} onClick={() => onRemove(id)}>
-                      Remove
-                    </Button>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className="mt-5 flex justify-end">
-            <Button variant="subtle" onClick={onClose}>
-              Close
             </Button>
           </div>
         </div>

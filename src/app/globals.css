@@ -169,8 +169,11 @@ body {
   letter-spacing: var(--display-space);
 }
 
+/* High-contrast selection — brand-soft was invisible on brand-soft surfaces
+   (e.g. chat bubbles), which made text look unselectable. */
 ::selection {
-  background: var(--color-brand-soft);
+  background: var(--color-brand);
+  color: var(--color-brand-ink);
 }
 
 ::-webkit-scrollbar {

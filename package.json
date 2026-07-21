@@ -9,16 +9,21 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clock-out": "node scripts/time-entry-cli.mjs clock-out",
+    "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
+    "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs"
   },
   "dependencies": {
+    "@openai/agents": "^0.13.5",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.107.0",
     "leaflet": "^1.9.4",
     "next": "^15.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "recharts": "^2.15.4"
+    "recharts": "^2.15.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",

@@ -2,6 +2,7 @@
 /.next
 /out
 /build
+/.test-dist
 .env
 .env.local
 .env*.local
