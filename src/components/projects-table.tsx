@@ -7,7 +7,7 @@ import { Kpi } from "@/components/kpi";
 import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import { amountBeforeTax, LABOUR_ALERT_PERCENT, LABOUR_MAX_PERCENT, LABOUR_MIN_PERCENT } from "@/lib/metrics";
-import type { BudgetStatus, ProjectDetail, ProjectRollup } from "@/lib/metrics";
+import type { BudgetStatus, ProjectDetail, ProjectRollup, ProjectTaskProgress } from "@/lib/metrics";
 
 const statusTone: Record<BudgetStatus, "good" | "warn" | "bad" | "neutral"> = {
   under: "good",
@@ -35,10 +35,12 @@ function UsageBar({ percent, status }: { percent: number | null; status: BudgetS
 export function ProjectsTable({
   rows,
   detailsByProject,
+  taskProgressByProject,
   canManage,
 }: {
   rows: ProjectRollup[];
   detailsByProject: Record<string, ProjectDetail>;
+  taskProgressByProject: Record<string, ProjectTaskProgress[]>;
   canManage: boolean;
 }) {
   const [search, setSearch] = useState("");
@@ -157,8 +159,10 @@ export function ProjectsTable({
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
                       <div className="flex items-center justify-end gap-1.5">
-                        <span>{fmtMoney(r.amountBeforeTax)}</span>
-                        {canManage ? (
+                        <span title={r.amountSource === "calculator" ? "Synced from the default calculator" : undefined}>
+                          {fmtMoney(r.amountBeforeTax)}
+                        </span>
+                        {canManage && r.amountSource !== "calculator" ? (
                           <button
                             type="button"
                             onClick={() => setBudgetFor(r)}
@@ -219,6 +223,7 @@ export function ProjectsTable({
         <JobDetailsDialog
           project={detailsFor}
           detail={detailsByProject[detailsFor.projectId]}
+          taskProgress={taskProgressByProject[detailsFor.projectId] ?? []}
           onClose={() => setDetailsFor(null)}
         />
       ) : null}
@@ -239,10 +244,12 @@ export function ProjectsTable({
 function JobDetailsDialog({
   project,
   detail,
+  taskProgress,
   onClose,
 }: {
   project: ProjectRollup;
   detail?: ProjectDetail;
+  taskProgress: ProjectTaskProgress[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -307,9 +314,65 @@ function JobDetailsDialog({
             </div>
             {project.amountIncludingTax != null ? (
               <p className="mb-6 text-[11px] text-[var(--color-muted)]">
-                Before-tax value is calculated live from {fmtMoney(project.amountIncludingTax)} including HST. Change orders only require updating that one amount.
+                {project.amountSource === "calculator"
+                  ? `Synced automatically from the default calculator total of ${fmtMoney(project.amountIncludingTax)} including HST.`
+                  : `Before-tax value is calculated live from ${fmtMoney(project.amountIncludingTax)} including HST.`}
               </p>
             ) : <div className="mb-6" />}
+
+            {taskProgress.length > 0 ? (
+              <section aria-labelledby="task-progress-title" className="mb-6">
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <div>
+                    <h3 id="task-progress-title" className="font-display text-sm font-semibold text-[var(--color-heading)]">Task progress</h3>
+                    <p className="text-xs text-[var(--color-muted)]">Painter tasks from the default calculator · hours tracked in the app</p>
+                  </div>
+                  <span className="text-xs text-[var(--color-muted)]">
+                    {taskProgress.filter((task) => task.status === "completed").length}/{taskProgress.length} complete
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {taskProgress.map((task) => {
+                    const over = task.budgetedHours > 0 && task.spentHours > task.budgetedHours;
+                    const percent = task.budgetedHours > 0 ? Math.min(100, (task.spentHours / task.budgetedHours) * 100) : 0;
+                    const activeCount = task.contributors.filter((contributor) => contributor.active).length;
+                    return (
+                      <div key={task.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="truncate text-sm font-medium" title={task.notes ?? undefined}>{task.title}</span>
+                          <span className={`shrink-0 text-xs font-semibold tabular-nums ${over ? "text-[var(--color-bad)]" : "text-[var(--color-text)]"}`}>
+                            {fmtHours(task.spentHours)}{task.budgetedHours > 0 ? ` of ${fmtHours(task.budgetedHours)}` : ""}
+                          </span>
+                        </div>
+                        {task.budgetedHours > 0 ? (
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${percent}%`, background: over ? "var(--color-bad)" : "var(--color-brand)" }}
+                            />
+                          </div>
+                        ) : null}
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {activeCount > 0 ? <Badge tone="good">{activeCount} on task now</Badge> : null}
+                          {task.contributors.length === 0 ? (
+                            <span className="text-[11px] text-[var(--color-muted)]">No time tracked yet</span>
+                          ) : (
+                            task.contributors.map((contributor) => (
+                              <span
+                                key={contributor.userId}
+                                className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-muted)]"
+                              >
+                                {contributor.name} · {fmtHours(contributor.hours)}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
               <section aria-labelledby="crew-hours-title">

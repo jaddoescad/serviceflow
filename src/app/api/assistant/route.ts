@@ -25,7 +25,7 @@ export const runtime = "nodejs";
 const INSTRUCTIONS = `You are the estimating assistant inside Ottawa Painters' job calculator. You help fill out painting quotes fast.
 
 Facts about the calculator:
-- Interior rooms are priced from Length × Width × Height in FEET. New rooms default to walls + ceiling included, 8 ft height.
+- Interior rooms are priced from Length × Width × Height in FEET. Rooms with no requested surface scope default to walls + ceiling included, 8 ft height.
 - Room price categories: walls (rate depends on paint tier: HP / SuperPaint / Duration), ceiling, popcorn ceiling, doors, trim (per coat), crown molding, closets, optional 3rd coat (+35% of walls).
 - Labour hours = interior price × labour% ÷ hourly rate; exterior hours come from production rates.
 - Exterior items: siding (sf), trim/soffits/fascia (lf), doors & windows (each), decks, fences (panels), prep (hours), pressure washing.
@@ -33,10 +33,12 @@ Facts about the calculator:
 
 How to behave:
 - Users type fast, on site, with typos ("kitchrn", "anf"). Fix obvious typos yourself: clean, capitalized room names ("Kitchen", "Dining room"), no leading articles ("a dining room" → "Dining room").
-- For a handful of rooms, prefer one add_room call PER room with exact fields — never combine two rooms into one. Modifiers like "only walls" apply only to the room they follow ("only walls" = walls true, ceiling false).
+- For a handful of rooms, prefer one add_room call PER room with exact fields — never combine two rooms into one.
+- add_room.surfaces is the COMPLETE, EXACT selection for that room. Never include an unrequested surface. "wall", "walls", "just wall", "only walls", and "walls only" mean ["walls"] — never include ceiling. When the user gives no surface scope at all, use ["walls", "ceiling"].
+- Surface modifiers apply only to the room they follow.
 - Use add_rooms_from_text only for long comma/line-separated lists (4+ rooms) with no typos.
 - Use the other tools for targeted changes. Resolve rooms by their visible name (e.g. "Bedroom 2").
-- After changing anything, call get_summary and check it matches the user's request (right number of rooms, right names). Fix mistakes with update_room/remove_room BEFORE replying.
+- After changing anything, call get_summary and check it matches the user's request (right number of rooms, right names, exact included surfaces). Fix mistakes with update_room/remove_room BEFORE replying.
 - Confirm in ONE short sentence with the new client price (pre-HST) and labour hours. Never invent numbers — read them from get_summary.
 - If a request is ambiguous or a tool reports an error, ask a brief clarifying question instead of guessing.
 - Keep replies to one or two sentences. No markdown headers or bullet lists unless asked.`;
@@ -57,12 +59,39 @@ const roomFields = {
   notes: z.string().nullable().describe("Room notes"),
 };
 
+const newRoomFields = {
+  length: roomFields.length,
+  width: roomFields.width,
+  height: roomFields.height,
+  doors: roomFields.doors,
+  closets: roomFields.closets,
+  surfaces: z
+    .array(z.enum(["walls", "thirdCoat", "ceiling", "popcorn", "trim", "crown"]))
+    .describe(
+      'Complete exact list of selected surfaces. For "just wall"/"walls only", pass only ["walls"]. If no surface scope is given, pass ["walls", "ceiling"].',
+    ),
+  trimCoats: roomFields.trimCoats,
+  notes: roomFields.notes,
+};
+
 function roomPatch(input: Record<string, unknown>): Partial<Room> {
   const patch: Partial<Room> = {};
   for (const key of Object.keys(roomFields) as Array<keyof typeof roomFields>) {
     const value = input[key];
     if (value !== null && value !== undefined) (patch as Record<string, unknown>)[key] = value;
   }
+  return patch;
+}
+
+function newRoomPatch(input: Record<string, unknown>): Partial<Room> {
+  const patch = roomPatch(input);
+  const surfaces = new Set(Array.isArray(input.surfaces) ? input.surfaces : []);
+  patch.walls = surfaces.has("walls") || surfaces.has("thirdCoat");
+  patch.thirdCoat = surfaces.has("thirdCoat");
+  patch.ceiling = surfaces.has("ceiling");
+  patch.popcorn = surfaces.has("popcorn");
+  patch.trim = surfaces.has("trim");
+  patch.crown = surfaces.has("crown");
   return patch;
 }
 
@@ -192,10 +221,11 @@ export async function POST(request: Request) {
     }),
     tool({
       name: "add_room",
-      description: "Add one interior room with explicit fields.",
-      parameters: z.object({ name: z.string(), ...roomFields }),
+      description:
+        "Add one interior room. surfaces is the complete exact selection; never add surfaces the user did not request.",
+      parameters: z.object({ name: z.string(), ...newRoomFields }),
       async execute(input) {
-        record({ type: "addRoom", name: input.name, id: randomUUID(), patch: roomPatch(input) });
+        record({ type: "addRoom", name: input.name, id: randomUUID(), patch: newRoomPatch(input) });
         return `Room added. ${summarize()}`;
       },
     }),

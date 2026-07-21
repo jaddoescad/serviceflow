@@ -160,6 +160,14 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Most dashboard pages stay within a readable centered column. Routes with a
+   persistent workspace rail (the calculator assistant) can opt into the full
+   area between the navigation and the viewport edge. */
+.app-content:has(> [data-app-content="full-bleed"]) {
+  max-width: none;
+  padding: 0;
+}
+
 * {
   border-color: var(--color-border);
 }

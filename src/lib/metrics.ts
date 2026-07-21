@@ -13,6 +13,8 @@ import type {
   Project,
   ProjectBudget,
   ProjectLabourExpense,
+  ProjectLabourTask,
+  ProjectLabourTaskTimeEntry,
   TimeEntry,
 } from "@/lib/types";
 
@@ -35,6 +37,7 @@ export type ProjectRollup = {
   budgetedHours: number | null;
   amountIncludingTax: number | null;
   amountBeforeTax: number | null;
+  amountSource: "calculator" | "manual" | null;
   hourlyRate: number | null;
   remainingHours: number | null;
   percentUsed: number | null;
@@ -102,6 +105,23 @@ export type ProjectDetail = {
   labourExpenses: ProjectLabourExpenseDetail[];
 };
 
+export type ProjectTaskContributor = {
+  userId: string;
+  name: string;
+  hours: number;
+  active: boolean;
+};
+
+export type ProjectTaskProgress = {
+  id: string;
+  title: string;
+  notes: string | null;
+  status: string;
+  budgetedHours: number;
+  spentHours: number;
+  contributors: ProjectTaskContributor[];
+};
+
 export type EmployeeRollup = {
   userId: string;
   name: string;
@@ -159,8 +179,10 @@ export function rollupProjects(
   payRates: EmployeePayRate[],
   labourExpenses: ProjectLabourExpense[],
   now = Date.now(),
+  defaultCalculatorProjectIds: Iterable<string> = [],
 ): ProjectRollup[] {
   const budgetById = new Map(budgets.map((b) => [b.companycam_project_id, b]));
+  const defaultCalculatorProjects = new Set(defaultCalculatorProjectIds);
   const assignedById = new Map<string, number>();
   for (const a of assignments) {
     assignedById.set(a.companycam_project_id, (assignedById.get(a.companycam_project_id) ?? 0) + 1);
@@ -250,6 +272,12 @@ export function rollupProjects(
       budgetedHours,
       amountIncludingTax: invoiceAmount,
       amountBeforeTax: preTaxAmount,
+      amountSource:
+        invoiceAmount == null
+          ? null
+          : defaultCalculatorProjects.has(id)
+            ? "calculator"
+            : "manual",
       hourlyRate: rate,
       remainingHours: budgetedHours != null ? budgetedHours - logged : null,
       percentUsed,
@@ -305,6 +333,60 @@ function latestActivity(a: string | null | undefined, b: string | null | undefin
   if (!a) return b ?? null;
   if (!b) return a;
   return new Date(a) > new Date(b) ? a : b;
+}
+
+/** Per-job painter task progress with per-painter contributions, matching the mobile app. */
+export function projectTaskProgress(
+  tasks: ProjectLabourTask[],
+  taskEntries: ProjectLabourTaskTimeEntry[],
+  employees: EmployeeProfile[],
+  now = Date.now(),
+): Record<string, ProjectTaskProgress[]> {
+  const nameByUserId = new Map(
+    employees.map((employee) => [employee.user_id, employee.full_name ?? employee.email ?? "Painter"]),
+  );
+  const entriesByTask = new Map<string, ProjectLabourTaskTimeEntry[]>();
+  for (const entry of taskEntries) {
+    const list = entriesByTask.get(entry.task_id) ?? [];
+    list.push(entry);
+    entriesByTask.set(entry.task_id, list);
+  }
+
+  const byProject: Record<string, ProjectTaskProgress[]> = {};
+  for (const task of tasks) {
+    const contributors = new Map<string, ProjectTaskContributor>();
+    let spentHours = 0;
+    for (const entry of entriesByTask.get(task.id) ?? []) {
+      const startedAt = Date.parse(entry.started_at);
+      const endedAt = entry.ended_at ? Date.parse(entry.ended_at) : now;
+      if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) continue;
+      const hours = Math.max(0, endedAt - startedAt) / 3_600_000;
+      const active = entry.ended_at == null;
+      spentHours += hours;
+      const current = contributors.get(entry.user_id);
+      if (current) {
+        current.hours += hours;
+        current.active = current.active || active;
+      } else {
+        contributors.set(entry.user_id, {
+          userId: entry.user_id,
+          name: nameByUserId.get(entry.user_id) ?? "Painter",
+          hours,
+          active,
+        });
+      }
+    }
+    (byProject[task.companycam_project_id] ??= []).push({
+      id: task.id,
+      title: task.title,
+      notes: task.notes,
+      status: task.status,
+      budgetedHours: Math.max(0, task.budgeted_hours ?? 0),
+      spentHours,
+      contributors: [...contributors.values()].sort((a, b) => b.hours - a.hours),
+    });
+  }
+  return byProject;
 }
 
 /** Compact drill-down data for the jobs table. */

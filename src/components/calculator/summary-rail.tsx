@@ -41,7 +41,12 @@ function Line({
   );
 }
 
-function buildCopyText(projectName: string, quote: Quote, totals: CalculatorTotals): string {
+function buildCopyText(
+  projectName: string,
+  quote: Quote,
+  totals: CalculatorTotals,
+  labourBudgetHours = totals.hours,
+): string {
   const lines: string[] = [];
   lines.push(`${projectName} — ${quote.name} (${QUOTE_STATUS_LABELS[quote.status]})`);
   if (totals.adjustmentAmount !== 0) {
@@ -51,7 +56,7 @@ function buildCopyText(projectName: string, quote: Quote, totals: CalculatorTota
   lines.push(`Client price (pre-HST): ${fmtMoney(totals.price)}`);
   lines.push(`HST (${Math.round(quote.rates.exterior.hst * 100)}%): ${fmtMoney(totals.hst)}`);
   lines.push(`Total incl. HST: ${fmtMoney(totals.totalWithHst)}`);
-  lines.push(`Labour budget: ${totals.hours.toFixed(2)} h`);
+  lines.push(`Labour budget: ${labourBudgetHours.toFixed(2)} h`);
 
   if (quote.rooms.length > 0) {
     lines.push("", "Rooms — expected hours");
@@ -209,6 +214,11 @@ export function SummaryRail({
   const defaultIsCurrent =
     isDefault &&
     new Date(defaultCalculator.sourceQuoteUpdatedAt).getTime() === new Date(quote.updatedAt).getTime();
+  const currentDefault = defaultIsCurrent ? defaultCalculator : null;
+  const hasManualOverrides = Boolean(
+    currentDefault?.tasks.some((task) => task.manualBudgetedHours !== null),
+  );
+  const displayedLabourHours = currentDefault?.budgetedHours ?? totals.hours;
 
   return (
     <Card className="p-5 lg:sticky lg:top-6">
@@ -220,8 +230,13 @@ export function SummaryRail({
 
       <div className="mt-4 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">Labour budget</div>
       <div className="font-display mt-1 text-3xl font-semibold tabular-nums text-[var(--color-heading)]">
-        {totals.hours.toFixed(1)} h
+        {displayedLabourHours.toFixed(1)} h
       </div>
+      {hasManualOverrides && currentDefault ? (
+        <div className="mt-0.5 text-[11px] leading-4 text-[var(--color-warn)]">
+          Calculated {currentDefault.calculatedHours.toFixed(1)} h · manual task overrides applied. Client price is unchanged.
+        </div>
+      ) : null}
       {totals.interior.hours > 0 ? (
         <div className="mt-0.5 text-[11px] tabular-nums text-[var(--color-muted)]">
           {fmtMoney(totals.interior.total)} × {Math.round(quote.rates.interior.labourPercent * 100)}% ={" "}
@@ -235,55 +250,6 @@ export function SummaryRail({
           rates (sf/hr · lf/hr · hrs each)
         </div>
       ) : null}
-
-      <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold text-[var(--color-heading)]">Default calculator</div>
-            <p className="mt-0.5 text-[10px] leading-4 text-[var(--color-muted)]">
-              {defaultIsCurrent
-                ? `This is the job default · ${defaultCalculator.taskCount} painter tasks · ${defaultCalculator.budgetedHours.toFixed(1)} h`
-                : isDefault
-                  ? "This is the default, but its painter tasks need updating."
-                  : defaultCalculator
-                    ? `Current default: “${defaultCalculator.quoteName}”.`
-                    : "The first calculator is being set as the default."}
-            </p>
-          </div>
-          {isDefault ? (
-            <span className="shrink-0 rounded-full bg-[var(--color-good-soft)] px-2 py-1 text-[10px] font-semibold text-[var(--color-good)]">
-              Default
-            </span>
-          ) : null}
-        </div>
-        <Button
-          variant={defaultIsCurrent ? "subtle" : "primary"}
-          size="sm"
-          className="mt-2.5 w-full"
-          disabled={makingDefault || defaultIsCurrent}
-          onClick={() => void onMakeDefault()}
-        >
-          {makingDefault
-            ? "Saving default…"
-            : defaultIsCurrent
-              ? "✓ Default calculator"
-              : isDefault
-                ? "Update painter tasks"
-                : "Make default"}
-        </Button>
-        {!hasAnything ? (
-          <p className="mt-1.5 text-[10px] text-[var(--color-muted)]">This calculator currently has no painter tasks.</p>
-        ) : defaultCalculator && !isDefault ? (
-          <p className="mt-1.5 text-[10px] text-[var(--color-muted)]">
-            Opening this calculator changed nothing. <strong>Make default</strong> will replace “{defaultCalculator.quoteName}”.
-          </p>
-        ) : null}
-        {defaultCalculatorError ? (
-          <p role="alert" className="mt-1.5 text-[10px] leading-4 text-[var(--color-bad)]">
-            {defaultCalculatorError}
-          </p>
-        ) : null}
-      </div>
 
       <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
         {totals.interior.total > 0 ? <Line label="Interior" value={fmtMoney(totals.interior.total)} /> : null}
@@ -319,7 +285,9 @@ export function SummaryRail({
           disabled={!hasAnything}
           onClick={async () => {
             try {
-              await navigator.clipboard.writeText(buildCopyText(projectName, quote, totals));
+              await navigator.clipboard.writeText(
+                buildCopyText(projectName, quote, totals, displayedLabourHours),
+              );
               setCopied(true);
             } catch {
               // Clipboard unavailable (permissions) — nothing to do.
@@ -328,6 +296,29 @@ export function SummaryRail({
         >
           {copied ? "Copied ✓" : "Copy summary"}
         </Button>
+        {!isDefault ? (
+          <Button
+            variant="subtle"
+            className="w-full"
+            disabled={makingDefault}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Make “${quote.name}” the painter default? The painter task list will switch to this calculator.`,
+                )
+              ) {
+                void onMakeDefault();
+              }
+            }}
+          >
+            {makingDefault ? "Saving…" : "Make default"}
+          </Button>
+        ) : null}
+        {defaultCalculatorError ? (
+          <p role="alert" className="text-[10px] leading-4 text-[var(--color-bad)]">
+            {defaultCalculatorError}
+          </p>
+        ) : null}
         {confirmClear ? (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-bad-soft)] px-3 py-2">
             <span className="text-xs font-medium text-[var(--color-bad)]">Clear this quote?</span>

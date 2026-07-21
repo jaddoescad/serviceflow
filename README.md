@@ -18,10 +18,11 @@ app.
   `20260707190000`) and written directly via RLS (admin/manager only).
 - **Calculator labour budgets** are versioned in `project_labour_budgets`.
   The first calculator is the default automatically. Opening another quote
-  does not change it; selecting **Make default** explicitly publishes that
-  quote and materializes its rooms/exterior lines as
-  `project_labour_tasks`. Replacing the selection keeps older task and timer
-  history inactive instead of deleting it.
+  does not change it; selecting **Make default** explicitly chooses that quote
+  and materializes its rooms/exterior lines as `project_labour_tasks`. Later
+  edits to the default quote republish those tasks through autosave. Replacing
+  the selection keeps older task and timer history inactive instead of
+  deleting it.
 - **Painter task time** is stored separately in
   `project_labour_task_time_entries`, with offline-safe client IDs and an
   optional link to the painter's existing whole-shift `time_entries` row.
@@ -66,6 +67,9 @@ Environment variables (`.env.local`):
 - `/projects` — Jobs & Budgets: set job amounts, track labour, assign crew,
   build multiple calculator options, and publish one option as the painter
   task budget.
+  A job with a default calculator gets its amount from that calculator
+  automatically. The table shows the same pre-HST client price; the manual
+  amount pencil remains only for jobs without a default calculator.
   “Last active” uses the latest crew time or verified contractor invoice date;
   logged hours use the higher verified total so invoices do not double-count
   clocked labour.

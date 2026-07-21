@@ -171,7 +171,7 @@ export function parseRoomsText(text: string): Array<{ name: string; patch: Parti
         rest = rest.replace(m[0], " ");
       }
     };
-    flag(/\b(?:only walls|walls only|just walls)\b/i, () => {
+    flag(/\b(?:only walls?|walls? only|just walls?)\b/i, () => {
       patch.walls = true;
       patch.ceiling = false;
     });

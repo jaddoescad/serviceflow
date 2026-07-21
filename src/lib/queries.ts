@@ -8,6 +8,8 @@ import type {
   Project,
   ProjectBudget,
   ProjectLabourExpense,
+  ProjectLabourTask,
+  ProjectLabourTaskTimeEntry,
   TimeEntry,
 } from "@/lib/types";
 
@@ -116,6 +118,17 @@ export async function getBudgets(): Promise<ProjectBudget[]> {
   return (data ?? []) as ProjectBudget[];
 }
 
+/** Jobs whose amount is owned by the currently selected default calculator. */
+export async function getDefaultCalculatorProjectIds(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_budgets")
+    .select("companycam_project_id")
+    .eq("is_active", true);
+  if (error) throw new Error(`default calculators: ${error.message}`);
+  return [...new Set((data ?? []).map((row) => row.companycam_project_id))];
+}
+
 export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -126,6 +139,30 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
     .order("invoice_date", { ascending: false });
   if (error) throw new Error(`project_labour_expenses: ${error.message}`);
   return (data ?? []) as ProjectLabourExpense[];
+}
+
+/** Active painter tasks published from each job's default calculator. */
+export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_tasks")
+    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .limit(5000);
+  if (error) throw new Error(`project_labour_tasks: ${error.message}`);
+  return (data ?? []) as unknown as ProjectLabourTask[];
+}
+
+export async function getProjectLabourTaskEntries(): Promise<ProjectLabourTaskTimeEntry[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_task_time_entries")
+    .select("task_id,user_id,started_at,ended_at,status")
+    .order("started_at", { ascending: false })
+    .limit(10000);
+  if (error) throw new Error(`project_labour_task_time_entries: ${error.message}`);
+  return (data ?? []) as unknown as ProjectLabourTaskTimeEntry[];
 }
 
 export async function getAssignments(): Promise<Assignment[]> {

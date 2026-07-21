@@ -139,3 +139,21 @@ export type Assignment = {
   user_id: string;
   status: "active" | "removed";
 };
+
+export type ProjectLabourTask = {
+  id: string;
+  companycam_project_id: string;
+  title: string;
+  notes: string | null;
+  budgeted_hours: number | null;
+  status: string;
+  sort_order: number;
+};
+
+export type ProjectLabourTaskTimeEntry = {
+  task_id: string;
+  user_id: string;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+};

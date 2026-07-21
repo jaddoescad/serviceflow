@@ -267,6 +267,15 @@ test("parser: trailing flags stay with their room when splitting run-ons", () =>
   assert.equal(parsed[1].patch.trim, undefined);
 });
 
+test("parser: singular wall-only phrases explicitly disable the ceiling", () => {
+  for (const phrase of ["just wall", "only wall", "wall only"]) {
+    const parsed = parseRoomsText(`office 12x10 ${phrase}`);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].patch.walls, true);
+    assert.equal(parsed[0].patch.ceiling, false);
+  }
+});
+
 test("parser feeds addRoomsFromText through ops", () => {
   let quote = makeQuote("t");
   quote = applyOp(quote, { type: "addRoomsFromText", text: "bedroom 12x11, bedroom 10x10" });

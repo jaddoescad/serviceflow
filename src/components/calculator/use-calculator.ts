@@ -18,6 +18,7 @@ import {
   makeCalculatorDefault,
   saveCalculator,
   saveCompanyRates,
+  setLabourTaskBudgetHours,
 } from "@/lib/actions/calculator";
 import type { DefaultCalculatorSelection } from "@/lib/actions/calculator";
 
@@ -63,9 +64,16 @@ export function useCalculator(projectId: string) {
   const [defaultCalculator, setDefaultCalculator] = useState<DefaultCalculatorSelection | null>(null);
   const [defaultCalculatorError, setDefaultCalculatorError] = useState<string | null>(null);
   const [makingDefault, setMakingDefault] = useState(false);
+  const [updatingTaskBudgetId, setUpdatingTaskBudgetId] = useState<string | null>(null);
+  const [taskBudgetError, setTaskBudgetError] = useState<string | null>(null);
   const companyRates = useRef<CalculatorRates>(structuredClone(DEFAULT_RATES));
   const saveTimer = useRef<number | null>(null);
   const serverAvailable = useRef(true);
+  const defaultCalculatorRef = useRef<DefaultCalculatorSelection | null>(null);
+
+  useEffect(() => {
+    defaultCalculatorRef.current = defaultCalculator;
+  }, [defaultCalculator]);
 
   // Load: server first, fall back to (and migrate from) localStorage.
   useEffect(() => {
@@ -136,6 +144,8 @@ export function useCalculator(projectId: string) {
   }, [projectId]);
 
   // Save: debounced; localStorage always (cache), Supabase when reachable.
+  // Edits to the selected default quote also republish its painter tasks so
+  // managers never need a separate "Update painter tasks" action.
   useEffect(() => {
     if (!hydrated) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -144,8 +154,37 @@ export function useCalculator(projectId: string) {
       if (!serverAvailable.current) return;
       setSyncStatus("saving");
       try {
-        const result = await saveCalculator(projectId, doc);
-        setSyncStatus(result.ok ? "synced" : "offline");
+        const selectedDefault = defaultCalculatorRef.current;
+        const defaultQuote = selectedDefault
+          ? doc.quotes.find((candidate) => candidate.id === selectedDefault.quoteId)
+          : undefined;
+        const defaultNeedsPublishing =
+          selectedDefault &&
+          defaultQuote &&
+          new Date(selectedDefault.sourceQuoteUpdatedAt).getTime() !==
+            new Date(defaultQuote.updatedAt).getTime();
+
+        // Calculator edits should still save even when task publication is
+        // temporarily blocked by a painter's active timer.
+        const saved = await saveCalculator(projectId, doc);
+        if (!saved.ok) {
+          setSyncStatus("offline");
+          return;
+        }
+        setSyncStatus("synced");
+
+        if (defaultNeedsPublishing) {
+          const published = await makeCalculatorDefault(projectId, doc, defaultQuote.id);
+          if (!published.ok) {
+            setDefaultCalculatorError(published.error);
+            return;
+          }
+          defaultCalculatorRef.current = published.defaultCalculator;
+          setDefaultCalculator(published.defaultCalculator);
+          setDefaultCalculatorError(null);
+          setSyncStatus("synced");
+          return;
+        }
       } catch {
         setSyncStatus("offline");
       }
@@ -277,6 +316,29 @@ export function useCalculator(projectId: string) {
     }
   }, [doc, projectId]);
 
+  const updateTaskBudgetHours = useCallback(
+    async (taskId: string, budgetedHours: number | null) => {
+      setUpdatingTaskBudgetId(taskId);
+      setTaskBudgetError(null);
+      try {
+        const result = await setLabourTaskBudgetHours(projectId, taskId, budgetedHours);
+        if (!result.ok) {
+          setTaskBudgetError(result.error);
+          return result;
+        }
+        setDefaultCalculator(result.defaultCalculator);
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not update the task budget.";
+        setTaskBudgetError(message);
+        return { ok: false as const, error: message };
+      } finally {
+        setUpdatingTaskBudgetId(null);
+      }
+    },
+    [projectId],
+  );
+
   return {
     doc,
     quote,
@@ -286,6 +348,8 @@ export function useCalculator(projectId: string) {
     defaultCalculator,
     defaultCalculatorError,
     makingDefault,
+    updatingTaskBudgetId,
+    taskBudgetError,
     dispatch,
     applyOps,
     addRoom,
@@ -297,5 +361,6 @@ export function useCalculator(projectId: string) {
     useCompanyDefaults,
     saveAsCompanyDefaults,
     makeDefault,
+    updateTaskBudgetHours,
   };
 }

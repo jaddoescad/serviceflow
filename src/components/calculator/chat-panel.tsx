@@ -176,10 +176,10 @@ export function ChatPanel({
       className={cn(
         "flex shrink-0 flex-col border-l border-[var(--color-border)] bg-[var(--color-surface)]",
         // Below xl: off-canvas drawer sliding in from the right.
-        "fixed bottom-0 right-0 top-0 z-50 w-[340px] max-w-[92vw] shadow-2xl transition-transform duration-300",
+        "fixed bottom-0 right-0 top-0 z-50 w-[380px] max-w-[92vw] shadow-2xl transition-transform duration-300",
         mobileOpen ? "translate-x-0" : "translate-x-full",
-        // xl+: always-open inline column, no transform.
-        "xl:sticky xl:bottom-auto xl:z-auto xl:h-screen xl:w-[300px] xl:max-w-none xl:translate-x-0 xl:shadow-none xl:transition-none 2xl:w-[340px]",
+        // xl+: always-open inline column that grows with the viewport, up to a readable limit.
+        "xl:sticky xl:bottom-auto xl:top-0 xl:z-auto xl:h-screen xl:w-[clamp(320px,24vw,440px)] xl:max-w-[440px] xl:translate-x-0 xl:shadow-none xl:transition-none",
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-5 py-4">

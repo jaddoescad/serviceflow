@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
 import { Select } from "@/components/ui";
+import type { LabourBudgetTaskSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
   CATALOG_BY_ID,
@@ -68,11 +69,20 @@ export function CalculatorPage({
   const hasInterior = quote.rooms.length > 0;
   const hasExterior = quote.exterior.length > 0 || quote.washing !== "none";
   const isEmpty = !hasInterior && !hasExterior;
+  const currentLabourTasks = useMemo(() => {
+    const selection = calc.defaultCalculator;
+    if (
+      !selection ||
+      selection.quoteId !== quote.id ||
+      new Date(selection.sourceQuoteUpdatedAt).getTime() !== new Date(quote.updatedAt).getTime()
+    ) {
+      return new Map<string, LabourBudgetTaskSelection>();
+    }
+    return new Map(selection.tasks.map((task) => [`${task.sourceKind}:${task.sourceItemId}`, task]));
+  }, [calc.defaultCalculator, quote.id, quote.updatedAt]);
 
   return (
-    // -m-6 cancels the app shell's content padding so the assistant column can
-    // run the full viewport height, flush against the right edge.
-    <div className="-m-6 flex flex-col xl:flex-row">
+    <div data-app-content="full-bleed" className="flex min-h-screen flex-col xl:flex-row">
       <div className="min-w-0 flex-1 px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
@@ -112,6 +122,12 @@ export function CalculatorPage({
                 }}
               />
 
+              {calc.taskBudgetError ? (
+                <p role="alert" className="-mt-5 text-xs leading-4 text-[var(--color-bad)]">
+                  {calc.taskBudgetError}
+                </p>
+              ) : null}
+
               {isEmpty && calc.hydrated ? (
                 <div className="rounded-xl border border-dashed border-[var(--color-border)] px-6 py-14 text-center">
                   <p className="text-sm font-medium text-[var(--color-heading)]">Start with a room</p>
@@ -149,18 +165,25 @@ export function CalculatorPage({
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {quote.rooms.map((room) => (
-                      <RoomCard
-                        key={room.id}
-                        room={room}
-                        tier={quote.paintTier}
-                        rates={quote.rates.interior}
-                        autoFocus={room.id === lastAddedId}
-                        onChange={(patch) => dispatch({ type: "updateRoom", roomId: room.id, patch })}
-                        onRemove={() => dispatch({ type: "removeRoom", roomId: room.id })}
-                        onDuplicate={() => dispatch({ type: "duplicateRoom", roomId: room.id })}
-                      />
-                    ))}
+                    {quote.rooms.map((room) => {
+                      const labourTask = currentLabourTasks.get(`room:${room.id}`);
+                      return (
+                        <RoomCard
+                          key={room.id}
+                          room={room}
+                          tier={quote.paintTier}
+                          rates={quote.rates.interior}
+                          autoFocus={room.id === lastAddedId}
+                          labourTask={labourTask}
+                          taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                          taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
+                          onTaskBudgetChange={calc.updateTaskBudgetHours}
+                          onChange={(patch) => dispatch({ type: "updateRoom", roomId: room.id, patch })}
+                          onRemove={() => dispatch({ type: "removeRoom", roomId: room.id })}
+                          onDuplicate={() => dispatch({ type: "duplicateRoom", roomId: room.id })}
+                        />
+                      );
+                    })}
                   </div>
                 </section>
               ) : null}
@@ -186,20 +209,33 @@ export function CalculatorPage({
                             {EXTERIOR_SECTION_LABELS[sectionId]}
                           </div>
                           <div className="space-y-3">
-                            {lines.map((line) => (
-                              <ExteriorCard
-                                key={line.id}
-                                line={line}
-                                rates={quote.rates.exterior}
-                                autoFocus={line.id === lastAddedId}
-                                onChange={(patch) => dispatch({ type: "updateExteriorLine", lineId: line.id, patch })}
-                                onRemove={() => dispatch({ type: "removeExteriorLine", lineId: line.id })}
-                              />
-                            ))}
+                            {lines.map((line) => {
+                              const labourTask = currentLabourTasks.get(`exterior:${line.id}`);
+                              return (
+                                <ExteriorCard
+                                  key={line.id}
+                                  line={line}
+                                  rates={quote.rates.exterior}
+                                  autoFocus={line.id === lastAddedId}
+                                  labourTask={labourTask}
+                                  taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                                  taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
+                                  onTaskBudgetChange={calc.updateTaskBudgetHours}
+                                  onChange={(patch) => dispatch({ type: "updateExteriorLine", lineId: line.id, patch })}
+                                  onRemove={() => dispatch({ type: "removeExteriorLine", lineId: line.id })}
+                                />
+                              );
+                            })}
                             {showWashing ? (
                               <WashingCard
                                 choice={quote.washing}
                                 rates={quote.rates.exterior}
+                                labourTask={currentLabourTasks.get("washing:pressure-washing")}
+                                taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                                taskBudgetSaving={
+                                  calc.updatingTaskBudgetId === currentLabourTasks.get("washing:pressure-washing")?.id
+                                }
+                                onTaskBudgetChange={calc.updateTaskBudgetHours}
                                 onChange={(choice) => dispatch({ type: "setWashing", choice })}
                                 onRemove={() => dispatch({ type: "setWashing", choice: "none" })}
                               />
