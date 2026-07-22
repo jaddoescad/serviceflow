@@ -7,7 +7,6 @@ import {
   CalculatorRates,
   ProjectCalculator,
   Quote,
-  computeTotals,
   mergeRates,
   reviveProjectCalculator,
 } from "@/lib/calculator/engine";
@@ -206,11 +205,10 @@ export type MakeCalculatorDefaultResult =
   | { ok: false; error: string };
 
 /**
- * Save the calculator and publish one quote as the job default. The same
- * transaction synchronizes the quote's HST-inclusive total to the job amount.
- * The UI calls this both when a manager selects a default and when autosave
- * republishes edits to that default. Other quotes never replace it implicitly.
- * Older task snapshots remain inactive so time history is not destroyed.
+ * Save the calculator and publish one quote as the painter-task default. Job
+ * amounts remain manually managed and are preserved when calculator tasks are
+ * republished. Other quotes never replace the default implicitly. Older task
+ * snapshots remain inactive so time history is not destroyed.
  */
 export async function makeCalculatorDefault(
   projectId: string,
@@ -227,18 +225,50 @@ export async function makeCalculatorDefault(
   if (!quote) return { ok: false, error: "Choose a calculator before making it the default." };
 
   const draft = buildLabourBudgetDraft(quote);
-  const amountIncludingTax = Math.round(computeTotals(quote).totalWithHst * 100) / 100;
-  if (!Number.isFinite(amountIncludingTax) || amountIncludingTax < 0) {
-    return { ok: false, error: "The calculator client total must be zero or greater." };
+  const supabase = await createClient();
+
+  // Manually added tasks (source_kind "custom") are not part of any quote, so
+  // carry them into the new snapshot or republishing would silently drop them.
+  const customTasks = await supabase
+    .from("project_labour_tasks")
+    .select("source_item_id,title,notes,budgeted_hours,sort_order")
+    .eq("companycam_project_id", projectId)
+    .eq("is_active", true)
+    .eq("source_kind", "custom")
+    .order("sort_order", { ascending: true });
+  if (customTasks.error) return { ok: false, error: customTasks.error.message };
+  const nextSortOrder = draft.tasks.reduce((max, task) => Math.max(max, task.sortOrder + 1), 0);
+  const carriedTasks = (customTasks.data ?? []).map((task, index) => ({
+    sourceKind: "custom" as const,
+    sourceItemId: task.source_item_id as string,
+    title: task.title as string,
+    notes: (task.notes as string | null) ?? null,
+    budgetedHours: Number(task.budgeted_hours) || 0,
+    sortOrder: nextSortOrder + index,
+    metadata: {},
+  }));
+
+  const currentBudget = await supabase
+    .from("project_budgets")
+    .select("amount_including_tax")
+    .eq("companycam_project_id", projectId)
+    .maybeSingle<{ amount_including_tax: number | string | null }>();
+  if (currentBudget.error) return { ok: false, error: currentBudget.error.message };
+
+  const storedAmount = currentBudget.data?.amount_including_tax;
+  const storedJobAmount = storedAmount == null ? null : Number(storedAmount);
+  if (storedJobAmount !== null && (!Number.isFinite(storedJobAmount) || storedJobAmount < 0)) {
+    return { ok: false, error: "The saved customer amount is invalid." };
   }
 
-  const supabase = await createClient();
   const { data, error } = await supabase.rpc("publish_project_calculator_default", {
     requested_project_id: projectId,
     calculator_doc: clean,
     requested_quote_id: quote.id,
-    task_payloads: draft.tasks,
-    requested_amount_including_tax: amountIncludingTax,
+    task_payloads: [...draft.tasks, ...carriedTasks],
+    // The RPC parameter keeps its legacy name, but receives the unchanged
+    // manual pre-HST job amount so calculator publishing cannot replace it.
+    requested_amount_including_tax: storedJobAmount,
   });
 
   if (error) return { ok: false, error: error.message };
@@ -250,6 +280,8 @@ export async function makeCalculatorDefault(
     return { ok: false, error: refreshed.error ?? "The published labour tasks could not be loaded." };
   }
 
+  revalidatePath(`/projects/${encodeURIComponent(projectId)}`);
+  revalidatePath(`/projects/${encodeURIComponent(projectId)}/tasks`);
   revalidatePath(`/projects/${encodeURIComponent(projectId)}/calculator`);
   revalidatePath("/projects");
   revalidatePath("/");
@@ -287,6 +319,8 @@ export async function setLabourTaskBudgetHours(
     return { ok: false, error: refreshed.error ?? "The updated labour budget could not be loaded." };
   }
 
+  revalidatePath(`/projects/${encodeURIComponent(projectId)}`);
+  revalidatePath(`/projects/${encodeURIComponent(projectId)}/tasks`);
   revalidatePath(`/projects/${encodeURIComponent(projectId)}/calculator`);
   revalidatePath("/projects");
   revalidatePath("/");

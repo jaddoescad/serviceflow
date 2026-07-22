@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
+import { ProjectTabs } from "@/components/project-tabs";
 import { Select } from "@/components/ui";
 import type { LabourBudgetTaskSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
@@ -32,6 +34,7 @@ export function CalculatorPage({
   projectId: string;
   projectName: string | null;
 }) {
+  const router = useRouter();
   const calc = useCalculator(projectId);
   const [ratesOpen, setRatesOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
@@ -90,12 +93,14 @@ export function CalculatorPage({
               Jobs &amp; Budgets
             </Link>
             <span className="mx-1.5">/</span>
-            <span>Calculator</span>
+            <span>{displayName || "Job"}</span>
           </div>
           <PageHeader
             title={displayName || "Job calculator"}
             subtitle="Prices and the labour budget update as you type"
           />
+
+          <ProjectTabs projectId={projectId} projectName={displayName || ""} />
 
           <QuoteBar
             doc={doc}
@@ -275,7 +280,14 @@ export function CalculatorPage({
               defaultCalculator={calc.defaultCalculator}
               defaultCalculatorError={calc.defaultCalculatorError}
               makingDefault={calc.makingDefault}
-              onMakeDefault={calc.makeDefault}
+              onMakeDefault={async () => {
+                const result = await calc.makeDefault();
+                if (result?.ok) {
+                  router.push(`/projects/${encodeURIComponent(projectId)}/tasks`);
+                }
+                return result;
+              }}
+              tasksHref={`/projects/${encodeURIComponent(projectId)}/tasks`}
               onEditRates={() => setRatesOpen(true)}
               onClear={() => dispatch({ type: "clear" })}
             />

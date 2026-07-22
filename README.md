@@ -67,9 +67,9 @@ Environment variables (`.env.local`):
 - `/projects` — Jobs & Budgets: set job amounts, track labour, assign crew,
   build multiple calculator options, and publish one option as the painter
   task budget.
-  A job with a default calculator gets its amount from that calculator
-  automatically. The table shows the same pre-HST client price; the manual
-  amount pencil remains only for jobs without a default calculator.
+  Job amounts are entered manually before HST and remain independent of
+  calculator totals. No tax is added or removed. Managers can edit the amount
+  whether or not a default calculator has been selected for painter tasks.
   “Last active” uses the latest crew time or verified contractor invoice date;
   logged hours use the higher verified total so invoices do not double-count
   clocked labour.

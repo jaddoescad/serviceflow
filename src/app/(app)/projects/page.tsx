@@ -1,17 +1,13 @@
 import {
   getAssignments,
   getBudgets,
-  getDefaultCalculatorProjectIds,
   getEmployeePayRates,
-  getEmployees,
   getProjectLabourExpenses,
-  getProjectLabourTaskEntries,
-  getProjectLabourTasks,
   getProjects,
   getTimeEntries,
 } from "@/lib/queries";
 import { requireStaff } from "@/lib/auth";
-import { projectDetails, projectTaskProgress, rollupProjects } from "@/lib/metrics";
+import { rollupProjects } from "@/lib/metrics";
 import { PageHeader } from "@/components/kpi";
 import { ProjectsTable } from "@/components/projects-table";
 
@@ -21,7 +17,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export default async function ProjectsPage() {
   const now = Date.now();
-  const [profile, entries, payRates, projects, budgets, assignments, labourExpenses, defaultCalculatorProjectIds, labourTasks, labourTaskEntries, employees] = await Promise.all([
+  const [profile, entries, payRates, projects, budgets, assignments, labourExpenses] = await Promise.all([
     requireStaff(),
     getTimeEntries(new Date(now - 180 * DAY).toISOString()),
     getEmployeePayRates(),
@@ -29,10 +25,6 @@ export default async function ProjectsPage() {
     getBudgets(),
     getAssignments(),
     getProjectLabourExpenses(),
-    getDefaultCalculatorProjectIds(),
-    getProjectLabourTasks(),
-    getProjectLabourTaskEntries(),
-    getEmployees(),
   ]);
 
   const rows = rollupProjects(
@@ -43,10 +35,7 @@ export default async function ProjectsPage() {
     payRates,
     labourExpenses,
     now,
-    defaultCalculatorProjectIds,
   );
-  const detailsByProject = projectDetails(entries, payRates, labourExpenses, now);
-  const taskProgressByProject = projectTaskProgress(labourTasks, labourTaskEntries, employees, now);
 
   return (
     <>
@@ -56,8 +45,6 @@ export default async function ProjectsPage() {
       />
       <ProjectsTable
         rows={rows}
-        detailsByProject={detailsByProject}
-        taskProgressByProject={taskProgressByProject}
         canManage={["admin", "manager"].includes(profile.role)}
       />
     </>

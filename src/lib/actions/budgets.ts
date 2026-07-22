@@ -6,15 +6,15 @@ import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult = { ok: boolean; error?: string };
 
-/** Store the single customer amount. Labour figures remove HST at read time. */
+/** Store the manually entered pre-HST job amount. */
 export async function setJobAmount(input: {
   projectId: string;
-  amountIncludingTax: number | null;
+  amountBeforeTax: number | null;
   notes?: string | null;
 }): Promise<ActionResult> {
   if (
-    input.amountIncludingTax != null &&
-    (!Number.isFinite(input.amountIncludingTax) || input.amountIncludingTax < 0)
+    input.amountBeforeTax != null &&
+    (!Number.isFinite(input.amountBeforeTax) || input.amountBeforeTax < 0)
   ) {
     return { ok: false, error: "Enter a valid customer amount." };
   }
@@ -24,7 +24,9 @@ export async function setJobAmount(input: {
   const { error } = await supabase.from("project_budgets").upsert(
     {
       companycam_project_id: input.projectId,
-      amount_including_tax: input.amountIncludingTax,
+      // Keep using the existing column for database compatibility. Its value
+      // is now the manually entered pre-HST amount.
+      amount_including_tax: input.amountBeforeTax,
       notes: input.notes ?? null,
       updated_by: profile.user_id,
     },

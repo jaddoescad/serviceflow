@@ -118,17 +118,6 @@ export async function getBudgets(): Promise<ProjectBudget[]> {
   return (data ?? []) as ProjectBudget[];
 }
 
-/** Jobs whose amount is owned by the currently selected default calculator. */
-export async function getDefaultCalculatorProjectIds(): Promise<string[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_budgets")
-    .select("companycam_project_id")
-    .eq("is_active", true);
-  if (error) throw new Error(`default calculators: ${error.message}`);
-  return [...new Set((data ?? []).map((row) => row.companycam_project_id))];
-}
-
 export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -173,4 +162,96 @@ export async function getAssignments(): Promise<Assignment[]> {
     .eq("status", "active");
   if (error) throw new Error(`assignments: ${error.message}`);
   return (data ?? []) as Assignment[];
+}
+
+// ---- Single-job variants: keep the job pages fast by fetching only one
+// ---- project's rows instead of the whole company's history.
+
+export async function getProjectById(projectId: string): Promise<Project | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("companycam_projects")
+    .select(
+      "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,companycam_updated_at",
+    )
+    .eq("companycam_id", projectId)
+    .maybeSingle();
+  if (error) throw new Error(`project: ${error.message}`);
+  return (data as Project | null) ?? null;
+}
+
+export async function getProjectTimeEntries(projectId: string, sinceIso?: string): Promise<TimeEntry[]> {
+  const supabase = await createClient();
+  let query = supabase
+    .from("time_entries")
+    .select(ENTRY_COLUMNS)
+    .eq("companycam_project_id", projectId)
+    .order("started_at", { ascending: false })
+    .limit(5000);
+  if (sinceIso) {
+    query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
+  }
+  const { data, error } = await query;
+  if (error) throw new Error(`time_entries: ${error.message}`);
+  return (data ?? []) as unknown as TimeEntry[];
+}
+
+export async function getProjectBudgetRows(projectId: string): Promise<ProjectBudget[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_budgets")
+    .select("companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,updated_at")
+    .eq("companycam_project_id", projectId);
+  if (error) throw new Error(`budgets: ${error.message}`);
+  return (data ?? []) as ProjectBudget[];
+}
+
+export async function getProjectAssignments(projectId: string): Promise<Assignment[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_assignments")
+    .select("id,companycam_project_id,user_id,status")
+    .eq("companycam_project_id", projectId)
+    .eq("status", "active");
+  if (error) throw new Error(`assignments: ${error.message}`);
+  return (data ?? []) as Assignment[];
+}
+
+export async function getLabourExpensesForProject(projectId: string): Promise<ProjectLabourExpense[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_expenses")
+    .select(
+      "id,companycam_project_id,worker_user_id,worker_name,supplier_name,invoice_number,invoice_date,amount_before_tax,tax_amount,notes,inserted_at,updated_at",
+    )
+    .eq("companycam_project_id", projectId)
+    .order("invoice_date", { ascending: false });
+  if (error) throw new Error(`project_labour_expenses: ${error.message}`);
+  return (data ?? []) as ProjectLabourExpense[];
+}
+
+export async function getLabourTasksForProject(projectId: string): Promise<ProjectLabourTask[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_tasks")
+    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order")
+    .eq("companycam_project_id", projectId)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .limit(5000);
+  if (error) throw new Error(`project_labour_tasks: ${error.message}`);
+  return (data ?? []) as unknown as ProjectLabourTask[];
+}
+
+export async function getTaskEntriesForTasks(taskIds: string[]): Promise<ProjectLabourTaskTimeEntry[]> {
+  if (taskIds.length === 0) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_labour_task_time_entries")
+    .select("task_id,user_id,started_at,ended_at,status")
+    .in("task_id", taskIds)
+    .order("started_at", { ascending: false })
+    .limit(10000);
+  if (error) throw new Error(`project_labour_task_time_entries: ${error.message}`);
+  return (data ?? []) as unknown as ProjectLabourTaskTimeEntry[];
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useState } from "react";
 import { Button, Card } from "@/components/ui";
 import type { DefaultCalculatorSelection } from "@/lib/actions/calculator";
@@ -91,6 +93,7 @@ export function SummaryRail({
   defaultCalculatorError,
   makingDefault,
   onMakeDefault,
+  tasksHref,
   onEditRates,
   onClear,
 }: {
@@ -102,6 +105,7 @@ export function SummaryRail({
   defaultCalculatorError: string | null;
   makingDefault: boolean;
   onMakeDefault: () => Promise<unknown>;
+  tasksHref?: string;
   onEditRates: () => void;
   onClear: () => void;
 }) {
@@ -198,15 +202,22 @@ export function SummaryRail({
             onClick={() => {
               if (
                 window.confirm(
-                  `Make “${quote.name}” the painter default? The painter task list will switch to this calculator.`,
+                  `Transfer “${quote.name}” to painter tasks? The painter task list will switch to this calculator. Manually added tasks are kept.`,
                 )
               ) {
                 void onMakeDefault();
               }
             }}
           >
-            {makingDefault ? "Saving…" : "Make default"}
+            {makingDefault ? "Transferring…" : "Transfer to tasks"}
           </Button>
+        ) : tasksHref ? (
+          <Link
+            href={tasksHref}
+            className="block w-full rounded-lg px-3 py-2 text-center text-sm font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+          >
+            Transferred ✓ View tasks →
+          </Link>
         ) : null}
         {defaultCalculatorError ? (
           <p role="alert" className="text-[10px] leading-4 text-[var(--color-bad)]">

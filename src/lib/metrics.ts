@@ -23,7 +23,6 @@ const OFFSITE_DISTANCE_METERS = 250;
 
 export type BudgetStatus = "none" | "under" | "near" | "over";
 
-export const HST_RATE = 0.13;
 export const LABOUR_MIN_PERCENT = 35;
 export const LABOUR_MAX_PERCENT = 38;
 export const LABOUR_ALERT_PERCENT = 40;
@@ -35,9 +34,7 @@ export type ProjectRollup = {
   labourExcluded: boolean;
   loggedHours: number;
   budgetedHours: number | null;
-  amountIncludingTax: number | null;
   amountBeforeTax: number | null;
-  amountSource: "calculator" | "manual" | null;
   hourlyRate: number | null;
   remainingHours: number | null;
   percentUsed: number | null;
@@ -138,11 +135,6 @@ export function budgetStatus(wageSharePercent: number | null): BudgetStatus {
   return wageSharePercent >= LABOUR_ALERT_PERCENT ? "over" : "under";
 }
 
-export function amountBeforeTax(amountIncludingTax: number | null | undefined): number | null {
-  if (amountIncludingTax == null || !Number.isFinite(amountIncludingTax)) return null;
-  return amountIncludingTax / (1 + HST_RATE);
-}
-
 type PayRateIndex = Map<string, EmployeePayRate[]>;
 
 export function buildPayRateIndex(payRates: EmployeePayRate[]): PayRateIndex {
@@ -179,10 +171,8 @@ export function rollupProjects(
   payRates: EmployeePayRate[],
   labourExpenses: ProjectLabourExpense[],
   now = Date.now(),
-  defaultCalculatorProjectIds: Iterable<string> = [],
 ): ProjectRollup[] {
   const budgetById = new Map(budgets.map((b) => [b.companycam_project_id, b]));
-  const defaultCalculatorProjects = new Set(defaultCalculatorProjectIds);
   const assignedById = new Map<string, number>();
   for (const a of assignments) {
     assignedById.set(a.companycam_project_id, (assignedById.get(a.companycam_project_id) ?? 0) + 1);
@@ -244,8 +234,10 @@ export function rollupProjects(
     const logged = Math.max(clockedHours, invoicedHours);
     const budgetedHours = budget?.budgeted_hours ?? null;
     const rate = budget?.hourly_rate ?? null;
-    const invoiceAmount = budget?.amount_including_tax ?? null;
-    const preTaxAmount = amountBeforeTax(invoiceAmount);
+    // `amount_including_tax` is the legacy database column name. The dashboard
+    // now stores and reads it as the manually entered pre-HST job amount.
+    const storedAmount = budget?.amount_including_tax ?? null;
+    const preTaxAmount = storedAmount == null ? null : Number(storedAmount);
     const clockedWageCost = labourExcluded ? 0 : (wagesById.get(id) ?? 0);
     const invoicedWageCost = labourExcluded ? 0 : invoicedProjectWagesBeforeTax(name);
     const fixedLabourCost = labourExcluded ? 0 : (expenseCostById.get(id) ?? 0);
@@ -270,14 +262,7 @@ export function rollupProjects(
       labourExcluded,
       loggedHours: logged,
       budgetedHours,
-      amountIncludingTax: invoiceAmount,
       amountBeforeTax: preTaxAmount,
-      amountSource:
-        invoiceAmount == null
-          ? null
-          : defaultCalculatorProjects.has(id)
-            ? "calculator"
-            : "manual",
       hourlyRate: rate,
       remainingHours: budgetedHours != null ? budgetedHours - logged : null,
       percentUsed,

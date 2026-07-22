@@ -56,7 +56,7 @@ export function BudgetHealth({ items }: { items: BudgetItem[] }) {
     <Card>
       <CardHeader
         title="Labour allowance health"
-        subtitle="Painter budget against 35–38% of job value before tax"
+        subtitle="Painter budget against 35–38% of the entered job amount"
         right={
           <div className="flex gap-2">
             {unpriced ? <Badge tone="warn">{unpriced} with unpriced time</Badge> : null}
