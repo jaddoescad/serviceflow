@@ -322,51 +322,54 @@ function JobDetailsDialog({
 
             {taskProgress.length > 0 ? (
               <section aria-labelledby="task-progress-title" className="mb-6">
-                <div className="mb-3 flex items-end justify-between gap-3">
-                  <div>
-                    <h3 id="task-progress-title" className="font-display text-sm font-semibold text-[var(--color-heading)]">Task progress</h3>
-                    <p className="text-xs text-[var(--color-muted)]">Painter tasks from the default calculator · hours tracked in the app</p>
-                  </div>
-                  <span className="text-xs text-[var(--color-muted)]">
-                    {taskProgress.filter((task) => task.status === "completed").length}/{taskProgress.length} complete
-                  </span>
+                <div className="mb-3">
+                  <h3 id="task-progress-title" className="font-display text-sm font-semibold text-[var(--color-heading)]">Task progress</h3>
+                  <p className="text-xs text-[var(--color-muted)]">Hours painters tracked against each task&rsquo;s budget</p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {taskProgress.map((task) => {
+                <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)]">
+                  {taskProgress.map((task, index) => {
                     const over = task.budgetedHours > 0 && task.spentHours > task.budgetedHours;
                     const percent = task.budgetedHours > 0 ? Math.min(100, (task.spentHours / task.budgetedHours) * 100) : 0;
-                    const activeCount = task.contributors.filter((contributor) => contributor.active).length;
+                    const contributors = task.contributors.filter(
+                      (contributor) => contributor.active || contributor.hours >= 1 / 60,
+                    );
+                    const onTaskNow = task.contributors.some((contributor) => contributor.active);
                     return (
-                      <div key={task.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
-                        <div className="flex items-baseline justify-between gap-3">
+                      <div
+                        key={task.id}
+                        className={`px-4 py-3 ${index > 0 ? "border-t border-[var(--color-border)]" : ""}`}
+                      >
+                        <div className="flex items-baseline justify-between gap-4">
                           <span className="truncate text-sm font-medium" title={task.notes ?? undefined}>{task.title}</span>
-                          <span className={`shrink-0 text-xs font-semibold tabular-nums ${over ? "text-[var(--color-bad)]" : "text-[var(--color-text)]"}`}>
-                            {fmtHours(task.spentHours)}{task.budgetedHours > 0 ? ` of ${fmtHours(task.budgetedHours)}` : ""}
+                          <span className="shrink-0 text-xs tabular-nums">
+                            <span className={`font-semibold ${over ? "text-[var(--color-bad)]" : "text-[var(--color-heading)]"}`}>
+                              {fmtHours(task.spentHours)}
+                            </span>
+                            {task.budgetedHours > 0 ? (
+                              <span className="text-[var(--color-muted)]"> / {fmtHours(task.budgetedHours)}</span>
+                            ) : null}
                           </span>
                         </div>
                         {task.budgetedHours > 0 ? (
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+                          <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
                             <div
                               className="h-full rounded-full"
                               style={{ width: `${percent}%`, background: over ? "var(--color-bad)" : "var(--color-brand)" }}
                             />
                           </div>
                         ) : null}
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          {activeCount > 0 ? <Badge tone="good">{activeCount} on task now</Badge> : null}
-                          {task.contributors.length === 0 ? (
-                            <span className="text-[11px] text-[var(--color-muted)]">No time tracked yet</span>
-                          ) : (
-                            task.contributors.map((contributor) => (
-                              <span
-                                key={contributor.userId}
-                                className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] text-[var(--color-muted)]"
-                              >
-                                {contributor.name} · {fmtHours(contributor.hours)}
-                              </span>
-                            ))
-                          )}
-                        </div>
+                        {contributors.length > 0 || onTaskNow ? (
+                          <div className="mt-1.5 flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
+                            <span className="truncate">
+                              {contributors
+                                .map((contributor) => `${contributor.name} ${fmtHours(contributor.hours)}`)
+                                .join(" · ")}
+                            </span>
+                            {onTaskNow ? (
+                              <span className="shrink-0 font-medium text-[var(--color-good)]">● on task now</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

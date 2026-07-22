@@ -82,8 +82,8 @@ export function CalculatorPage({
   }, [calc.defaultCalculator, quote.id, quote.updatedAt]);
 
   return (
-    <div data-app-content="full-bleed" className="flex min-h-screen flex-col xl:flex-row">
-      <div className="min-w-0 flex-1 px-6 py-6">
+    <div data-app-content="full-bleed" className="flex h-screen min-h-0 flex-col xl:flex-row">
+      <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
             <Link href="/projects" className="hover:text-[var(--color-text)]">
