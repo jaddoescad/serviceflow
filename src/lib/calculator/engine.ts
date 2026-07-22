@@ -209,17 +209,6 @@ export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
   lost: "Lost",
 };
 
-/**
- * Manual price tweak applied to the pre-HST subtotal (discount, rounding to a
- * clean number, minimum-job top-up). Negative value = discount. Deliberately
- * does NOT change labour hours — the work is the same; the margin moves.
- */
-export type Adjustment = {
-  mode: "amount" | "percent";
-  value: number | null;
-  label: string;
-};
-
 export type Quote = {
   id: string;
   name: string;
@@ -233,7 +222,6 @@ export type Quote = {
   washing: WashingChoice;
   /** Frozen snapshot taken from company defaults when the quote is created. */
   rates: CalculatorRates;
-  adjustment: Adjustment | null;
 };
 
 /** What gets persisted per project (localStorage now, one row later). */
@@ -321,7 +309,6 @@ export function makeQuote(name: string, rates?: CalculatorRates): Quote {
     exterior: [],
     washing: "none",
     rates: structuredClone(rates ?? DEFAULT_RATES),
-    adjustment: null,
   };
 }
 
@@ -449,15 +436,10 @@ export type CalculatorTotals = {
     hours: number;
     crewDays: number;
   };
-  /** Interior + exterior client price before HST, before adjustment. */
-  subtotal: number;
-  /** Signed dollar effect of the quote's adjustment (0 when none). */
-  adjustmentAmount: number;
-  /** Subtotal + adjustment — the headline pre-HST price. */
+  /** Interior + exterior client price before HST. */
   price: number;
   hst: number;
   totalWithHst: number;
-  /** Labour hours are never affected by the adjustment. */
   hours: number;
 };
 
@@ -495,15 +477,7 @@ export function computeTotals(state: Quote): CalculatorTotals {
   const markupAmount = exteriorCost * state.rates.exterior.markup;
   const exteriorClient = exteriorCost + markupAmount;
 
-  const subtotal = interiorTotal + exteriorClient;
-  const adj = state.adjustment;
-  const adjustmentAmount =
-    adj && typeof adj.value === "number" && Number.isFinite(adj.value)
-      ? adj.mode === "percent"
-        ? subtotal * (adj.value / 100)
-        : adj.value
-      : 0;
-  const price = subtotal + adjustmentAmount;
+  const price = interiorTotal + exteriorClient;
   const hst = price * state.rates.exterior.hst;
 
   return {
@@ -515,8 +489,6 @@ export function computeTotals(state: Quote): CalculatorTotals {
       hours: exteriorHours,
       crewDays: exteriorHours / 16,
     },
-    subtotal,
-    adjustmentAmount,
     price,
     hst,
     totalWithHst: price + hst,
@@ -555,7 +527,6 @@ export function reviveQuote(raw: unknown, fallbackName = "Quote 1"): Quote | nul
   const data = raw as Partial<Quote> & { updatedAt?: string };
   if (!Array.isArray(data.rooms) || !Array.isArray(data.exterior)) return null;
   const now = new Date().toISOString();
-  const adj = data.adjustment;
   return {
     id: typeof data.id === "string" ? data.id : crypto.randomUUID(),
     name: typeof data.name === "string" && data.name.trim() ? data.name : fallbackName,
@@ -568,10 +539,6 @@ export function reviveQuote(raw: unknown, fallbackName = "Quote 1"): Quote | nul
     exterior: data.exterior.filter((line) => CATALOG_BY_ID[line.itemId]),
     washing: data.washing === "minimum" || data.washing === "big" ? data.washing : "none",
     rates: mergeRates(data.rates),
-    adjustment:
-      adj && typeof adj === "object" && (adj.mode === "amount" || adj.mode === "percent")
-        ? { mode: adj.mode, value: typeof adj.value === "number" ? adj.value : null, label: typeof adj.label === "string" ? adj.label : "Adjustment" }
-        : null,
   };
 }
 

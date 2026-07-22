@@ -50,6 +50,25 @@ test("interior: full room combines walls, ceiling, doors, trim, crown", () => {
   assert.equal(p.parts.thirdCoat, 0);
 });
 
+test("interior: plausible generated room rounds to the requested $1,220 target", () => {
+  const p = priceRoom(
+    room({
+      length: 10,
+      width: 21,
+      height: 8,
+      doors: 1,
+      walls: true,
+      ceiling: true,
+      trim: true,
+      trimCoats: 1,
+    }),
+    "duration",
+    IR,
+  );
+  assert.equal(Math.round(p.total), 1220);
+  assert.equal(Number(p.hours.toFixed(1)), 13);
+});
+
 test("interior: third coat is 35% of walls, opt-in", () => {
   const p = priceRoom(room({ length: 12, width: 14, height: 8, walls: true, ceiling: false, thirdCoat: true }), "duration", IR);
   close(p.parts.thirdCoat, 574.08 * 0.35, 1e-9);
@@ -141,28 +160,6 @@ test("labour budget: materializes rooms, exterior lines, and washing as tasks", 
 });
 
 // ---------------------------------------------------------------------------
-// Adjustment
-// ---------------------------------------------------------------------------
-
-test("adjustment: amount and percent shift price, never hours", () => {
-  const quote = makeQuote("t");
-  quote.rooms = [room({ length: 16, width: 22, height: 8, walls: false, ceiling: true })];
-  const base = computeTotals(quote);
-
-  quote.adjustment = { mode: "amount", value: -100, label: "Discount" };
-  let t = computeTotals(quote);
-  close(t.subtotal, base.price);
-  close(t.adjustmentAmount, -100);
-  close(t.price, base.price - 100);
-  close(t.hst, (base.price - 100) * 0.13);
-  close(t.hours, base.hours, 1e-9);
-
-  quote.adjustment = { mode: "percent", value: -5, label: "Discount" };
-  t = computeTotals(quote);
-  close(t.price, base.price * 0.95);
-});
-
-// ---------------------------------------------------------------------------
 // Room numbering
 // ---------------------------------------------------------------------------
 
@@ -215,10 +212,8 @@ test("ops: clear empties contents but keeps rates, name and status", () => {
   let quote = makeQuote("Option A");
   quote.status = "sent";
   quote = applyOp(quote, { type: "addRoom", name: "Kitchen" });
-  quote = applyOp(quote, { type: "setAdjustment", adjustment: { mode: "amount", value: -50, label: "x" } });
   quote = applyOp(quote, { type: "clear" });
   assert.equal(quote.rooms.length, 0);
-  assert.equal(quote.adjustment, null);
   assert.equal(quote.name, "Option A");
   assert.equal(quote.status, "sent");
   close(quote.rates.interior.ceiling, 1.38, 1e-9);
@@ -311,7 +306,6 @@ test("migration: v1 localStorage blob becomes a single-quote v2 document", () =>
   assert.equal(q.paintTier, "superPaint");
   assert.equal(q.rooms[0].notes, "");
   assert.equal(q.washing, "minimum");
-  assert.equal(q.adjustment, null);
 });
 
 test("migration: v2 documents round-trip", () => {
@@ -322,4 +316,16 @@ test("migration: v2 documents round-trip", () => {
   assert.equal(revived.quotes[0].name, "Option A");
   assert.equal(revived.activeQuoteId, quote.id);
   assert.equal(revived.quotes[0].rooms[0].name, "Kitchen");
+});
+
+test("migration: legacy price adjustments are discarded", () => {
+  const quote = makeQuote("Old quote");
+  quote.rooms = [room({ length: 10, width: 10, height: 8 })];
+  quote.adjustment = { mode: "amount", value: -150, label: "Discount" };
+  const revived = reviveProjectCalculator({ version: 2, activeQuoteId: quote.id, quotes: [quote] });
+  assert.equal("adjustment" in revived.quotes[0], false);
+  close(
+    computeTotals(revived.quotes[0]).price,
+    priceRoom(quote.rooms[0], quote.paintTier, quote.rates.interior).total,
+  );
 });

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Card, Select } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
 import type { DefaultCalculatorSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
-  Adjustment,
   CATALOG_BY_ID,
   CalculatorTotals,
   PAINT_TIER_LABELS,
@@ -14,7 +13,6 @@ import {
   priceExteriorLine,
   priceRoom,
 } from "@/lib/calculator/engine";
-import { IconButton } from "./bits";
 import type { SyncStatus } from "./use-calculator";
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
@@ -49,10 +47,6 @@ function buildCopyText(
 ): string {
   const lines: string[] = [];
   lines.push(`${projectName} — ${quote.name} (${QUOTE_STATUS_LABELS[quote.status]})`);
-  if (totals.adjustmentAmount !== 0) {
-    lines.push(`Subtotal (pre-HST): ${fmtMoney(totals.subtotal)}`);
-    lines.push(`${quote.adjustment?.label || "Adjustment"}: ${fmtMoney(totals.adjustmentAmount)}`);
-  }
   lines.push(`Client price (pre-HST): ${fmtMoney(totals.price)}`);
   lines.push(`HST (${Math.round(quote.rates.exterior.hst * 100)}%): ${fmtMoney(totals.hst)}`);
   lines.push(`Total incl. HST: ${fmtMoney(totals.totalWithHst)}`);
@@ -88,86 +82,6 @@ function buildCopyText(
   return lines.join("\n");
 }
 
-function AdjustmentEditor({
-  adjustment,
-  onChange,
-}: {
-  adjustment: Adjustment;
-  onChange: (adjustment: Adjustment | null) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-2.5">
-      <div className="flex items-center gap-1.5">
-        <input
-          value={adjustment.label}
-          onChange={(e) => onChange({ ...adjustment, label: e.target.value })}
-          name="adjustment-label"
-          aria-label="Adjustment label"
-          placeholder="Adjustment"
-          className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-        />
-        <IconButton label="Remove adjustment" onClick={() => onChange(null)} danger>
-          ✕
-        </IconButton>
-      </div>
-      <div className="mt-2 flex items-end gap-2">
-        <Select
-          value={adjustment.mode}
-          onChange={(e) => onChange({ ...adjustment, mode: e.target.value as Adjustment["mode"] })}
-          name="adjustment-mode"
-          aria-label="Adjustment type"
-          className="!px-2 !py-1 text-xs"
-        >
-          <option value="amount">$</option>
-          <option value="percent">%</option>
-        </Select>
-        <NumFieldSigned
-          value={adjustment.value}
-          onChange={(value) => onChange({ ...adjustment, value })}
-          suffix={adjustment.mode === "percent" ? "%" : "$"}
-        />
-      </div>
-      <p className="mt-1.5 text-[10px] leading-3 text-[var(--color-muted)]">
-        Negative = discount. Hours are not affected.
-      </p>
-    </div>
-  );
-}
-
-/** Like NumField but allows negative values (discounts). */
-function NumFieldSigned({
-  value,
-  onChange,
-  suffix,
-}: {
-  value: number | null;
-  onChange: (value: number | null) => void;
-  suffix: string;
-}) {
-  return (
-    <span className="flex items-center gap-1">
-      <input
-        type="number"
-        inputMode="decimal"
-        name="adjustment-value"
-        aria-label="Adjustment value"
-        step="any"
-        value={value ?? ""}
-        onChange={(e) => {
-          const raw = e.target.value;
-          if (raw === "") return onChange(null);
-          const parsed = Number(raw);
-          onChange(Number.isFinite(parsed) ? parsed : null);
-        }}
-        onFocus={(e) => e.target.select()}
-        placeholder="-150"
-        className="w-24 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm tabular-nums text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
-      />
-      <span className="text-xs text-[var(--color-muted)]">{suffix}</span>
-    </span>
-  );
-}
-
 export function SummaryRail({
   projectName,
   quote,
@@ -178,7 +92,6 @@ export function SummaryRail({
   makingDefault,
   onMakeDefault,
   onEditRates,
-  onSetAdjustment,
   onClear,
 }: {
   projectName: string;
@@ -190,7 +103,6 @@ export function SummaryRail({
   makingDefault: boolean;
   onMakeDefault: () => Promise<unknown>;
   onEditRates: () => void;
-  onSetAdjustment: (adjustment: Adjustment | null) => void;
   onClear: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -209,7 +121,6 @@ export function SummaryRail({
   }, [confirmClear]);
 
   const hasAnything = quote.rooms.length > 0 || quote.exterior.length > 0 || quote.washing !== "none";
-  const hasAdjustment = quote.adjustment !== null;
   const isDefault = defaultCalculator?.quoteId === quote.id;
   const defaultIsCurrent =
     isDefault &&
@@ -254,25 +165,8 @@ export function SummaryRail({
       <div className="mt-5 space-y-2 border-t border-[var(--color-border)] pt-4">
         {totals.interior.total > 0 ? <Line label="Interior" value={fmtMoney(totals.interior.total)} /> : null}
         {totals.exterior.client > 0 ? <Line label="Exterior" value={fmtMoney(totals.exterior.client)} /> : null}
-        {hasAdjustment ? <Line label="Subtotal" value={fmtMoney(totals.subtotal)} /> : null}
-        {hasAdjustment ? (
-          <Line label={quote.adjustment?.label || "Adjustment"} value={fmtMoney(totals.adjustmentAmount)} />
-        ) : null}
         <Line label={`HST ${Math.round(quote.rates.exterior.hst * 100)}%`} value={fmtMoney(totals.hst)} />
         <Line label="Total incl. HST" value={fmtMoney(totals.totalWithHst)} strong />
-
-        {hasAdjustment ? (
-          <AdjustmentEditor adjustment={quote.adjustment!} onChange={onSetAdjustment} />
-        ) : (
-          <button
-            type="button"
-            onClick={() => onSetAdjustment({ mode: "amount", value: null, label: "Adjustment" })}
-            disabled={!hasAnything}
-            className="text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-brand-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            + Add adjustment (discount, rounding…)
-          </button>
-        )}
       </div>
 
       <div className="mt-5 space-y-2">

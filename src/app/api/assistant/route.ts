@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { Agent, run, tool } from "@openai/agents";
+import { Agent, MaxTurnsExceededError, run, tool } from "@openai/agents";
 import type { AgentInputItem } from "@openai/agents";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
@@ -27,9 +27,9 @@ const INSTRUCTIONS = `You are the estimating assistant inside Ottawa Painters' j
 Facts about the calculator:
 - Interior rooms are priced from Length × Width × Height in FEET. Rooms with no requested surface scope default to walls + ceiling included, 8 ft height.
 - Room price categories: walls (rate depends on paint tier: HP / SuperPaint / Duration), ceiling, popcorn ceiling, doors, trim (per coat), crown molding, closets, optional 3rd coat (+35% of walls).
+- Interior formulas: walls = 2 × height × (length + width) × wall rate; ceiling = length × width × ceiling rate; trim = 2 × (length + width) × trim rate × trim coats; doors = door count × door rate.
 - Labour hours = interior price × labour% ÷ hourly rate; exterior hours come from production rates.
 - Exterior items: siding (sf), trim/soffits/fascia (lf), doors & windows (each), decks, fences (panels), prep (hours), pressure washing.
-- The adjustment is applied to the pre-HST subtotal; negative = discount. It never changes hours.
 
 How to behave:
 - Users type fast, on site, with typos ("kitchrn", "anf"). Fix obvious typos yourself: clean, capitalized room names ("Kitchen", "Dining room"), no leading articles ("a dining room" → "Dining room").
@@ -38,8 +38,14 @@ How to behave:
 - Surface modifiers apply only to the room they follow.
 - Use add_rooms_from_text only for long comma/line-separated lists (4+ rooms) with no typos.
 - Use the other tools for targeted changes. Resolve rooms by their visible name (e.g. "Bedroom 2").
-- After changing anything, call get_summary and check it matches the user's request (right number of rooms, right names, exact included surfaces). Fix mistakes with update_room/remove_room BEFORE replying.
-- Confirm in ONE short sentence with the new client price (pre-HST) and labour hours. Never invent numbers — read them from get_summary.
+- When the user pastes proposal-style text, save that text as quote notes and translate its "Areas of Application" into the room's exact surfaces and door count.
+- When the user explicitly says to make up, invent, estimate, or "make it work" with measurements, that is permission to choose plausible measurements. Do not ask for measurements. Prefer one ordinary 8 ft-high room unless the user specifies multiple rooms. A singular "Door" in an application list means 1 door.
+- For a requested target price, calculate a plausible room from the current rates before calling a mutation tool. The displayed client price rounds to the nearest dollar, so a result that rounds to the requested whole-dollar target is a match. Make at most one measurement correction after reading the mutation result; never enter a trial-and-error loop.
+- Never change rates or use a manual adjustment merely to hit a target price. Only do those when the user explicitly asks for a rate change, discount, amount off, or adjustment.
+- Treat corrections such as "no, what I meant" as replacing the immediately preceding measurements you invented, not adding another option. Clear that invented room/item set before creating the corrected one.
+- Every mutating tool that affects price returns the resulting summary. Read that result directly; do not call get_summary immediately afterward. Use get_summary only for a read-only question or when no mutation result contains the state you need.
+- Check the mutation result matches the request (room count, names, exact surfaces, target price). If the one permitted correction still misses, explain the closest result instead of continuing to call tools.
+- Confirm in ONE short sentence with the new client price (pre-HST) and labour hours. Never invent totals or hours — read them from a tool result.
 - If a request is ambiguous or a tool reports an error, ask a brief clarifying question instead of guessing.
 - Keep replies to one or two sentences. No markdown headers or bullet lists unless asked.`;
 
@@ -153,7 +159,6 @@ export async function POST(request: Request) {
       clientPricePreHst: Math.round(totals.price),
       hstIncludedTotal: Math.round(totals.totalWithHst),
       labourHours: Number(totals.hours.toFixed(1)),
-      adjustment: working.adjustment,
       rooms: working.rooms.map((room) => {
         const p = priceRoom(room, working.paintTier, working.rates.interior);
         return {
@@ -312,23 +317,6 @@ export async function POST(request: Request) {
       },
     }),
     tool({
-      name: "set_adjustment",
-      description:
-        "Set a manual price adjustment on the pre-HST subtotal. Negative value = discount. Pass value null to remove the adjustment.",
-      parameters: z.object({
-        mode: z.enum(["amount", "percent"]),
-        value: z.number().nullable(),
-        label: z.string().nullable(),
-      }),
-      async execute({ mode, value, label }) {
-        record({
-          type: "setAdjustment",
-          adjustment: value == null ? null : { mode, value, label: label || "Adjustment" },
-        });
-        return `Adjustment ${value == null ? "removed" : "set"}. ${summarize()}`;
-      },
-    }),
-    tool({
       name: "set_status",
       description: "Set the quote status: draft, sent, won, or lost.",
       parameters: z.object({ status: z.enum(["draft", "sent", "won", "lost"]) }),
@@ -365,9 +353,20 @@ export async function POST(request: Request) {
     }),
   ];
 
+  // The browser sends the live quote separately from chat history. Put the
+  // relevant state and exact rates in model context so target-price requests
+  // can be calculated before the model mutates the quote.
+  const instructions = `${INSTRUCTIONS}
+
+Current calculator context at the start of this request:
+${summarize()}
+
+Current exact interior rates used by the formulas above:
+${JSON.stringify(working.rates.interior)}`;
+
   const agent = new Agent({
     name: "Calculator assistant",
-    instructions: INSTRUCTIONS,
+    instructions,
     model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
     tools,
   });
@@ -400,7 +399,17 @@ export async function POST(request: Request) {
           await result.completed;
           send({ kind: "final", text: result.finalOutput ?? "Done.", ops });
         } catch (error) {
-          send({ kind: "error", error: error instanceof Error ? error.message : "Assistant request failed." });
+          if (error instanceof MaxTurnsExceededError) {
+            // `working` is only a server-side copy. Do not send its partial ops
+            // when the run did not complete successfully.
+            send({
+              kind: "final",
+              text: "I couldn't safely finish that estimate, so I left the calculator unchanged. Please retry with the target price and painting areas in one message.",
+              ops: [],
+            });
+          } else {
+            send({ kind: "error", error: error instanceof Error ? error.message : "Assistant request failed." });
+          }
         } finally {
           controller.close();
         }
@@ -439,8 +448,6 @@ function toolLabel(name: string | undefined, argsJson: string | undefined): stri
       return `Switching paint tier`;
     case "bump_prices":
       return `Adjusting rates ${args.percent ?? ""}%`;
-    case "set_adjustment":
-      return "Setting adjustment";
     case "set_status":
       return `Marking ${args.status ?? "status"}`;
     case "set_notes":

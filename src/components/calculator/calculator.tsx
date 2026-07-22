@@ -277,7 +277,6 @@ export function CalculatorPage({
               makingDefault={calc.makingDefault}
               onMakeDefault={calc.makeDefault}
               onEditRates={() => setRatesOpen(true)}
-              onSetAdjustment={(adjustment) => dispatch({ type: "setAdjustment", adjustment })}
               onClear={() => dispatch({ type: "clear" })}
             />
           </div>

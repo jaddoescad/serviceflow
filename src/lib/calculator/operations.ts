@@ -4,7 +4,6 @@
  * nothing can drift between the three.
  */
 import {
-  Adjustment,
   CalculatorRates,
   ExteriorLine,
   PaintTierId,
@@ -30,7 +29,6 @@ export type QuoteOp =
   | { type: "setPaintTier"; tier: PaintTierId }
   | { type: "setRates"; rates: CalculatorRates }
   | { type: "bumpRates"; percent: number; scope?: "interior" | "exterior" | "all" }
-  | { type: "setAdjustment"; adjustment: Adjustment | null }
   | { type: "setNotes"; notes: string }
   | { type: "setStatus"; status: QuoteStatus }
   | { type: "renameQuote"; name: string }
@@ -265,9 +263,6 @@ function applyOpInner(quote: Quote, op: QuoteOp): Quote {
     case "bumpRates":
       return { ...quote, rates: bumpRates(quote.rates, op.percent, op.scope ?? "all") };
 
-    case "setAdjustment":
-      return { ...quote, adjustment: op.adjustment };
-
     case "setNotes":
       return { ...quote, notes: op.notes };
 
@@ -287,6 +282,6 @@ function applyOpInner(quote: Quote, op: QuoteOp): Quote {
 
     case "clear":
       // Contents only — the rates snapshot, name, status and notes survive.
-      return { ...quote, rooms: [], exterior: [], washing: "none", adjustment: null };
+      return { ...quote, rooms: [], exterior: [], washing: "none" };
   }
 }
