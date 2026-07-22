@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Modal,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BudgetHoursPanel } from '../components/BudgetProgress';
 import {
@@ -1368,62 +1371,153 @@ function PhotosPanel({ photos, loading, error, onRetry }) {
 
 function PhotoLightbox({ photos, selectedIndex, onClose }) {
   const scrollRef = useRef(null);
+  const translateY = useRef(new Animated.Value(0)).current;
+  const onCloseRef = useRef(onClose);
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(selectedIndex ?? 0);
   const visible = selectedIndex !== null;
+  const viewerTopInset = Math.max(insets.top, 16) + 10;
+  const viewerPageHeight = Math.max(0, height - viewerTopInset - insets.bottom - 54);
+  onCloseRef.current = onClose;
+
+  const heightRef = useRef(height);
+  heightRef.current = height;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+        gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
+      onPanResponderGrant: () => translateY.stopAnimation(),
+      onPanResponderMove: (_event, gesture) => {
+        translateY.setValue(Math.max(0, gesture.dy));
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        const screenHeight = heightRef.current;
+        const shouldDismiss =
+          gesture.dy > Math.min(140, screenHeight * 0.18) ||
+          (gesture.dy > 24 && gesture.vy > 0.8);
+
+        if (shouldDismiss) {
+          Animated.timing(translateY, {
+            toValue: screenHeight,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => {
+            translateY.setValue(0);
+            onCloseRef.current?.();
+          });
+          return;
+        }
+
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+        }).start();
+      },
+    }),
+  ).current;
+
+  const closeViewer = () => {
+    translateY.stopAnimation();
+    translateY.setValue(0);
+    onClose();
+  };
 
   useEffect(() => {
     if (!visible) return undefined;
 
     const nextIndex = selectedIndex ?? 0;
     setCurrentIndex(nextIndex);
+    translateY.setValue(0);
 
     const timer = setTimeout(() => {
       scrollRef.current?.scrollTo({ x: nextIndex * width, animated: false });
     }, 0);
 
     return () => clearTimeout(timer);
-  }, [selectedIndex, visible, width]);
+  }, [selectedIndex, translateY, visible, width]);
 
   if (!visible) return null;
 
   return (
-    <Modal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <SafeAreaView style={styles.viewer}>
-        <View style={styles.viewerTopBar}>
-          <TouchableOpacity style={styles.viewerCloseButton} activeOpacity={0.8} onPress={onClose}>
-            <Text style={styles.viewerCloseText}>Close</Text>
-          </TouchableOpacity>
-          <Text style={styles.viewerCounter}>
-            Picture {currentIndex + 1} / {photos.length}
-          </Text>
-          <View style={styles.viewerTopSpacer} />
-        </View>
-
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(event) => {
-            const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-            setCurrentIndex(Math.max(0, Math.min(photos.length - 1, nextIndex)));
-          }}
+    <Modal
+      visible
+      animationType="fade"
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={closeViewer}
+    >
+      <View style={styles.viewerBackdrop}>
+        <StatusBar style="light" backgroundColor="#050607" />
+        <Animated.View
+          style={[
+            styles.viewer,
+            {
+              paddingTop: viewerTopInset,
+              paddingBottom: insets.bottom,
+              transform: [{ translateY }],
+            },
+          ]}
+          accessibilityViewIsModal
+          onAccessibilityEscape={closeViewer}
+          {...panResponder.panHandlers}
         >
-          {photos.map((photo) => (
-            <View
-              key={photo.id || photo.thumbnailUrl || photo.url}
-              style={[styles.viewerSlide, { width, minHeight: Math.max(0, height - 120) }]}
+          <View style={styles.viewerTopBar}>
+            <TouchableOpacity
+              style={styles.viewerCloseButton}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Close picture viewer"
+              hitSlop={8}
+              onPress={closeViewer}
             >
-              <Image
-                source={{ uri: photo.url || photo.thumbnailUrl }}
-                style={styles.viewerImage}
-                resizeMode="contain"
-              />
-            </View>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
+              <Ionicons name="close" size={24} color="#ffffff" />
+              <Text style={styles.viewerCloseText}>Close</Text>
+            </TouchableOpacity>
+            <Text style={styles.viewerCounter}>
+              Picture {currentIndex + 1} / {photos.length}
+            </Text>
+            <View style={styles.viewerTopSpacer} />
+          </View>
+
+          <ScrollView
+            ref={scrollRef}
+            style={styles.viewerPages}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(event) => {
+              const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
+              setCurrentIndex(Math.max(0, Math.min(photos.length - 1, nextIndex)));
+            }}
+          >
+            {photos.map((photo) => (
+              <View
+                key={photo.id || photo.thumbnailUrl || photo.url}
+                style={[styles.viewerSlide, { width, height: viewerPageHeight }]}
+              >
+                <Image
+                  source={{ uri: photo.url || photo.thumbnailUrl }}
+                  style={styles.viewerImage}
+                  resizeMode="contain"
+                />
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }
@@ -1936,6 +2030,10 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     backgroundColor: SOFT,
   },
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: '#050607',
+  },
   viewer: {
     flex: 1,
     backgroundColor: '#050607',
@@ -1950,9 +2048,11 @@ const styles = StyleSheet.create({
   },
   viewerCloseButton: {
     minWidth: 68,
-    height: 40,
-    alignItems: 'flex-start',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
   },
   viewerCloseText: {
     color: '#ffffff',
@@ -1966,6 +2066,9 @@ const styles = StyleSheet.create({
   },
   viewerTopSpacer: {
     width: 68,
+  },
+  viewerPages: {
+    flex: 1,
   },
   viewerSlide: {
     alignItems: 'center',

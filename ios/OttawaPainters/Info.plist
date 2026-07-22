@@ -48,12 +48,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>ServiceFlow uses your location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>ServiceFlow uses your location while you are clocked in to confirm job-site time.</string>
+	<string>ServiceFlow uses your location during an active shift to confirm job-site and travel time.</string>
 	<key>RCTNewArchEnabled</key>
 	<false/>
 	<key>UIBackgroundModes</key>

@@ -41,16 +41,12 @@ module.exports = {
         ITSAppUsesNonExemptEncryption: false,
         UIBackgroundModes: ["location", "fetch"],
         NSLocationWhenInUseUsageDescription:
-          "ServiceFlow uses your location while you are clocked in to confirm job-site time.",
-        NSLocationAlwaysAndWhenInUseUsageDescription:
-          "ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.",
-        NSLocationAlwaysUsageDescription:
-          "ServiceFlow uses background location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site."
+          "ServiceFlow uses your location during an active shift to confirm job-site and travel time."
       }
     },
     android: {
       package: "com.ottawapainters.app",
-      versionCode: 9,
+      versionCode: 19,
       googleServicesFile: "./android/app/google-services.json",
       adaptiveIcon: {
         foregroundImage: "./assets/serviceflow-adaptive-icon.png",
@@ -66,7 +62,6 @@ module.exports = {
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
         "POST_NOTIFICATIONS"
@@ -82,12 +77,13 @@ module.exports = {
       [
         "expo-location",
         {
-          locationAlwaysAndWhenInUsePermission:
-            "ServiceFlow uses your location to track job-site and travel time while you are clocked in, and to remind you to clock in when you arrive at a job site.",
+          locationAlwaysAndWhenInUsePermission: false,
+          locationAlwaysPermission: false,
           locationWhenInUsePermission:
-            "ServiceFlow uses your location while you are clocked in to confirm job-site time.",
+            "ServiceFlow uses your location during an active shift to confirm job-site and travel time.",
           isIosBackgroundLocationEnabled: true,
-          isAndroidBackgroundLocationEnabled: true
+          isAndroidBackgroundLocationEnabled: false,
+          isAndroidForegroundServiceEnabled: true
         }
       ],
       "expo-task-manager",

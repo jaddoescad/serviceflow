@@ -4,10 +4,12 @@ import { normalizeProject } from "./trackingModel";
 import { activeEntry, applyEntryTimeUpdate, entryIdentityKeys, shiftToEntry } from "./timeEntryModel";
 import { getProjectLatestActivity, getProjectTimeTotals } from "./timeEntryPresenters";
 import {
+  cancelActiveShiftReminders,
   consumeInitialNotificationResponse,
+  ensureActiveShiftReminders,
   subscribeToTrackingNotificationResponses,
 } from "./timeTrackingNotifications";
-import { syncGeofences } from "./timeTrackingGeofence";
+import { retireLegacyGeofences } from "./timeTrackingGeofence";
 import {
   geocodeProject,
   geocodeProjects,
@@ -24,6 +26,10 @@ import {
   watchActiveLocation,
 } from "./timeTrackingRuntime";
 import { syncPendingLocationData } from "./locationTrackingRepository";
+import {
+  flushPendingProjectLabourTaskWrites,
+  stopActiveProjectLabourTaskTimer,
+} from "./projectLabourTasks";
 import {
   completeEntry,
   deleteServerEntry,
@@ -100,16 +106,6 @@ function buildPermissionNotice(permissions, fallbackMessage) {
     };
   }
 
-  if (!permissions?.background) {
-    return {
-      type: "permission",
-      message:
-        fallbackMessage ||
-        "Background location must be set to Always before clocking in.",
-      createdAt: new Date().toISOString(),
-    };
-  }
-
   return {
     type: "permission",
     message: fallbackMessage || "Location tracking is not ready. Check location settings and try again.",
@@ -117,11 +113,8 @@ function buildPermissionNotice(permissions, fallbackMessage) {
   };
 }
 
-// In development (Expo Go) the "Always" background permission cannot be granted,
-// so we let foreground-only access be enough to clock in. Production still
-// requires full background tracking (permissions.ready).
 function permissionsAllowTracking(permissions) {
-  return Boolean(permissions?.ready || (__DEV__ && permissions?.foreground));
+  return Boolean(permissions?.foreground);
 }
 
 function hasSeenEntry(seen, entry) {
@@ -287,6 +280,12 @@ export function useTimeTracking(projects = [], user) {
   }, [refreshTrackingPermissions]);
 
   useEffect(() => {
+    // Retire regions registered by releases that used elevated location access.
+    // New releases never create geofences.
+    retireLegacyGeofences().catch(() => {});
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     Promise.all([readStore(), readTrackingRuntimeState()])
       .then(([store, runtime]) => {
@@ -364,6 +363,10 @@ export function useTimeTracking(projects = [], user) {
           }
         }
       }
+
+      if (!activeRow && !activeRef.current) {
+        await stopActiveProjectLabourTaskTimer({ userId: user.id });
+      }
     } catch (_error) {
       // Local clocking still works if time_entries is unavailable.
     }
@@ -426,6 +429,7 @@ export function useTimeTracking(projects = [], user) {
     if (!user?.id) return undefined;
     const interval = setInterval(() => {
       flushQueuedWrites();
+      flushPendingProjectLabourTaskWrites();
       syncPendingLocationData();
     }, 60_000);
     return () => clearInterval(interval);
@@ -442,6 +446,15 @@ export function useTimeTracking(projects = [], user) {
       lastNotificationAt: notificationRef.current,
     });
   }, [hydrated, entries, resolvedProjects, trackingNotice]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (activeShift?.localId) {
+      ensureActiveShiftReminders(activeShift);
+    } else {
+      cancelActiveShiftReminders();
+    }
+  }, [activeShift?.localId, hydrated]);
 
   useEffect(() => {
     if (!activeShift) return undefined;
@@ -507,17 +520,13 @@ export function useTimeTracking(projects = [], user) {
         return;
       }
 
-      // Expo Go can't start Always background tracking; the foreground watcher
-      // above keeps the active shift updated during development.
-      if (__DEV__ && !permissions.ready) return;
-
       const result = await configureAdaptiveTracking(activeShift, projectsRef.current, {
         permissions,
       });
       if (!cancelled && !result.started) {
         setTrackingNotice({
-          type: "permission",
-          message: "Background location could not start. Reopen the app or check location settings.",
+          type: "tracking_error",
+          message: "Active-shift tracking could not start. Keep ServiceFlow open or check location settings.",
           createdAt: new Date().toISOString(),
         });
         return;
@@ -535,23 +544,6 @@ export function useTimeTracking(projects = [], user) {
       cancelled = true;
     };
   }, [activeShift?.localId, activeShift?.serverId, activeShift?.onSite]);
-
-  useEffect(() => {
-    // Register job-site geofences so the painter is prompted to clock in on
-    // arrival, even while clocked out and with the app closed. Requires
-    // background ("Always") location; syncGeofences no-ops otherwise. Geofences
-    // intentionally persist across unmount/app-close, so there is no teardown.
-    if (!permissionsAllowTracking(trackingPermissions)) return undefined;
-    syncGeofences(resolvedProjects, activeShift);
-    return undefined;
-  }, [
-    resolvedProjects,
-    trackingPermissions?.ready,
-    trackingPermissions?.foreground,
-    trackingPermissions?.background,
-    activeShift?.localId,
-    activeShift?.serverId,
-  ]);
 
   const clockIn = useCallback(
     async (project) => {
@@ -698,6 +690,7 @@ export function useTimeTracking(projects = [], user) {
       setLocationStatus(null);
       setTrackingNotice(null);
       setSuggestedProject(null);
+      await stopActiveProjectLabourTaskTimer({ userId: shift.userId, endedAt });
       const savedRow = await completeEntry(entry);
       if (savedRow?.status === "complete" && savedRow.ended_at) {
         // A concurrent/earlier completion wins. Reflect its canonical end time
@@ -759,6 +752,11 @@ export function useTimeTracking(projects = [], user) {
       setActiveShift(next);
       setTrackingNotice(null);
       setSuggestedProject(null);
+
+      await stopActiveProjectLabourTaskTimer({
+        userId: current.userId,
+        endedAt: switchedAt,
+      });
 
       const serverSwitch = await switchEntry(completed, next);
       if (serverSwitch?.completedRow?.status === "complete" && serverSwitch.completedRow.ended_at) {
@@ -825,6 +823,9 @@ export function useTimeTracking(projects = [], user) {
       setTrackingNotice(null);
       setSuggestedProject(null);
       await stopBackgroundTracking();
+      await stopActiveProjectLabourTaskTimer({
+        userId: entry.userId || user?.id,
+      });
     }
 
     setEntries((current) =>
@@ -836,7 +837,7 @@ export function useTimeTracking(projects = [], user) {
 
     await deleteServerEntry(entry);
     return true;
-  }, []);
+  }, [user?.id]);
 
   const updateTimeEntry = useCallback(async (entry, updates) => {
     if (!entryIdentityKeys(entry).length) return null;

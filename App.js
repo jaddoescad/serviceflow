@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Linking,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -23,9 +22,6 @@ import ProjectDetailScreen from "./src/screens/ProjectDetailScreen";
 import ClockInScreen from "./src/screens/ClockInScreen";
 import TimesheetScreen from "./src/screens/TimesheetScreen";
 import TeamMapScreen from "./src/screens/TeamMapScreen";
-import LocationPermissionBlocker, {
-  shouldOpenSettingsAfterPermissionRequest,
-} from "./src/screens/clock-in/LocationPermissionBlocker";
 import { supabase } from "./src/lib/supabase";
 import { useTimeTracking } from "./src/lib/timeTracking";
 import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
@@ -53,7 +49,6 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
-  const [devBypassLocationGate, setDevBypassLocationGate] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -106,31 +101,6 @@ function AppRoot() {
     return <LoginScreen />;
   }
 
-  if (!tracking.trackingPermissions?.ready && !devBypassLocationGate) {
-    const openLocationSettings = () => Linking.openSettings().catch(() => {});
-    const enableLocation = async () => {
-      const nextPermissions = await tracking.requestTrackingPermissionAccess?.();
-      if (shouldOpenSettingsAfterPermissionRequest(nextPermissions)) {
-        openLocationSettings();
-      }
-    };
-
-    return (
-      <SafeAreaView style={styles.shell}>
-        <LocationPermissionBlocker
-          permissions={tracking.trackingPermissions}
-          isClockedIn={!!tracking.activeShift}
-          projectName={tracking.activeShift?.project?.name}
-          onEnable={enableLocation}
-          onOpenSettings={openLocationSettings}
-          onCheckAgain={tracking.refreshTrackingPermissions}
-          onClockOut={tracking.activeShift ? () => tracking.clockOut("manual") : null}
-          onDevBypass={__DEV__ ? () => setDevBypassLocationGate(true) : null}
-        />
-      </SafeAreaView>
-    );
-  }
-
   return (
     <View style={styles.shell}>
       <View style={[styles.content, { paddingTop: insets.top }]}>
@@ -139,13 +109,12 @@ function AppRoot() {
         >
           <ClockInScreen
             enabled={activeTab === "clock" && !selectedProject}
+            user={session.user}
             painterName={painterName}
             onViewProject={setSelectedProject}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
             todayWorkedMs={tracking.todayWorkedMs}
-            projectTimeTotals={tracking.projectTimeTotals}
-            canViewTeamTime={canManageProjects}
             locationStatus={tracking.locationStatus}
             trackingNotice={tracking.trackingNotice}
             trackingPermissions={tracking.trackingPermissions}
@@ -353,14 +322,19 @@ function MoreScreen({ userEmail, activeShift, trackingPermissions, trackingDiagn
               Last upload: {formatDiagnosticTime(trackingDiagnostic?.lastSyncAt)}
             </Text>
             <Text style={styles.diagnosticText}>
-              Background permission: {trackingPermissions?.background ? "Allowed" : "Needs attention"}
+              Location access: {trackingPermissions?.foreground ? "Active shifts only" : "Not enabled"}
+            </Text>
+            <Text style={styles.diagnosticText}>
+              Tracking may pause if ServiceFlow is force-closed.
             </Text>
             {trackingDiagnostic?.lastErrorCode ? (
               <Text style={styles.diagnosticError}>Issue: {trackingDiagnostic.lastErrorCode}</Text>
             ) : null}
           </>
         ) : (
-          <Text style={styles.diagnosticText}>ServiceFlow records work locations only while you are clocked in.</Text>
+          <Text style={styles.diagnosticText}>
+            ServiceFlow requests location when you clock in and stops tracking when you clock out.
+          </Text>
         )}
       </View>
       <Pressable style={styles.signOutButton} onPress={() => supabase.auth.signOut()}>
@@ -372,8 +346,8 @@ function MoreScreen({ userEmail, activeShift, trackingPermissions, trackingDiagn
 
 function trackingModeLabel(mode) {
   return ({
-    painting: "Painting mode · low power",
-    stationary: "Stationary · low power",
+    painting: "On-site tracking active",
+    stationary: "Stationary tracking active",
     travel: "Travel tracking active",
     unavailable: "Tracking unavailable",
   })[mode] || "Preparing location tracking";

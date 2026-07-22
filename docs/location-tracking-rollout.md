@@ -1,16 +1,21 @@
-# Adaptive location tracking rollout
+# Active-shift location tracking rollout
 
 ## What ships
 
-- Low-power painting/stationary background updates backed by geofences, plus a
-  four-minute foreground heartbeat while the app is open.
-- Balanced-accuracy travel mode with 100 m filtering and deferred 2-minute/250 m batches.
+- One user-started native location service that runs only during an active shift,
+  plus a four-minute foreground heartbeat while the app is open.
+- Balanced-accuracy updates with 50 m filtering and deferred 2-minute/100 m batches.
 - Offline location queue with idempotent Supabase synchronization.
 - Append-only daily route history and current tracking diagnostics.
 - Manager Team Map on iOS, Android, and web.
+- Eight-hour and ten-hour "Still clocked in?" reminders with a Clock Out action.
 - Stale-travel alerts and 60-day route retention.
 
-Tracking is active only while an employee is clocked in. An explicit iOS force-quit still prevents background delivery until the employee reopens the app.
+The app requests only foreground/When In Use authorization. Android keeps the
+active shift alive with a visible foreground-service notification. iOS may
+continue the user-started session in the background with its location indicator,
+but a force-quit prevents delivery until the employee reopens the app. The app
+does not register job-site geofences or monitor employees while clocked out.
 
 ## Controlled rollout
 
@@ -21,7 +26,7 @@ EXPO_PUBLIC_LOCATION_TRACKING_ENABLED=1
 EXPO_PUBLIC_LOCATION_TRACKING_PILOT_EMAILS=michael@example.com,bilal@example.com
 ```
 
-Leave `EXPO_PUBLIC_LOCATION_TRACKING_PILOT_EMAILS` empty after the pilot to enable location history for all employees. The adaptive battery-saving state machine remains the same; the pilot flag controls new route/status uploads.
+Leave `EXPO_PUBLIC_LOCATION_TRACKING_PILOT_EMAILS` empty after the pilot to enable location history for all employees. The pilot flag controls new route/status uploads.
 
 ## Supabase deployment
 
@@ -46,12 +51,16 @@ Use signed builds on at least two iPhones and one Android device. For each devic
 - Clock in at a mapped job, lock the screen, and leave the phone stationary for at least one hour.
 - With the app open and stationary, confirm the manager status advances at least once within five minutes.
 - Confirm the app reports painting mode and does not create repetitive route points while stationary.
-- Leave the 160 m job geofence and drive at least 2 km with the screen locked.
+- Leave the job and drive at least 2 km with the screen locked.
 - Confirm travel points appear on the manager map within five minutes and route gaps are labeled.
-- Stop for more than three minutes, then drive again and confirm tracking resumes after leaving the stop geofence.
+- Stop for more than three minutes, then drive again and confirm the same active-shift service continues tracking.
 - Repeat while offline, then reconnect and confirm queued points upload once without duplicates.
-- Change background permission and confirm diagnostics show the problem.
-- Force-quit on iOS and confirm the map eventually presents the location as old rather than claiming it is live.
+- Deny foreground location and confirm the rest of the app stays accessible while clock-in explains that location is required.
+- Confirm no platform prompt offers or requests Always/Allow all the time access.
+- Confirm the long-shift reminders are scheduled while clocked in and removed
+  after clock-out or deletion of the active entry.
+- Force-quit on iOS and confirm the map presents the location as old and the interruption alert asks the employee to reopen ServiceFlow.
+- Force-stop on Android and confirm the same interruption behavior.
 - Record Settings > Battery results for an eight-hour mostly-stationary shift and compare against the previous release.
 
 Before any Google Play submission, install and launch the exact release artifact as required by `AGENTS.md`; a successful build alone is not a launch test.

@@ -122,19 +122,6 @@ export function freshnessForTimestamp(value, now = Date.now()) {
 
 export function freshnessForTrackingStatus(status, now = Date.now()) {
   const freshness = freshnessForTimestamp(status?.last_location_at || status?.lastLocationAt, now);
-  if (
-    freshness.ageMs != null &&
-    (status?.tracking_mode === TRACKING_MODE.PAINTING || status?.tracking_mode === TRACKING_MODE.STATIONARY) &&
-    status?.task_status === "geofence"
-  ) {
-    return {
-      ...freshness,
-      level: "stationary",
-      label: status.tracking_mode === TRACKING_MODE.PAINTING
-        ? "Stationary at job"
-        : "Stationary",
-    };
-  }
   if (status?.tracking_mode === TRACKING_MODE.CLOCKED_OUT) {
     return { ...freshness, level: "clocked_out", label: "Clocked out" };
   }

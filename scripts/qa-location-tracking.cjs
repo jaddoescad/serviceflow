@@ -27,12 +27,10 @@ async function main() {
   );
   const {
     TRACKING_MODE,
-    TRACKING_PROFILE,
     freshnessForTimestamp,
     freshnessForTrackingStatus,
     shouldRecordLocation,
     splitRouteSegments,
-    trackingProfileForMode,
     trackingEventId,
     updateStationaryState,
   } = policy;
@@ -98,21 +96,6 @@ async function main() {
     true,
     "explicit lifecycle events should be retained",
   );
-  assert.equal(
-    trackingProfileForMode(TRACKING_MODE.PAINTING),
-    TRACKING_PROFILE.LOW_POWER,
-    "painting must retain a low-power location service instead of stopping GPS",
-  );
-  assert.equal(
-    trackingProfileForMode(TRACKING_MODE.STATIONARY),
-    TRACKING_PROFILE.LOW_POWER,
-    "stationary travel stops must retain a low-power location service",
-  );
-  assert.equal(
-    trackingProfileForMode(TRACKING_MODE.TRAVEL),
-    TRACKING_PROFILE.TRAVEL,
-  );
-
   let stationary = updateStationaryState(null, point(45.42, -75.69), TRACKING_MODE.TRAVEL);
   stationary = updateStationaryState(stationary, point(45.4201, -75.69, 2 * 60_000), TRACKING_MODE.TRAVEL);
   assert.equal(stationary.stationary, false, "a short traffic stop must not switch modes");
@@ -133,10 +116,9 @@ async function main() {
     freshnessForTrackingStatus({
       last_location_at: new Date(baseTime - 2 * 60 * 60_000).toISOString(),
       tracking_mode: TRACKING_MODE.PAINTING,
-      task_status: "geofence",
     }, baseTime).level,
-    "stationary",
-    "low-power painting mode should not be presented as a failed live tracker",
+    "stale",
+    "a gap in active-shift tracking must be presented honestly",
   );
 
   assert.match(
@@ -258,6 +240,10 @@ async function main() {
   );
   assert.match(runtimeSource, /export async function watchActiveLocation/);
   assert.match(runtimeSource, /startLowPowerTracking/);
+  assert.match(runtimeSource, /ACTIVE_SHIFT_TRACKING_PROFILE\s*=\s*["']active_shift["']/);
+  assert.match(runtimeSource, /foregroundService:\s*\{/);
+  assert.match(runtimeSource, /ready:\s*foregroundPermission\.granted/);
+  assert.doesNotMatch(runtimeSource, /requestBackgroundPermissionsAsync|getBackgroundPermissionsAsync/);
   assert.doesNotMatch(
     runtimeSource,
     /stopContinuousTracking\(["']geofence["']/,
@@ -290,6 +276,17 @@ async function main() {
     /startedAt:\s*switchedAt/,
     "the next job should start at the same timestamp used to close the previous job",
   );
+  assert.match(hookSource, /ensureActiveShiftReminders\(activeShift\)/);
+  assert.match(hookSource, /cancelActiveShiftReminders\(\)/);
+
+  const notificationsSource = fs.readFileSync(
+    path.join(__dirname, "../src/lib/timeTrackingNotifications.js"),
+    "utf8",
+  );
+  assert.match(notificationsSource, /serviceflow-active-shift-8h/);
+  assert.match(notificationsSource, /serviceflow-active-shift-10h/);
+  assert.match(notificationsSource, /type:\s*["']active_shift_reminder["']/);
+  assert.match(notificationsSource, /CLOCK_OUT_NOTIFICATION_CATEGORY/);
 
   const clockInScreenSource = fs.readFileSync(
     path.join(__dirname, "../src/screens/ClockInScreen.js"),
@@ -304,6 +301,7 @@ async function main() {
   assert.match(activeClockInBodySource, />Change Job<\/Text>/);
 
   const appSource = fs.readFileSync(path.join(__dirname, "../App.js"), "utf8");
+  assert.doesNotMatch(appSource, /LocationPermissionBlocker|trackingPermissions\?\.ready/);
   const projectDetailSource = fs.readFileSync(
     path.join(__dirname, "../src/screens/ProjectDetailScreen.js"),
     "utf8",
@@ -315,6 +313,27 @@ async function main() {
     /await refreshBudgetProgress\(\);\s*onOpenActiveClock\?\.\(\);/,
     "a successful project-page clock action should open the active Clock In page",
   );
+
+  const appConfigSource = fs.readFileSync(path.join(__dirname, "../app.config.js"), "utf8");
+  const androidManifestSource = fs.readFileSync(
+    path.join(__dirname, "../android/app/src/main/AndroidManifest.xml"),
+    "utf8",
+  );
+  const iosInfoPlistSource = fs.readFileSync(
+    path.join(__dirname, "../ios/OttawaPainters/Info.plist"),
+    "utf8",
+  );
+  const geofenceSource = fs.readFileSync(
+    path.join(__dirname, "../src/lib/timeTrackingGeofenceConfig.js"),
+    "utf8",
+  );
+  assert.doesNotMatch(appConfigSource, /ACCESS_BACKGROUND_LOCATION|NSLocationAlways/);
+  assert.match(appConfigSource, /isAndroidBackgroundLocationEnabled:\s*false/);
+  assert.match(appConfigSource, /isAndroidForegroundServiceEnabled:\s*true/);
+  assert.doesNotMatch(androidManifestSource, /ACCESS_BACKGROUND_LOCATION/);
+  assert.doesNotMatch(iosInfoPlistSource, /NSLocationAlways/);
+  assert.doesNotMatch(geofenceSource, /startGeofencingAsync/);
+  assert.match(geofenceSource, /stopGeofencingAsync/);
 
   const migrationSource = fs.readFileSync(
     path.join(

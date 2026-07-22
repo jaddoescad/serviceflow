@@ -6,6 +6,10 @@ export async function notifyArrival() {
   return false;
 }
 
+export async function cancelActiveShiftReminders() {}
+
+export async function ensureActiveShiftReminders() {}
+
 export async function requestNotificationPermissions() {
   return false;
 }

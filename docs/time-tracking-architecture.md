@@ -32,13 +32,16 @@
    record, which distinguishes a deliberate edit from a stale retry.
 9. The app clears a local active session when Supabase already has the same
    session completed.
-10. An unchanged geofence region set is never re-registered.
+10. The app never registers job-site geofences; an upgrade cleanup removes any
+    regions left by older releases.
 11. An employee can have at most one active server entry.
-12. GPS/geofence observations can update only location evidence; their RPC has
+12. GPS observations can update only location evidence; their RPC has
     no lifecycle columns in its update surface.
 13. The command-based client never performs direct `INSERT`, `UPDATE`, or
     `DELETE` calls on `time_entries`; employee edits go through an ownership-
     checked, audited RPC.
+14. Long-shift reminders exist only while a local shift is active; hydration and
+    project switches reconcile them, and clock-out cancels them.
 
 ## Clock-out order
 
@@ -50,7 +53,7 @@
 4. Atomically clear and tombstone the local active session.
 5. Update React state and complete the Supabase row only if it is still active.
 6. Use the row already in Supabase if another completion won.
-7. Record terminal tracking status, remove geofences, and flush pending location data.
+7. Record terminal tracking status and flush pending location data.
 
 This order obtains the best available end-of-shift evidence without allowing a
 stale point to masquerade as the clock-out location. The foreground lock,

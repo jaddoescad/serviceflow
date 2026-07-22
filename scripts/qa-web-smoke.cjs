@@ -114,9 +114,6 @@ async function runAuthenticatedChecks(page) {
     /Clock In/i,
     /Projects/i,
     /Timesheet/i,
-    /Set location to Always/i,
-    /Turn on location/i,
-    /Checking access/i,
   ], 30_000);
 
   addResult(
@@ -125,19 +122,6 @@ async function runAuthenticatedChecks(page) {
     reachedApp ? "QA user reached an app state." : "QA user did not leave the login flow.",
   );
   await screenshot(page, "after-login");
-
-  if (await textVisible(page, "Skip for now (dev only)")) {
-    await clickText(page, "Skip for now (dev only)");
-    await page.waitForTimeout(500);
-    addResult("location dev bypass", "passed", "Dev-only blocker bypass was available and clicked.");
-  } else if (await textVisible(page, "Set location to Always") || await textVisible(page, "Turn on location")) {
-    addResult(
-      "location gate",
-      "passed",
-      "Authenticated session correctly stopped at the location permission gate.",
-    );
-    return;
-  }
 
   await expectVisible(page, "Clock In", "clock tab");
   await expectVisible(page, "Projects", "projects tab");
@@ -159,7 +143,7 @@ async function runAuthenticatedChecks(page) {
   await screenshot(page, "more-tab");
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  const sessionPersisted = await waitForAnyText(page, [/Clock In/i, /Set location to Always/i, /Turn on location/i], 20_000);
+  const sessionPersisted = await waitForAnyText(page, [/Clock In/i, /Projects/i], 20_000);
   addResult(
     "session persistence",
     sessionPersisted ? "passed" : "failed",

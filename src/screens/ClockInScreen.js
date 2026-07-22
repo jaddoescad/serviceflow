@@ -15,11 +15,11 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useProjectBudgetProgress } from "../lib/projectBudget";
 import ActiveClockInBody from "./clock-in/ActiveClockInBody";
 import { getLatestActiveCompanyCamProject, getProjectId, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
+import { useProjectLabourTasks } from "../lib/useProjectLabourTasks";
 import ClockInMap, {
   findNearestProject,
   formatProjectAddress as formatAddress,
@@ -47,13 +47,12 @@ function formatSignedMinutes(minutes) {
 
 export default function ClockInScreen({
   enabled = true,
+  user,
   painterName = "Painter",
   onViewProject,
   activeShift,
   activeElapsedMs = 0,
   todayWorkedMs = 0,
-  projectTimeTotals = {},
-  canViewTeamTime = false,
   locationStatus,
   trackingNotice,
   trackingPermissions,
@@ -138,22 +137,10 @@ export default function ClockInScreen({
   const displayProject = activeShift?.project || selectedProject || nearestWithinRadius || defaultProject;
   const displayClockedInAt = activeShift?.startedAt ? new Date(activeShift.startedAt) : null;
   const isClockedIn = !!activeShift;
-  const budgetProjects = useMemo(
-    () => (isClockedIn && displayProject ? [displayProject] : []),
-    [displayProject, isClockedIn],
-  );
-  const {
-    progressByProjectId,
-    error: budgetProgressError,
-    refresh: refreshBudgetProgress,
-  } = useProjectBudgetProgress(budgetProjects, { enabled: enabled && isClockedIn });
-  const budgetProgress =
-    progressByProjectId[getProjectId(displayProject)] ||
-    (budgetProgressError ? { status: "unavailable" } : null);
-  const projectHoursUsed = projectTimeTotals?.[getProjectId(displayProject)] || "0h 0m";
-  const projectHoursLabel = canViewTeamTime
-    ? "Team hours · This job"
-    : "Your hours · This job";
+  const labourTasks = useProjectLabourTasks(getProjectId(displayProject), {
+    enabled: enabled && isClockedIn,
+    userId: user?.id || null,
+  });
 
   const address = useMemo(() => {
     return formatAddress(displayProject);
@@ -322,7 +309,6 @@ export default function ClockInScreen({
         setSearchQuery("");
         setSearchResults([]);
         setSearchError("");
-        await refreshBudgetProgress();
       }
     } catch (nextError) {
       setClockInError(nextError?.message || "Switch could not complete. Try again.");
@@ -349,7 +335,6 @@ export default function ClockInScreen({
         adjustmentSource: "active_start_edit",
         skipAdjustmentHistory: true,
       });
-      await refreshBudgetProgress();
     } catch (nextError) {
       setClockInError(nextError?.message || "Could not adjust start time. Try again.");
     } finally {
@@ -366,13 +351,11 @@ export default function ClockInScreen({
         <ActiveClockInView
           project={displayProject}
           address={address}
-          workedSinceClockIn={workedSinceClockIn}
-          projectHoursUsed={projectHoursUsed}
-          projectHoursLabel={projectHoursLabel}
+          activeShift={activeShift}
+          labourTasks={labourTasks}
           activeTimer={activeTimer}
           startTimeLabel={startTimeLabel}
           adjustmentSummary={adjustmentSummary}
-          budgetProgress={budgetProgress}
           trackingNotice={trackingNotice}
           locationStatus={locationStatus}
           suggestedProject={suggestedProject}
@@ -714,13 +697,11 @@ function ActiveClockInView({
   painterName,
   project,
   address,
-  workedSinceClockIn,
-  projectHoursUsed,
-  projectHoursLabel,
+  activeShift,
+  labourTasks,
   activeTimer,
   startTimeLabel,
   adjustmentSummary,
-  budgetProgress,
   trackingNotice,
   locationStatus,
   suggestedProject,
@@ -749,13 +730,11 @@ function ActiveClockInView({
         painterName={painterName}
         project={project}
         address={address}
-        workedSinceClockIn={workedSinceClockIn}
-        projectHoursUsed={projectHoursUsed}
-        projectHoursLabel={projectHoursLabel}
+        activeShift={activeShift}
+        labourTasks={labourTasks}
         activeTimer={activeTimer}
         startTimeLabel={startTimeLabel}
         adjustmentSummary={adjustmentSummary}
-        budgetProgress={budgetProgress}
         statusMessage={statusMessage}
         offSite={locationStatus?.onSite === false}
         suggestedProject={suggestedProject}

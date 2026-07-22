@@ -78,9 +78,9 @@ Deno.serve(async (req) => {
         managerTokens.map((tokenRow) => ({
           to: tokenRow.expo_push_token,
           sound: "default",
-          title: `${entry.user_name || "Painter"} location is stale`,
-          body: `No expected location update for ${staleWindowLabel(statusByUser.get(entry.user_id)?.tracking_mode)} while clocked in to ${entry.project_name || "a job"}.`,
-          data: { type: "stale_location", userId: entry.user_id, timeEntryId: entry.id },
+          title: `${entry.user_name || "Painter"} tracking was interrupted`,
+          body: `No work-location update for ${staleWindowLabel(statusByUser.get(entry.user_id)?.tracking_mode)} while clocked in to ${entry.project_name || "a job"}. Ask them to reopen ServiceFlow.`,
+          data: { type: "tracking_interrupted", userId: entry.user_id, timeEntryId: entry.id },
         })),
       );
       for (const batch of chunk(messages, BATCH_SIZE)) {
@@ -130,7 +130,7 @@ async function fetchActiveEntries(supabase: ServiceClient) {
 async function fetchStatuses(supabase: ServiceClient) {
   const { data, error } = await supabase
     .from("employee_tracking_status")
-    .select("user_id,last_location_at,tracking_mode");
+    .select("user_id,last_location_at,tracking_mode,task_status,platform");
   if (error) throw new Error(error.message);
   return data || [];
 }

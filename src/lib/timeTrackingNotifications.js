@@ -13,6 +13,11 @@ const CLOCK_OUT_NOTIFICATION_ACTION = "clock_out";
 const SWITCH_PROJECT_NOTIFICATION_ACTION = "switch_project";
 const CLOCK_IN_NOTIFICATION_ACTION = "clock_in";
 const NOTIFICATION_COOLDOWN_MS = 10 * 60 * 1000;
+const ACTIVE_SHIFT_REMINDERS = [
+  { identifier: "serviceflow-active-shift-8h", hours: 8 },
+  { identifier: "serviceflow-active-shift-10h", hours: 10 },
+];
+const HOUR_MS = 60 * 60 * 1000;
 
 // Expo suppresses notifications received while the app is foregrounded unless
 // a handler explicitly opts into presenting them. Keep foreground behavior
@@ -86,6 +91,65 @@ export async function notifyArrival(project) {
     return true;
   } catch (_error) {
     return false;
+  }
+}
+
+export async function cancelActiveShiftReminders() {
+  if (Platform.OS === "web") return;
+
+  await Promise.all(
+    ACTIVE_SHIFT_REMINDERS.map(({ identifier }) =>
+      Notifications.cancelScheduledNotificationAsync(identifier).catch(() => {}),
+    ),
+  );
+}
+
+export async function ensureActiveShiftReminders(shift) {
+  if (Platform.OS === "web" || !shift?.localId) return;
+
+  const startedAt = Date.parse(shift.originalStartedAt || shift.startedAt);
+  if (!Number.isFinite(startedAt)) return;
+
+  try {
+    // Fixed identifiers make this a reconciliation step: a project switch or
+    // newly hydrated shift replaces reminders for the previous active shift.
+    await cancelActiveShiftReminders();
+
+    const now = Date.now();
+    const overdueReminder = [...ACTIVE_SHIFT_REMINDERS]
+      .reverse()
+      .find(({ hours }) => startedAt + hours * HOUR_MS <= now);
+
+    await Promise.all(
+      ACTIVE_SHIFT_REMINDERS.map(async ({ identifier, hours }) => {
+        const target = startedAt + hours * HOUR_MS;
+        if (target <= now && identifier !== overdueReminder?.identifier) return;
+
+        await Notifications.scheduleNotificationAsync({
+          identifier,
+          content: {
+            title: "Still clocked in?",
+            body: `Your shift at ${shift.project?.name || "your job"} has been running for ${hours} hours. Clock out if you are finished.`,
+            sound: true,
+            categoryIdentifier: CLOCK_OUT_NOTIFICATION_CATEGORY,
+            data: {
+              type: "active_shift_reminder",
+              hours,
+              shiftLocalId: shift.localId,
+              activeProjectId: shift.project?.companycam_id || null,
+            },
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: target <= now ? 60 : Math.max(60, Math.ceil((target - now) / 1000)),
+            repeats: false,
+          },
+        });
+      }),
+    );
+  } catch (_error) {
+    // Reminders are a convenience; clock-in and tracking must remain usable
+    // when notifications are denied or unavailable.
   }
 }
 
@@ -193,6 +257,12 @@ function processNotificationResponse(response, handlers) {
     setTrackingNotice?.({
       type: "clock_out",
       message: "You may be away from this job. Clock out if you are done.",
+      createdAt: new Date().toISOString(),
+    });
+  } else if (data.type === "active_shift_reminder") {
+    setTrackingNotice?.({
+      type: "clock_out",
+      message: `You are still clocked in${data.hours ? ` after ${data.hours} hours` : ""}. Clock out if you are finished.`,
       createdAt: new Date().toISOString(),
     });
   }
