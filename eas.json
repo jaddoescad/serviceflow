@@ -9,9 +9,11 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "preview"
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true,
       "android": {
         "credentialsSource": "local"
@@ -25,6 +27,9 @@
     "production": {
       "android": {
         "track": "alpha"
+      },
+      "ios": {
+        "ascAppId": "6787451069"
       }
     }
   }

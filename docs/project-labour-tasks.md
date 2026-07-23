@@ -55,6 +55,39 @@ idempotent after a response is lost.
 Permanent authorization, validation, and schema errors are not queued. The last
 successful task list remains visible with an actionable error message.
 
+## Over-budget reasons
+
+Stopping an individual task timer prompts the painter for a reason only when the
+task has a positive hour budget and its displayed aggregate team time is over
+that budget. Sub-minute timer precision that still displays at or under the
+budget does not trigger the prompt.
+Submitting or skipping records a device-local marker for the signed-in painter,
+task, and budget revision, so the prompt appears at most once for that revision.
+The marker is intentionally device-local; reinstalling the app or using another
+device may show the prompt again. Whole-shift clock-out does not show the prompt.
+
+Submitted answers use the same offline write queue as task timers. The backend
+stores the reason, optional note, hours over, and budget revision in
+`project_labour_task_over_budget_reasons`. Its `task_id` is resolved from the
+current versioned task row to the permanent `project_labour_task_progress`
+identity, so reporting remains attached to the same job item after a calculator
+republish. RLS permits painters to insert and read only their own answers for
+assigned jobs; active managers and admins can read all answers. Answers are
+append-only.
+
+Device QA checklist:
+
+- Stop an under-budget task and confirm no prompt appears.
+- Stop an over-budget task and submit a reason.
+- Select **Something else** and confirm Send stays disabled until a note is
+  entered.
+- Skip once, restart and stop the same task, and confirm the same budget
+  revision does not prompt again.
+- Submit while in airplane mode, confirm the saved-on-device notice appears,
+  reconnect, and confirm the answer reaches the backend.
+- On a second device, confirm the prompt may appear again because the
+  de-duplication marker is local to each installation.
+
 ## Backend boundary
 
 The mobile app uses the painter-safe functions and tables created by
@@ -66,6 +99,7 @@ atomic wrapper in `20260721220000_sync_calculator_job_amount.sql`:
 - `set_project_labour_task_status(uuid, text)`
 - `project_labour_task_progress`
 - `project_labour_task_time_entries`
+- `project_labour_task_over_budget_reasons`
 - `set_project_labour_task_budget_hours(text, uuid, numeric)` (manager-only;
   `null` resets the task)
 

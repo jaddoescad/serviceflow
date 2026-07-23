@@ -5,6 +5,20 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function hoursAtDisplayPrecision(value) {
+  const hours = Math.max(0, finiteNumber(value));
+  if (hours < 1) return Math.round(hours * 60) / 60;
+  return Number(hours.toFixed(1));
+}
+
+export function isLabourTaskVisiblyOverBudget(spentHours, budgetedHours) {
+  const budgeted = Math.max(0, finiteNumber(budgetedHours));
+  return (
+    budgeted > 0 &&
+    hoursAtDisplayPrecision(spentHours) > hoursAtDisplayPrecision(budgeted)
+  );
+}
+
 export function normalizeProjectLabourBudget(row) {
   if (!row) return null;
   const id = row.labour_budget_id || row.id || null;
@@ -55,6 +69,7 @@ export function normalizeProjectLabourTask(row) {
     budgetedHours: Math.max(0, finiteNumber(row.task_budgeted_hours ?? row.budgeted_hours)),
     hoursSpent: Math.max(0, finiteNumber(row.hours_spent)),
     status: TASK_STATUSES.has(status) ? status : "pending",
+    completedAt: row.completed_at || null,
     sortOrder: Math.round(finiteNumber(row.sort_order)),
     metadata:
       row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)

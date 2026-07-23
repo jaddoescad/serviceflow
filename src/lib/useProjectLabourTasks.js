@@ -8,9 +8,14 @@ import {
   setProjectLabourTaskStatus,
   startProjectLabourTaskTimer,
   stopActiveProjectLabourTaskTimer,
+  submitOverBudgetReason as persistOverBudgetReason,
   subscribeToProjectLabourTaskChanges,
   writeCachedProjectLabourTasks,
 } from "./projectLabourTasks";
+import {
+  hasAnsweredLabourTaskOverBudgetReason,
+  markLabourTaskOverBudgetReasonAnswered,
+} from "./timeTrackingStorage";
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -152,10 +157,19 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
     async (taskId, status) =>
       runTaskAction(taskId, async () => {
         const previous = planRef.current;
+        // Discard any in-flight background refresh so a stale response cannot
+        // overwrite the optimistic checkbox state (visible as a flicker).
+        requestIdRef.current += 1;
         persistPlan((current) => ({
           ...current,
           tasks: current.tasks.map((task) =>
-            task.id === taskId ? { ...task, status } : task,
+            task.id === taskId
+              ? {
+                  ...task,
+                  status,
+                  completedAt: status === "completed" ? new Date().toISOString() : null,
+                }
+              : task,
           ),
         }));
         const result = await setProjectLabourTaskStatus(taskId, status, { userId });
@@ -166,10 +180,11 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
           setError(friendlyTaskError(result.error));
         } else {
           setError("");
+          await refresh({ silent: true });
         }
         return result;
       }),
-    [persistPlan, runTaskAction, userId],
+    [persistPlan, refresh, runTaskAction, userId],
   );
 
   const startTimer = useCallback(
@@ -179,6 +194,7 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
         const startedAt = new Date().toISOString();
         const startedAtMs = new Date(startedAt).getTime();
         const previous = planRef.current;
+        requestIdRef.current += 1;
         persistPlan((current) => ({
           ...current,
           fetchedAt: startedAtMs,
@@ -228,6 +244,7 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
         const endedAt = new Date().toISOString();
         const endedAtMs = new Date(endedAt).getTime();
         const previous = planRef.current;
+        requestIdRef.current += 1;
         persistPlan((current) => ({
           ...current,
           fetchedAt: endedAtMs,
@@ -281,6 +298,7 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
         );
         const deltaHours = (Math.max(0, minutes) * 60_000 - oldMs) / 3_600_000;
         const previous = planRef.current;
+        requestIdRef.current += 1;
         persistPlan((current) => ({
           ...current,
           tasks: current.tasks.map((task) =>
@@ -309,6 +327,65 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
     [persistPlan, refresh, runTaskAction, userId],
   );
 
+  const hasAnsweredOverBudgetReason = useCallback(
+    (task) =>
+      hasAnsweredLabourTaskOverBudgetReason(
+        userId,
+        task?.id,
+        planRef.current.budget?.revision,
+      ),
+    [userId],
+  );
+
+  const markOverBudgetReasonAnswered = useCallback(
+    (task) =>
+      markLabourTaskOverBudgetReasonAnswered(
+        userId,
+        task?.id,
+        planRef.current.budget?.revision,
+      ),
+    [userId],
+  );
+
+  const submitOverBudgetReason = useCallback(
+    async (task, { reason, note = null, hoursOver = 0 } = {}) => {
+      if (!userId || !task?.id) {
+        const result = {
+          error: new Error("A task and signed-in painter are required."),
+          queued: false,
+        };
+        setError(friendlyTaskError(result.error));
+        return result;
+      }
+
+      const result = await persistOverBudgetReason({
+        taskId: task.id,
+        userId,
+        reason,
+        note,
+        hoursOver,
+        budgetRevision: planRef.current.budget?.revision ?? null,
+      });
+      await markOverBudgetReasonAnswered(task);
+      if (result.queued) {
+        setSyncNotice(
+          "Thanks — your note is saved on this device. It will sync when ServiceFlow reconnects.",
+        );
+      } else if (result.error) {
+        setError(friendlyTaskError(result.error));
+      } else {
+        setError("");
+      }
+      return result;
+    },
+    [markOverBudgetReasonAnswered, userId],
+  );
+
+  const skipOverBudgetReason = useCallback(
+    (task) => markOverBudgetReasonAnswered(task),
+    [markOverBudgetReasonAnswered],
+  );
+
   const toggleCompleted = useCallback(
     async (task) => {
       if (task.myActiveStartedAt) await stopTimer(task.id);
@@ -330,6 +407,9 @@ export function useProjectLabourTasks(projectId, { enabled = true, userId = null
     stopTimer,
     fetchLastSession,
     adjustSession,
+    hasAnsweredOverBudgetReason,
+    submitOverBudgetReason,
+    skipOverBudgetReason,
     toggleCompleted,
   };
 }

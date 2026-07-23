@@ -77,16 +77,18 @@ export default function ActiveClockInBody({
       </View>
 
       <View style={styles.card}>
-        {statusMessage ? (
-          <View style={styles.locationRow}>
-            <Ionicons
-              name={offSite ? "warning-outline" : "navigate-outline"}
-              size={15}
-              color={offSite ? "#b56025" : TEAL}
-            />
-            <Text style={styles.locationText} numberOfLines={2}>{statusMessage}</Text>
-          </View>
-        ) : null}
+        <View style={styles.locationRow}>
+          {statusMessage ? (
+            <>
+              <Ionicons
+                name={offSite ? "warning-outline" : "navigate-outline"}
+                size={15}
+                color={offSite ? "#b56025" : TEAL}
+              />
+              <Text style={styles.locationText} numberOfLines={2}>{statusMessage}</Text>
+            </>
+          ) : null}
+        </View>
 
         {suggestedProject ? (
           <Pressable
@@ -208,6 +210,7 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
     marginTop: 8,
+    minHeight: 20,
   },
   locationText: { color: "#4c5a56", fontSize: 12.5, fontWeight: "600", flexShrink: 1 },
   switchChip: {

@@ -16,6 +16,13 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ActiveClockInBody from "./clock-in/ActiveClockInBody";
+import OverBudgetReasonSheet from "../components/OverBudgetReasonSheet";
+import {
+  evaluateJobOverBudget,
+  hasAnsweredJobOverBudgetReason,
+  markJobOverBudgetReasonAnswered,
+  submitJobOverBudgetReason,
+} from "../lib/jobOverBudget";
 import { getLatestActiveCompanyCamProject, getProjectId, searchActiveCompanyCamProjects } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
@@ -75,6 +82,7 @@ export default function ClockInScreen({
   const [foregroundPoint, setForegroundPoint] = useState(null);
   const [clockingIn, setClockingIn] = useState(false);
   const [clockingOut, setClockingOut] = useState(false);
+  const [jobReasonPrompt, setJobReasonPrompt] = useState(null);
   const [switching, setSwitching] = useState(false);
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
   const [adjustingStart, setAdjustingStart] = useState(false);
@@ -259,19 +267,62 @@ export default function ClockInScreen({
     }
   };
 
+  const maybePromptJobOverBudget = async (project) => {
+    try {
+      const projectId = getProjectId(project);
+      if (!projectId || !user?.id) return;
+      if (await hasAnsweredJobOverBudgetReason(user.id, projectId)) return;
+      const { over, hoursOver } = await evaluateJobOverBudget(projectId);
+      if (over) setJobReasonPrompt({ project, projectId, hoursOver });
+    } catch (_error) {
+      // The reason prompt is best effort; clock-out already succeeded.
+    }
+  };
+
   const stopClockIn = async () => {
     if (clockingOut) return;
+    const project = displayProject;
     setClockingOut(true);
     setClockInError("");
+    // Open the job page first so the map never flashes while the shift ends.
+    // On failure the job page still shows the live shift and its own
+    // Clock Out button, so the state stays coherent.
+    if (project) onViewProject?.(project);
     try {
       const entry = await onClockOut?.("manual");
-      if (!entry) setClockInError("Clock out could not complete. Try again.");
+      if (!entry) {
+        setClockInError("Clock out could not complete. Try again.");
+        return;
+      }
+      if (project) maybePromptJobOverBudget(project);
     } catch (nextError) {
       setClockInError(nextError?.message || "Clock out could not complete. Try again.");
     } finally {
       setClockingOut(false);
     }
   };
+
+  const jobReasonSheet = jobReasonPrompt ? (
+    <OverBudgetReasonSheet
+      task={{ title: jobReasonPrompt.project?.name || jobReasonPrompt.project?.title || "This job" }}
+      hoursOver={jobReasonPrompt.hoursOver}
+      onSubmit={async ({ reason, note }) => {
+        await submitJobOverBudgetReason({
+          projectId: jobReasonPrompt.projectId,
+          userId: user?.id,
+          reason,
+          note,
+          hoursOver: jobReasonPrompt.hoursOver,
+        });
+        await markJobOverBudgetReasonAnswered(user?.id, jobReasonPrompt.projectId);
+        setJobReasonPrompt(null);
+      }}
+      onSkip={async () => {
+        await markJobOverBudgetReasonAnswered(user?.id, jobReasonPrompt.projectId);
+        setJobReasonPrompt(null);
+      }}
+    />
+  ) : null;
 
   const closeProjectSwitcher = () => {
     if (switching) return;
@@ -370,6 +421,7 @@ export default function ClockInScreen({
           onClockOut={stopClockIn}
           onViewProject={displayProject ? () => onViewProject?.(displayProject) : null}
         />
+        {jobReasonSheet}
         <ProjectSwitcherModal
           visible={projectSwitcherOpen}
           currentProject={displayProject}
@@ -543,6 +595,7 @@ export default function ClockInScreen({
           </Pressable>
         </View>
       </View>
+      {jobReasonSheet}
     </View>
   );
 }

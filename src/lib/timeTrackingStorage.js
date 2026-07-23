@@ -23,6 +23,8 @@ const LAST_NOTIFICATION_RESPONSE_KEY = "ottawaPainters.lastHandledNotification.v
 const LOCATION_QUEUE_KEY = "ottawaPainters.locationPointQueue.v1";
 const TRACKING_STATUS_KEY = "ottawaPainters.pendingTrackingStatus.v1";
 const TRACKING_RUNTIME_KEY = "ottawaPainters.trackingRuntime.v1";
+const OVER_BUDGET_REASON_ANSWERED_PREFIX =
+  "ottawaPainters.labourTaskOverBudgetReasonAnswered.v1";
 const MAX_LOCATION_QUEUE_SIZE = 2000;
 
 let locationQueueMutation = Promise.resolve();
@@ -34,6 +36,48 @@ function parseJson(value, fallback) {
     return value ? JSON.parse(value) : fallback;
   } catch (_error) {
     return fallback;
+  }
+}
+
+function overBudgetReasonAnsweredKey(userId, taskId, budgetRevision) {
+  if (!userId || !taskId) return null;
+  const hasBudgetRevision =
+    budgetRevision !== null && budgetRevision !== undefined && budgetRevision !== "";
+  const numericRevision = Number(budgetRevision);
+  const revision =
+    hasBudgetRevision && Number.isInteger(numericRevision)
+      ? numericRevision
+      : "unpublished";
+  return `${OVER_BUDGET_REASON_ANSWERED_PREFIX}:${String(userId)}:${String(taskId)}:${revision}`;
+}
+
+export async function hasAnsweredLabourTaskOverBudgetReason(
+  userId,
+  taskId,
+  budgetRevision,
+) {
+  const key = overBudgetReasonAnsweredKey(userId, taskId, budgetRevision);
+  if (!key) return false;
+  try {
+    return Boolean(await AsyncStorage.getItem(key));
+  } catch (_error) {
+    return false;
+  }
+}
+
+export async function markLabourTaskOverBudgetReasonAnswered(
+  userId,
+  taskId,
+  budgetRevision,
+) {
+  const key = overBudgetReasonAnsweredKey(userId, taskId, budgetRevision);
+  if (!key) return false;
+  try {
+    await AsyncStorage.setItem(key, new Date().toISOString());
+    return true;
+  } catch (_error) {
+    // Prompt de-duplication is best effort and must not block stopping a timer.
+    return false;
   }
 }
 

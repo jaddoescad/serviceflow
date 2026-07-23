@@ -110,5 +110,22 @@ target 'OttawaPainters' do
         phase.shell_script = '/bin/bash "$PODS_TARGET_SRCROOT/../scripts/get-app-config-ios.sh"'
       end
     end
+
+    # expo-updates invokes its resource script through `bash -c`, which splits
+    # project paths containing spaces. Pass a stable project root directly so
+    # local Release builds work from this repository's directory.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'EXUpdates'
+
+      target.shell_script_build_phases.each do |phase|
+        next unless phase.name == '[CP-User] Generate updates resources for expo-updates'
+
+        phase.shell_script = <<~SCRIPT
+          export PROJECT_ROOT="$PODS_ROOT/../.."
+          export PROJECT_DIR="Pods"
+          /bin/bash "$PODS_TARGET_SRCROOT/../scripts/create-updates-resources-ios.sh"
+        SCRIPT
+      end
+    end
   end
 end

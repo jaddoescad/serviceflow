@@ -5,9 +5,17 @@ import { supabase } from "./supabase";
 const CACHE_PREFIX = "ottawaPainters.projectLabourTasks.v1";
 const WRITE_QUEUE_KEY = "ottawaPainters.projectLabourTaskWrites.v1";
 const TIMER_TABLE = "project_labour_task_time_entries";
+const REASON_TABLE = "project_labour_task_over_budget_reasons";
 const LIVE_STATE_TABLE = "project_labour_task_live_state";
 const LIVE_TASKS_RPC = "list_project_labour_tasks_live";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OVER_BUDGET_REASON_KEYS = new Set([
+  "budget_unrealistic",
+  "extra_prep",
+  "moving_furniture",
+  "waiting",
+  "other",
+]);
 let queueMutation = Promise.resolve();
 let flushMutation = null;
 let timerMutation = Promise.resolve();
@@ -164,6 +172,41 @@ export async function startProjectLabourTaskTimer({
   });
 }
 
+export async function submitOverBudgetReason({
+  taskId,
+  userId,
+  reason,
+  note = null,
+  hoursOver = 0,
+  budgetRevision = null,
+  clientId = operationId("obr"),
+}) {
+  const normalizedNote = typeof note === "string" ? note.trim() || null : null;
+  const hasBudgetRevision =
+    budgetRevision !== null && budgetRevision !== undefined && budgetRevision !== "";
+  const numericRevision = Number(budgetRevision);
+  const operation = {
+    id: operationId("over-budget-reason"),
+    action: "over_budget_reason",
+    clientId: String(clientId || ""),
+    taskId: String(taskId || ""),
+    userId: String(userId || ""),
+    reason: String(reason || ""),
+    note: normalizedNote,
+    hoursOver: Math.max(0, Number(hoursOver) || 0),
+    budgetRevision:
+      hasBudgetRevision && Number.isInteger(numericRevision) ? numericRevision : null,
+    createdAt: new Date().toISOString(),
+  };
+  const result = await executeTaskOperation(operation);
+  if (!result.error) return { ...result, queued: false, clientId: operation.clientId };
+  if (!shouldQueueTaskOperation(result.error)) {
+    return { ...result, queued: false, clientId: operation.clientId };
+  }
+  await enqueueTaskOperation(operation);
+  return { ...result, queued: true, clientId: operation.clientId };
+}
+
 export async function stopActiveProjectLabourTaskTimer({
   userId,
   endedAt = new Date().toISOString(),
@@ -271,6 +314,44 @@ async function executeTaskOperation(operation) {
       requested_status: operation.status,
     });
     return { data: Array.isArray(data) ? data[0] || null : data, error };
+  }
+
+  if (operation.action === "over_budget_reason") {
+    if (
+      !operation.taskId ||
+      !operation.userId ||
+      !operation.clientId ||
+      !OVER_BUDGET_REASON_KEYS.has(operation.reason)
+    ) {
+      return {
+        data: null,
+        error: new Error("A task, signed-in painter, and valid reason are required."),
+      };
+    }
+    if (operation.note && operation.note.length > 280) {
+      return { data: null, error: new Error("The over-budget note is too long.") };
+    }
+
+    const inserted = await supabase
+      .from(REASON_TABLE)
+      .insert({
+        client_id: operation.clientId,
+        task_id: operation.taskId,
+        user_id: operation.userId,
+        reason: operation.reason,
+        note: operation.note || null,
+        hours_over: Math.max(0, Number(operation.hoursOver) || 0),
+        budget_revision: operation.budgetRevision ?? null,
+        created_at: operation.createdAt,
+      })
+      .select(
+        "id,client_id,task_id,user_id,reason,note,hours_over,budget_revision,created_at",
+      )
+      .single();
+    if (inserted.error?.code === "23505") {
+      return { data: null, error: null };
+    }
+    return { data: inserted.data || null, error: inserted.error };
   }
 
   if (operation.action === "timer_stop") {

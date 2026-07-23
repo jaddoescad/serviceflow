@@ -182,16 +182,63 @@ export function BudgetHoursPanel({
         )}
       </View>
 
-      {breakdown.tracked ? (
+      {breakdown.tracked || breakdown.presentation.status === "loading" ? (
         <>
           <Tank progress={progress} zone={zone} />
           <Text style={styles.panelFootnote}>
-            {breakdown.totalLabel
-              ? `${breakdown.totalLabel} expected total · ${breakdown.presentation.percentLabel} used`
-              : `${breakdown.presentation.percentLabel} of the labour budget used`}
+            {breakdown.presentation.status === "loading"
+              ? "Loading budget…"
+              : breakdown.totalLabel
+                ? `${breakdown.totalLabel} expected total · ${breakdown.presentation.percentLabel} used`
+                : `${breakdown.presentation.percentLabel} of the labour budget used`}
           </Text>
         </>
       ) : null}
+    </View>
+  );
+}
+
+// Compact hours story for embedding in other cards (e.g. the tasks panel):
+// used vs left, the segmented burn tank, and the percent footnote.
+export function BudgetBurnMeter({ progress, style }) {
+  const breakdown = getBudgetHoursBreakdown(progress);
+  const zone = getBurnZone(Number(progress?.percentUsed));
+
+  // While the budget is loading, hold the meter's full space with an empty
+  // tank so the checklist below never jumps when the numbers arrive.
+  if (!progress) {
+    return (
+      <View style={style}>
+        <View style={styles.meterRow}>
+          <Text style={styles.meterUsed}>–</Text>
+          <Text style={styles.meterCaption}> used</Text>
+        </View>
+        <Tank progress={null} zone={zone} />
+        <Text style={styles.panelFootnote}>Loading budget…</Text>
+      </View>
+    );
+  }
+  if (!breakdown.tracked) return null;
+
+  return (
+    <View style={style}>
+      <View style={styles.meterRow}>
+        <Text style={styles.meterUsed}>{breakdown.usedLabel || "0h"}</Text>
+        <Text style={styles.meterCaption}> used</Text>
+        {breakdown.derivable ? (
+          <Text style={[styles.meterLeft, { color: zone.color }]}>
+            {breakdown.over
+              ? `${breakdown.leftLabel} over budget`
+              : `${breakdown.leftLabel} left`}
+          </Text>
+        ) : null}
+      </View>
+      <Tank progress={progress} zone={zone} />
+      <Text style={styles.panelFootnote}>
+        {breakdown.totalLabel
+          ? `${breakdown.totalLabel} expected total · ${breakdown.presentation.percentLabel} used`
+          : `${breakdown.presentation.percentLabel} of the labour budget used`}
+      </Text>
     </View>
   );
 }
@@ -231,6 +278,30 @@ export function BudgetProgressBadge({ progress, dark = false }) {
 }
 
 const styles = StyleSheet.create({
+  meterRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginBottom: 8,
+  },
+  meterUsed: {
+    color: "#11201d",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: -0.4,
+    fontVariant: ["tabular-nums"],
+  },
+  meterCaption: {
+    color: "#8b9692",
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+  meterLeft: {
+    flex: 1,
+    textAlign: "right",
+    fontSize: 12.5,
+    fontWeight: "900",
+    fontVariant: ["tabular-nums"],
+  },
   track: {
     height: 9,
     borderRadius: 999,

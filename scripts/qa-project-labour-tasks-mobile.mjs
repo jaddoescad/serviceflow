@@ -66,6 +66,15 @@ assert.equal(plan.tasks[0].budgetedHours, 4.25);
 assert.equal(plan.tasks[1].status, "completed");
 assert.equal(plan.tasks[0].activePainters[0].displayName, "Pat Painter");
 assert.deepEqual(plan.tasks[1].activePainters, []);
+assert.equal(
+  model.isLabourTaskVisiblyOverBudget(1.001, 1),
+  false,
+  "sub-display-precision timer drift must not trigger an over-budget prompt",
+);
+assert.equal(model.isLabourTaskVisiblyOverBudget(1.06, 1), true);
+assert.equal(model.isLabourTaskVisiblyOverBudget(0.501, 0.5), false);
+assert.equal(model.isLabourTaskVisiblyOverBudget(0.51, 0.5), true);
+assert.equal(model.isLabourTaskVisiblyOverBudget(5, 0), false);
 
 const summary = model.projectLabourTaskSummary(
   plan,

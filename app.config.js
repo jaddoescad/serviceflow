@@ -31,7 +31,6 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ottawapainters.app",
-      buildNumber: "15",
       config: googleMapsApiKeyIos
         ? {
             googleMapsApiKey: googleMapsApiKeyIos
@@ -46,7 +45,7 @@ module.exports = {
     },
     android: {
       package: "com.ottawapainters.app",
-      versionCode: 19,
+      versionCode: 24,
       googleServicesFile: "./android/app/google-services.json",
       adaptiveIcon: {
         foregroundImage: "./assets/serviceflow-adaptive-icon.png",
@@ -67,7 +66,11 @@ module.exports = {
         "POST_NOTIFICATIONS"
       ]
     },
+    // Bare native projects require a literal OTA runtime version. Increment
+    // this whenever a release changes native code or native dependencies.
+    runtimeVersion: "1.1.0",
     updates: {
+      url: `https://u.expo.dev/${easProjectId}`,
       fallbackToCacheTimeout: 0
     },
     assetBundlePatterns: ["**/*"],

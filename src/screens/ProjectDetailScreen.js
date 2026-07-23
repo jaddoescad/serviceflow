@@ -26,6 +26,15 @@ import {
 import { supabase } from '../lib/supabase';
 import { buildPainterClockInSummaries } from '../lib/projectClockInSummary';
 import { buildProjectClockInDays } from '../lib/timeTracking';
+import ProjectLabourTasksPanel from '../components/ProjectLabourTasksPanel';
+import OverBudgetReasonSheet from '../components/OverBudgetReasonSheet';
+import { useProjectLabourTasks } from '../lib/useProjectLabourTasks';
+import {
+  evaluateJobOverBudget,
+  hasAnsweredJobOverBudgetReason,
+  markJobOverBudgetReasonAnswered,
+  submitJobOverBudgetReason,
+} from '../lib/jobOverBudget';
 
 const BRAND = '#2b8496';
 const NAVY = '#31495d';
@@ -904,6 +913,7 @@ export default function ProjectDetailScreen({
   entries = [],
   activeShift,
   activeElapsedMs = 0,
+  clockOutPending = false,
   trackingNotice,
   projects = [],
   user,
@@ -924,6 +934,7 @@ export default function ProjectDetailScreen({
   const [photosLoaded, setPhotosLoaded] = useState(false);
   const [photosError, setPhotosError] = useState('');
   const [clockActionPending, setClockActionPending] = useState(false);
+  const [jobReasonPrompt, setJobReasonPrompt] = useState(null);
   const [clockActionError, setClockActionError] = useState('');
   const [liveNowMs, setLiveNowMs] = useState(Date.now);
   const hasActiveProjectEntry = useMemo(
@@ -951,6 +962,10 @@ export default function ProjectDetailScreen({
 
   const title = getProjectTitle(project);
   const companyCamProjectId = getCompanyCamProjectId(project);
+  const labourTasks = useProjectLabourTasks(companyCamProjectId, {
+    enabled: Boolean(companyCamProjectId),
+    userId: user?.id,
+  });
   const budgetProjects = useMemo(() => (project ? [project] : []), [project]);
   const {
     progressByProjectId,
@@ -980,7 +995,7 @@ export default function ProjectDetailScreen({
   const visibleHoursLabel = canViewTeamTime ? 'Team total' : 'Entries shown';
   const recentTitle = canViewTeamTime ? 'Hours by Painter' : 'Your Clock-ins';
   const recentCount = canViewTeamTime ? `${painterSummaries.length} crew` : `${clockInDays.length} day${clockInDays.length === 1 ? '' : 's'}`;
-  const isActiveProject = isSameCompanyCamProject(activeShift?.project, project);
+  const isActiveProject = isSameCompanyCamProject(activeShift?.project, project) && !clockOutPending;
   const activeStartLabel =
     isActiveProject && activeShift?.startedAt ? formatEditTime(new Date(activeShift.startedAt)) : null;
   const activeElapsedLabel = isActiveProject ? formatElapsedClock(activeElapsedMs) : null;
@@ -998,6 +1013,7 @@ export default function ProjectDetailScreen({
           setClockActionError('Clock out could not complete. Try again.');
         } else {
           await refreshBudgetProgress();
+          maybePromptJobOverBudget();
         }
         return;
       }
@@ -1007,8 +1023,8 @@ export default function ProjectDetailScreen({
         if (!nextShift) {
           setClockActionError('Switch job could not complete. Check location permissions and try again.');
         } else {
-          await refreshBudgetProgress();
           onOpenActiveClock?.();
+          refreshBudgetProgress();
         }
         return;
       }
@@ -1017,8 +1033,8 @@ export default function ProjectDetailScreen({
       if (!shift) {
         setClockActionError('Clock in could not start. Check location permissions and try again.');
       } else {
-        await refreshBudgetProgress();
         onOpenActiveClock?.();
+        refreshBudgetProgress();
       }
     } catch (error) {
       setClockActionError(error?.message || 'Clock action could not complete. Try again.');
@@ -1027,6 +1043,17 @@ export default function ProjectDetailScreen({
     }
   };
   const clockFeedback = trackingNotice?.message || clockActionError;
+
+  const maybePromptJobOverBudget = async () => {
+    try {
+      if (!companyCamProjectId || !user?.id) return;
+      if (await hasAnsweredJobOverBudgetReason(user.id, companyCamProjectId)) return;
+      const { over, hoursOver } = await evaluateJobOverBudget(companyCamProjectId);
+      if (over) setJobReasonPrompt({ hoursOver });
+    } catch (_error) {
+      // The reason prompt is best effort; clock-out already succeeded.
+    }
+  };
 
   useEffect(() => {
     if (activeTab !== 'photos' || photosLoaded) return;
@@ -1244,8 +1271,8 @@ export default function ProjectDetailScreen({
                   />
                 ))
               ) : (
-                <View style={styles.emptyState}>
-                  <View style={styles.emptyArt}>
+                <View style={[styles.emptyState, styles.emptyStateCompact]}>
+                  <View style={[styles.emptyArt, styles.emptyArtCompact]}>
                     <ClockGlyph color={BRAND} size={32} />
                   </View>
                   <Text style={styles.emptyTitle}>No clock-ins yet</Text>
@@ -1254,6 +1281,15 @@ export default function ProjectDetailScreen({
                   </Text>
                 </View>
               )}
+
+              <View style={styles.tasksSection}>
+                <ProjectLabourTasksPanel
+                  project={project}
+                  activeShift={activeShift}
+                  tracking={labourTasks}
+                  showHoursMeter={false}
+                />
+              </View>
             </>
           )
         ) : (
@@ -1290,6 +1326,28 @@ export default function ProjectDetailScreen({
             <Ionicons name={primaryClockIcon === 'play' ? 'time-outline' : primaryClockIcon} size={27} color="#fff" />
           )}
         </TouchableOpacity>
+      ) : null}
+
+      {jobReasonPrompt ? (
+        <OverBudgetReasonSheet
+          task={{ title }}
+          hoursOver={jobReasonPrompt.hoursOver}
+          onSubmit={async ({ reason, note }) => {
+            await submitJobOverBudgetReason({
+              projectId: companyCamProjectId,
+              userId: user?.id,
+              reason,
+              note,
+              hoursOver: jobReasonPrompt.hoursOver,
+            });
+            await markJobOverBudgetReasonAnswered(user?.id, companyCamProjectId);
+            setJobReasonPrompt(null);
+          }}
+          onSkip={async () => {
+            await markJobOverBudgetReasonAnswered(user?.id, companyCamProjectId);
+            setJobReasonPrompt(null);
+          }}
+        />
       ) : null}
     </SafeAreaView>
   );
@@ -1523,6 +1581,9 @@ function PhotoLightbox({ photos, selectedIndex, onClose }) {
 }
 
 const styles = StyleSheet.create({
+  tasksSection: {
+    marginTop: 18,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: '#fff',
@@ -1943,6 +2004,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
+  },
+  emptyStateCompact: {
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  emptyArtCompact: {
+    width: 44,
+    height: 44,
+    marginBottom: 6,
   },
   artCircle: {
     position: 'absolute',

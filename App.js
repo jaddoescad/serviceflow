@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -28,6 +28,7 @@ import { useEmployeeProjectContext } from "./src/lib/useEmployeeProjectContext";
 import { registerPushToken } from "./src/lib/pushTokenRegistration";
 import { isLocationTrackingFeatureEnabled } from "./src/lib/locationTrackingFeature";
 import { palette as COLORS } from "./src/theme";
+import UpdateReadyPrompt from "./src/components/UpdateReadyPrompt";
 
 const BASE_TABS = [
   { key: "clock", label: "Clock In", icon: "clock" },
@@ -40,6 +41,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="dark" backgroundColor={COLORS.white} />
       <AppRoot />
+      <UpdateReadyPrompt />
     </SafeAreaProvider>
   );
 }
@@ -80,6 +82,20 @@ function AppRoot() {
   const canManageProjects = ["admin", "manager"].includes(employeeProfile?.role);
   const canViewTeamMap = canManageProjects && isLocationTrackingFeatureEnabled();
   const tracking = useTimeTracking(trackingProjects, sessionUser);
+  // Shared "shift is ending" flag so screens can hide live-shift UI (e.g. the
+  // Current clock-in banner) instead of flashing it while clock-out settles.
+  const [clockOutPending, setClockOutPending] = useState(false);
+  const clockOutWithPending = useCallback(
+    async (reason) => {
+      setClockOutPending(true);
+      try {
+        return await tracking.clockOut(reason);
+      } finally {
+        setClockOutPending(false);
+      }
+    },
+    [tracking.clockOut],
+  );
   const tabs = canViewTeamMap
     ? [...BASE_TABS, { key: "teamMap", label: "Team Map", icon: "map" }, { key: "more", label: "More", icon: "more" }]
     : [...BASE_TABS, { key: "more", label: "More", icon: "more" }];
@@ -121,7 +137,7 @@ function AppRoot() {
             suggestedProject={tracking.suggestedProject}
             projects={tracking.resolvedProjects}
             onClockIn={tracking.clockIn}
-            onClockOut={tracking.clockOut}
+            onClockOut={clockOutWithPending}
             onSwitchProject={tracking.switchProject}
             onUpdateTimeEntry={tracking.updateTimeEntry}
           />
@@ -192,12 +208,13 @@ function AppRoot() {
             entries={tracking.teamEntries}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
+            clockOutPending={clockOutPending}
             trackingNotice={tracking.trackingNotice}
             projects={trackingProjects}
             user={session.user}
             canViewTeamTime={canManageProjects}
             onClockIn={tracking.clockIn}
-            onClockOut={tracking.clockOut}
+            onClockOut={clockOutWithPending}
             onSwitchProject={tracking.switchProject}
             onOpenActiveClock={() => {
               setSelectedProject(null);

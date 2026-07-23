@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getProjectId } from "./projectRepository";
 import { supabase } from "./supabase";
 
@@ -7,6 +8,44 @@ const MAX_PROJECTS_PER_REQUEST = 100;
 const DEFAULT_REFRESH_INTERVAL_MS = 45_000;
 const PROJECT_ID_SEPARATOR = "\0";
 const budgetProgressCache = new Map();
+
+// The in-memory cache dies on every app launch, which made budget panels pop
+// in late on the first screen after a restart. Persist last-known values so
+// panels render immediately and refresh silently.
+const CACHE_STORAGE_KEY = "ottawaPainters.budgetProgressCache.v1";
+let cacheHydration = null;
+
+function ensureBudgetCacheHydrated() {
+  if (!cacheHydration) {
+    cacheHydration = (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(CACHE_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          for (const [projectId, progress] of Object.entries(parsed)) {
+            if (progress && !budgetProgressCache.has(projectId)) {
+              budgetProgressCache.set(projectId, progress);
+            }
+          }
+        }
+      } catch (_error) {
+        // Cache warming is best effort; the network refresh still runs.
+      }
+    })();
+  }
+  return cacheHydration;
+}
+
+function persistBudgetCache() {
+  try {
+    AsyncStorage.setItem(
+      CACHE_STORAGE_KEY,
+      JSON.stringify(Object.fromEntries(budgetProgressCache)),
+    ).catch(() => {});
+  } catch (_error) {
+    // Persistence is best effort.
+  }
+}
 
 export async function listProjectBudgetProgress(projectIds) {
   const ids = normalizeProjectIds(projectIds);
@@ -60,6 +99,8 @@ export function useProjectBudgetProgress(
     const projectIds = projectIdsKey ? projectIdsKey.split(PROJECT_ID_SEPARATOR) : [];
     const requestId = ++requestIdRef.current;
 
+    await ensureBudgetCacheHydrated();
+    if (requestId !== requestIdRef.current) return;
     const seededProgress = getSeededBudgetProgress(projects, projectIdsKey);
     if (Object.keys(seededProgress).length) {
       setProgressByProjectId((current) => ({ ...current, ...seededProgress }));
@@ -93,6 +134,7 @@ export function useProjectBudgetProgress(
       for (const [projectId, progress] of Object.entries(result.progressByProjectId)) {
         budgetProgressCache.set(projectId, progress);
       }
+      persistBudgetCache();
       setError(null);
     }
     setLoading(false);
