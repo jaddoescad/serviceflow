@@ -231,14 +231,29 @@ assert.match(hookSource, /submitOverBudgetReason/);
 assert.match(hookSource, /budget\?\.revision/);
 assert.match(hookSource, /It will sync when ServiceFlow reconnects/);
 
-const panelSource = await readFile(
-  new URL("src/components/ProjectLabourTasksPanel.js", root),
+const jobOverBudgetSource = await readFile(
+  new URL("src/lib/jobOverBudget.js", root),
   "utf8",
 );
-assert.match(panelSource, /isLabourTaskVisiblyOverBudget\(spent, budgeted\)/);
-assert.match(panelSource, /hasAnsweredOverBudgetReason/);
-assert.match(panelSource, /skipOverBudgetReason/);
-assert.doesNotMatch(panelSource, /PREVIEW_OVER_BUDGET_REASON/);
+assert.match(jobOverBudgetSource, /evaluateJobOverBudget/);
+assert.match(jobOverBudgetSource, /hasAnsweredJobOverBudgetReason/);
+assert.match(jobOverBudgetSource, /markJobOverBudgetReasonAnswered/);
+assert.match(jobOverBudgetSource, /project_over_budget_reasons/);
+
+const clockScreenSource = await readFile(
+  new URL("src/screens/ClockInScreen.js", root),
+  "utf8",
+);
+const projectScreenSource = await readFile(
+  new URL("src/screens/ProjectDetailScreen.js", root),
+  "utf8",
+);
+for (const source of [clockScreenSource, projectScreenSource]) {
+  assert.match(source, /<OverBudgetReasonSheet/);
+  assert.match(source, /evaluateJobOverBudget/);
+  assert.match(source, /submitJobOverBudgetReason/);
+  assert.match(source, /markJobOverBudgetReasonAnswered/);
+}
 
 const storageSource = await readFile(
   new URL("src/lib/timeTrackingStorage.js", root),
@@ -248,5 +263,5 @@ assert.match(storageSource, /labourTaskOverBudgetReasonAnswered/);
 assert.match(storageSource, /userId.*taskId.*budgetRevision/s);
 
 console.log(
-  "Over-budget reason checks passed: stable task mapping, assigned-job RLS, append-only answers, idempotency, offline queue wiring, and one-prompt gating.",
+  "Over-budget reason checks passed: stable task mapping, assigned-job RLS, append-only answers, offline queue wiring, and job-level one-prompt clock-out gating.",
 );

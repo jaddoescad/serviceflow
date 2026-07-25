@@ -1023,8 +1023,8 @@ export default function ProjectDetailScreen({
         if (!nextShift) {
           setClockActionError('Switch job could not complete. Check location permissions and try again.');
         } else {
+          await refreshBudgetProgress();
           onOpenActiveClock?.();
-          refreshBudgetProgress();
         }
         return;
       }
@@ -1033,8 +1033,8 @@ export default function ProjectDetailScreen({
       if (!shift) {
         setClockActionError('Clock in could not start. Check location permissions and try again.');
       } else {
+        await refreshBudgetProgress();
         onOpenActiveClock?.();
-        refreshBudgetProgress();
       }
     } catch (error) {
       setClockActionError(error?.message || 'Clock action could not complete. Try again.');

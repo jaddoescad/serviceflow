@@ -172,15 +172,14 @@ assert.match(clockScreenSource, /labourTasks=\{labourTasks\}/);
 assert.match(activeClockSource, /<ProjectLabourTasksPanel/);
 assert.match(activeClockSource, /activeShift=\{activeShift\}/);
 assert.doesNotMatch(projectScreenSource, /accessibilityLabel=["']Tasks["']/);
-assert.doesNotMatch(projectScreenSource, /<ProjectLabourTasksPanel/);
-assert.match(panelSource, /Start timer for/);
-assert.match(panelSource, /Stop timer for/);
-assert.match(panelSource, /is on this task/);
-assert.doesNotMatch(panelSource, />Live</);
-assert.match(panelSource, /of \$\{formatHours\(budgetedHours\)\}|of \{formatHours/);
-assert.doesNotMatch(panelSource, /accessibilityRole=["']checkbox["']/);
-assert.match(panelSource, /Adjust time for/);
-assert.match(panelSource, /adjustSession/);
+assert.match(projectScreenSource, /<ProjectLabourTasksPanel/);
+assert.match(projectScreenSource, /tracking=\{labourTasks\}/);
+assert.match(projectScreenSource, /showHoursMeter=\{false\}/);
+assert.match(panelSource, /accessibilityRole=["']checkbox["']/);
+assert.match(panelSource, /tracking\.toggleCompleted\(task\)/);
+assert.match(panelSource, /<BudgetBurnMeter/);
+assert.match(panelSource, /summary\.completedCount/);
+assert.match(panelSource, /summary\.budgetedHours/);
 assert.doesNotMatch(panelSource, /\bprice\b|hourly rate|labour rate/i);
 
 const timeTrackingSource = await readFile(new URL("src/lib/timeTracking.js", root), "utf8");
@@ -188,5 +187,5 @@ assert.match(timeTrackingSource, /stopActiveProjectLabourTaskTimer\(\{ userId: s
 assert.match(timeTrackingSource, /flushPendingProjectLabourTaskWrites\(\)/);
 
 console.log(
-  "Mobile labour-task checks passed: painter-safe realtime presence, live hour totals, active Clock In task UI, offline write queue, and shift-linked timer cleanup.",
+  "Mobile labour-task checks passed: painter-safe task lists, checklist progress, active Clock In and Project Details task UI, offline write queue, and shift-linked timer cleanup.",
 );

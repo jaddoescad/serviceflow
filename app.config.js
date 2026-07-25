@@ -45,7 +45,7 @@ module.exports = {
     },
     android: {
       package: "com.ottawapainters.app",
-      versionCode: 24,
+      versionCode: 25,
       googleServicesFile: "./android/app/google-services.json",
       adaptiveIcon: {
         foregroundImage: "./assets/serviceflow-adaptive-icon.png",
