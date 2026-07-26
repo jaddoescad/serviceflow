@@ -205,10 +205,11 @@ export type MakeCalculatorDefaultResult =
   | { ok: false; error: string };
 
 /**
- * Save the calculator and publish one quote as the painter-task default. Job
- * amounts remain manually managed and are preserved when calculator tasks are
- * republished. Other quotes never replace the default implicitly. Older task
- * snapshots remain inactive so time history is not destroyed.
+ * Copy one quote's items into the painter task list. Additive: tasks that came
+ * from the same calculator items are updated in place, new items are appended,
+ * and nothing is removed — manual tasks, other tasks, painter progress, and
+ * manual hour overrides are untouched. The calculator does not own the task
+ * list; this is a one-way transfer.
  */
 export async function makeCalculatorDefault(
   projectId: string,
@@ -222,53 +223,16 @@ export async function makeCalculatorDefault(
   if (!clean) return { ok: false, error: "Invalid calculator document." };
 
   const quote: Quote | undefined = clean.quotes.find((candidate) => candidate.id === quoteId);
-  if (!quote) return { ok: false, error: "Choose a calculator before making it the default." };
+  if (!quote) return { ok: false, error: "Choose a calculator before transferring it." };
 
   const draft = buildLabourBudgetDraft(quote);
   const supabase = await createClient();
 
-  // Manually added tasks (source_kind "custom") are not part of any quote, so
-  // carry them into the new snapshot or republishing would silently drop them.
-  const customTasks = await supabase
-    .from("project_labour_tasks")
-    .select("source_item_id,title,notes,budgeted_hours,sort_order")
-    .eq("companycam_project_id", projectId)
-    .eq("is_active", true)
-    .eq("source_kind", "custom")
-    .order("sort_order", { ascending: true });
-  if (customTasks.error) return { ok: false, error: customTasks.error.message };
-  const nextSortOrder = draft.tasks.reduce((max, task) => Math.max(max, task.sortOrder + 1), 0);
-  const carriedTasks = (customTasks.data ?? []).map((task, index) => ({
-    sourceKind: "custom" as const,
-    sourceItemId: task.source_item_id as string,
-    title: task.title as string,
-    notes: (task.notes as string | null) ?? null,
-    budgetedHours: Number(task.budgeted_hours) || 0,
-    sortOrder: nextSortOrder + index,
-    metadata: {},
-  }));
-
-  const currentBudget = await supabase
-    .from("project_budgets")
-    .select("amount_including_tax")
-    .eq("companycam_project_id", projectId)
-    .maybeSingle<{ amount_including_tax: number | string | null }>();
-  if (currentBudget.error) return { ok: false, error: currentBudget.error.message };
-
-  const storedAmount = currentBudget.data?.amount_including_tax;
-  const storedJobAmount = storedAmount == null ? null : Number(storedAmount);
-  if (storedJobAmount !== null && (!Number.isFinite(storedJobAmount) || storedJobAmount < 0)) {
-    return { ok: false, error: "The saved customer amount is invalid." };
-  }
-
-  const { data, error } = await supabase.rpc("publish_project_calculator_default", {
+  const { data, error } = await supabase.rpc("transfer_project_calculator_tasks", {
     requested_project_id: projectId,
     calculator_doc: clean,
     requested_quote_id: quote.id,
-    task_payloads: [...draft.tasks, ...carriedTasks],
-    // The RPC parameter keeps its legacy name, but receives the unchanged
-    // manual pre-HST job amount so calculator publishing cannot replace it.
-    requested_amount_including_tax: storedJobAmount,
+    task_payloads: draft.tasks,
   });
 
   if (error) return { ok: false, error: error.message };

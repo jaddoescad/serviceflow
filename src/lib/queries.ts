@@ -96,24 +96,62 @@ export async function getEmployeePayRates(): Promise<EmployeePayRate[]> {
 
 export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("companycam_projects")
-    .select(
-      "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,companycam_updated_at",
-    )
-    .eq("is_archived", false)
-    .eq("is_lead", false)
-    .order("companycam_updated_at", { ascending: false, nullsFirst: false })
-    .limit(1000);
-  if (error) throw new Error(`projects: ${error.message}`);
-  return (data ?? []) as Project[];
+  const projectColumns =
+    "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,companycam_updated_at";
+  const [activeResult, completedBudgetResult] = await Promise.all([
+    supabase
+      .from("companycam_projects")
+      .select(projectColumns)
+      .eq("is_archived", false)
+      .eq("is_lead", false)
+      .order("companycam_updated_at", { ascending: false, nullsFirst: false })
+      .limit(1000),
+    supabase
+      .from("project_budgets")
+      .select("companycam_project_id")
+      .not("labour_closed_at", "is", null),
+  ]);
+
+  if (activeResult.error) {
+    throw new Error(`projects: ${activeResult.error.message}`);
+  }
+  if (completedBudgetResult.error) {
+    throw new Error(`completed project budgets: ${completedBudgetResult.error.message}`);
+  }
+
+  const activeProjects = (activeResult.data ?? []) as Project[];
+  const activeIds = new Set(activeProjects.map((project) => project.companycam_id));
+  const completedProjectIds = (completedBudgetResult.data ?? [])
+    .map((budget) => budget.companycam_project_id)
+    .filter((projectId) => !activeIds.has(projectId));
+
+  if (completedProjectIds.length === 0) return activeProjects;
+
+  const { data: archivedCompletedData, error: archivedCompletedError } =
+    await supabase
+      .from("companycam_projects")
+      .select(projectColumns)
+      .in("companycam_id", completedProjectIds)
+      .eq("is_lead", false)
+      .order("companycam_updated_at", { ascending: false, nullsFirst: false });
+
+  if (archivedCompletedError) {
+    throw new Error(`archived completed projects: ${archivedCompletedError.message}`);
+  }
+
+  return [
+    ...activeProjects,
+    ...((archivedCompletedData ?? []) as Project[]),
+  ];
 }
 
 export async function getBudgets(): Promise<ProjectBudget[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("project_budgets")
-    .select("companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,updated_at");
+    .select(
+      "companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,labour_closed_at,labour_invoice_job_started_on,updated_at",
+    );
   if (error) throw new Error(`budgets: ${error.message}`);
   return (data ?? []) as ProjectBudget[];
 }
@@ -135,7 +173,7 @@ export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("project_labour_tasks")
-    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order")
+    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order,completed_at,completed_by")
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
     .limit(5000);
@@ -200,7 +238,9 @@ export async function getProjectBudgetRows(projectId: string): Promise<ProjectBu
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("project_budgets")
-    .select("companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,updated_at")
+    .select(
+      "companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,labour_closed_at,labour_invoice_job_started_on,updated_at",
+    )
     .eq("companycam_project_id", projectId);
   if (error) throw new Error(`budgets: ${error.message}`);
   return (data ?? []) as ProjectBudget[];
@@ -234,7 +274,7 @@ export async function getLabourTasksForProject(projectId: string): Promise<Proje
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("project_labour_tasks")
-    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order")
+    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order,completed_at,completed_by")
     .eq("companycam_project_id", projectId)
     .eq("is_active", true)
     .order("sort_order", { ascending: true })

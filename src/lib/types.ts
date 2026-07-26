@@ -105,6 +105,11 @@ export type ProjectBudget = {
   amount_including_tax: number | null;
   hourly_rate: number | null;
   notes: string | null;
+  // Set once every painter invoice for the job is in. Only closed jobs feed the
+  // headline labour share; an open job's labour cost is still incomplete.
+  labour_closed_at: string | null;
+  // Invoices before this date belong to a previous job for the same customer.
+  labour_invoice_job_started_on: string | null;
   updated_at: string;
 };
 
@@ -148,6 +153,8 @@ export type ProjectLabourTask = {
   budgeted_hours: number | null;
   status: string;
   sort_order: number;
+  completed_at: string | null;
+  completed_by: string | null;
 };
 
 export type ProjectLabourTaskTimeEntry = {

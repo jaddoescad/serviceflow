@@ -125,15 +125,11 @@ export function SummaryRail({
   }, [confirmClear]);
 
   const hasAnything = quote.rooms.length > 0 || quote.exterior.length > 0 || quote.washing !== "none";
-  const isDefault = defaultCalculator?.quoteId === quote.id;
-  const defaultIsCurrent =
-    isDefault &&
+  // Transferred = this exact quote state was last copied to the task list.
+  const transferredIsCurrent =
+    defaultCalculator?.quoteId === quote.id &&
     new Date(defaultCalculator.sourceQuoteUpdatedAt).getTime() === new Date(quote.updatedAt).getTime();
-  const currentDefault = defaultIsCurrent ? defaultCalculator : null;
-  const hasManualOverrides = Boolean(
-    currentDefault?.tasks.some((task) => task.manualBudgetedHours !== null),
-  );
-  const displayedLabourHours = currentDefault?.budgetedHours ?? totals.hours;
+  const displayedLabourHours = totals.hours;
 
   return (
     <Card className="p-5 lg:sticky lg:top-6">
@@ -147,11 +143,6 @@ export function SummaryRail({
       <div className="font-display mt-1 text-3xl font-semibold tabular-nums text-[var(--color-heading)]">
         {displayedLabourHours.toFixed(1)} h
       </div>
-      {hasManualOverrides && currentDefault ? (
-        <div className="mt-0.5 text-[11px] leading-4 text-[var(--color-warn)]">
-          Calculated {currentDefault.calculatedHours.toFixed(1)} h · manual task overrides applied. Client price is unchanged.
-        </div>
-      ) : null}
       {totals.interior.hours > 0 ? (
         <div className="mt-0.5 text-[11px] tabular-nums text-[var(--color-muted)]">
           {fmtMoney(totals.interior.total)} × {Math.round(quote.rates.interior.labourPercent * 100)}% ={" "}
@@ -194,15 +185,15 @@ export function SummaryRail({
         >
           {copied ? "Copied ✓" : "Copy summary"}
         </Button>
-        {!isDefault ? (
+        {!transferredIsCurrent ? (
           <Button
             variant="subtle"
             className="w-full"
-            disabled={makingDefault}
+            disabled={makingDefault || !hasAnything}
             onClick={() => {
               if (
                 window.confirm(
-                  `Transfer “${quote.name}” to painter tasks? The painter task list will switch to this calculator. Manually added tasks are kept.`,
+                  `Copy “${quote.name}”’s items to the painter task list? Existing tasks are kept — items already transferred are updated, new ones are added, nothing is removed.`,
                 )
               ) {
                 void onMakeDefault();

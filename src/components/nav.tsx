@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/", label: "Overview", icon: "▤" },
   { href: "/timesheets", label: "Timesheets", icon: "🕑" },
   { href: "/projects", label: "Jobs & Budgets", icon: "🏗" },
+  { href: "/invoices", label: "Labour Invoices", icon: "🧾" },
   { href: "/employees", label: "Crew", icon: "👥" },
 ];
 

@@ -23,6 +23,23 @@ export function fmtMoney(value: number | null | undefined): string {
   }).format(value);
 }
 
+export function fmtCurrencyTotals(
+  totals: Partial<Record<"CAD" | "USD", number>>,
+): string {
+  const parts = (["CAD", "USD"] as const)
+    .filter((currency) => Number(totals[currency] ?? 0) !== 0)
+    .map((currency) =>
+      new Intl.NumberFormat("en-CA", {
+        style: "currency",
+        currency,
+        currencyDisplay: "narrowSymbol",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(Number(totals[currency])),
+    );
+  return parts.length ? parts.join(" + ") : "—";
+}
+
 export function fmtDateTime(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);

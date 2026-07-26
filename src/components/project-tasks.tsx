@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Badge, Button, Card, Field, Input } from "@/components/ui";
-import { fmtHours } from "@/lib/format";
+import { fmtDate, fmtHours, fmtTime } from "@/lib/format";
 import { addProjectTask, removeProjectTask, updateProjectTask } from "@/lib/actions/tasks";
 import type { ProjectTaskProgress } from "@/lib/metrics";
 
@@ -60,8 +60,8 @@ export function ProjectTasksPanel({
             <h3 className="font-display text-sm font-semibold text-[var(--color-heading)]">Painter tasks</h3>
             <p className="text-xs text-[var(--color-muted)]">
               {taskProgress.length > 0
-                ? `${fmtHours(totalSpent)} tracked of ${fmtHours(totalBudgeted)} budgeted across ${taskProgress.length} ${taskProgress.length === 1 ? "task" : "tasks"}`
-                : "Hours painters track against each task's budget"}
+                ? `${taskProgress.filter((task) => task.status === "completed").length} of ${taskProgress.length} done · ${fmtHours(totalBudgeted)} budgeted`
+                : "What painters check off on site"}
             </p>
           </div>
           {canManage ? (
@@ -108,12 +108,31 @@ export function ProjectTasksPanel({
               );
               const onTaskNow = task.contributors.some((contributor) => contributor.active);
               const removing = removingId === task.id && pending;
+              const completed = task.status === "completed";
               return (
                 <div key={task.id} className={`px-5 py-3 ${index > 0 ? "border-t border-[var(--color-border)]" : ""}`}>
                   <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-baseline gap-2">
-                      <span className="truncate text-sm font-medium">{task.title}</span>
-                      {task.status === "completed" ? <Badge tone="good">done</Badge> : null}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        aria-hidden="true"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md"
+                        style={
+                          completed
+                            ? { background: "var(--color-good)" }
+                            : { boxShadow: "inset 0 0 0 2px var(--color-border)" }
+                        }
+                      >
+                        {completed ? (
+                          <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
+                            <path d="M5 10.5l3.2 3.2L15 7" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        ) : null}
+                      </span>
+                      <span
+                        className={`truncate text-sm font-medium ${completed ? "text-[var(--color-muted)] line-through" : ""}`}
+                      >
+                        {task.title}
+                      </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span className="text-xs tabular-nums">
@@ -170,8 +189,14 @@ export function ProjectTasksPanel({
                       ) : null}
                     </div>
                   </div>
+                  {completed && task.completedAt ? (
+                    <div className="mt-0.5 pl-[30px] text-[11px] font-medium text-[var(--color-good)]">
+                      Done {fmtDate(task.completedAt)} · {fmtTime(task.completedAt)}
+                      {task.completedByName ? ` · ${task.completedByName}` : ""}
+                    </div>
+                  ) : null}
                   {task.notes ? (
-                    <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]" title={task.notes}>
+                    <div className="mt-0.5 truncate pl-[30px] text-[11px] text-[var(--color-muted)]" title={task.notes}>
                       {task.notes}
                     </div>
                   ) : null}

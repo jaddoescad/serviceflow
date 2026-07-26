@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export type ProjectTabKey = "overview" | "tasks" | "calculator";
-export type LocalTabKey = Exclude<ProjectTabKey, "calculator">;
+export type ProjectTabKey = "overview" | "tasks" | "invoices" | "calculator";
+export type LocalTabKey = "overview" | "tasks";
 
 export function ProjectTabs({
   projectId,
@@ -22,12 +22,19 @@ export function ProjectTabs({
   const pathname = usePathname();
   const active: ProjectTabKey =
     activeOverride ??
-    (pathname.endsWith("/tasks") ? "tasks" : pathname.endsWith("/calculator") ? "calculator" : "overview");
+    (pathname.endsWith("/tasks")
+      ? "tasks"
+      : pathname.endsWith("/invoices")
+        ? "invoices"
+        : pathname.endsWith("/calculator")
+          ? "calculator"
+          : "overview");
 
   const base = `/projects/${encodeURIComponent(projectId)}`;
   const tabs: { key: ProjectTabKey; label: string; href: string }[] = [
     { key: "overview", label: "Overview", href: base },
     { key: "tasks", label: "Tasks", href: `${base}/tasks` },
+    { key: "invoices", label: "Invoices", href: `${base}/invoices` },
     { key: "calculator", label: "Calculator", href: `${base}/calculator?name=${encodeURIComponent(projectName)}` },
   ];
 
@@ -44,7 +51,7 @@ export function ProjectTabs({
             ? "bg-[var(--color-brand)] text-[var(--color-brand-ink)] shadow-sm"
             : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
         }`;
-        if (onLocalSwitch && tab.key !== "calculator") {
+        if (onLocalSwitch && (tab.key === "overview" || tab.key === "tasks")) {
           return (
             <button
               key={tab.key}

@@ -15,6 +15,7 @@ import {
   LABOUR_ALERT_PERCENT,
   rollupEmployees,
   rollupProjects,
+  summarizeLabour,
   sumHours,
 } from "@/lib/metrics";
 import { computeDurations } from "@/lib/hours";
@@ -27,6 +28,7 @@ import { ActivityTable } from "@/components/activity-table";
 import { CrewOperationsMap, type CrewLocation } from "@/components/crew-operations-map";
 import { dayKey, fmtHoursDecimal, fmtMoney, fmtDistance, fmtDateTime } from "@/lib/format";
 import type { EmployeeLocationPoint, EmployeeTrackingStatus, Project, TimeEntry } from "@/lib/types";
+import { getProjectLabourInvoiceSummaries } from "@/lib/invoice-queries";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,17 @@ export default async function OverviewPage() {
   const now = Date.now();
   const since = new Date(now - 30 * DAY).toISOString();
 
-  const [entries, employees, payRates, projects, budgets, assignments, labourExpenses, trackingStatuses] = await Promise.all([
+  const [
+    entries,
+    employees,
+    payRates,
+    projects,
+    budgets,
+    assignments,
+    labourExpenses,
+    trackingStatuses,
+    invoiceSummaries,
+  ] = await Promise.all([
     getTimeEntries(since),
     getEmployees(),
     getEmployeePayRates(),
@@ -46,6 +58,7 @@ export default async function OverviewPage() {
     getAssignments(),
     getProjectLabourExpenses(),
     getEmployeeTrackingStatuses(),
+    getProjectLabourInvoiceSummaries(),
   ]);
 
   const inWindow = (from: number, to: number) => (e: { started_at: string }) => {
@@ -97,7 +110,16 @@ export default async function OverviewPage() {
   const onSitePct = totalMs > 0 ? Math.round((onSiteMs / totalMs) * 100) : 0;
 
   const activeEmployees = employees.filter((e) => e.is_active);
-  const projectRollups = rollupProjects(entries, projects, budgets, assignments, payRates, labourExpenses, now);
+  const projectRollups = rollupProjects(
+    entries,
+    projects,
+    budgets,
+    assignments,
+    payRates,
+    labourExpenses,
+    now,
+    invoiceSummaries,
+  );
   const employeeRollups = rollupEmployees(entries, employees, now).filter((r) => r.loggedHours > 0);
 
   const dayData = hoursByDay(entries, 14, now);
@@ -110,6 +132,10 @@ export default async function OverviewPage() {
     .slice(0, 8)
     .map((r) => ({ name: r.name, hours: Math.round(r.loggedHours * 10) / 10 }));
 
+  // Jobs measurable at all: an amount is entered and some labour is recorded.
+  // `summarizeLabour` then splits them into settled and in-flight, because a
+  // part-spent job carries its full contract value and would otherwise drag the
+  // headline percentage down.
   const jobsWithLabour = projectRollups.filter(
     (r) =>
       r.amountBeforeTax != null &&
@@ -118,6 +144,7 @@ export default async function OverviewPage() {
       r.wageSharePercent != null &&
       r.wageCost > 0,
   );
+  const labourSummary = summarizeLabour(projectRollups, now);
   const budgetItems = jobsWithLabour.map((r) => ({
     projectId: r.projectId,
     name: r.name,
@@ -128,10 +155,9 @@ export default async function OverviewPage() {
     allowanceHigh: r.labourAllowanceHigh!,
     unpricedHours: r.unpricedHours,
     status: r.status,
+    settled: r.labourBucket === "settled",
   }));
-  const totalJobValue = jobsWithLabour.reduce((sum, row) => sum + (row.amountBeforeTax ?? 0), 0);
-  const totalPainterWages = jobsWithLabour.reduce((sum, row) => sum + row.wageCost, 0);
-  const budgetPct = totalJobValue > 0 ? (totalPainterWages / totalJobValue) * 100 : null;
+  const budgetPct = labourSummary.settled.sharePercent;
 
   const attention = attentionLists(entries, now);
   const crewLocations = buildCrewLocations(movementShifts, projects, trackingStatuses, locationPoints);
@@ -162,7 +188,11 @@ export default async function OverviewPage() {
         <Kpi
           label="Labour share"
           value={budgetPct != null ? `${budgetPct.toFixed(1)}%` : "—"}
-          hint={budgetPct != null ? `${fmtMoney(totalPainterWages)} wages · green below 40%` : "add job amounts"}
+          hint={
+            budgetPct != null
+              ? `${fmtMoney(labourSummary.settled.labourCost)} on ${labourSummary.settled.count} completed`
+              : "mark labour completed on a finished job"
+          }
           tone={budgetPct == null ? "neutral" : budgetPct >= LABOUR_ALERT_PERCENT ? "bad" : "good"}
         />
         <Kpi
@@ -187,7 +217,7 @@ export default async function OverviewPage() {
       </div>
 
       <div className="mt-4">
-        <BudgetHealth items={budgetItems} />
+        <BudgetHealth items={budgetItems} summary={labourSummary} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">

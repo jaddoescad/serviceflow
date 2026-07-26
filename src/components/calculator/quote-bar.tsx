@@ -55,7 +55,7 @@ export function QuoteBar({
             <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDot[q.status])} />
             {q.id === defaultQuoteId ? (
               <span className="rounded-full bg-[var(--color-good-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--color-good)]">
-                Default
+                Transferred
               </span>
             ) : null}
             <input
@@ -82,7 +82,7 @@ export function QuoteBar({
             {q.name}
             {q.id === defaultQuoteId ? (
               <span className="rounded-full bg-[var(--color-good-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--color-good)]">
-                Default
+                Transferred
               </span>
             ) : null}
           </button>

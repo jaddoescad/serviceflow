@@ -14,7 +14,10 @@ type ProjectInvoiceSummary = {
   invoicedWagesBeforeTax: number;
 };
 
-const LABOUR_EXCLUDED_PROJECTS = new Set(["mike ralph"]);
+// Jobs remain included by default. Keep this explicit allow-list mechanism for
+// any future management-directed exclusions, but do not suppress legitimate
+// budgets, clocked wages, or invoices.
+const LABOUR_EXCLUDED_PROJECTS = new Set<string>();
 
 // XDesign invoices verified from the downloaded PDFs and invoice 8599 supplied
 // on July 13, 2026. Hours are left blank when a multi-job invoice does not say

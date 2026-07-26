@@ -12,6 +12,7 @@ import {
 } from "@/lib/queries";
 import { requireStaff } from "@/lib/auth";
 import { projectDetails, projectTaskProgress, rollupProjects } from "@/lib/metrics";
+import { getProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -21,7 +22,18 @@ const DAY = 24 * 60 * 60 * 1000;
  */
 export const getProjectData = cache(async (projectId: string) => {
   const now = Date.now();
-  const [profile, project, entries, payRates, budgets, assignments, labourExpenses, labourTasks, employees] = await Promise.all([
+  const [
+    profile,
+    project,
+    entries,
+    payRates,
+    budgets,
+    assignments,
+    labourExpenses,
+    labourTasks,
+    employees,
+    invoiceSummary,
+  ] = await Promise.all([
     requireStaff(),
     getProjectById(projectId),
     getProjectTimeEntries(projectId, new Date(now - 180 * DAY).toISOString()),
@@ -31,13 +43,23 @@ export const getProjectData = cache(async (projectId: string) => {
     getLabourExpensesForProject(projectId),
     getLabourTasksForProject(projectId),
     getEmployees(),
+    getProjectLabourInvoiceSummary(projectId),
   ]);
 
   if (!project) return null;
 
   const taskEntries = await getTaskEntriesForTasks(labourTasks.map((task) => task.id));
 
-  const rows = rollupProjects(entries, [project], budgets, assignments, payRates, labourExpenses, now);
+  const rows = rollupProjects(
+    entries,
+    [project],
+    budgets,
+    assignments,
+    payRates,
+    labourExpenses,
+    now,
+    new Map([[projectId, invoiceSummary]]),
+  );
   const rollup = rows.find((row) => row.projectId === projectId);
   if (!rollup) return null;
 

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Avatar, Badge, Button, Card, Field, Input } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
 import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
-import { setJobAmount } from "@/lib/actions/budgets";
+import { setJobAmount, setLabourClosed } from "@/lib/actions/budgets";
 import { LABOUR_MAX_PERCENT, LABOUR_MIN_PERCENT } from "@/lib/metrics";
 import type { BudgetStatus, ProjectDetail, ProjectRollup } from "@/lib/metrics";
 
@@ -34,6 +34,14 @@ export function ProjectOverviewPanel({
   const maxCrewHours = Math.max(...crew.map((member) => member.hours), 0);
   const activeEntryCount = detail?.activeEntryCount ?? 0;
 
+  const labourClosed = Boolean(project.labourClosedAt);
+  // Completing settles the job's labour cost, so it only makes sense once the
+  // job has an amount to measure against. Excluded and untouched jobs opt out.
+  const canCompleteLabour =
+    project.labourBucket === "settled" ||
+    project.labourBucket === "in_flight" ||
+    project.labourBucket === "not_costed";
+
   function saveAmount(input: { projectId: string; amountBeforeTax: number | null }) {
     setError(null);
     startTransition(async () => {
@@ -43,10 +51,23 @@ export function ProjectOverviewPanel({
     });
   }
 
+  function toggleLabourClosed(closed: boolean) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setLabourClosed({ projectId: project.projectId, closed });
+      if (!res.ok) setError(res.error ?? "Action failed");
+    });
+  }
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          {labourClosed ? (
+            <Badge tone="good">Labour completed {fmtDate(project.labourClosedAt)}</Badge>
+          ) : canCompleteLabour ? (
+            <Badge tone="neutral">Labour not completed</Badge>
+          ) : null}
           {activeEntryCount > 0 ? <Badge tone="good">{activeEntryCount} on clock</Badge> : null}
           {project.invoicedHours > project.clockedHours ? <Badge tone="neutral">invoice hours</Badge> : null}
           {project.expenseCount > 0 ? (
@@ -60,9 +81,29 @@ export function ProjectOverviewPanel({
           {project.unpricedHours > 0 ? <Badge tone="warn">{fmtHours(project.unpricedHours)} unpriced</Badge> : null}
         </div>
         {canManage ? (
-          <Button variant="ghost" onClick={() => setEditingAmount(true)} disabled={pending}>
-            Edit amount
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" onClick={() => setEditingAmount(true)} disabled={pending}>
+              Edit amount
+            </Button>
+            {canCompleteLabour ? (
+              <Button
+                variant={labourClosed ? "ghost" : "primary"}
+                onClick={() => toggleLabourClosed(!labourClosed)}
+                disabled={pending}
+                title={
+                  labourClosed
+                    ? "Reopen if another painter invoice still has to land"
+                    : "Mark once every painter invoice for this job is in. Only completed jobs count toward the headline labour share."
+                }
+              >
+                {labourClosed ? "Reopen labour" : "Mark job completed"}
+              </Button>
+            ) : project.labourBucket === "missing_amount" ? (
+              <span className="text-xs text-[var(--color-warn)]">
+                Set a job amount before completing
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -81,12 +122,16 @@ export function ProjectOverviewPanel({
               ? `${fmtMoney(project.labourAllowanceLow)}–${fmtMoney(project.labourAllowanceHigh)}`
               : "—"
           }
-          hint="35–38% of the job amount"
+          hint="35–37% of the job amount"
         />
         <Kpi
           label="Painter budget"
           value={project.labourExcluded ? "—" : fmtMoney(project.wageCost)}
-          hint="timesheets + fixed invoices"
+          hint={`larger of invoices or clocked wages · ${
+            project.labourCostSource === "invoices"
+              ? "invoices chosen"
+              : "clocked wages chosen"
+          }`}
         />
         <Kpi
           label="Used by painters"
@@ -320,7 +365,7 @@ export function AmountDialog({
               <span className="font-semibold tabular-nums">{fmtMoney(numericAmount)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3 text-sm">
-              <span className="text-[var(--color-muted)]">35–38% labour allowance</span>
+              <span className="text-[var(--color-muted)]">35–37% labour allowance</span>
               <span className="font-semibold tabular-nums">
                 {allowanceLow != null && allowanceHigh != null
                   ? `${fmtMoney(allowanceLow)}–${fmtMoney(allowanceHigh)}`

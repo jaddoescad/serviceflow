@@ -17,15 +17,21 @@ import type {
   ProjectLabourTaskTimeEntry,
   TimeEntry,
 } from "@/lib/types";
+import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
 
 // A clock-in this far from the job site is worth flagging for review.
 const OFFSITE_DISTANCE_METERS = 250;
 
 export type BudgetStatus = "none" | "under" | "near" | "over";
+export type LabourCostSource = "invoices" | "clocked_hours";
 
 export const LABOUR_MIN_PERCENT = 35;
-export const LABOUR_MAX_PERCENT = 38;
+export const LABOUR_MAX_PERCENT = 37;
 export const LABOUR_ALERT_PERCENT = 40;
+
+// An open job this quiet is almost certainly finished on site and just waiting
+// for someone to confirm the last invoice landed.
+export const LABOUR_IDLE_NUDGE_DAYS = 30;
 
 export type ProjectRollup = {
   projectId: string;
@@ -43,6 +49,9 @@ export type ProjectRollup = {
   budgetCost: number | null;
   labourAllowanceLow: number | null;
   labourAllowanceHigh: number | null;
+  /** Dollar cost of priced clocked hours only, before any invoice override. */
+  clockedWageCost: number;
+  labourCostSource: LabourCostSource;
   wageCost: number;
   wageSharePercent: number | null;
   allowanceUsedLowPercent: number | null;
@@ -52,11 +61,31 @@ export type ProjectRollup = {
   unpricedHours: number;
   assignedCount: number;
   lastActivity: string | null;
+  /** Latest real clock-in; excludes older manually curated invoice activity. */
+  lastClockIn: string | null;
   clockedHours: number;
   invoicedHours: number;
   fixedLabourCost: number;
   expenseCount: number;
+  labourClosedAt: string | null;
+  labourBucket: LabourBucket;
 };
+
+/**
+ * Which side of the accounting line a job sits on.
+ *
+ * `settled` jobs have a final labour cost against a final contract value, so
+ * their ratio is true and they alone drive the headline labour share. Every
+ * other bucket is reported on its own line: blending a part-spent job into the
+ * average drags the percentage down and makes an unfinished book look healthy.
+ */
+export type LabourBucket =
+  | "settled"
+  | "in_flight"
+  | "not_costed"
+  | "missing_amount"
+  | "excluded"
+  | "idle";
 
 export type ProjectCrewHours = {
   crewId: string;
@@ -114,6 +143,8 @@ export type ProjectTaskProgress = {
   title: string;
   notes: string | null;
   status: string;
+  completedAt: string | null;
+  completedByName: string | null;
   budgetedHours: number;
   spentHours: number;
   contributors: ProjectTaskContributor[];
@@ -133,6 +164,111 @@ export type EmployeeRollup = {
 export function budgetStatus(wageSharePercent: number | null): BudgetStatus {
   if (wageSharePercent == null) return "none";
   return wageSharePercent >= LABOUR_ALERT_PERCENT ? "over" : "under";
+}
+
+function classifyLabour(input: {
+  labourExcluded: boolean;
+  amountBeforeTax: number | null;
+  wageCost: number;
+  labourClosedAt: string | null;
+}): LabourBucket {
+  if (input.labourExcluded) return "excluded";
+  const hasAmount = input.amountBeforeTax != null && input.amountBeforeTax > 0;
+  const hasLabour = input.wageCost > 0;
+  if (!hasAmount) return hasLabour ? "missing_amount" : "idle";
+  if (!hasLabour) return "not_costed";
+  return input.labourClosedAt ? "settled" : "in_flight";
+}
+
+export type LabourPool = {
+  count: number;
+  jobValue: number;
+  labourCost: number;
+  sharePercent: number | null;
+};
+
+export type LabourSummary = {
+  /** Final numbers. This pool alone produces the headline percentage. */
+  settled: LabourPool;
+  /** Costs to date against full contract values — always incomplete. */
+  inFlight: LabourPool;
+  /** Job amount entered, no hours or invoices against it yet. */
+  notCosted: LabourPool;
+  /** Labour recorded but no job amount, so the job cannot be measured at all. */
+  missingAmount: LabourPool;
+  /** Settled or in-flight jobs already at or above the 40% alert line. */
+  overCount: number;
+  /** In-flight jobs with no activity for LABOUR_IDLE_NUDGE_DAYS — likely done. */
+  readyToCloseCount: number;
+};
+
+function emptyPool(): LabourPool {
+  return { count: 0, jobValue: 0, labourCost: 0, sharePercent: null };
+}
+
+function addToPool(pool: LabourPool, jobValue: number, labourCost: number): void {
+  pool.count += 1;
+  pool.jobValue += jobValue;
+  pool.labourCost += labourCost;
+}
+
+function finishPool(pool: LabourPool): LabourPool {
+  pool.sharePercent = pool.jobValue > 0 ? (pool.labourCost / pool.jobValue) * 100 : null;
+  return pool;
+}
+
+/** True when an open job has gone quiet long enough to prompt closing it. */
+export function readyToCloseLabour(rollup: ProjectRollup, now = Date.now()): boolean {
+  if (rollup.labourBucket !== "in_flight") return false;
+  if (!rollup.lastActivity) return false;
+  const last = new Date(rollup.lastActivity).getTime();
+  if (!Number.isFinite(last)) return false;
+  return now - last >= LABOUR_IDLE_NUDGE_DAYS * 86_400_000;
+}
+
+/**
+ * Split every job into its accounting bucket and total each one separately.
+ *
+ * Deliberately never returns a combined percentage across settled and in-flight
+ * work: that blended figure is the one this replaces.
+ */
+export function summarizeLabour(rollups: ProjectRollup[], now = Date.now()): LabourSummary {
+  const summary: LabourSummary = {
+    settled: emptyPool(),
+    inFlight: emptyPool(),
+    notCosted: emptyPool(),
+    missingAmount: emptyPool(),
+    overCount: 0,
+    readyToCloseCount: 0,
+  };
+
+  for (const rollup of rollups) {
+    const jobValue = rollup.amountBeforeTax ?? 0;
+    switch (rollup.labourBucket) {
+      case "settled":
+        addToPool(summary.settled, jobValue, rollup.wageCost);
+        break;
+      case "in_flight":
+        addToPool(summary.inFlight, jobValue, rollup.wageCost);
+        if (readyToCloseLabour(rollup, now)) summary.readyToCloseCount += 1;
+        break;
+      case "not_costed":
+        addToPool(summary.notCosted, jobValue, 0);
+        break;
+      case "missing_amount":
+        addToPool(summary.missingAmount, 0, rollup.wageCost);
+        break;
+      default:
+        continue;
+    }
+    if (rollup.status === "over") summary.overCount += 1;
+  }
+
+  finishPool(summary.settled);
+  finishPool(summary.inFlight);
+  finishPool(summary.notCosted);
+  finishPool(summary.missingAmount);
+  return summary;
 }
 
 type PayRateIndex = Map<string, EmployeePayRate[]>;
@@ -171,6 +307,7 @@ export function rollupProjects(
   payRates: EmployeePayRate[],
   labourExpenses: ProjectLabourExpense[],
   now = Date.now(),
+  invoiceSummaries?: ReadonlyMap<string, ProjectLabourInvoiceSummary>,
 ): ProjectRollup[] {
   const budgetById = new Map(budgets.map((b) => [b.companycam_project_id, b]));
   const assignedById = new Map<string, number>();
@@ -241,10 +378,23 @@ export function rollupProjects(
     const clockedWageCost = labourExcluded ? 0 : (wagesById.get(id) ?? 0);
     const invoicedWageCost = labourExcluded ? 0 : invoicedProjectWagesBeforeTax(name);
     const fixedLabourCost = labourExcluded ? 0 : (expenseCostById.get(id) ?? 0);
-    // Clocked time and painter invoices can describe the same work. Use the
-    // stronger total so HST is excluded and labour is never double-counted.
-    // Fixed-price subcontractor invoices are a separate source and are added.
-    const wageCost = Math.max(clockedWageCost, invoicedWageCost) + fixedLabourCost;
+    // The linked labour-invoice archive is the source of truth once a usable
+    // pre-tax amount has been allocated to this job. Until then, fall back to
+    // timesheets and the older curated invoice sources so an unallocated shared
+    // invoice does not erase a real hours-based cost.
+    const archivedInvoiceCost = labourExcluded
+      ? 0
+      : Math.max(0, Number(invoiceSummaries?.get(id)?.totals.CAD) || 0);
+    const legacyInvoiceCost = invoicedWageCost + fixedLabourCost;
+    const invoiceCost =
+      archivedInvoiceCost > 0 ? archivedInvoiceCost : legacyInvoiceCost;
+    // The table deliberately uses the more conservative number: whichever is
+    // larger between priced clocked wages and current-job pre-tax invoices.
+    const wageCost = Math.max(clockedWageCost, invoiceCost);
+    const labourCostSource: LabourCostSource =
+      invoiceCost > 0 && invoiceCost >= clockedWageCost
+        ? "invoices"
+        : "clocked_hours";
     const allowanceLow = preTaxAmount != null ? preTaxAmount * (LABOUR_MIN_PERCENT / 100) : null;
     const allowanceHigh = preTaxAmount != null ? preTaxAmount * (LABOUR_MAX_PERCENT / 100) : null;
     const wageSharePercent = labourExcluded
@@ -255,6 +405,15 @@ export function rollupProjects(
     const allowanceUsedLowPercent = allowanceLow && allowanceLow > 0 ? (wageCost / allowanceLow) * 100 : null;
     const allowanceUsedHighPercent = allowanceHigh && allowanceHigh > 0 ? (wageCost / allowanceHigh) * 100 : null;
     const percentUsed = allowanceUsedHighPercent;
+    const labourClosedAt = budget?.labour_closed_at ?? null;
+    const archivedInvoiceDate = invoiceSummaries?.get(id)?.latestInvoiceDate;
+    const lastActivity = latestActivity(
+      latestProjectActivity(
+        name,
+        latestActivity(lastById.get(id), expenseLastById.get(id)),
+      ),
+      archivedInvoiceDate ? `${archivedInvoiceDate}T12:00:00.000Z` : null,
+    );
     rollups.push({
       projectId: id,
       name,
@@ -271,6 +430,8 @@ export function rollupProjects(
       budgetCost: allowanceHigh,
       labourAllowanceLow: allowanceLow,
       labourAllowanceHigh: allowanceHigh,
+      clockedWageCost,
+      labourCostSource,
       wageCost,
       wageSharePercent,
       allowanceUsedLowPercent,
@@ -279,11 +440,14 @@ export function rollupProjects(
       remainingLabourHigh: allowanceHigh != null ? allowanceHigh - wageCost : null,
       unpricedHours: labourExcluded ? 0 : (unpricedById.get(id) ?? 0),
       assignedCount: assignedById.get(id) ?? 0,
-      lastActivity: latestProjectActivity(name, latestActivity(lastById.get(id), expenseLastById.get(id))),
+      lastActivity,
+      lastClockIn: lastById.get(id) ?? null,
       clockedHours,
       invoicedHours,
       fixedLabourCost,
       expenseCount: expenseCountById.get(id) ?? 0,
+      labourClosedAt,
+      labourBucket: classifyLabour({ labourExcluded, amountBeforeTax: preTaxAmount, wageCost, labourClosedAt }),
     });
   }
 
@@ -366,6 +530,8 @@ export function projectTaskProgress(
       title: task.title,
       notes: task.notes,
       status: task.status,
+      completedAt: task.completed_at ?? null,
+      completedByName: task.completed_by ? nameByUserId.get(task.completed_by) ?? "Painter" : null,
       budgetedHours: Math.max(0, task.budgeted_hours ?? 0),
       spentHours,
       contributors: [...contributors.values()].sort((a, b) => b.hours - a.hours),

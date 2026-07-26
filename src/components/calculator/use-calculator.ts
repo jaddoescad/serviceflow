@@ -144,8 +144,8 @@ export function useCalculator(projectId: string) {
   }, [projectId]);
 
   // Save: debounced; localStorage always (cache), Supabase when reachable.
-  // Edits to the selected default quote also republish its painter tasks so
-  // managers never need a separate "Update painter tasks" action.
+  // Saving never touches painter tasks — the calculator and the task list are
+  // decoupled; tasks only change on an explicit "Transfer to tasks".
   useEffect(() => {
     if (!hydrated) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -154,37 +154,8 @@ export function useCalculator(projectId: string) {
       if (!serverAvailable.current) return;
       setSyncStatus("saving");
       try {
-        const selectedDefault = defaultCalculatorRef.current;
-        const defaultQuote = selectedDefault
-          ? doc.quotes.find((candidate) => candidate.id === selectedDefault.quoteId)
-          : undefined;
-        const defaultNeedsPublishing =
-          selectedDefault &&
-          defaultQuote &&
-          new Date(selectedDefault.sourceQuoteUpdatedAt).getTime() !==
-            new Date(defaultQuote.updatedAt).getTime();
-
-        // Calculator edits should still save even when task publication is
-        // temporarily blocked by a painter's active timer.
         const saved = await saveCalculator(projectId, doc);
-        if (!saved.ok) {
-          setSyncStatus("offline");
-          return;
-        }
-        setSyncStatus("synced");
-
-        if (defaultNeedsPublishing) {
-          const published = await makeCalculatorDefault(projectId, doc, defaultQuote.id);
-          if (!published.ok) {
-            setDefaultCalculatorError(published.error);
-            return;
-          }
-          defaultCalculatorRef.current = published.defaultCalculator;
-          setDefaultCalculator(published.defaultCalculator);
-          setDefaultCalculatorError(null);
-          setSyncStatus("synced");
-          return;
-        }
+        setSyncStatus(saved.ok ? "synced" : "offline");
       } catch {
         setSyncStatus("offline");
       }
