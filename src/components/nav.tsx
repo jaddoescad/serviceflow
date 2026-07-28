@@ -7,6 +7,7 @@ import { cn } from "@/components/ui";
 const LINKS = [
   { href: "/", label: "Overview", icon: "▤" },
   { href: "/timesheets", label: "Timesheets", icon: "🕑" },
+  { href: "/leads", label: "Leads & Estimates", icon: "◎" },
   { href: "/projects", label: "Jobs & Budgets", icon: "🏗" },
   { href: "/invoices", label: "Labour Invoices", icon: "🧾" },
   { href: "/employees", label: "Crew", icon: "👥" },

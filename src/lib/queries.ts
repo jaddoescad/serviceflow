@@ -5,6 +5,7 @@ import type {
   EmployeePayRate,
   EmployeeProfile,
   EmployeeTrackingStatus,
+  LeadEstimate,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
@@ -97,7 +98,7 @@ export async function getEmployeePayRates(): Promise<EmployeePayRate[]> {
 export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient();
   const projectColumns =
-    "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,companycam_updated_at";
+    "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,is_lead,companycam_updated_at";
   const [activeResult, completedBudgetResult] = await Promise.all([
     supabase
       .from("companycam_projects")
@@ -143,6 +144,100 @@ export async function getProjects(): Promise<Project[]> {
     ...activeProjects,
     ...((archivedCompletedData ?? []) as Project[]),
   ];
+}
+
+type LeadProjectRow = {
+  companycam_id: string;
+  name: string;
+  street_address_1: string | null;
+  street_address_2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  formatted_address: string | null;
+  companycam_created_at: string | null;
+  last_synced_at: string | null;
+  raw: Record<string, unknown> | null;
+};
+
+function companyCamIso(value: unknown): string | null {
+  if (value == null || value === "") return null;
+
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric < 1_000_000_000_000 ? numeric * 1000 : numeric)
+    : new Date(String(value));
+
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function leadAddress(project: LeadProjectRow): string | null {
+  const parts = [
+    project.street_address_1,
+    project.street_address_2,
+    project.city,
+    project.state,
+    project.postal_code,
+  ].filter((part): part is string => Boolean(part?.trim()));
+
+  if (parts.length === 0) return null;
+  return project.formatted_address?.trim() || parts.join(", ");
+}
+
+export async function getLeadEstimates(): Promise<LeadEstimate[]> {
+  const supabase = await createClient();
+  const [leadsResult, calculatorsResult] = await Promise.all([
+    supabase
+      .from("companycam_projects")
+      .select(
+        "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,companycam_created_at,last_synced_at,raw",
+      )
+      .eq("is_lead", true)
+      .eq("is_archived", false)
+      .eq("is_deleted", false)
+      .limit(1000),
+    supabase
+      .from("project_calculators")
+      .select("companycam_project_id,updated_at")
+      .limit(5000),
+  ]);
+
+  if (leadsResult.error) {
+    throw new Error(`leads: ${leadsResult.error.message}`);
+  }
+  if (calculatorsResult.error) {
+    throw new Error(`lead calculators: ${calculatorsResult.error.message}`);
+  }
+
+  const estimateUpdatedByProject = new Map(
+    (calculatorsResult.data ?? []).map((calculator) => [
+      calculator.companycam_project_id,
+      calculator.updated_at,
+    ]),
+  );
+
+  return ((leadsResult.data ?? []) as LeadProjectRow[])
+    .map((project) => {
+      const raw = project.raw ?? {};
+      return {
+        projectId: project.companycam_id,
+        name: project.name,
+        address: leadAddress(project),
+        hasStreetAddress: Boolean(project.street_address_1?.trim()),
+        createdAt:
+          project.companycam_created_at ??
+          companyCamIso(raw.created_at ?? raw.inserted_at) ??
+          project.last_synced_at,
+        estimateUpdatedAt:
+          estimateUpdatedByProject.get(project.companycam_id) ?? null,
+      };
+    })
+    .sort(
+      (left, right) =>
+        (right.createdAt ? Date.parse(right.createdAt) : 0) -
+          (left.createdAt ? Date.parse(left.createdAt) : 0) ||
+        left.name.localeCompare(right.name, "en-CA"),
+    );
 }
 
 export async function getBudgets(): Promise<ProjectBudget[]> {
@@ -210,7 +305,7 @@ export async function getProjectById(projectId: string): Promise<Project | null>
   const { data, error } = await supabase
     .from("companycam_projects")
     .select(
-      "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,companycam_updated_at",
+      "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,is_lead,companycam_updated_at",
     )
     .eq("companycam_id", projectId)
     .maybeSingle();

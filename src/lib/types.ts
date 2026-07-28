@@ -96,7 +96,17 @@ export type Project = {
   latitude: number | null;
   longitude: number | null;
   is_archived: boolean;
+  is_lead: boolean;
   companycam_updated_at: string | null;
+};
+
+export type LeadEstimate = {
+  projectId: string;
+  name: string;
+  address: string | null;
+  hasStreetAddress: boolean;
+  createdAt: string | null;
+  estimateUpdatedAt: string | null;
 };
 
 export type ProjectBudget = {

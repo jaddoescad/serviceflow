@@ -57,7 +57,10 @@ function writeLocal(key: string, value: unknown) {
   } catch {}
 }
 
-export function useCalculator(projectId: string) {
+export function useCalculator(
+  projectId: string,
+  { allowTaskTransfer = true }: { allowTaskTransfer?: boolean } = {},
+) {
   const [doc, setDoc] = useState<ProjectCalculator>(emptyProjectCalculator);
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
@@ -103,6 +106,11 @@ export function useCalculator(projectId: string) {
           // migration has not been deployed yet.
           const saved = result.doc ? { ok: true } : await saveCalculator(projectId, initialDoc);
           if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
+        } else if (!allowTaskTransfer) {
+          // Lead estimates save as calculator documents, but do not create
+          // operational painter budgets or tasks before the lead is converted.
+          const saved = result.doc ? { ok: true } : await saveCalculator(projectId, initialDoc);
+          if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
         } else {
           // There is no explicit default yet. The first-created quote—not the
           // currently viewed quote—becomes the default automatically.
@@ -141,7 +149,7 @@ export function useCalculator(projectId: string) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [allowTaskTransfer, projectId]);
 
   // Save: debounced; localStorage always (cache), Supabase when reachable.
   // Saving never touches painter tasks — the calculator and the task list are
@@ -266,6 +274,15 @@ export function useCalculator(projectId: string) {
   }, [quote.rates]);
 
   const makeDefault = useCallback(async () => {
+    if (!allowTaskTransfer) {
+      const result = {
+        ok: false as const,
+        error: "Convert this lead to a job in CompanyCam before transferring painter tasks.",
+      };
+      setDefaultCalculatorError(result.error);
+      return result;
+    }
+
     setMakingDefault(true);
     setDefaultCalculatorError(null);
     try {
@@ -285,10 +302,19 @@ export function useCalculator(projectId: string) {
     } finally {
       setMakingDefault(false);
     }
-  }, [doc, projectId]);
+  }, [allowTaskTransfer, doc, projectId]);
 
   const updateTaskBudgetHours = useCallback(
     async (taskId: string, budgetedHours: number | null) => {
+      if (!allowTaskTransfer) {
+        const result = {
+          ok: false as const,
+          error: "Convert this lead to a job in CompanyCam before changing painter task budgets.",
+        };
+        setTaskBudgetError(result.error);
+        return result;
+      }
+
       setUpdatingTaskBudgetId(taskId);
       setTaskBudgetError(null);
       try {
@@ -307,7 +333,7 @@ export function useCalculator(projectId: string) {
         setUpdatingTaskBudgetId(null);
       }
     },
-    [projectId],
+    [allowTaskTransfer, projectId],
   );
 
   return {

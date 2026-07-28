@@ -204,6 +204,25 @@ export type MakeCalculatorDefaultResult =
   | { ok: true; defaultCalculator: DefaultCalculatorSelection }
   | { ok: false; error: string };
 
+async function operationalProjectError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("companycam_projects")
+    .select("is_lead,is_deleted")
+    .eq("companycam_id", projectId)
+    .maybeSingle();
+
+  if (error) return error.message;
+  if (!data) return "The CompanyCam job was not found.";
+  if (data.is_deleted) return "Deleted CompanyCam jobs cannot publish painter tasks.";
+  if (data.is_lead) {
+    return "Convert this lead to a job in CompanyCam before transferring painter tasks.";
+  }
+  return null;
+}
+
 /**
  * Copy one quote's items into the painter task list. Additive: tasks that came
  * from the same calculator items are updated in place, new items are appended,
@@ -225,8 +244,11 @@ export async function makeCalculatorDefault(
   const quote: Quote | undefined = clean.quotes.find((candidate) => candidate.id === quoteId);
   if (!quote) return { ok: false, error: "Choose a calculator before transferring it." };
 
-  const draft = buildLabourBudgetDraft(quote);
   const supabase = await createClient();
+  const projectError = await operationalProjectError(supabase, projectId);
+  if (projectError) return { ok: false, error: projectError };
+
+  const draft = buildLabourBudgetDraft(quote);
 
   const { data, error } = await supabase.rpc("transfer_project_calculator_tasks", {
     requested_project_id: projectId,
@@ -271,6 +293,9 @@ export async function setLabourTaskBudgetHours(
   }
 
   const supabase = await createClient();
+  const projectError = await operationalProjectError(supabase, projectId);
+  if (projectError) return { ok: false, error: projectError };
+
   const { error } = await supabase.rpc("set_project_labour_task_budget_hours", {
     requested_project_id: projectId,
     requested_task_id: taskId,

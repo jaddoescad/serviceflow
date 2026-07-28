@@ -30,12 +30,14 @@ const nameKey = (projectId: string) => `op-calculator-name:${projectId}`;
 export function CalculatorPage({
   projectId,
   projectName,
+  isLead,
 }: {
   projectId: string;
   projectName: string | null;
+  isLead: boolean;
 }) {
   const router = useRouter();
-  const calc = useCalculator(projectId);
+  const calc = useCalculator(projectId, { allowTaskTransfer: !isLead });
   const [ratesOpen, setRatesOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
@@ -89,8 +91,8 @@ export function CalculatorPage({
       <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
-            <Link href="/projects" className="hover:text-[var(--color-text)]">
-              Jobs &amp; Budgets
+            <Link href={isLead ? "/leads" : "/projects"} className="hover:text-[var(--color-text)]">
+              {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
             </Link>
             <span className="mx-1.5">/</span>
             <span>{displayName || "Job"}</span>
@@ -100,7 +102,18 @@ export function CalculatorPage({
             subtitle="Prices and the labour budget update as you type"
           />
 
-          <ProjectTabs projectId={projectId} projectName={displayName || ""} />
+          {isLead ? (
+            <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-4 py-3">
+              <div className="text-sm font-medium text-[var(--color-brand-strong)]">
+                CompanyCam lead estimate
+              </div>
+              <p className="mt-0.5 text-xs leading-5 text-[var(--color-muted)]">
+                An address is optional. This estimate autosaves to the lead and will remain attached when it becomes a job.
+              </p>
+            </div>
+          ) : (
+            <ProjectTabs projectId={projectId} projectName={displayName || ""} />
+          )}
 
           <QuoteBar
             doc={doc}
@@ -180,7 +193,7 @@ export function CalculatorPage({
                           rates={quote.rates.interior}
                           autoFocus={room.id === lastAddedId}
                           labourTask={labourTask}
-                          taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                          taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
                           taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
                           onTaskBudgetChange={calc.updateTaskBudgetHours}
                           onChange={(patch) => dispatch({ type: "updateRoom", roomId: room.id, patch })}
@@ -223,7 +236,7 @@ export function CalculatorPage({
                                   rates={quote.rates.exterior}
                                   autoFocus={line.id === lastAddedId}
                                   labourTask={labourTask}
-                                  taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                                  taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
                                   taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
                                   onTaskBudgetChange={calc.updateTaskBudgetHours}
                                   onChange={(patch) => dispatch({ type: "updateExteriorLine", lineId: line.id, patch })}
@@ -236,7 +249,7 @@ export function CalculatorPage({
                                 choice={quote.washing}
                                 rates={quote.rates.exterior}
                                 labourTask={currentLabourTasks.get("washing:pressure-washing")}
-                                taskBudgetDisabled={calc.updatingTaskBudgetId !== null}
+                                taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
                                 taskBudgetSaving={
                                   calc.updatingTaskBudgetId === currentLabourTasks.get("washing:pressure-washing")?.id
                                 }
@@ -280,6 +293,7 @@ export function CalculatorPage({
               defaultCalculator={calc.defaultCalculator}
               defaultCalculatorError={calc.defaultCalculatorError}
               makingDefault={calc.makingDefault}
+              canTransferTasks={!isLead}
               onMakeDefault={async () => {
                 const result = await calc.makeDefault();
                 if (result?.ok) {
@@ -287,7 +301,7 @@ export function CalculatorPage({
                 }
                 return result;
               }}
-              tasksHref={`/projects/${encodeURIComponent(projectId)}/tasks`}
+              tasksHref={isLead ? undefined : `/projects/${encodeURIComponent(projectId)}/tasks`}
               onEditRates={() => setRatesOpen(true)}
               onClear={() => dispatch({ type: "clear" })}
             />

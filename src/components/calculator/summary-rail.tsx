@@ -92,6 +92,7 @@ export function SummaryRail({
   defaultCalculator,
   defaultCalculatorError,
   makingDefault,
+  canTransferTasks,
   onMakeDefault,
   tasksHref,
   onEditRates,
@@ -104,6 +105,7 @@ export function SummaryRail({
   defaultCalculator: DefaultCalculatorSelection | null;
   defaultCalculatorError: string | null;
   makingDefault: boolean;
+  canTransferTasks: boolean;
   onMakeDefault: () => Promise<unknown>;
   tasksHref?: string;
   onEditRates: () => void;
@@ -185,7 +187,16 @@ export function SummaryRail({
         >
           {copied ? "Copied ✓" : "Copy summary"}
         </Button>
-        {!transferredIsCurrent ? (
+        {!canTransferTasks ? (
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-3 py-2.5">
+            <div className="text-xs font-medium text-[var(--color-brand-strong)]">
+              Lead estimate
+            </div>
+            <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-muted)]">
+              Painter task transfer unlocks automatically when this lead becomes a job in CompanyCam.
+            </p>
+          </div>
+        ) : !transferredIsCurrent ? (
           <Button
             variant="subtle"
             className="w-full"
@@ -210,7 +221,7 @@ export function SummaryRail({
             Transferred ✓ View tasks →
           </Link>
         ) : null}
-        {defaultCalculatorError ? (
+        {canTransferTasks && defaultCalculatorError ? (
           <p role="alert" className="text-[10px] leading-4 text-[var(--color-bad)]">
             {defaultCalculatorError}
           </p>
