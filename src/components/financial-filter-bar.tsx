@@ -3,7 +3,12 @@
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import type { FinancialAccount } from "@/lib/financials";
 import Link from "next/link";
-import type { ChangeEvent } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useTransition,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 
 export type FinancialFilters = {
   year: number;
@@ -14,10 +19,6 @@ export type FinancialFilters = {
   transactionType: "all" | "income" | "expense" | "transfer" | "credit";
   evidence: "all" | "matched" | "no_document" | "missing";
 };
-
-function applySelectFilter(event: ChangeEvent<HTMLSelectElement>) {
-  event.currentTarget.form?.requestSubmit();
-}
 
 export function FinancialFilterBar({
   filters,
@@ -30,6 +31,8 @@ export function FinancialFilterBar({
   accounts: FinancialAccount[];
   categories: string[];
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const activeFilterCount = [
     filters.account !== "all",
     filters.category !== "all",
@@ -38,6 +41,41 @@ export function FinancialFilterBar({
     filters.evidence !== "all",
     Boolean(filters.query),
   ].filter(Boolean).length;
+  const formKey = [
+    filters.year,
+    filters.account,
+    filters.category,
+    filters.query,
+    filters.status,
+    filters.transactionType,
+    filters.evidence,
+  ].join("|");
+
+  function updateFilters(form: HTMLFormElement) {
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+
+    for (const [name, value] of formData.entries()) {
+      if (typeof value !== "string") continue;
+      const normalizedValue = value.trim();
+      if (!normalizedValue || normalizedValue === "all") continue;
+      params.set(name, normalizedValue);
+    }
+
+    startTransition(() => {
+      router.replace(`/financials?${params.toString()}`, { scroll: false });
+    });
+  }
+
+  function applySelectFilter(event: ChangeEvent<HTMLSelectElement>) {
+    const form = event.currentTarget.form;
+    if (form) updateFilters(form);
+  }
+
+  function applySubmittedFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    updateFilters(event.currentTarget);
+  }
 
   return (
     <Card className="mb-2 p-3">
@@ -52,8 +90,11 @@ export function FinancialFilterBar({
         ) : null}
       </div>
       <form
+        key={formKey}
         action="/financials"
         method="get"
+        onSubmit={applySubmittedFilters}
+        aria-busy={isPending}
         className="flex flex-wrap items-end gap-2"
       >
         <div className="w-[90px]">
@@ -162,11 +203,17 @@ export function FinancialFilterBar({
           </Field>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button type="submit" variant="subtle" size="sm">
-            Apply filters
+          <Button
+            type="submit"
+            variant="subtle"
+            size="sm"
+            disabled={isPending}
+          >
+            {isPending ? "Filtering…" : "Apply filters"}
           </Button>
           <Link
             href="/financials"
+            scroll={false}
             className="inline-flex items-center justify-center rounded-lg px-2.5 py-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
           >
             Clear
