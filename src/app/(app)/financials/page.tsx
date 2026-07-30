@@ -67,6 +67,13 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function isOneOf<const T extends readonly string[]>(
+  value: string,
+  options: T,
+): value is T[number] {
+  return options.includes(value);
+}
+
 function sum(
   transactions: FinancialTransaction[],
   field: "amount" | "tax_amount" | "net_amount",
@@ -163,7 +170,39 @@ export default async function FinancialsPage({
   const requestedCategory = firstParam(params.category) || "all";
   const category = categories.includes(requestedCategory) ? requestedCategory : "all";
   const query = firstParam(params.q).trim().slice(0, 120);
-  const filters: FinancialFilters = { year, account, category, query };
+  const requestedStatus = firstParam(params.status) || "all";
+  const statusOptions = ["all", "needs_review", "reconciled", "paid"] as const;
+  const status = isOneOf(requestedStatus, statusOptions)
+    ? requestedStatus
+    : "all";
+  const requestedTransactionType = firstParam(params.type) || "all";
+  const transactionTypeOptions = [
+    "all",
+    "income",
+    "expense",
+    "transfer",
+    "credit",
+  ] as const;
+  const transactionType = isOneOf(
+    requestedTransactionType,
+    transactionTypeOptions,
+  )
+    ? requestedTransactionType
+    : "all";
+  const requestedEvidence = firstParam(params.evidence) || "all";
+  const evidenceOptions = ["all", "matched", "no_document", "missing"] as const;
+  const evidence = isOneOf(requestedEvidence, evidenceOptions)
+    ? requestedEvidence
+    : "all";
+  const filters: FinancialFilters = {
+    year,
+    account,
+    category,
+    query,
+    status,
+    transactionType,
+    evidence,
+  };
 
   const periodTransactions = ledger.transactions.filter(
     (transaction) =>
@@ -171,9 +210,37 @@ export default async function FinancialsPage({
       (account === "all" || transaction.financial_accounts.slug === account),
   );
   const normalizedQuery = query.toLocaleLowerCase("en-CA");
-  const displayedTransactions = periodTransactions.filter(
-    (transaction) =>
+  const displayedTransactions = periodTransactions.filter((transaction) => {
+    const hasPaidInvoice = transaction.evidence.some(
+      (item) => item.kind === "labour_invoice",
+    );
+    const hasMatchedEvidence = transaction.evidence.some(
+      (item) =>
+        item.kind === "labour_invoice" || item.kind === "interac_email",
+    );
+    const hasNoDocumentRequired = transaction.evidence.some(
+      (item) => item.kind === "no_document_required",
+    );
+    const isMissingEvidence = !hasMatchedEvidence && !hasNoDocumentRequired;
+    const matchesStatus =
+      status === "all" ||
+      (status === "paid" && hasPaidInvoice) ||
+      (status === "reconciled" &&
+        transaction.review_status === "reconciled") ||
+      (status === "needs_review" &&
+        transaction.review_status !== "reconciled");
+    const matchesEvidence =
+      evidence === "all" ||
+      (evidence === "matched" && hasMatchedEvidence) ||
+      (evidence === "no_document" && hasNoDocumentRequired) ||
+      (evidence === "missing" && isMissingEvidence);
+
+    return (
       (category === "all" || transaction.category === category) &&
+      (transactionType === "all" ||
+        transaction.transaction_type === transactionType) &&
+      matchesStatus &&
+      matchesEvidence &&
       (!normalizedQuery ||
         [
           transaction.counterparty,
@@ -184,8 +251,9 @@ export default async function FinancialsPage({
           String(value ?? "")
             .toLocaleLowerCase("en-CA")
             .includes(normalizedQuery),
-        )),
-  );
+        ))
+    );
+  });
 
   const operatingTransactions = periodTransactions.filter(
     (transaction) => !transaction.is_transfer,

@@ -2,6 +2,7 @@
 
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 import type { FinancialAccount } from "@/lib/financials";
+import Link from "next/link";
 import type { ChangeEvent } from "react";
 
 export type FinancialFilters = {
@@ -9,6 +10,9 @@ export type FinancialFilters = {
   account: string;
   category: string;
   query: string;
+  status: "all" | "needs_review" | "reconciled" | "paid";
+  transactionType: "all" | "income" | "expense" | "transfer" | "credit";
+  evidence: "all" | "matched" | "no_document" | "missing";
 };
 
 function applySelectFilter(event: ChangeEvent<HTMLSelectElement>) {
@@ -26,12 +30,36 @@ export function FinancialFilterBar({
   accounts: FinancialAccount[];
   categories: string[];
 }) {
+  const activeFilterCount = [
+    filters.account !== "all",
+    filters.category !== "all",
+    filters.status !== "all",
+    filters.transactionType !== "all",
+    filters.evidence !== "all",
+    Boolean(filters.query),
+  ].filter(Boolean).length;
+
   return (
     <Card className="mb-4 p-4">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-sm font-semibold text-[var(--color-heading)]">
+            Filter transactions
+          </h2>
+          <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+            Use payment status and evidence to find what still needs attention.
+          </p>
+        </div>
+        {activeFilterCount > 0 ? (
+          <span className="rounded-full bg-[var(--color-brand-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-brand)]">
+            {activeFilterCount} active
+          </span>
+        ) : null}
+      </div>
       <form
         action="/financials"
         method="get"
-        className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[140px_230px_230px_minmax(220px,1fr)_auto]"
+        className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         <Field label="Year">
           <Select
@@ -45,6 +73,46 @@ export function FinancialFilterBar({
                 {year}
               </option>
             ))}
+          </Select>
+        </Field>
+        <Field label="Payment / review">
+          <Select
+            name="status"
+            defaultValue={filters.status}
+            className="w-full"
+            onChange={applySelectFilter}
+          >
+            <option value="all">All statuses</option>
+            <option value="needs_review">Needs review</option>
+            <option value="paid">Paid invoice</option>
+            <option value="reconciled">Reconciled</option>
+          </Select>
+        </Field>
+        <Field label="Supporting evidence">
+          <Select
+            name="evidence"
+            defaultValue={filters.evidence}
+            className="w-full"
+            onChange={applySelectFilter}
+          >
+            <option value="all">All evidence</option>
+            <option value="matched">Invoice or email matched</option>
+            <option value="no_document">No document required</option>
+            <option value="missing">Missing document</option>
+          </Select>
+        </Field>
+        <Field label="Transaction type">
+          <Select
+            name="type"
+            defaultValue={filters.transactionType}
+            className="w-full"
+            onChange={applySelectFilter}
+          >
+            <option value="all">All types</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+            <option value="transfer">Transfer</option>
+            <option value="credit">Credit</option>
           </Select>
         </Field>
         <Field label="Account">
@@ -84,9 +152,17 @@ export function FinancialFilterBar({
             placeholder="Counterparty or description"
           />
         </Field>
-        <Button type="submit" variant="subtle">
-          Apply filters
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="submit" variant="subtle" className="flex-1">
+            Apply filters
+          </Button>
+          <Link
+            href="/financials"
+            className="inline-flex items-center justify-center rounded-lg px-3.5 py-2 text-sm font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+          >
+            Clear
+          </Link>
+        </div>
       </form>
     </Card>
   );
