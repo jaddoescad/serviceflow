@@ -40,6 +40,9 @@ export type InvoiceEntryRecord = {
     invoice_date: string | null;
     source_date: string | null;
     currency: "CAD" | "USD";
+    amount_before_tax: number;
+    tax_amount: number;
+    amount_after_tax: number;
     original_filename: string;
     duplicate_group_size: number;
     owner_name: string;
@@ -62,10 +65,12 @@ type StoredEntry = Omit<InvoiceEntryRecord, "invoice" | "jobs"> & {
     | (Omit<
         InvoiceEntryRecord["invoice"],
         | "owner_name"
+        | "amount_after_tax"
         | "paid_amount"
         | "payment_status"
         | "verification_status"
       > & {
+        amount_paid: number;
         labour_contractors: {
           employee_profiles: {
             full_name: string;
@@ -130,6 +135,9 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
             invoice_date,
             source_date,
             currency,
+            amount_before_tax,
+            tax_amount,
+            amount_paid,
             original_filename,
             duplicate_group_size,
             labour_contractors (
@@ -182,6 +190,7 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
       const verification = verificationByInvoice.get(row.invoice_id);
       const {
         labour_contractors: contractor,
+        amount_paid: amountAfterTax,
         ...storedInvoice
       } = row.labour_invoices;
 
@@ -208,6 +217,9 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
         needs_review: row.needs_review,
         invoice: {
           ...storedInvoice,
+          amount_before_tax: Number(storedInvoice.amount_before_tax),
+          tax_amount: Number(storedInvoice.tax_amount),
+          amount_after_tax: Number(amountAfterTax),
           owner_name:
             contractor?.employee_profiles?.full_name ??
             storedInvoice.supplier_name,
