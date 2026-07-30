@@ -331,13 +331,6 @@ export default async function FinancialsPage({
         }
       />
 
-      <FinancialFilterBar
-        filters={filters}
-        years={years}
-        accounts={ledger.accounts}
-        categories={categories}
-      />
-
       {needsReview ? (
         <Card className="mb-4 border-[var(--color-warn)] p-4">
           <div className="text-sm font-medium text-[var(--color-heading)]">
@@ -527,6 +520,13 @@ export default async function FinancialsPage({
           );
         })}
       </div>
+
+      <FinancialFilterBar
+        filters={filters}
+        years={years}
+        accounts={ledger.accounts}
+        categories={categories}
+      />
 
       <FinancialTransactionsTable
         transactions={displayedTransactions}
