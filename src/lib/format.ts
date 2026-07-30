@@ -66,7 +66,9 @@ export function fmtTime(value: string | null): string {
 
 export function fmtDate(value: string | null): string {
   if (!value) return "—";
-  const d = new Date(value);
+  const d = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value,
+  );
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("en-CA", {
     timeZone: OTTAWA_TZ,
