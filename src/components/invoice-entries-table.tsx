@@ -317,7 +317,7 @@ export function InvoiceEntriesTable({
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
                     {money(
-                      entry.after_hst_amount,
+                      entry.amount_before_tax + entry.tax_amount,
                       entry.invoice.currency,
                     )}
                   </td>
