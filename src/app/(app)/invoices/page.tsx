@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
 import { getInvoiceEntries } from "@/lib/invoice-entry-queries";
 import { PageHeader, Kpi } from "@/components/kpi";
@@ -23,6 +24,14 @@ export default async function InvoicesPage() {
       <PageHeader
         title="Invoices"
         subtitle="Browse individual entries while preserving every original invoice as source evidence"
+        actions={
+          <Link
+            href="/settlements"
+            className="rounded-lg bg-[var(--color-brand)] px-3.5 py-2 text-sm font-medium text-[var(--color-brand-ink)] hover:brightness-95"
+          >
+            Match bank payments
+          </Link>
+        }
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi

@@ -13,6 +13,8 @@
     "clock-out": "node scripts/time-entry-cli.mjs clock-out",
     "tasks": "node scripts/project-task-cli.mjs",
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
+    "audit:invoice-bank": "node --experimental-strip-types scripts/audit-invoice-bank-matches.mjs",
+    "test:invoice-bank": "node --experimental-strip-types --test scripts/invoice-bank-matcher.test.mjs",
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs"

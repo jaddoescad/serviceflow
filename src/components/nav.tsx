@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/projects", label: "Jobs & Budgets", icon: "🏗" },
   { href: "/financials", label: "Financials", icon: "＄" },
   { href: "/invoices", label: "Invoices", icon: "🧾" },
+  { href: "/settlements", label: "Invoice Payments", icon: "↔" },
   { href: "/employees", label: "Crew", icon: "👥" },
 ];
 
