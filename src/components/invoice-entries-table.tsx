@@ -174,7 +174,7 @@ export function InvoiceEntriesTable({
         <div className="overflow-x-auto">
           <table
             className={`w-full text-left text-sm ${
-              showJobs ? "min-w-[1320px]" : "min-w-[1080px]"
+              showJobs ? "min-w-[1420px]" : "min-w-[1180px]"
             }`}
           >
             <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -190,6 +190,9 @@ export function InvoiceEntriesTable({
                 </th>
                 <th className="px-4 py-3 text-right font-medium">
                   Before HST
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  After HST
                 </th>
                 <th className="px-4 py-3 font-medium">Payment</th>
                 <th className="px-4 py-3 font-medium">Evidence</th>
@@ -284,6 +287,12 @@ export function InvoiceEntriesTable({
                   <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
                     {money(
                       entry.amount_before_tax,
+                      entry.invoice.currency,
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
+                    {money(
+                      entry.amount_before_tax + entry.tax_amount,
                       entry.invoice.currency,
                     )}
                   </td>
