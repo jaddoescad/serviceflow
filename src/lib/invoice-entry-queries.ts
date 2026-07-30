@@ -30,6 +30,7 @@ export type InvoiceEntryRecord = {
   hourly_rate: number | null;
   amount_before_tax: number;
   tax_amount: number;
+  after_hst_amount: number;
   source_kind: InvoiceEntrySourceKind;
   source_text: string | null;
   needs_review: boolean;
@@ -40,6 +41,9 @@ export type InvoiceEntryRecord = {
     invoice_date: string | null;
     source_date: string | null;
     currency: "CAD" | "USD";
+    amount_before_tax: number;
+    tax_amount: number;
+    amount_paid: number;
     original_filename: string;
     duplicate_group_size: number;
     owner_name: string;
@@ -99,6 +103,89 @@ function dateKey(entry: InvoiceEntryRecord): string {
   );
 }
 
+function cents(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100);
+}
+
+function addAfterHstAmounts(
+  entries: InvoiceEntryRecord[],
+): InvoiceEntryRecord[] {
+  const entriesByInvoice = new Map<string, InvoiceEntryRecord[]>();
+  for (const entry of entries) {
+    entriesByInvoice.set(entry.invoice_id, [
+      ...(entriesByInvoice.get(entry.invoice_id) ?? []),
+      entry,
+    ]);
+  }
+
+  return [...entriesByInvoice.values()].flatMap((invoiceEntries) => {
+    const invoiceTaxCents = cents(invoiceEntries[0]!.invoice.tax_amount);
+    const recordedLineTaxCents = invoiceEntries.reduce(
+      (total, entry) => total + cents(entry.tax_amount),
+      0,
+    );
+    const taxToAllocate = invoiceTaxCents - recordedLineTaxCents;
+    const allocationBasis = invoiceEntries.reduce(
+      (total, entry) => total + Math.max(0, cents(entry.amount_before_tax)),
+      0,
+    );
+
+    if (taxToAllocate === 0 || allocationBasis === 0) {
+      return invoiceEntries.map((entry, index) => ({
+        ...entry,
+        after_hst_amount:
+          (cents(entry.amount_before_tax) +
+            cents(entry.tax_amount) +
+            (allocationBasis === 0 && index === 0 ? taxToAllocate : 0)) /
+          100,
+      }));
+    }
+
+    const shares = invoiceEntries.map((entry) => {
+      const rawShare =
+        (taxToAllocate * Math.max(0, cents(entry.amount_before_tax))) /
+        allocationBasis;
+      const baseShare = Math.trunc(rawShare);
+      return {
+        entry,
+        baseShare,
+        remainder: Math.abs(rawShare - baseShare),
+      };
+    });
+    const remainder =
+      taxToAllocate -
+      shares.reduce((total, share) => total + share.baseShare, 0);
+    const adjustment = Math.sign(remainder);
+    const ordered = [...shares].sort(
+      (left, right) =>
+        right.remainder - left.remainder ||
+        left.entry.line_number - right.entry.line_number ||
+        left.entry.id.localeCompare(right.entry.id),
+    );
+    const adjustmentByEntry = new Map<string, number>();
+    for (
+      let index = 0;
+      index < Math.abs(remainder) && ordered.length;
+      index += 1
+    ) {
+      const entryId = ordered[index % ordered.length]!.entry.id;
+      adjustmentByEntry.set(
+        entryId,
+        (adjustmentByEntry.get(entryId) ?? 0) + adjustment,
+      );
+    }
+    return shares.map(({ entry, baseShare }) => ({
+      ...entry,
+      after_hst_amount:
+        (cents(entry.amount_before_tax) +
+          cents(entry.tax_amount) +
+          baseShare +
+          (adjustmentByEntry.get(entry.id) ?? 0)) /
+        100,
+    }));
+  });
+}
+
 export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
   const supabase = await createClient();
   const [entriesResult, verificationResult] = await Promise.all([
@@ -130,6 +217,9 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
             invoice_date,
             source_date,
             currency,
+            amount_before_tax,
+            tax_amount,
+            amount_paid,
             original_filename,
             duplicate_group_size,
             labour_contractors (
@@ -203,11 +293,15 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
           row.hourly_rate == null ? null : Number(row.hourly_rate),
         amount_before_tax: Number(row.amount_before_tax),
         tax_amount: Number(row.tax_amount),
+        after_hst_amount: 0,
         source_kind: row.source_kind,
         source_text: row.source_text,
         needs_review: row.needs_review,
         invoice: {
           ...storedInvoice,
+          amount_before_tax: Number(storedInvoice.amount_before_tax),
+          tax_amount: Number(storedInvoice.tax_amount),
+          amount_paid: Number(storedInvoice.amount_paid),
           owner_name:
             contractor?.employee_profiles?.full_name ??
             storedInvoice.supplier_name,
@@ -234,7 +328,7 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
     })
     .filter((entry): entry is InvoiceEntryRecord => entry != null);
 
-  return entries.sort(
+  return addAfterHstAmounts(entries).sort(
     (left, right) =>
       dateKey(right).localeCompare(dateKey(left)) ||
       right.invoice.invoice_number.localeCompare(
