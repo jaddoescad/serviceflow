@@ -137,7 +137,7 @@ export function FinancialFilterBar({
               onChange={applySelectFilter}
             >
               <option value="all">All evidence</option>
-              <option value="matched">Invoice or email matched</option>
+              <option value="matched">Payment purpose matched</option>
               <option value="no_document">No document required</option>
               <option value="missing">Missing document</option>
             </Select>

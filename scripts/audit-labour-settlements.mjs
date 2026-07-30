@@ -173,8 +173,8 @@ const [
   db
     .from("labour_reconciliation_resolutions")
     .select("id", { count: "exact", head: true }),
-  db.from("labour_invoice_reconciliation").select("*"),
-  db.from("labour_payment_reconciliation").select("*"),
+  db.from("labour_invoice_verification").select("*"),
+  db.from("labour_payment_verification").select("*"),
 ]);
 
 for (const [label, result] of Object.entries({

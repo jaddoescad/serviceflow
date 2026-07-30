@@ -26,11 +26,7 @@ export type FinancialImport = {
 };
 
 export type FinancialEvidence = {
-  kind:
-    | "bank_record"
-    | "no_document_required"
-    | "labour_invoice"
-    | "interac_email";
+  kind: "bank_record" | "no_document_required" | "labour_invoice";
   label: string;
   detail: string;
   status: "confirmed" | "source";
@@ -45,6 +41,26 @@ export type FinancialSourceDetails = {
   authorized_on: string | null;
   pending: boolean;
   reference: string | null;
+};
+
+export type PaymentVerificationSummary = {
+  contractor_id: string | null;
+  recipient_status: "unknown" | "confirmed";
+  payment_amount: number;
+  invoice_allocated_amount: number;
+  bonus_allocated_amount: number;
+  other_allocated_amount: number;
+  total_allocated_amount: number;
+  unallocated_amount: number;
+  invoice_count: number;
+  bonus_count: number;
+  other_count: number;
+  payment_status:
+    | "unidentified"
+    | "unmatched"
+    | "partially_allocated"
+    | "fully_allocated"
+    | "needs_review";
 };
 
 export type FinancialTransaction = {
@@ -65,6 +81,7 @@ export type FinancialTransaction = {
   notes: string | null;
   source_details: FinancialSourceDetails;
   evidence: FinancialEvidence[];
+  payment_verification: PaymentVerificationSummary | null;
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -84,20 +101,11 @@ type FinancialSourceData = {
   bank_category?: unknown;
   authorized_date?: unknown;
   bank_sync_transaction_id?: unknown;
-  interac_gmail_message_id?: unknown;
-  settlements?: unknown;
-};
-
-type StoredSettlement = {
-  kind?: unknown;
-  labour_invoice_id?: unknown;
-  allocated_amount?: unknown;
-  payment_confirmation_message_id?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
   FinancialTransaction,
-  "source_details" | "evidence"
+  "source_details" | "evidence" | "payment_verification"
 > & {
   source_data: FinancialSourceData | null;
 };
@@ -112,24 +120,8 @@ type EvidenceLabourInvoice = {
   storage_path: string;
 };
 
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function storedSettlements(sourceData: FinancialSourceData | null) {
-  return Array.isArray(sourceData?.settlements)
-    ? (sourceData.settlements.filter(recordValue) as StoredSettlement[])
-    : [];
-}
-
-function gmailMessageUrl(messageId: string) {
-  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
 }
 
 function normalizeSourceDetails(
@@ -147,17 +139,14 @@ function normalizeSourceDetails(
 
 function buildEvidence(
   transaction: StoredFinancialTransaction,
-  invoiceById: Map<string, EvidenceLabourInvoice & { signed_url: string | null }>,
+  invoiceAllocations: Array<{
+    invoice: EvidenceLabourInvoice & { signed_url: string | null };
+    amount: number;
+  }>,
 ): FinancialEvidence[] {
-  const sourceData = transaction.source_data;
   const evidence: FinancialEvidence[] = [];
 
-  for (const settlement of storedSettlements(sourceData)) {
-    if (settlement.kind !== "labour_invoice") continue;
-    const invoiceId = stringValue(settlement.labour_invoice_id);
-    const invoice = invoiceId ? invoiceById.get(invoiceId) : null;
-    if (!invoice) continue;
-    const allocatedAmount = Number(settlement.allocated_amount);
+  for (const { invoice, amount } of invoiceAllocations) {
     evidence.push({
       kind: "labour_invoice",
       label: `${invoice.supplier_name} · Invoice #${invoice.invoice_number}`,
@@ -165,48 +154,9 @@ function buildEvidence(
         ? `Invoice dated ${invoice.invoice_date}`
         : "Linked labour invoice",
       status: "confirmed",
-      amount: Number.isFinite(allocatedAmount)
-        ? Math.abs(allocatedAmount)
-        : invoice.amount_paid,
-      href: invoice.signed_url,
+      amount,
+      href: `/invoices/${encodeURIComponent(invoice.id)}`,
       filename: invoice.original_filename,
-    });
-
-    const confirmationId = stringValue(
-      settlement.payment_confirmation_message_id,
-    );
-    if (confirmationId) {
-      evidence.push({
-        kind: "interac_email",
-        label: "Interac payment confirmation",
-        detail: "Confirmation email linked to this bank payment",
-        status: "confirmed",
-        amount: null,
-        href: gmailMessageUrl(confirmationId),
-        filename: null,
-      });
-    }
-  }
-
-  const sourceConfirmationId = stringValue(
-    sourceData?.interac_gmail_message_id,
-  );
-  if (
-    sourceConfirmationId &&
-    !evidence.some(
-      (item) =>
-        item.kind === "interac_email" &&
-        item.href === gmailMessageUrl(sourceConfirmationId),
-    )
-  ) {
-    evidence.push({
-      kind: "interac_email",
-      label: "Interac payment confirmation",
-      detail: "Gmail confirmation used to reconcile this transaction",
-      status: "confirmed",
-      amount: null,
-      href: gmailMessageUrl(sourceConfirmationId),
-      filename: null,
     });
   }
 
@@ -313,15 +263,23 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
 
   const storedTransactions =
     transactions as unknown as StoredFinancialTransaction[];
+  const [verificationResult, allocationResult] = await Promise.all([
+    supabase.from("labour_payment_verification").select("*"),
+    supabase
+      .from("labour_payment_allocations")
+      .select("financial_transaction_id,invoice_id,allocated_amount")
+      .is("reversed_at", null),
+  ]);
+  if (verificationResult.error) throw verificationResult.error;
+  if (allocationResult.error) throw allocationResult.error;
+
+  const allocations = (allocationResult.data ?? []) as Array<{
+    financial_transaction_id: string;
+    invoice_id: string;
+    allocated_amount: number;
+  }>;
   const labourInvoiceIds = [
-    ...new Set(
-      storedTransactions.flatMap((transaction) =>
-        storedSettlements(transaction.source_data)
-          .filter((settlement) => settlement.kind === "labour_invoice")
-          .map((settlement) => stringValue(settlement.labour_invoice_id))
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ),
+    ...new Set(allocations.map((allocation) => allocation.invoice_id)),
   ];
   const invoiceById = new Map<
     string,
@@ -355,6 +313,44 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     }
   }
 
+  const verificationByTransaction = new Map(
+    (verificationResult.data ?? []).map((row) => [
+      row.financial_transaction_id,
+      {
+        contractor_id: row.contractor_id,
+        recipient_status: row.recipient_status,
+        payment_amount: Number(row.payment_amount),
+        invoice_allocated_amount: Number(row.invoice_allocated_amount),
+        bonus_allocated_amount: Number(row.bonus_allocated_amount),
+        other_allocated_amount: Number(row.other_allocated_amount),
+        total_allocated_amount: Number(row.total_allocated_amount),
+        unallocated_amount: Number(row.unallocated_amount),
+        invoice_count: Number(row.invoice_count),
+        bonus_count: Number(row.bonus_count),
+        other_count: Number(row.other_count),
+        payment_status: row.payment_status,
+      } as PaymentVerificationSummary,
+    ]),
+  );
+  const allocationsByTransaction = new Map<
+    string,
+    Array<{
+      invoice: EvidenceLabourInvoice & { signed_url: string | null };
+      amount: number;
+    }>
+  >();
+  for (const allocation of allocations) {
+    const invoice = invoiceById.get(allocation.invoice_id);
+    if (!invoice) continue;
+    const values =
+      allocationsByTransaction.get(allocation.financial_transaction_id) ?? [];
+    values.push({
+      invoice,
+      amount: Number(allocation.allocated_amount),
+    });
+    allocationsByTransaction.set(allocation.financial_transaction_id, values);
+  }
+
   return {
     accounts: (accountsResult.data ?? []) as FinancialAccount[],
     imports: (importsResult.data ?? []) as FinancialImport[],
@@ -364,8 +360,10 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
         source_details: normalizeSourceDetails(sourceData),
         evidence: buildEvidence(
           { ...transaction, source_data: sourceData },
-          invoiceById,
+          allocationsByTransaction.get(transaction.id) ?? [],
         ),
+        payment_verification:
+          verificationByTransaction.get(transaction.id) ?? null,
       }),
     ),
   };

@@ -31,10 +31,14 @@ function statusTone(status: string): "neutral" | "good" | "warn" | "bad" | "bran
 
 function paymentLabel(invoice: LabourInvoiceRecord) {
   if (invoice.payment_status === "paid") return "Paid";
-  if (invoice.payment_status === "partial") {
+  if (invoice.payment_status === "partially_paid") {
     return `${money(invoice.paid_amount, invoice.currency)} matched`;
   }
-  return "Payment not matched";
+  if (invoice.payment_status === "overpaid") return "Overpaid";
+  if (invoice.verification_status === "needs_information") {
+    return "Payment not verified";
+  }
+  return "Unpaid";
 }
 
 export function LabourInvoicesTable({
@@ -91,9 +95,12 @@ export function LabourInvoicesTable({
                   {invoice.invoice_date ?? "—"}
                 </td>
                 <td className="px-4 py-3">
-                  <div className="font-medium text-[var(--color-heading)]">
+                  <Link
+                    href={`/invoices/${encodeURIComponent(invoice.id)}`}
+                    className="font-medium text-[var(--color-brand-strong)] hover:underline"
+                  >
                     {invoice.supplier_name}
-                  </div>
+                  </Link>
                   <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                     #{invoice.invoice_number}
                   </div>
@@ -119,8 +126,10 @@ export function LabourInvoicesTable({
                     tone={
                       invoice.payment_status === "paid"
                         ? "good"
-                        : invoice.payment_status === "partial"
+                        : invoice.payment_status === "partially_paid"
                           ? "warn"
+                          : invoice.payment_status === "overpaid"
+                            ? "bad"
                           : "neutral"
                     }
                   >
@@ -158,9 +167,24 @@ export function LabourInvoicesTable({
                   </td>
                 ) : null}
                 <td className="px-4 py-3">
-                  <Badge tone={statusTone(invoice.match_status)}>
-                    {statusLabel(invoice.match_status)}
-                  </Badge>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge tone={statusTone(invoice.match_status)}>
+                      {statusLabel(invoice.match_status)}
+                    </Badge>
+                    <Badge
+                      tone={
+                        invoice.verification_status === "verified"
+                          ? "good"
+                          : invoice.verification_status === "needs_information"
+                            ? "bad"
+                            : "warn"
+                      }
+                    >
+                      {invoice.verification_status === "verified"
+                        ? "Numbers verified"
+                        : invoice.verification_status.replaceAll("_", " ")}
+                    </Badge>
+                  </div>
                 </td>
                 <td className="max-w-[260px] px-4 py-3">
                   {invoice.signed_url ? (
@@ -182,6 +206,12 @@ export function LabourInvoicesTable({
                   >
                     {invoice.original_filename}
                   </div>
+                  <Link
+                    href={`/invoices/${encodeURIComponent(invoice.id)}`}
+                    className="mt-2 inline-block text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
+                  >
+                    Full evidence →
+                  </Link>
                 </td>
               </tr>
             ))}

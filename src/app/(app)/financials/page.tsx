@@ -211,13 +211,12 @@ export default async function FinancialsPage({
   );
   const normalizedQuery = query.toLocaleLowerCase("en-CA");
   const displayedTransactions = periodTransactions.filter((transaction) => {
-    const hasPaidInvoice = transaction.evidence.some(
-      (item) => item.kind === "labour_invoice",
-    );
-    const hasMatchedEvidence = transaction.evidence.some(
-      (item) =>
-        item.kind === "labour_invoice" || item.kind === "interac_email",
-    );
+    const hasPaidInvoice =
+      Number(transaction.payment_verification?.invoice_allocated_amount ?? 0) >
+      0;
+    const hasMatchedEvidence =
+      Number(transaction.payment_verification?.total_allocated_amount ?? 0) >
+      0;
     const hasNoDocumentRequired = transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     );
@@ -228,7 +227,10 @@ export default async function FinancialsPage({
       (status === "reconciled" &&
         transaction.review_status === "reconciled") ||
       (status === "needs_review" &&
-        transaction.review_status !== "reconciled");
+        (transaction.review_status !== "reconciled" ||
+          (transaction.payment_verification != null &&
+            transaction.payment_verification.payment_status !==
+              "fully_allocated")));
     const matchesEvidence =
       evidence === "all" ||
       (evidence === "matched" && hasMatchedEvidence) ||

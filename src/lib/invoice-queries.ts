@@ -32,13 +32,14 @@ export type LabourInvoiceRecord = {
   duplicate_group_size: number;
   signed_url: string | null;
   paid_amount: number;
-  payment_status: "paid" | "partial" | "not_matched";
+  payment_status: "paid" | "partially_paid" | "unpaid" | "overpaid";
+  verification_status: "needs_information" | "needs_review" | "verified";
   labour_invoice_projects: LabourInvoiceProjectLink[];
 };
 
 type StoredLabourInvoiceRecord = Omit<
   LabourInvoiceRecord,
-  "signed_url" | "paid_amount" | "payment_status"
+  "signed_url" | "paid_amount" | "payment_status" | "verification_status"
 >;
 
 export type ProjectLabourInvoiceSummary = {
@@ -128,14 +129,14 @@ async function addSignedUrls(
   if (!invoices.length) return [];
 
   const supabase = await createClient();
-  const [signed, paymentAmounts] = await Promise.all([
+  const [signed, verificationByInvoice] = await Promise.all([
     supabase.storage
       .from("labour-invoices")
       .createSignedUrls(
         invoices.map((invoice) => invoice.storage_path),
         60 * 60,
       ),
-    queryLabourInvoicePaymentAmounts(),
+    queryLabourInvoiceVerifications(),
   ]);
 
   const urlByPath = new Map(
@@ -145,11 +146,12 @@ async function addSignedUrls(
   return invoices.map((invoice) => ({
     ...invoice,
     signed_url: urlByPath.get(invoice.storage_path) ?? null,
-    paid_amount: paymentAmounts.get(invoice.id) ?? 0,
-    payment_status: paymentStatus(
-      paymentAmounts.get(invoice.id) ?? 0,
-      invoice.amount_paid ?? invoice.amount_before_tax,
-    ),
+    paid_amount: verificationByInvoice.get(invoice.id)?.paid_amount ?? 0,
+    payment_status:
+      verificationByInvoice.get(invoice.id)?.payment_status ?? "unpaid",
+    verification_status:
+      verificationByInvoice.get(invoice.id)?.verification_status ??
+      "needs_information",
     labour_invoice_projects: [...invoice.labour_invoice_projects].sort(
       (left, right) =>
         Number(right.is_primary) - Number(left.is_primary) ||
@@ -158,68 +160,25 @@ async function addSignedUrls(
   }));
 }
 
-function paymentStatus(
-  paidAmount: number,
-  invoiceAmount: number | null,
-): LabourInvoiceRecord["payment_status"] {
-  if (invoiceAmount != null && paidAmount >= Number(invoiceAmount) - 0.01) {
-    return "paid";
-  }
-  if (paidAmount > 0) return "partial";
-  return "not_matched";
-}
-
-async function queryLabourInvoicePaymentAmounts() {
+async function queryLabourInvoiceVerifications() {
   const supabase = await createClient();
-  const amounts = new Map<string, number>();
-  const pageSize = 1000;
+  const { data, error } = await supabase
+    .from("labour_invoice_verification")
+    .select("invoice_id,paid_amount,payment_status,verification_status");
+  if (error) throw error;
 
-  for (let page = 0; page < 20; page += 1) {
-    const from = page * pageSize;
-    const result = await supabase
-      .from("financial_transactions")
-      .select("source_data")
-      .range(from, from + pageSize - 1);
-    if (result.error) throw result.error;
-
-    for (const row of result.data ?? []) {
-      const sourceData =
-        row.source_data != null &&
-        typeof row.source_data === "object" &&
-        !Array.isArray(row.source_data)
-          ? (row.source_data as Record<string, unknown>)
-          : null;
-      const settlements = Array.isArray(sourceData?.settlements)
-        ? sourceData.settlements
-        : [];
-      for (const value of settlements) {
-        if (
-          value == null ||
-          typeof value !== "object" ||
-          Array.isArray(value)
-        ) {
-          continue;
-        }
-        const settlement = value as Record<string, unknown>;
-        if (
-          settlement.kind !== "labour_invoice" ||
-          typeof settlement.labour_invoice_id !== "string"
-        ) {
-          continue;
-        }
-        const allocatedAmount = Number(settlement.allocated_amount);
-        if (!Number.isFinite(allocatedAmount) || allocatedAmount <= 0) continue;
-        amounts.set(
-          settlement.labour_invoice_id,
-          (amounts.get(settlement.labour_invoice_id) ?? 0) + allocatedAmount,
-        );
-      }
-    }
-
-    if ((result.data?.length ?? 0) < pageSize) return amounts;
-  }
-
-  throw new Error("Financial settlements exceeded the 20,000-row read limit.");
+  return new Map(
+    (data ?? []).map((row) => [
+      row.invoice_id,
+      {
+        paid_amount: Number(row.paid_amount),
+        payment_status:
+          row.payment_status as LabourInvoiceRecord["payment_status"],
+        verification_status:
+          row.verification_status as LabourInvoiceRecord["verification_status"],
+      },
+    ]),
+  );
 }
 
 export async function getLabourInvoices(): Promise<LabourInvoiceRecord[]> {
