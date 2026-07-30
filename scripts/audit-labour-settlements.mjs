@@ -105,6 +105,7 @@ const [
   lineAllocationCountResult,
   lineTimeEntryCountResult,
   paymentAllocationResult,
+  paymentRecordResult,
   resolutionCountResult,
   invoiceReconciliationResult,
   paymentReconciliationResult,
@@ -157,7 +158,10 @@ const [
     .from("labour_invoice_projects")
     .select("invoice_id,companycam_project_id,allocated_amount,needs_review"),
   fetchAllFinancialSettlementSources(),
-  db.from("labour_contractors").select("id", { count: "exact", head: true }),
+  db
+    .from("labour_contractors")
+    .select("id,supplier_name,worker_user_id,notes")
+    .order("supplier_name", { ascending: true }),
   db.from("labour_invoice_lines").select("id", { count: "exact", head: true }),
   db
     .from("labour_invoice_line_allocations")
@@ -169,6 +173,11 @@ const [
     .from("labour_payment_allocations")
     .select(
       "id,financial_transaction_id,invoice_id,allocated_amount,match_method,confirmed_at",
+    ),
+  db
+    .from("labour_payment_records")
+    .select(
+      "financial_transaction_id,contractor_id,recipient_status,confirmation_method,confirmation_note,confirmed_at",
     ),
   db
     .from("labour_reconciliation_resolutions")
@@ -191,6 +200,7 @@ for (const [label, result] of Object.entries({
   lineAllocationCount: lineAllocationCountResult,
   lineTimeEntryCount: lineTimeEntryCountResult,
   paymentAllocations: paymentAllocationResult,
+  paymentRecords: paymentRecordResult,
   resolutionCount: resolutionCountResult,
   invoiceReconciliation: invoiceReconciliationResult,
   paymentReconciliation: paymentReconciliationResult,
@@ -440,7 +450,7 @@ console.log(
       },
       settlement_model: {
         table_counts: {
-          labour_contractors: contractorCountResult.count ?? 0,
+          labour_contractors: (contractorCountResult.data ?? []).length,
           labour_invoice_lines: invoiceLineCountResult.count ?? 0,
           labour_invoice_line_allocations:
             lineAllocationCountResult.count ?? 0,
@@ -452,6 +462,18 @@ console.log(
             resolutionCountResult.count ?? 0,
         },
         payment_allocations: paymentAllocationResult.data ?? [],
+        payment_records: paymentRecordResult.data ?? [],
+        subcontractor_recipient_evidence: financialTransactions
+          .filter((transaction) => transaction.category === "Subcontractors")
+          .map((transaction) => ({
+            id: transaction.id,
+            posted_on: transaction.posted_on,
+            description: transaction.description,
+            counterparty: transaction.counterparty,
+            amount: transaction.amount,
+            review_status: transaction.review_status,
+            source_data: transaction.source_data,
+          })),
         audited_invoices: (invoiceReconciliationResult.data ?? []).filter(
           (invoice) => invoiceIdSet.has(invoice.invoice_id),
         ),
@@ -462,6 +484,7 @@ console.log(
                 candidate.id === payment.financial_transaction_id,
             ),
         ),
+        contractor_directory: contractorCountResult.data ?? [],
       },
       contractor_profiles: profileResult.data ?? [],
       invoices,

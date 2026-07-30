@@ -48,7 +48,7 @@ function reviewLabel(transaction: FinancialTransaction) {
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "Fully matched";
   if (status === "partially_allocated") return "Partially matched";
-  if (status === "unidentified") return "Recipient unknown";
+  if (status === "unidentified") return "Recipient not verified";
   if (status === "unmatched") return "Payment unmatched";
   if (status === "needs_review") return "Allocation error";
   if (transaction.review_status === "reconciled") return "Reconciled";

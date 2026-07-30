@@ -49,7 +49,8 @@ export default async function FinancialTransactionEvidencePage({
             }
           >
             {payment.verification?.payment_status
-              ?.replaceAll("_", " ")
+              ?.replace("unidentified", "Recipient not verified")
+              .replaceAll("_", " ")
               .replace(/^\w/, (character) => character.toUpperCase()) ??
               "Needs review"}
           </Badge>

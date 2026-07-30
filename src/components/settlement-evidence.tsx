@@ -50,7 +50,7 @@ function statusLabel(status: string) {
     partially_paid: "Partially paid",
     paid: "Paid",
     overpaid: "Overpaid",
-    unidentified: "Recipient unidentified",
+    unidentified: "Recipient not verified",
     unmatched: "No invoice or bonus matched",
     partially_allocated: "Partially allocated",
     fully_allocated: "Fully allocated",
@@ -417,7 +417,7 @@ export function PaymentEvidence({
         <Badge tone={verification?.recipient_status === "confirmed" ? "good" : "warn"}>
           {verification?.recipient_status === "confirmed"
             ? "Recipient confirmed"
-            : "Recipient unknown"}
+            : "Recipient not verified"}
         </Badge>
       </div>
 
