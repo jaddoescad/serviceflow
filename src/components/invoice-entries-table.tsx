@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Badge, Card, EmptyState, Input } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, Select } from "@/components/ui";
 import { fmtDate, fmtHours } from "@/lib/format";
 import type {
   InvoiceEntryRecord,
@@ -82,6 +82,7 @@ export function InvoiceEntriesTable({
   showJobs?: boolean;
 }) {
   const [type, setType] = useState<TypeFilter>(initialType);
+  const [owner, setOwner] = useState("all");
   const [query, setQuery] = useState("");
 
   const counts = useMemo(
@@ -98,14 +99,23 @@ export function InvoiceEntriesTable({
   const visibleTypes = TYPE_ORDER.filter(
     (entryType) => counts[entryType] > 0,
   );
+  const owners = useMemo(
+    () =>
+      [...new Set(entries.map((entry) => entry.invoice.owner_name))].sort(
+        (left, right) => left.localeCompare(right, "en-CA"),
+      ),
+    [entries],
+  );
   const normalizedQuery = query.trim().toLocaleLowerCase("en-CA");
   const filtered = useMemo(
     () =>
       entries.filter((entry) => {
         if (type !== "all" && entry.entry_type !== type) return false;
+        if (owner !== "all" && entry.invoice.owner_name !== owner) return false;
         if (!normalizedQuery) return true;
         return [
           entry.description,
+          entry.invoice.owner_name,
           entry.invoice.supplier_name,
           entry.invoice.invoice_number,
           ...entry.jobs.flatMap((job) => [job.name, job.address ?? ""]),
@@ -114,7 +124,7 @@ export function InvoiceEntriesTable({
           .toLocaleLowerCase("en-CA")
           .includes(normalizedQuery);
       }),
-    [entries, normalizedQuery, type],
+    [entries, normalizedQuery, owner, type],
   );
 
   return (
@@ -148,14 +158,29 @@ export function InvoiceEntriesTable({
             </button>
           ))}
         </div>
-        <Input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search supplier, invoice, entry, or job"
-          aria-label="Search invoice entries"
-          className="h-8 w-full max-w-[310px] px-2.5 py-1 text-xs"
-        />
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <Select
+            value={owner}
+            onChange={(event) => setOwner(event.currentTarget.value)}
+            aria-label="Filter invoices by owner"
+            className="h-8 min-w-0 flex-1 px-2.5 py-1 text-xs sm:w-[210px]"
+          >
+            <option value="all">All invoice owners</option>
+            {owners.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search supplier, invoice, entry, or job"
+            aria-label="Search invoice entries"
+            className="h-8 min-w-0 flex-1 px-2.5 py-1 text-xs sm:w-[310px]"
+          />
+        </div>
       </div>
 
       <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">

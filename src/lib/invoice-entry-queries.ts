@@ -42,6 +42,7 @@ export type InvoiceEntryRecord = {
     currency: "CAD" | "USD";
     original_filename: string;
     duplicate_group_size: number;
+    owner_name: string;
     paid_amount: number;
     payment_status: "paid" | "partially_paid" | "unpaid" | "overpaid";
     verification_status: "needs_information" | "needs_review" | "verified";
@@ -57,10 +58,21 @@ export type InvoiceEntryRecord = {
 };
 
 type StoredEntry = Omit<InvoiceEntryRecord, "invoice" | "jobs"> & {
-  labour_invoices: Omit<
-    InvoiceEntryRecord["invoice"],
-    "paid_amount" | "payment_status" | "verification_status"
-  > | null;
+  labour_invoices:
+    | (Omit<
+        InvoiceEntryRecord["invoice"],
+        | "owner_name"
+        | "paid_amount"
+        | "payment_status"
+        | "verification_status"
+      > & {
+        labour_contractors: {
+          employee_profiles: {
+            full_name: string;
+          } | null;
+        } | null;
+      })
+    | null;
   labour_invoice_line_allocations: Array<{
     companycam_project_id: string;
     allocated_amount: number;
@@ -119,7 +131,12 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
             source_date,
             currency,
             original_filename,
-            duplicate_group_size
+            duplicate_group_size,
+            labour_contractors (
+              employee_profiles (
+                full_name
+              )
+            )
           ),
           labour_invoice_line_allocations (
             companycam_project_id,
@@ -163,6 +180,10 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
       const row = value as unknown as StoredEntry;
       if (!row.labour_invoices) return null;
       const verification = verificationByInvoice.get(row.invoice_id);
+      const {
+        labour_contractors: contractor,
+        ...storedInvoice
+      } = row.labour_invoices;
 
       return {
         id: row.id,
@@ -186,7 +207,10 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
         source_text: row.source_text,
         needs_review: row.needs_review,
         invoice: {
-          ...row.labour_invoices,
+          ...storedInvoice,
+          owner_name:
+            contractor?.employee_profiles?.full_name ??
+            storedInvoice.supplier_name,
           paid_amount: verification?.paid_amount ?? 0,
           payment_status: verification?.payment_status ?? "unpaid",
           verification_status:
