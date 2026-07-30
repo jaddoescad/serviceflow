@@ -33,12 +33,30 @@ export type InvoiceVerification = {
 export type InvoiceLineEvidence = {
   id: string;
   line_number: number;
+  entry_type:
+    | "labour"
+    | "material"
+    | "bonus"
+    | "commission"
+    | "expense"
+    | "other"
+    | "unclassified";
   description: string;
   service_started_on: string | null;
   service_ended_on: string | null;
+  quantity: number | null;
+  unit: string | null;
+  unit_price: number | null;
   quantity_hours: number | null;
   hourly_rate: number | null;
   amount_before_tax: number;
+  tax_amount: number;
+  source_kind:
+    | "extracted"
+    | "manual"
+    | "legacy_project_link"
+    | "legacy_invoice_total";
+  source_reference: string | null;
   source_text: string | null;
   needs_review: boolean;
   jobs: Array<{
@@ -205,7 +223,7 @@ async function getInvoiceEvidenceWithClient(
       supabase
         .from("labour_invoice_lines")
         .select(
-          "id,line_number,description,service_started_on,service_ended_on,quantity_hours,hourly_rate,amount_before_tax,source_text,needs_review",
+          "id,line_number,entry_type,description,service_started_on,service_ended_on,quantity,unit,unit_price,quantity_hours,hourly_rate,amount_before_tax,tax_amount,source_kind,source_reference,source_text,needs_review",
         )
         .eq("invoice_id", invoiceId)
         .order("line_number", { ascending: true }),
@@ -401,11 +419,14 @@ async function getInvoiceEvidenceWithClient(
     signedUrl: signedResult.data?.signedUrl ?? null,
     lines: storedLines.map((line) => ({
       ...line,
+      quantity: line.quantity == null ? null : Number(line.quantity),
+      unit_price: line.unit_price == null ? null : Number(line.unit_price),
       quantity_hours:
         line.quantity_hours == null ? null : Number(line.quantity_hours),
       hourly_rate:
         line.hourly_rate == null ? null : Number(line.hourly_rate),
       amount_before_tax: Number(line.amount_before_tax),
+      tax_amount: Number(line.tax_amount),
       jobs: jobsByLine.get(line.id) ?? [],
       timeEntries: timesByLine.get(line.id) ?? [],
     })),
@@ -418,6 +439,32 @@ export async function getLabourInvoiceEvidence(
 ): Promise<LabourInvoiceEvidence | null> {
   const supabase = await createClient();
   return getInvoiceEvidenceWithClient(supabase, invoiceId);
+}
+
+export async function getInvoiceEntryEvidence(
+  entryId: string,
+): Promise<{
+  entry: InvoiceLineEvidence;
+  invoice: LabourInvoiceEvidence;
+} | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("labour_invoice_lines")
+    .select("invoice_id")
+    .eq("id", entryId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const invoice = await getInvoiceEvidenceWithClient(
+    supabase,
+    data.invoice_id,
+  );
+  if (!invoice) return null;
+
+  const entry = invoice.lines.find((line) => line.id === entryId);
+  return entry ? { entry, invoice } : null;
 }
 
 export async function getLabourPaymentEvidence(

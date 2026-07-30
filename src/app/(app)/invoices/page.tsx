@@ -1,58 +1,55 @@
 import { requireStaff } from "@/lib/auth";
-import { getLabourInvoices } from "@/lib/invoice-queries";
+import { getInvoiceEntries } from "@/lib/invoice-entry-queries";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { LabourInvoicesTable } from "@/components/labour-invoices-table";
+import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function LabourInvoicesPage() {
-  const [, invoices] = await Promise.all([requireStaff(), getLabourInvoices()]);
-  const matched = invoices.filter((invoice) =>
-    ["matched", "matched_multiple"].includes(invoice.match_status),
+export default async function InvoicesPage() {
+  const [, entries] = await Promise.all([requireStaff(), getInvoiceEntries()]);
+  const sourceInvoices = new Set(entries.map((entry) => entry.invoice_id)).size;
+  const exactEntries = entries.filter(
+    (entry) => entry.source_kind === "extracted",
   ).length;
-  const unmatched = invoices.filter(
-    (invoice) => invoice.match_status === "unmatched",
+  const derivedEntries = entries.filter(
+    (entry) => entry.source_kind === "legacy_project_link",
   ).length;
-  const duplicateGroups = new Set(
-    invoices
-      .map((invoice) => invoice.duplicate_group_id)
-      .filter((group): group is string => Boolean(group)),
-  ).size;
-  const amountsCaptured = invoices.filter(
-    (invoice) => invoice.amount_paid != null,
+  const needsExtraction = entries.filter(
+    (entry) => entry.source_kind === "legacy_invoice_total",
   ).length;
 
   return (
     <>
       <PageHeader
-        title="Labour Invoices"
-        subtitle="Private invoice archive with the amount paid and linked CompanyCam jobs"
+        title="Invoices"
+        subtitle="Browse individual entries while preserving every original invoice as source evidence"
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
-          label="Archived files"
-          value={invoices.length}
-          hint={`${matched} matched to at least one job`}
+          label="Invoice entries"
+          value={entries.length}
+          hint={`across ${sourceInvoices} source invoices`}
         />
         <Kpi
-          label="Unmatched"
-          value={unmatched}
-          hint="Needs a reliable job reference"
-          tone={unmatched ? "warn" : "good"}
+          label="Exact source entries"
+          value={exactEntries}
+          hint="transcribed from the invoice"
+          tone={exactEntries ? "good" : "neutral"}
         />
         <Kpi
-          label="Duplicate groups"
-          value={duplicateGroups}
-          hint="Includes revisions and payment copies"
-          tone={duplicateGroups ? "warn" : "good"}
+          label="Derived job entries"
+          value={derivedEntries}
+          hint="preserved legacy job-dollar matches"
+          tone={derivedEntries ? "warn" : "neutral"}
         />
         <Kpi
-          label="Amounts captured"
-          value={amountsCaptured}
-          hint="Per-file totals; duplicate versions are not summed"
+          label="Needs exact extraction"
+          value={needsExtraction}
+          hint="visible placeholders, never hidden"
+          tone={needsExtraction ? "warn" : "good"}
         />
       </div>
-      <LabourInvoicesTable invoices={invoices} />
+      <InvoiceEntriesTable entries={entries} />
     </>
   );
 }

@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
-import { LabourInvoicesTable } from "@/components/labour-invoices-table";
+import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
 import { Badge } from "@/components/ui";
 import { getProjectShell } from "@/lib/project-data";
+import { getInvoiceEntriesForProject } from "@/lib/invoice-entry-queries";
 import {
-  getLabourInvoicesForProject,
   getProjectLabourInvoiceSummary,
   isInvoiceInCurrentJob,
 } from "@/lib/invoice-queries";
@@ -21,20 +21,19 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
-  const [shell, invoices, summary] = await Promise.all([
+  const [shell, entries, summary] = await Promise.all([
     getProjectShell(projectId),
-    getLabourInvoicesForProject(projectId),
+    getInvoiceEntriesForProject(projectId),
     getProjectLabourInvoiceSummary(projectId),
   ]);
 
   if (!shell) notFound();
 
-  const currentInvoices = invoices.filter((invoice) =>
-    isInvoiceInCurrentJob(invoice, summary.jobStartedOn),
+  const currentEntries = entries.filter((entry) =>
+    isInvoiceInCurrentJob(entry.invoice, summary.jobStartedOn),
   );
-  const historicalInvoices = invoices.filter(
-    (invoice) =>
-      !isInvoiceInCurrentJob(invoice, summary.jobStartedOn),
+  const historicalEntries = entries.filter(
+    (entry) => !isInvoiceInCurrentJob(entry.invoice, summary.jobStartedOn),
   );
 
   return (
@@ -101,20 +100,22 @@ export default async function ProjectInvoicesPage({
         </div>
       ) : null}
 
-      <LabourInvoicesTable
-        invoices={currentInvoices}
-        title="Current job labour invoices"
-        subtitle="These files feed the current job total; revised versions are counted once"
-        showAssociatedJobs={false}
+      <InvoiceEntriesTable
+        entries={currentEntries}
+        initialType="all"
+        title="Current job invoice entries"
+        subtitle="Every item allocated to this job, with its source invoice one click away"
+        showJobs={false}
       />
 
-      {historicalInvoices.length > 0 ? (
+      {historicalEntries.length > 0 ? (
         <div className="mt-6">
-          <LabourInvoicesTable
-            invoices={historicalInvoices}
-            title="Previous job invoice files"
+          <InvoiceEntriesTable
+            entries={historicalEntries}
+            initialType="all"
+            title="Previous job invoice entries"
             subtitle="Linked to the same customer project, but excluded from the current job budget and labour totals"
-            showAssociatedJobs={false}
+            showJobs={false}
           />
         </div>
       ) : null}

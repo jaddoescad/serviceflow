@@ -30,7 +30,7 @@ export default async function LabourInvoiceEvidencePage({
           href="/invoices"
           className="text-sm font-medium text-[var(--color-brand-strong)] hover:underline"
         >
-          ← Labour invoices
+          ← Invoices
         </Link>
       </div>
       <PageHeader

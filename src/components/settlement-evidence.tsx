@@ -57,6 +57,27 @@ function statusLabel(status: string) {
   }[status] ?? status.replaceAll("_", " ");
 }
 
+function entryTypeLabel(entryType: string) {
+  return {
+    labour: "Labour",
+    material: "Material",
+    bonus: "Bonus",
+    commission: "Commission",
+    expense: "Expense",
+    other: "Other",
+    unclassified: "Unclassified",
+  }[entryType] ?? entryType;
+}
+
+function entrySourceLabel(sourceKind: string) {
+  return {
+    extracted: "Exact source entry",
+    manual: "Manually entered",
+    legacy_project_link: "Derived from job match",
+    legacy_invoice_total: "Exact lines needed",
+  }[sourceKind] ?? sourceKind;
+}
+
 function Difference({
   label,
   value,
@@ -93,9 +114,11 @@ function Difference({
 export function InvoiceEvidence({
   invoice,
   showDocument = true,
+  highlightEntryId,
 }: {
   invoice: LabourInvoiceEvidence;
   showDocument?: boolean;
+  highlightEntryId?: string;
 }) {
   const { verification } = invoice;
   const canPreviewSource = /\.(pdf|png|jpe?g|webp)$/i.test(
@@ -228,10 +251,45 @@ export function InvoiceEvidence({
                 const hoursDifference =
                   backendHours - Number(line.quantity_hours ?? 0);
                 return (
-                  <tr key={line.id} className="align-top">
+                  <tr
+                    key={line.id}
+                    id={`invoice-entry-${line.id}`}
+                    className={`align-top ${
+                      highlightEntryId === line.id
+                        ? "bg-[var(--color-brand-soft)]"
+                        : ""
+                    }`}
+                  >
                     <td className="max-w-[300px] px-4 py-3">
-                      <div className="font-medium text-[var(--color-heading)]">
+                      <Link
+                        href={`/invoices/entries/${encodeURIComponent(line.id)}`}
+                        className="font-medium text-[var(--color-brand-strong)] hover:underline"
+                      >
                         {line.description}
+                      </Link>
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <Badge
+                          tone={
+                            line.entry_type === "unclassified"
+                              ? "bad"
+                              : "neutral"
+                          }
+                        >
+                          {entryTypeLabel(line.entry_type)}
+                        </Badge>
+                        <Badge
+                          tone={
+                            line.source_kind === "extracted"
+                              ? "good"
+                              : line.source_kind === "manual"
+                                ? "brand"
+                                : line.source_kind === "legacy_project_link"
+                                  ? "warn"
+                                  : "bad"
+                          }
+                        >
+                          {entrySourceLabel(line.source_kind)}
+                        </Badge>
                       </div>
                       <div className="mt-1 text-xs text-[var(--color-muted)]">
                         {fmtDate(line.service_started_on)}
