@@ -29,6 +29,14 @@ function statusTone(status: string): "neutral" | "good" | "warn" | "bad" | "bran
   return "neutral";
 }
 
+function paymentLabel(invoice: LabourInvoiceRecord) {
+  if (invoice.payment_status === "paid") return "Paid";
+  if (invoice.payment_status === "partial") {
+    return `${money(invoice.paid_amount, invoice.currency)} matched`;
+  }
+  return "Payment not matched";
+}
+
 export function LabourInvoicesTable({
   invoices,
   title = "Invoice archive",
@@ -58,7 +66,7 @@ export function LabourInvoicesTable({
       <div className="overflow-x-auto">
         <table
           className={`w-full text-left text-sm ${
-            showAssociatedJobs ? "min-w-[1280px]" : "min-w-[980px]"
+            showAssociatedJobs ? "min-w-[1380px]" : "min-w-[1080px]"
           }`}
         >
           <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -68,6 +76,7 @@ export function LabourInvoicesTable({
               <th className="px-4 py-3 text-right font-medium">Amount</th>
               <th className="px-4 py-3 text-right font-medium">HST</th>
               <th className="px-4 py-3 text-right font-medium">Total</th>
+              <th className="px-4 py-3 font-medium">Payment</th>
               {showAssociatedJobs ? (
                 <th className="px-4 py-3 font-medium">Associated job</th>
               ) : null}
@@ -104,6 +113,19 @@ export function LabourInvoicesTable({
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
                   {money(invoice.amount_paid, invoice.currency)}
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <Badge
+                    tone={
+                      invoice.payment_status === "paid"
+                        ? "good"
+                        : invoice.payment_status === "partial"
+                          ? "warn"
+                          : "neutral"
+                    }
+                  >
+                    {paymentLabel(invoice)}
+                  </Badge>
                 </td>
                 {showAssociatedJobs ? (
                   <td className="max-w-[300px] px-4 py-3">

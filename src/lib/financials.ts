@@ -25,6 +25,28 @@ export type FinancialImport = {
   imported_at: string;
 };
 
+export type FinancialEvidence = {
+  kind:
+    | "bank_record"
+    | "no_document_required"
+    | "labour_invoice"
+    | "interac_email";
+  label: string;
+  detail: string;
+  status: "confirmed" | "source";
+  amount: number | null;
+  href: string | null;
+  filename: string | null;
+};
+
+export type FinancialSourceDetails = {
+  provider: string;
+  bank_category: string | null;
+  authorized_on: string | null;
+  pending: boolean;
+  reference: string | null;
+};
+
 export type FinancialTransaction = {
   id: string;
   posted_on: string;
@@ -40,6 +62,9 @@ export type FinancialTransaction = {
   is_transfer: boolean;
   review_status: "unreviewed" | "needs_review" | "reconciled";
   running_balance: number | null;
+  notes: string | null;
+  source_details: FinancialSourceDetails;
+  evidence: FinancialEvidence[];
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -52,6 +77,164 @@ export type FinancialLedger = {
   imports: FinancialImport[];
   transactions: FinancialTransaction[];
 };
+
+type FinancialSourceData = {
+  source?: unknown;
+  pending?: unknown;
+  bank_category?: unknown;
+  authorized_date?: unknown;
+  bank_sync_transaction_id?: unknown;
+  interac_gmail_message_id?: unknown;
+  settlements?: unknown;
+};
+
+type StoredSettlement = {
+  kind?: unknown;
+  labour_invoice_id?: unknown;
+  allocated_amount?: unknown;
+  payment_confirmation_message_id?: unknown;
+};
+
+type StoredFinancialTransaction = Omit<
+  FinancialTransaction,
+  "source_details" | "evidence"
+> & {
+  source_data: FinancialSourceData | null;
+};
+
+type EvidenceLabourInvoice = {
+  id: string;
+  supplier_name: string;
+  invoice_number: string;
+  invoice_date: string | null;
+  amount_paid: number | null;
+  original_filename: string;
+  storage_path: string;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function storedSettlements(sourceData: FinancialSourceData | null) {
+  return Array.isArray(sourceData?.settlements)
+    ? (sourceData.settlements.filter(recordValue) as StoredSettlement[])
+    : [];
+}
+
+function gmailMessageUrl(messageId: string) {
+  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
+}
+
+function normalizeSourceDetails(
+  sourceData: FinancialSourceData | null,
+): FinancialSourceDetails {
+  const reference = stringValue(sourceData?.bank_sync_transaction_id);
+  return {
+    provider: stringValue(sourceData?.source) ?? "Imported financial source",
+    bank_category: stringValue(sourceData?.bank_category),
+    authorized_on: stringValue(sourceData?.authorized_date),
+    pending: sourceData?.pending === true,
+    reference: reference ? reference.slice(-12) : null,
+  };
+}
+
+function buildEvidence(
+  transaction: StoredFinancialTransaction,
+  invoiceById: Map<string, EvidenceLabourInvoice & { signed_url: string | null }>,
+): FinancialEvidence[] {
+  const sourceData = transaction.source_data;
+  const evidence: FinancialEvidence[] = [];
+
+  for (const settlement of storedSettlements(sourceData)) {
+    if (settlement.kind !== "labour_invoice") continue;
+    const invoiceId = stringValue(settlement.labour_invoice_id);
+    const invoice = invoiceId ? invoiceById.get(invoiceId) : null;
+    if (!invoice) continue;
+    const allocatedAmount = Number(settlement.allocated_amount);
+    evidence.push({
+      kind: "labour_invoice",
+      label: `${invoice.supplier_name} · Invoice #${invoice.invoice_number}`,
+      detail: invoice.invoice_date
+        ? `Invoice dated ${invoice.invoice_date}`
+        : "Linked labour invoice",
+      status: "confirmed",
+      amount: Number.isFinite(allocatedAmount)
+        ? Math.abs(allocatedAmount)
+        : invoice.amount_paid,
+      href: invoice.signed_url,
+      filename: invoice.original_filename,
+    });
+
+    const confirmationId = stringValue(
+      settlement.payment_confirmation_message_id,
+    );
+    if (confirmationId) {
+      evidence.push({
+        kind: "interac_email",
+        label: "Interac payment confirmation",
+        detail: "Confirmation email linked to this bank payment",
+        status: "confirmed",
+        amount: null,
+        href: gmailMessageUrl(confirmationId),
+        filename: null,
+      });
+    }
+  }
+
+  const sourceConfirmationId = stringValue(
+    sourceData?.interac_gmail_message_id,
+  );
+  if (
+    sourceConfirmationId &&
+    !evidence.some(
+      (item) =>
+        item.kind === "interac_email" &&
+        item.href === gmailMessageUrl(sourceConfirmationId),
+    )
+  ) {
+    evidence.push({
+      kind: "interac_email",
+      label: "Interac payment confirmation",
+      detail: "Gmail confirmation used to reconcile this transaction",
+      status: "confirmed",
+      amount: null,
+      href: gmailMessageUrl(sourceConfirmationId),
+      filename: null,
+    });
+  }
+
+  if (transaction.category === "Bank fees") {
+    evidence.push({
+      kind: "no_document_required",
+      label: "No receipt required",
+      detail:
+        "This is a fee charged directly by the bank. The posted bank record is the supporting evidence.",
+      status: "confirmed",
+      amount: Math.abs(Number(transaction.amount)),
+      href: null,
+      filename: null,
+    });
+  }
+
+  evidence.push({
+    kind: "bank_record",
+    label: "Posted bank record",
+    detail: `${transaction.financial_accounts.name} · ${transaction.financial_imports.original_filename}`,
+    status: "source",
+    amount: Math.abs(Number(transaction.amount)),
+    href: null,
+    filename: transaction.financial_imports.original_filename,
+  });
+
+  return evidence;
+}
 
 export async function getFinancialLedger(): Promise<FinancialLedger> {
   const supabase = await createClient();
@@ -79,6 +262,8 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
             is_transfer,
             review_status,
             running_balance,
+            notes,
+            source_data,
             financial_accounts!inner (
               id,
               slug,
@@ -126,9 +311,62 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
   if (accountsResult.error) throw accountsResult.error;
   if (importsResult.error) throw importsResult.error;
 
+  const storedTransactions =
+    transactions as unknown as StoredFinancialTransaction[];
+  const labourInvoiceIds = [
+    ...new Set(
+      storedTransactions.flatMap((transaction) =>
+        storedSettlements(transaction.source_data)
+          .filter((settlement) => settlement.kind === "labour_invoice")
+          .map((settlement) => stringValue(settlement.labour_invoice_id))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ),
+  ];
+  const invoiceById = new Map<
+    string,
+    EvidenceLabourInvoice & { signed_url: string | null }
+  >();
+
+  if (labourInvoiceIds.length) {
+    const invoiceResult = await supabase
+      .from("labour_invoices")
+      .select(
+        "id,supplier_name,invoice_number,invoice_date,amount_paid,original_filename,storage_path",
+      )
+      .in("id", labourInvoiceIds);
+    if (invoiceResult.error) throw invoiceResult.error;
+
+    const invoices = (invoiceResult.data ?? []) as EvidenceLabourInvoice[];
+    const signedResult = await supabase.storage
+      .from("labour-invoices")
+      .createSignedUrls(
+        invoices.map((invoice) => invoice.storage_path),
+        60 * 60,
+      );
+    const signedUrlByPath = new Map(
+      (signedResult.data ?? []).map((item) => [item.path, item.signedUrl]),
+    );
+    for (const invoice of invoices) {
+      invoiceById.set(invoice.id, {
+        ...invoice,
+        signed_url: signedUrlByPath.get(invoice.storage_path) ?? null,
+      });
+    }
+  }
+
   return {
     accounts: (accountsResult.data ?? []) as FinancialAccount[],
     imports: (importsResult.data ?? []) as FinancialImport[],
-    transactions: transactions as FinancialTransaction[],
+    transactions: storedTransactions.map(
+      ({ source_data: sourceData, ...transaction }) => ({
+        ...transaction,
+        source_details: normalizeSourceDetails(sourceData),
+        evidence: buildEvidence(
+          { ...transaction, source_data: sourceData },
+          invoiceById,
+        ),
+      }),
+    ),
   };
 }
