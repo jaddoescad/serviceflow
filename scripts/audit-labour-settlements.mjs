@@ -74,7 +74,9 @@ async function fetchAllFinancialSettlementSources() {
     const from = page * pageSize;
     const result = await db
       .from("financial_transactions")
-      .select("id,amount,source_data")
+      .select(
+        "id,posted_on,description,counterparty,amount,category,review_status,source_data",
+      )
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (result.error) return result;
@@ -98,6 +100,14 @@ const [
   allInvoicesResult,
   allInvoiceLinksResult,
   allSettlementSourcesResult,
+  contractorCountResult,
+  invoiceLineCountResult,
+  lineAllocationCountResult,
+  lineTimeEntryCountResult,
+  paymentAllocationResult,
+  resolutionCountResult,
+  invoiceReconciliationResult,
+  paymentReconciliationResult,
 ] = await Promise.all([
   db
     .from("labour_invoices")
@@ -147,6 +157,24 @@ const [
     .from("labour_invoice_projects")
     .select("invoice_id,companycam_project_id,allocated_amount,needs_review"),
   fetchAllFinancialSettlementSources(),
+  db.from("labour_contractors").select("id", { count: "exact", head: true }),
+  db.from("labour_invoice_lines").select("id", { count: "exact", head: true }),
+  db
+    .from("labour_invoice_line_allocations")
+    .select("invoice_line_id", { count: "exact", head: true }),
+  db
+    .from("labour_invoice_line_time_entries")
+    .select("invoice_line_id", { count: "exact", head: true }),
+  db
+    .from("labour_payment_allocations")
+    .select(
+      "id,financial_transaction_id,invoice_id,allocated_amount,match_method,confirmed_at",
+    ),
+  db
+    .from("labour_reconciliation_resolutions")
+    .select("id", { count: "exact", head: true }),
+  db.from("labour_invoice_reconciliation").select("*"),
+  db.from("labour_payment_reconciliation").select("*"),
 ]);
 
 for (const [label, result] of Object.entries({
@@ -158,6 +186,14 @@ for (const [label, result] of Object.entries({
   allInvoices: allInvoicesResult,
   allInvoiceLinks: allInvoiceLinksResult,
   allSettlementSources: allSettlementSourcesResult,
+  contractorCount: contractorCountResult,
+  invoiceLineCount: invoiceLineCountResult,
+  lineAllocationCount: lineAllocationCountResult,
+  lineTimeEntryCount: lineTimeEntryCountResult,
+  paymentAllocations: paymentAllocationResult,
+  resolutionCount: resolutionCountResult,
+  invoiceReconciliation: invoiceReconciliationResult,
+  paymentReconciliation: paymentReconciliationResult,
 })) {
   if (result.error) throw new Error(`${label}: ${result.error.message}`);
 }
@@ -284,6 +320,72 @@ const legacySettlements = (allSettlementSourcesResult.data ?? []).flatMap(
       ...settlement,
     })),
 );
+const financialTransactions = allSettlementSourcesResult.data ?? [];
+const categorySummary = Object.values(
+  financialTransactions.reduce((summary, transaction) => {
+    const key = `${transaction.category}\u0000${transaction.review_status}`;
+    const current = summary[key] ?? {
+      category: transaction.category,
+      review_status: transaction.review_status,
+      transaction_count: 0,
+      absolute_amount: 0,
+    };
+    current.transaction_count += 1;
+    current.absolute_amount = round(
+      current.absolute_amount + Math.abs(Number(transaction.amount)),
+    );
+    summary[key] = current;
+    return summary;
+  }, {}),
+).sort(
+  (left, right) =>
+    right.absolute_amount - left.absolute_amount ||
+    left.category.localeCompare(right.category, "en-CA"),
+);
+const subcontractorSummary = Object.values(
+  financialTransactions
+    .filter((transaction) => transaction.category === "Subcontractors")
+    .reduce((summary, transaction) => {
+      const counterparty = transaction.counterparty?.trim() || "Unknown";
+      const current = summary[counterparty] ?? {
+        counterparty,
+        transaction_count: 0,
+        absolute_amount: 0,
+        needs_review_count: 0,
+      };
+      current.transaction_count += 1;
+      current.absolute_amount = round(
+        current.absolute_amount + Math.abs(Number(transaction.amount)),
+      );
+      if (transaction.review_status !== "reconciled") {
+        current.needs_review_count += 1;
+      }
+      summary[counterparty] = current;
+      return summary;
+    }, {}),
+).sort(
+  (left, right) =>
+    right.absolute_amount - left.absolute_amount ||
+    left.counterparty.localeCompare(right.counterparty, "en-CA"),
+);
+const subcontractorReviewRows = financialTransactions
+  .filter(
+    (transaction) =>
+      transaction.category === "Subcontractors" &&
+      transaction.review_status !== "reconciled",
+  )
+  .map((transaction) => ({
+    id: transaction.id,
+    posted_on: transaction.posted_on,
+    description: transaction.description,
+    counterparty: transaction.counterparty,
+    amount: transaction.amount,
+  }))
+  .sort(
+    (left, right) =>
+      Math.abs(Number(right.amount)) - Math.abs(Number(left.amount)) ||
+      left.posted_on.localeCompare(right.posted_on),
+  );
 
 console.log(
   JSON.stringify(
@@ -313,6 +415,11 @@ console.log(
           (link) => link.needs_review,
         ).length,
       },
+      financial_classification_health: {
+        by_category_and_review_status: categorySummary,
+        subcontractors: subcontractorSummary,
+        subcontractor_needs_review: subcontractorReviewRows,
+      },
       legacy_json_settlements: {
         allocation_count: legacySettlements.length,
         transaction_count: new Set(
@@ -329,6 +436,31 @@ console.log(
               sum + Number(settlement.allocated_amount ?? 0),
             0,
           ),
+        ),
+      },
+      settlement_model: {
+        table_counts: {
+          labour_contractors: contractorCountResult.count ?? 0,
+          labour_invoice_lines: invoiceLineCountResult.count ?? 0,
+          labour_invoice_line_allocations:
+            lineAllocationCountResult.count ?? 0,
+          labour_invoice_line_time_entries:
+            lineTimeEntryCountResult.count ?? 0,
+          labour_payment_allocations:
+            (paymentAllocationResult.data ?? []).length,
+          labour_reconciliation_resolutions:
+            resolutionCountResult.count ?? 0,
+        },
+        payment_allocations: paymentAllocationResult.data ?? [],
+        audited_invoices: (invoiceReconciliationResult.data ?? []).filter(
+          (invoice) => invoiceIdSet.has(invoice.invoice_id),
+        ),
+        candidate_payments: (paymentReconciliationResult.data ?? []).filter(
+          (payment) =>
+            candidateTransactions.some(
+              (candidate) =>
+                candidate.id === payment.financial_transaction_id,
+            ),
         ),
       },
       contractor_profiles: profileResult.data ?? [],
