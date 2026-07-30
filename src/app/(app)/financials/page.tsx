@@ -64,7 +64,7 @@ const monthNames = [
 ];
 
 function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
 
 function isOneOf<const T extends readonly string[]>(
@@ -103,11 +103,15 @@ function buildMonthlyData(
         transaction.posted_on.startsWith(monthKey) && !transaction.is_transfer,
     );
     const revenue = sum(
-      current.filter((transaction) => transaction.transaction_type === "income"),
+      current.filter(
+        (transaction) => transaction.transaction_type === "income",
+      ),
       "net_amount",
     );
     const expenses = -sum(
-      current.filter((transaction) => transaction.transaction_type !== "income"),
+      current.filter(
+        (transaction) => transaction.transaction_type !== "income",
+      ),
       "net_amount",
     );
     return {
@@ -152,7 +156,9 @@ export default async function FinancialsPage({
 
   const years = [
     ...new Set(
-      ledger.transactions.map((transaction) => Number(transaction.posted_on.slice(0, 4))),
+      ledger.transactions.map((transaction) =>
+        Number(transaction.posted_on.slice(0, 4)),
+      ),
     ),
   ].sort((left, right) => right - left);
   const requestedYear = Number(firstParam(params.year));
@@ -168,7 +174,22 @@ export default async function FinancialsPage({
     ...new Set(ledger.transactions.map((transaction) => transaction.category)),
   ].sort((left, right) => left.localeCompare(right, "en-CA"));
   const requestedCategory = firstParam(params.category) || "all";
-  const category = categories.includes(requestedCategory) ? requestedCategory : "all";
+  const category = categories.includes(requestedCategory)
+    ? requestedCategory
+    : "all";
+  const counterparties = [
+    ...new Set(
+      ledger.transactions
+        .map((transaction) => transaction.counterparty?.trim())
+        .filter((counterparty): counterparty is string =>
+          Boolean(counterparty),
+        ),
+    ),
+  ].sort((left, right) => left.localeCompare(right, "en-CA"));
+  const requestedCounterparty = firstParam(params.counterparty) || "all";
+  const counterparty = counterparties.includes(requestedCounterparty)
+    ? requestedCounterparty
+    : "all";
   const query = firstParam(params.q).trim().slice(0, 120);
   const requestedStatus = firstParam(params.status) || "all";
   const statusOptions = ["all", "needs_review", "reconciled", "paid"] as const;
@@ -198,6 +219,7 @@ export default async function FinancialsPage({
     year,
     account,
     category,
+    counterparty,
     query,
     status,
     transactionType,
@@ -215,8 +237,7 @@ export default async function FinancialsPage({
       Number(transaction.payment_verification?.invoice_allocated_amount ?? 0) >
       0;
     const hasMatchedEvidence =
-      Number(transaction.payment_verification?.total_allocated_amount ?? 0) >
-      0;
+      Number(transaction.payment_verification?.total_allocated_amount ?? 0) > 0;
     const hasNoDocumentRequired = transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     );
@@ -224,8 +245,7 @@ export default async function FinancialsPage({
     const matchesStatus =
       status === "all" ||
       (status === "paid" && hasPaidInvoice) ||
-      (status === "reconciled" &&
-        transaction.review_status === "reconciled") ||
+      (status === "reconciled" && transaction.review_status === "reconciled") ||
       (status === "needs_review" &&
         (transaction.review_status !== "reconciled" ||
           (transaction.payment_verification != null &&
@@ -239,6 +259,7 @@ export default async function FinancialsPage({
 
     return (
       (category === "all" || transaction.category === category) &&
+      (counterparty === "all" || transaction.counterparty === counterparty) &&
       (transactionType === "all" ||
         transaction.transaction_type === transactionType) &&
       matchesStatus &&
@@ -301,7 +322,9 @@ export default async function FinancialsPage({
   const hstPayable = roundMoney(sum(operatingTransactions, "tax_amount"));
   const monthlyData = buildMonthlyData(periodTransactions, year);
 
-  const categoryTotals = [...new Set(expenseTransactions.map((item) => item.category))]
+  const categoryTotals = [
+    ...new Set(expenseTransactions.map((item) => item.category)),
+  ]
     .map((name) => {
       const rows = expenseTransactions.filter((item) => item.category === name);
       return {
@@ -311,7 +334,10 @@ export default async function FinancialsPage({
       };
     })
     .sort((left, right) => right.amount - left.amount);
-  const largestExpense = Math.max(0, ...categoryTotals.map((item) => item.amount));
+  const largestExpense = Math.max(
+    0,
+    ...categoryTotals.map((item) => item.amount),
+  );
   const reconciled = periodTransactions.filter(
     (transaction) => transaction.review_status === "reconciled",
   ).length;
@@ -528,6 +554,7 @@ export default async function FinancialsPage({
         years={years}
         accounts={ledger.accounts}
         categories={categories}
+        counterparties={counterparties}
       />
 
       <FinancialTransactionsTable

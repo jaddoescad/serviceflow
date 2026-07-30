@@ -4,16 +4,13 @@ import { Button, Card, Field, Input, Select } from "@/components/ui";
 import type { FinancialAccount } from "@/lib/financials";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  useTransition,
-  type ChangeEvent,
-  type FormEvent,
-} from "react";
+import { useTransition, type ChangeEvent, type FormEvent } from "react";
 
 export type FinancialFilters = {
   year: number;
   account: string;
   category: string;
+  counterparty: string;
   query: string;
   status: "all" | "needs_review" | "reconciled" | "paid";
   transactionType: "all" | "income" | "expense" | "transfer" | "credit";
@@ -25,17 +22,20 @@ export function FinancialFilterBar({
   years,
   accounts,
   categories,
+  counterparties,
 }: {
   filters: FinancialFilters;
   years: number[];
   accounts: FinancialAccount[];
   categories: string[];
+  counterparties: string[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const activeFilterCount = [
     filters.account !== "all",
     filters.category !== "all",
+    filters.counterparty !== "all",
     filters.status !== "all",
     filters.transactionType !== "all",
     filters.evidence !== "all",
@@ -45,6 +45,7 @@ export function FinancialFilterBar({
     filters.year,
     filters.account,
     filters.category,
+    filters.counterparty,
     filters.query,
     filters.status,
     filters.transactionType,
@@ -193,6 +194,23 @@ export function FinancialFilterBar({
             </Select>
           </Field>
         </div>
+        <div className="w-[210px]">
+          <Field label="Counterparty">
+            <Select
+              name="counterparty"
+              defaultValue={filters.counterparty}
+              className="w-full"
+              onChange={applySelectFilter}
+            >
+              <option value="all">All counterparties</option>
+              {counterparties.map((counterparty) => (
+                <option key={counterparty} value={counterparty}>
+                  {counterparty}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <div className="w-full sm:w-[220px]">
           <Field label="Search">
             <Input
@@ -203,12 +221,7 @@ export function FinancialFilterBar({
           </Field>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="submit"
-            variant="subtle"
-            size="sm"
-            disabled={isPending}
-          >
+          <Button type="submit" variant="subtle" size="sm" disabled={isPending}>
             {isPending ? "Filtering…" : "Apply filters"}
           </Button>
           <Link
