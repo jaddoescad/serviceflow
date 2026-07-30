@@ -98,6 +98,9 @@ export function InvoiceEvidence({
   showDocument?: boolean;
 }) {
   const { verification } = invoice;
+  const canPreviewSource = /\.(pdf|png|jpe?g|webp)$/i.test(
+    verification.original_filename,
+  );
 
   return (
     <div className="space-y-4">
@@ -171,12 +174,23 @@ export function InvoiceEvidence({
               )
             }
           />
-          {invoice.signedUrl ? (
+          {invoice.signedUrl && canPreviewSource ? (
             <iframe
               src={invoice.signedUrl}
               title={`Invoice ${verification.invoice_number}`}
               className="h-[620px] w-full bg-white"
             />
+          ) : invoice.signedUrl ? (
+            <div className="border-t border-[var(--color-border)] px-5 py-8 text-sm">
+              <div className="font-medium text-[var(--color-heading)]">
+                Exact source archived as an email file
+              </div>
+              <p className="mt-1 max-w-2xl text-[var(--color-muted)]">
+                Email files do not preview reliably in the browser. Use Open
+                source to download the archived file; the invoice entries and
+                comparisons remain visible below.
+              </p>
+            </div>
           ) : (
             <div className="px-5 py-10 text-center text-sm text-[var(--color-muted)]">
               The archived source file is unavailable.
