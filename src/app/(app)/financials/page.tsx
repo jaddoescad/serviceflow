@@ -177,17 +177,22 @@ export default async function FinancialsPage({
   const category = categories.includes(requestedCategory)
     ? requestedCategory
     : "all";
-  const counterparties = [
+  const subcontractors = [
     ...new Set(
       ledger.transactions
+        .filter(
+          (transaction) =>
+            transaction.category === "Subcontractors" &&
+            transaction.payment_verification?.recipient_status === "confirmed",
+        )
         .map((transaction) => transaction.counterparty?.trim())
-        .filter((counterparty): counterparty is string =>
-          Boolean(counterparty),
+        .filter((subcontractor): subcontractor is string =>
+          Boolean(subcontractor),
         ),
     ),
   ].sort((left, right) => left.localeCompare(right, "en-CA"));
   const requestedCounterparty = firstParam(params.counterparty) || "all";
-  const counterparty = counterparties.includes(requestedCounterparty)
+  const counterparty = subcontractors.includes(requestedCounterparty)
     ? requestedCounterparty
     : "all";
   const query = firstParam(params.q).trim().slice(0, 120);
@@ -554,7 +559,7 @@ export default async function FinancialsPage({
         years={years}
         accounts={ledger.accounts}
         categories={categories}
-        counterparties={counterparties}
+        subcontractors={subcontractors}
       />
 
       <FinancialTransactionsTable

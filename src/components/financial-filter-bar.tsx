@@ -22,13 +22,13 @@ export function FinancialFilterBar({
   years,
   accounts,
   categories,
-  counterparties,
+  subcontractors,
 }: {
   filters: FinancialFilters;
   years: number[];
   accounts: FinancialAccount[];
   categories: string[];
-  counterparties: string[];
+  subcontractors: string[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -195,17 +195,17 @@ export function FinancialFilterBar({
           </Field>
         </div>
         <div className="w-[210px]">
-          <Field label="Counterparty">
+          <Field label="Subcontractor">
             <Select
               name="counterparty"
               defaultValue={filters.counterparty}
               className="w-full"
               onChange={applySelectFilter}
             >
-              <option value="all">All counterparties</option>
-              {counterparties.map((counterparty) => (
-                <option key={counterparty} value={counterparty}>
-                  {counterparty}
+              <option value="all">All subcontractors</option>
+              {subcontractors.map((subcontractor) => (
+                <option key={subcontractor} value={subcontractor}>
+                  {subcontractor}
                 </option>
               ))}
             </Select>
@@ -216,7 +216,7 @@ export function FinancialFilterBar({
             <Input
               name="q"
               defaultValue={filters.query}
-              placeholder="Counterparty or description"
+              placeholder="Description or category"
             />
           </Field>
         </div>
