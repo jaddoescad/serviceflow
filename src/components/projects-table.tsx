@@ -119,41 +119,12 @@ function UsageBar({
   );
 }
 
-/**
- * Read-only completion marker beside the job name. Completing a job is done on
- * the job's own page, so a stray click in a dense table cannot settle labour.
- */
-function LabourStateChip({ row, now }: { row: ProjectTableRow; now: number }) {
-  if (row.labourBucket === "excluded" || row.labourBucket === "idle") return null;
-
-  if (row.labourClosedAt) {
-    return (
-      <span
-        className="shrink-0 whitespace-nowrap rounded-full bg-[var(--color-good-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-good)]"
-        title={`Labour completed ${fmtDate(row.labourClosedAt)}`}
-      >
-        Completed
-      </span>
-    );
-  }
-  if (row.labourBucket === "missing_amount") {
-    return (
-      <span className="shrink-0 whitespace-nowrap text-[10px] font-medium text-[var(--color-warn)]">
-        No job amount
-      </span>
-    );
-  }
-  if (readyToCloseLabour(row, now)) {
-    return (
-      <span
-        className="shrink-0 whitespace-nowrap text-[10px] font-medium text-[var(--color-warn)]"
-        title="Quiet for a while — open the job to mark it completed"
-      >
-        Ready to complete
-      </span>
-    );
-  }
-  return null;
+function JobStatus({ row }: { row: ProjectTableRow }) {
+  return row.labourClosedAt ? (
+    <Badge tone="good">Completed</Badge>
+  ) : (
+    <Badge tone="neutral">Not completed</Badge>
+  );
 }
 
 function activityTimestamp(value: string | null): number {
@@ -328,15 +299,16 @@ export function ProjectsTable({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] table-fixed text-[13px]">
               <colgroup>
-                <col className="w-[20%]" />
-                <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-[10%]" />
-                <col className="w-[11%]" />
+                <col className="w-[18%]" />
                 <col className="w-[9%]" />
-                <col className="w-[11%]" />
+                <col className="w-[9%]" />
                 <col className="w-[9%]" />
                 <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[11%]" />
+                <col className="w-[8%]" />
+                <col className="w-[11%]" />
+                <col className="w-[7%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -361,6 +333,7 @@ export function ProjectsTable({
                   >
                     Budget left 35/37/40
                   </th>
+                  <th className="px-2.5 py-2.5 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -375,11 +348,8 @@ export function ProjectsTable({
                         className="block w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
                         aria-label={`View details for ${r.name}`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium text-[var(--color-heading)] underline decoration-transparent underline-offset-4 transition-colors hover:text-[var(--color-brand-strong)] hover:decoration-current">
-                            {r.name}
-                          </span>
-                          <LabourStateChip row={r} now={now} />
+                        <div className="truncate font-medium text-[var(--color-heading)] underline decoration-transparent underline-offset-4 transition-colors hover:text-[var(--color-brand-strong)] hover:decoration-current">
+                          {r.name}
                         </div>
                         {r.address ? (
                           <div className="truncate text-xs text-[var(--color-muted)]">{r.address}</div>
@@ -496,6 +466,9 @@ export function ProjectsTable({
                         amountBeforeTax={r.labourExcluded ? null : r.amountBeforeTax}
                         used={r.wageCost}
                       />
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2.5">
+                      <JobStatus row={r} />
                     </td>
                   </tr>
                 ))}

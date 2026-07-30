@@ -16,6 +16,14 @@ app.
   `project-assignments` edge function.
 - **Financial budgets** are stored in `project_budgets` (migration
   `20260707190000`) and written directly via RLS (admin/manager only).
+- **Financial statements** are consolidated in `financial_accounts`,
+  `financial_imports`, and `financial_transactions` (migration
+  `20260726180000`), with live-feed balances added by migration
+  `20260727020000`. Signed HST and before-tax amounts are retained with
+  source hashes; inter-account credit-card payments are marked as transfers
+  so the dashboard does not double-count them. Live posted transactions are
+  imported idempotently, pending transactions are skipped, and provisional
+  categories and HST remain flagged for review.
 - **Calculator labour budgets** are versioned in `project_labour_budgets`.
   The first calculator is the default automatically. Opening another quote
   does not change it; selecting **Make default** explicitly chooses that quote
@@ -73,6 +81,10 @@ Environment variables (`.env.local`):
   “Last active” uses the latest crew time or verified contractor invoice date;
   logged hours use the higher verified total so invoices do not double-count
   clocked labour.
+- `/financials` — consolidated business chequing, e-transfer, and TD Visa
+  activity with before-HST revenue and expenses, cash-basis net income, HST
+  payable, live account balances, reconciliation coverage, category totals,
+  and source-level transaction provenance.
 - `/employees` — Crew: create members, set roles, activate/deactivate.
 
 ## Clock-out CLI

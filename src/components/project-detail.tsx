@@ -1,12 +1,28 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Avatar, Badge, Button, Card, Field, Input } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Field,
+  Input,
+} from "@/components/ui";
 import { Kpi } from "@/components/kpi";
 import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
 import { setJobAmount, setLabourClosed } from "@/lib/actions/budgets";
-import { LABOUR_MAX_PERCENT, LABOUR_MIN_PERCENT } from "@/lib/metrics";
+import {
+  LABOUR_ALERT_PERCENT,
+  LABOUR_MAX_PERCENT,
+  LABOUR_MIN_PERCENT,
+} from "@/lib/metrics";
 import type { BudgetStatus, ProjectDetail, ProjectRollup } from "@/lib/metrics";
+import {
+  allocateBonusByHours,
+  calculateBonusPool,
+} from "@/lib/bonus";
 
 const statusTone: Record<BudgetStatus, "good" | "warn" | "bad" | "neutral"> = {
   under: "good",
@@ -33,6 +49,19 @@ export function ProjectOverviewPanel({
   const labourExpenses = detail?.labourExpenses ?? [];
   const maxCrewHours = Math.max(...crew.map((member) => member.hours), 0);
   const activeEntryCount = detail?.activeEntryCount ?? 0;
+  const bonusPool = calculateBonusPool(
+    project.amountBeforeTax,
+    project.wageCost,
+    LABOUR_ALERT_PERCENT,
+  );
+  const bonusAllocation = allocateBonusByHours(
+    bonusPool ?? 0,
+    crew.map((member) => ({
+      id: member.crewId,
+      name: member.name,
+      hours: member.hours,
+    })),
+  );
 
   const labourClosed = Boolean(project.labourClosedAt);
   // Completing settles the job's labour cost, so it only makes sense once the
@@ -147,6 +176,14 @@ export function ProjectOverviewPanel({
       ) : (
         <div className="mb-6" />
       )}
+
+      <PainterBonus
+        project={project}
+        crew={crew}
+        bonusPool={bonusPool}
+        totalHours={bonusAllocation.totalHours}
+        allocations={bonusAllocation.allocations}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
         <section aria-labelledby="crew-hours-title">
@@ -315,6 +352,171 @@ export function ProjectOverviewPanel({
         />
       ) : null}
     </>
+  );
+}
+
+function PainterBonus({
+  project,
+  crew,
+  bonusPool,
+  totalHours,
+  allocations,
+}: {
+  project: ProjectRollup;
+  crew: ProjectDetail["crew"];
+  bonusPool: number | null;
+  totalHours: number;
+  allocations: ReturnType<typeof allocateBonusByHours>["allocations"];
+}) {
+  const allowance =
+    project.amountBeforeTax == null
+      ? null
+      : project.amountBeforeTax * (LABOUR_ALERT_PERCENT / 100);
+  const sourceLabel =
+    project.labourCostSource === "invoices"
+      ? "labour invoices"
+      : "clocked wages";
+  const isFinal = Boolean(project.labourClosedAt);
+
+  return (
+    <Card className="mb-6 overflow-hidden">
+      <CardHeader
+        title="Painter bonus"
+        subtitle="The amount left inside the 40% painter budget, split by each painter’s share of clocked hours"
+        right={
+          <Badge tone={isFinal ? "good" : "warn"}>
+            {isFinal ? "Final" : "Live estimate"}
+          </Badge>
+        }
+      />
+
+      {bonusPool == null || allowance == null ? (
+        <div className="px-5 py-8 text-center text-sm text-[var(--color-muted)]">
+          Set the job amount before HST to calculate the painter bonus.
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-px border-b border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">
+            <div className="bg-[var(--color-surface)] px-5 py-4">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                40% painter budget
+              </div>
+              <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
+                {fmtMoney(allowance)}
+              </div>
+            </div>
+            <div className="bg-[var(--color-surface)] px-5 py-4">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                Painter cost
+              </div>
+              <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
+                {fmtMoney(project.wageCost)}
+              </div>
+              <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+                {sourceLabel} chosen
+              </div>
+            </div>
+            <div className="bg-[var(--color-surface)] px-5 py-4">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                {isFinal ? "Final bonus pool" : "Estimated bonus pool"}
+              </div>
+              <div
+                className={`mt-1 text-xl font-semibold tabular-nums ${
+                  bonusPool > 0
+                    ? "text-[var(--color-good)]"
+                    : "text-[var(--color-muted)]"
+                }`}
+              >
+                {fmtMoney(bonusPool)}
+              </div>
+            </div>
+          </div>
+
+          {crew.length === 0 || allocations.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm text-[var(--color-muted)]">
+                No clocked painter hours are available to split this bonus.
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+                Invoice costs can set the pool, but a painter needs clocked hours
+                to receive a share.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)] text-left text-[11px] uppercase tracking-wide text-[var(--color-muted)]">
+                    <th className="px-5 py-2.5 font-medium">Painter</th>
+                    <th className="px-5 py-2.5 text-right font-medium">
+                      Hours
+                    </th>
+                    <th className="px-5 py-2.5 text-right font-medium">
+                      Share
+                    </th>
+                    <th className="px-5 py-2.5 text-right font-medium">
+                      Bonus
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allocations.map((allocation) => (
+                    <tr
+                      key={allocation.id}
+                      className="border-b border-[var(--color-border)] last:border-0"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar label={initials(allocation.name)} />
+                          <span className="font-medium">{allocation.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums text-[var(--color-muted)]">
+                        {fmtHours(allocation.hours)}
+                      </td>
+                      <td className="px-5 py-3 text-right font-medium tabular-nums">
+                        {allocation.sharePercent.toFixed(1)}%
+                      </td>
+                      <td className="px-5 py-3 text-right font-semibold tabular-nums text-[var(--color-good)]">
+                        {fmtMoney(allocation.bonusAmount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-[var(--color-border)] bg-[var(--color-bg)] font-medium">
+                    <td className="px-5 py-3">Total</td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      {fmtHours(totalHours)}
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      100.0%
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold tabular-nums">
+                      {fmtMoney(bonusPool)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          <div className="border-t border-[var(--color-border)] px-5 py-3 text-[11px] leading-4 text-[var(--color-muted)]">
+            {allocations.length > 0 ? (
+              <>
+                Each painter receives their clocked hours ÷ {fmtHours(totalHours)} total
+                hours × {fmtMoney(bonusPool)}.{" "}
+              </>
+            ) : (
+              <>The bonus can be split once painter hours are clocked. </>
+            )}
+            {sourceLabel === "labour invoices"
+              ? "Invoices determine the painter cost; clocked hours only determine the split."
+              : "Clocked wages determine the painter cost and clocked hours determine the split."}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 
