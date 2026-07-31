@@ -478,6 +478,120 @@ export function PaymentEvidence({
     !hasFullyAllocatedBonus &&
     !hasFullyAllocatedOtherSettlement &&
     Number(verification?.invoice_allocated_amount ?? 0) <= 0;
+  const hasBankSupportedExpense =
+    payment.transaction.expense_evidence_status === "bank_supported_no_itc" &&
+    payment.transaction.review_status === "reconciled";
+
+  if (hasBankSupportedExpense) {
+    const isCredit = payment.transaction.transaction_type === "credit";
+    const vendor =
+      payment.transaction.expense_evidence_vendor ??
+      payment.transaction.counterparty ??
+      "Software vendor";
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Value
+            label={isCredit ? "Gross credit" : "Gross expense"}
+            value={money(Math.abs(payment.transaction.amount))}
+          />
+          <Value
+            label="Before HST"
+            value={money(Math.abs(payment.transaction.net_amount))}
+          />
+          <Value
+            label="HST claimed"
+            value={money(Math.abs(payment.transaction.tax_amount))}
+          />
+          <Value
+            label="Accounting category"
+            value={payment.transaction.category}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="good">
+            {isCredit
+              ? "Subscription credit reconciled"
+              : "Software expense reconciled"}
+          </Badge>
+          <Badge tone="neutral">Bank evidence</Badge>
+          <Badge tone="neutral">No HST claimed</Badge>
+        </div>
+
+        <Card>
+          <CardHeader
+            title="Expense classification"
+            subtitle="Ordinary business overhead; no labour invoice or job allocation is expected"
+          />
+          <dl className="grid gap-x-6 gap-y-4 p-5 text-sm sm:grid-cols-2 xl:grid-cols-3">
+            <Detail label="Vendor" value={vendor} />
+            <Detail label="Category" value={payment.transaction.category} />
+            <Detail
+              label="Treatment"
+              value={
+                isCredit ? "Offsets software overhead" : "Software overhead"
+              }
+            />
+            <Detail
+              label="Evidence"
+              value="Posted business credit-card record"
+            />
+            <Detail label="Supplier document" value="Not attached" />
+            <Detail
+              label="Tax treatment"
+              value="No input tax credit claimed"
+            />
+          </dl>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Bank evidence"
+            subtitle="The imported card row proves the posted vendor, date, and amount"
+          />
+          <dl className="grid gap-x-6 gap-y-4 p-5 text-sm sm:grid-cols-2 xl:grid-cols-3">
+            <Detail
+              label="Posted"
+              value={fmtDate(payment.transaction.posted_on)}
+            />
+            <Detail
+              label="Account"
+              value={`${payment.transaction.account_name} •••• ${
+                payment.transaction.account_last_four ?? "—"
+              }`}
+            />
+            <Detail
+              label="Bank description"
+              value={payment.transaction.description}
+            />
+            <Detail
+              label="Counterparty"
+              value={payment.transaction.counterparty ?? vendor}
+            />
+            <Detail
+              label="Source file"
+              value={payment.transaction.source_filename}
+            />
+            <Detail
+              label="Source checksum"
+              value={
+                payment.transaction.source_sha256
+                  ? `${payment.transaction.source_sha256.slice(0, 20)}…`
+                  : "Unavailable"
+              }
+            />
+          </dl>
+          {payment.transaction.notes ? (
+            <p className="border-t border-[var(--color-border)] px-5 py-4 text-sm text-[var(--color-muted)]">
+              {payment.transaction.notes}
+            </p>
+          ) : null}
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

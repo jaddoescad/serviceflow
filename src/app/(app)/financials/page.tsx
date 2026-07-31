@@ -289,7 +289,12 @@ export default async function FinancialsPage({
       Number(transaction.payment_verification?.invoice_allocated_amount ?? 0) >
       0;
     const hasMatchedEvidence =
-      Number(transaction.payment_verification?.total_allocated_amount ?? 0) > 0;
+      Number(transaction.payment_verification?.total_allocated_amount ?? 0) > 0 ||
+      transaction.evidence.some(
+        (item) =>
+          item.status === "confirmed" &&
+          item.kind !== "no_document_required",
+      );
     const hasNoDocumentRequired = transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     );

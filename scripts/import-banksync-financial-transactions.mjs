@@ -160,6 +160,33 @@ function cardCategory(transaction) {
   return "Uncategorized";
 }
 
+function softwareVendor(transaction) {
+  const text = [
+    transaction.description,
+    transaction.originalDescription,
+    transaction.merchantName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("en-CA");
+  const vendors = [
+    ["DripJobs CRM", ["dripjobs"]],
+    ["CompanyCam", ["companycam"]],
+    ["QuickBooks Online", ["qbooks", "quickbooks", "intuit"]],
+    ["Perspective Software", ["perspective software"]],
+    ["Google Workspace", ["workspace_pain", "google workspace"]],
+    ["Zapier", ["zapier"]],
+    ["Connecteam", ["connecteam"]],
+    ["OpenAI", ["openai", "chatgpt"]],
+    ["Slack", ["slack"]],
+    ["CapCut", ["capcut"]],
+  ];
+  return (
+    vendors.find(([, terms]) => terms.some((term) => text.includes(term)))?.[0] ??
+    null
+  );
+}
+
 function classifyTransaction(transaction, accountType) {
   const description = transaction.description.toLocaleUpperCase("en-CA");
 
@@ -172,11 +199,15 @@ function classifyTransaction(transaction, accountType) {
         review_status: "reconciled",
       };
     }
+    const category = cardCategory(transaction);
     return {
       transaction_type: transaction.amount > 0 ? "credit" : "expense",
-      category: cardCategory(transaction),
+      category,
       is_transfer: false,
-      review_status: "needs_review",
+      review_status:
+        category === "Software & subscriptions" && softwareVendor(transaction)
+          ? "reconciled"
+          : "needs_review",
     };
   }
 
@@ -407,22 +438,33 @@ for (const transactionSet of snapshot.transactionSets) {
       transaction,
       definition.account_type,
     );
+    const subscriptionVendor =
+      classification.category === "Software & subscriptions"
+        ? softwareVendor(transaction)
+        : null;
+    const isSubscriptionCredit = transaction.amount > 0;
+    const subscriptionNote = subscriptionVendor
+      ? isSubscriptionCredit
+        ? `${subscriptionVendor} software-subscription credit verified from the posted business credit-card record. It offsets software overhead; no HST adjustment is claimed without a supplier credit note.`
+        : `${subscriptionVendor} business software subscription verified from the posted business credit-card record. Recorded as overhead; no HST input tax credit is claimed without a supplier receipt.`
+      : null;
     transactionCandidates.push({
       account_id: resolvedAccountId,
       source_key: sourceKey(transaction.id),
       posted_on: dateOnly(transaction.date),
       transaction_on: dateOnly(transaction.authorizedDate ?? transaction.date),
       description: transaction.description,
-      counterparty: transaction.merchantName,
+      counterparty: subscriptionVendor ?? transaction.merchantName,
       amount: transaction.amount,
       tax_amount: 0,
       currency: transaction.currency,
       ...classification,
       running_balance: null,
       notes:
-        classification.review_status === "needs_review"
+        subscriptionNote ??
+        (classification.review_status === "needs_review"
           ? "Live bank feed; category and HST require review."
-          : "Live bank feed; deterministic bank transfer or fee.",
+          : "Live bank feed; deterministic bank transfer or fee."),
       source_data: {
         source: "banksync_plaid",
         bank_sync_transaction_id: transaction.id,
@@ -433,6 +475,24 @@ for (const transactionSet of snapshot.transactionSets) {
         bank_category: transaction.category,
         bank_type: transaction.type,
         pending: transaction.pending,
+        ...(subscriptionVendor
+          ? {
+              expense_evidence: {
+                status: "bank_supported_no_itc",
+                classification: isSubscriptionCredit
+                  ? "software_subscription_credit"
+                  : "software_subscription",
+                vendor: subscriptionVendor,
+                evidence: "posted_business_credit_card_record",
+                tax_treatment: "no_itc_claimed",
+                supplier_document_status: "not_attached",
+                source: "deterministic recognized vendor rule",
+                confirmed_on: dateOnly(snapshot.fetchedAt),
+                reason:
+                  "Recognized software vendor on the posted business credit-card feed; HST remains zero until supported by a supplier tax document.",
+              },
+            }
+          : {}),
       },
     });
   }

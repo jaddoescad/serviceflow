@@ -131,7 +131,10 @@ export type LabourPaymentEvidence = {
     description: string;
     counterparty: string | null;
     amount: number;
+    tax_amount: number;
+    net_amount: number;
     currency: string;
+    transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
     review_status: string;
     running_balance: number | null;
@@ -140,6 +143,8 @@ export type LabourPaymentEvidence = {
     has_no_invoice: boolean;
     invoice_not_found: boolean;
     partial_no_invoice_residual: boolean;
+    expense_evidence_status: "bank_supported_no_itc" | null;
+    expense_evidence_vendor: string | null;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -484,7 +489,10 @@ export async function getLabourPaymentEvidence(
           description,
           counterparty,
           amount,
+          tax_amount,
+          net_amount,
           currency,
+          transaction_type,
           category,
           review_status,
           running_balance,
@@ -600,7 +608,10 @@ export async function getLabourPaymentEvidence(
     description: string;
     counterparty: string | null;
     amount: number;
+    tax_amount: number;
+    net_amount: number;
     currency: string;
+    transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
     review_status: string;
     running_balance: number | null;
@@ -611,6 +622,10 @@ export async function getLabourPaymentEvidence(
       };
       reconciliation_research?: {
         status?: string;
+      };
+      expense_evidence?: {
+        status?: string;
+        vendor?: string;
       };
     } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
@@ -641,7 +656,10 @@ export async function getLabourPaymentEvidence(
       description: transaction.description,
       counterparty: transaction.counterparty,
       amount: Number(transaction.amount),
+      tax_amount: Number(transaction.tax_amount),
+      net_amount: Number(transaction.net_amount),
       currency: transaction.currency,
+      transaction_type: transaction.transaction_type,
       category: transaction.category,
       review_status: transaction.review_status,
       running_balance:
@@ -660,6 +678,15 @@ export async function getLabourPaymentEvidence(
       partial_no_invoice_residual:
         transaction.source_data?.reconciliation_research?.status ===
         "partial_invoice_allocation_with_no_invoice_residual",
+      expense_evidence_status:
+        transaction.source_data?.expense_evidence?.status ===
+        "bank_supported_no_itc"
+          ? "bank_supported_no_itc"
+          : null,
+      expense_evidence_vendor:
+        typeof transaction.source_data?.expense_evidence?.vendor === "string"
+          ? transaction.source_data.expense_evidence.vendor
+          : null,
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

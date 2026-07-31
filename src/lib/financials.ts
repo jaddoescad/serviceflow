@@ -26,7 +26,11 @@ export type FinancialImport = {
 };
 
 export type FinancialEvidence = {
-  kind: "bank_record" | "no_document_required" | "labour_invoice";
+  kind:
+    | "bank_record"
+    | "business_expense"
+    | "no_document_required"
+    | "labour_invoice";
   label: string;
   detail: string;
   status: "confirmed" | "source";
@@ -48,6 +52,8 @@ export type FinancialSourceDetails = {
     | "invoice_not_found"
     | "partial_no_invoice_residual"
     | null;
+  expense_evidence_status: "bank_supported_no_itc" | null;
+  expense_evidence_vendor: string | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -111,6 +117,7 @@ type FinancialSourceData = {
   cancelled_e_transfer?: unknown;
   confirmed_overpayment?: unknown;
   reconciliation_research?: unknown;
+  expense_evidence?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -160,6 +167,20 @@ function normalizeSourceDetails(
     reconciliationResearch && "status" in reconciliationResearch
       ? reconciliationResearch.status
       : null;
+  const expenseEvidence =
+    sourceData?.expense_evidence &&
+    typeof sourceData.expense_evidence === "object" &&
+    !Array.isArray(sourceData.expense_evidence)
+      ? sourceData.expense_evidence
+      : null;
+  const expenseEvidenceStatus =
+    expenseEvidence && "status" in expenseEvidence
+      ? expenseEvidence.status
+      : null;
+  const expenseEvidenceVendor =
+    expenseEvidence && "vendor" in expenseEvidence
+      ? expenseEvidence.vendor
+      : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -186,6 +207,11 @@ function normalizeSourceDetails(
             "partial_invoice_allocation_with_no_invoice_residual"
           ? "partial_no_invoice_residual"
           : null,
+    expense_evidence_status:
+      expenseEvidenceStatus === "bank_supported_no_itc"
+        ? "bank_supported_no_itc"
+        : null,
+    expense_evidence_vendor: stringValue(expenseEvidenceVendor),
   };
 }
 
@@ -222,6 +248,29 @@ function buildEvidence(
       amount: Math.abs(Number(transaction.amount)),
       href: null,
       filename: null,
+    });
+  }
+
+  const sourceDetails = normalizeSourceDetails(transaction.source_data);
+  if (sourceDetails.expense_evidence_status === "bank_supported_no_itc") {
+    const vendor =
+      sourceDetails.expense_evidence_vendor ??
+      transaction.counterparty ??
+      "Software vendor";
+    evidence.push({
+      kind: "business_expense",
+      label:
+        transaction.transaction_type === "credit"
+          ? `${vendor} subscription credit`
+          : `${vendor} software subscription`,
+      detail:
+        transaction.transaction_type === "credit"
+          ? "The posted business credit-card record confirms this vendor credit. It offsets software overhead; no HST adjustment is claimed without a supplier credit note."
+          : "The posted business credit-card record confirms the vendor and amount. It is software overhead; no HST input tax credit is claimed without a supplier receipt.",
+      status: "confirmed",
+      amount: Math.abs(Number(transaction.amount)),
+      href: null,
+      filename: transaction.financial_imports.original_filename,
     });
   }
 

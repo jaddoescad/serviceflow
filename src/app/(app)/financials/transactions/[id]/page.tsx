@@ -42,6 +42,9 @@ export default async function FinancialTransactionEvidencePage({
     !hasFullyAllocatedBonus &&
     !hasFullyAllocatedOtherSettlement &&
     Number(payment.verification?.invoice_allocated_amount ?? 0) <= 0;
+  const hasBankSupportedExpense =
+    payment.transaction.expense_evidence_status === "bank_supported_no_itc" &&
+    payment.transaction.review_status === "reconciled";
   const settlementLabel = payment.transaction.is_overpayment
     ? "Overpayment"
     : payment.transaction.partial_no_invoice_residual
@@ -56,11 +59,15 @@ export default async function FinancialTransactionEvidencePage({
               ? "Settled without invoice"
               : hasMissingSubcontractorInvoice
                 ? "Invoice missing"
-                : (payment.verification?.payment_status
-                    ?.replace("unidentified", "Recipient not verified")
-                    .replaceAll("_", " ")
-                    .replace(/^\w/, (character) => character.toUpperCase()) ??
-                  "Needs review");
+                : hasBankSupportedExpense
+                  ? payment.transaction.transaction_type === "credit"
+                    ? "Subscription credit reconciled"
+                    : "Software expense reconciled"
+                  : (payment.verification?.payment_status
+                      ?.replace("unidentified", "Recipient not verified")
+                      .replaceAll("_", " ")
+                      .replace(/^\w/, (character) => character.toUpperCase()) ??
+                    "Needs review");
 
   return (
     <>
@@ -86,9 +93,11 @@ export default async function FinancialTransactionEvidencePage({
                 ? "bad"
                 : hasMissingSubcontractorInvoice
                   ? "bad"
-                  : payment.verification?.payment_status === "fully_allocated"
+                  : hasBankSupportedExpense
                     ? "good"
-                    : "warn"
+                    : payment.verification?.payment_status === "fully_allocated"
+                      ? "good"
+                      : "warn"
             }
           >
             {settlementLabel}

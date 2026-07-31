@@ -15,6 +15,7 @@
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
     "audit:invoice-job-links": "node scripts/audit-invoice-entry-job-links.mjs",
     "reconcile:exact-invoice-job-links": "node scripts/backfill-exact-invoice-entry-job-links.mjs",
+    "reconcile:software-subscriptions": "node scripts/reconcile-software-subscriptions.mjs",
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs"
