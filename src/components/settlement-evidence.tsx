@@ -500,7 +500,9 @@ export function PaymentEvidence({
         >
           {payment.transaction.is_overpayment
             ? "Overpayment"
-            : statusLabel(verification?.payment_status ?? "unmatched")}
+            : payment.transaction.has_no_invoice
+              ? "No invoice provided"
+              : statusLabel(verification?.payment_status ?? "unmatched")}
         </Badge>
         <Badge
           tone={

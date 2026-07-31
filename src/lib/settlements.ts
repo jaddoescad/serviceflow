@@ -52,10 +52,7 @@ export type InvoiceLineEvidence = {
   amount_before_tax: number;
   tax_amount: number;
   source_kind:
-    | "extracted"
-    | "manual"
-    | "legacy_project_link"
-    | "legacy_invoice_total";
+    "extracted" | "manual" | "legacy_project_link" | "legacy_invoice_total";
   source_reference: string | null;
   source_text: string | null;
   needs_review: boolean;
@@ -140,6 +137,7 @@ export type LabourPaymentEvidence = {
     running_balance: number | null;
     notes: string | null;
     is_overpayment: boolean;
+    has_no_invoice: boolean;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -609,6 +607,9 @@ export async function getLabourPaymentEvidence(
       confirmed_overpayment?: {
         status?: string;
       };
+      reconciliation_research?: {
+        status?: string;
+      };
     } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
@@ -648,6 +649,9 @@ export async function getLabourPaymentEvidence(
       notes: transaction.notes,
       is_overpayment:
         transaction.source_data?.confirmed_overpayment?.status === "confirmed",
+      has_no_invoice:
+        transaction.source_data?.reconciliation_research?.status ===
+        "no_invoice_provided",
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

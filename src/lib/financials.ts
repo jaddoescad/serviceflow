@@ -43,6 +43,7 @@ export type FinancialSourceDetails = {
   reference: string | null;
   transfer_status: "cancelled" | null;
   overpayment_status: "confirmed" | null;
+  invoice_evidence_status: "no_invoice_provided" | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -105,6 +106,7 @@ type FinancialSourceData = {
   bank_sync_transaction_id?: unknown;
   cancelled_e_transfer?: unknown;
   confirmed_overpayment?: unknown;
+  reconciliation_research?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -144,6 +146,12 @@ function normalizeSourceDetails(
     !Array.isArray(sourceData.confirmed_overpayment)
       ? sourceData.confirmed_overpayment
       : null;
+  const reconciliationResearch =
+    sourceData?.reconciliation_research &&
+    typeof sourceData.reconciliation_research === "object" &&
+    !Array.isArray(sourceData.reconciliation_research)
+      ? sourceData.reconciliation_research
+      : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -161,6 +169,12 @@ function normalizeSourceDetails(
       "status" in overpayment &&
       overpayment.status === "confirmed"
         ? "confirmed"
+        : null,
+    invoice_evidence_status:
+      reconciliationResearch &&
+      "status" in reconciliationResearch &&
+      reconciliationResearch.status === "no_invoice_provided"
+        ? "no_invoice_provided"
         : null,
   };
 }

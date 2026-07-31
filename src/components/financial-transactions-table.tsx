@@ -57,6 +57,11 @@ function reviewLabel(transaction: FinancialTransaction) {
   if (transaction.source_details.overpayment_status === "confirmed") {
     return "Overpayment";
   }
+  if (
+    transaction.source_details.invoice_evidence_status === "no_invoice_provided"
+  ) {
+    return "No invoice";
+  }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "Fully matched";
   if (status === "partially_allocated") return "Partially matched";
@@ -75,6 +80,11 @@ function reviewTone(
   }
   if (transaction.source_details.overpayment_status === "confirmed") {
     return "bad";
+  }
+  if (
+    transaction.source_details.invoice_evidence_status === "no_invoice_provided"
+  ) {
+    return "warn";
   }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "good";
