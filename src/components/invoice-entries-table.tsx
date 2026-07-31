@@ -69,10 +69,14 @@ function paymentLabel(entry: InvoiceEntryRecord) {
 }
 
 function entryAmounts(entry: InvoiceEntryRecord, projectId?: string) {
+  const invoiceTaxRate =
+    entry.invoice.amount_before_tax === 0
+      ? 0
+      : entry.invoice.tax_amount / entry.invoice.amount_before_tax;
   if (!projectId) {
     return {
       beforeTax: entry.amount_before_tax,
-      afterTax: entry.amount_before_tax + entry.tax_amount,
+      afterTax: entry.amount_before_tax * (1 + invoiceTaxRate),
     };
   }
 
@@ -80,11 +84,7 @@ function entryAmounts(entry: InvoiceEntryRecord, projectId?: string) {
     (job) => job.companycam_project_id === projectId,
   );
   const beforeTax = allocation?.allocated_amount ?? 0;
-  const allocatedTax =
-    entry.amount_before_tax === 0
-      ? 0
-      : entry.tax_amount * (beforeTax / entry.amount_before_tax);
-  return { beforeTax, afterTax: beforeTax + allocatedTax };
+  return { beforeTax, afterTax: beforeTax * (1 + invoiceTaxRate) };
 }
 
 export function InvoiceEntriesTable({
