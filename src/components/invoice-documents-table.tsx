@@ -78,6 +78,33 @@ function evidenceSummary(invoice: InvoiceGroup) {
   return { label: "Manually entered", tone: "brand" as const };
 }
 
+function jobStatusForEntry(entry: InvoiceEntryRecord): Exclude<JobFilter, "all"> {
+  if (entry.jobs.length > 0) return "assigned";
+  if (entry.invoice.match_status === "overhead_unmatched") return "overhead";
+  return "needs_job";
+}
+
+function entryMatchesQuery(entry: InvoiceEntryRecord, query: string) {
+  return [
+    entry.description,
+    entry.source_text ?? "",
+    ...entry.jobs.flatMap((job) => [job.name, job.address ?? ""]),
+  ]
+    .join(" ")
+    .toLocaleLowerCase("en-CA")
+    .includes(query);
+}
+
+function jobLinkCounts(entries: InvoiceEntryRecord[]) {
+  return entries.reduce(
+    (counts, entry) => {
+      counts[jobStatusForEntry(entry)] += 1;
+      return counts;
+    },
+    { assigned: 0, needs_job: 0, overhead: 0 },
+  );
+}
+
 function groupInvoices(entries: InvoiceEntryRecord[]): InvoiceGroup[] {
   const groups = new Map<string, InvoiceGroup>();
   for (const entry of entries) {
@@ -136,57 +163,43 @@ export function InvoiceDocumentsTable({
       ),
     [invoices],
   );
+  const jobCounts = useMemo(() => jobLinkCounts(entries), [entries]);
   const normalizedQuery = query.trim().toLocaleLowerCase("en-CA");
   const filtered = useMemo(
     () =>
-      invoices.filter((invoice) => {
-        if (
-          type !== "all" &&
-          !invoice.entries.some((entry) => entry.entry_type === type)
-        ) {
-          return false;
-        }
-        if (
-          owner !== "all" &&
-          invoice.invoice.owner_name !== owner
-        ) {
-          return false;
-        }
-        const hasAssignedEntry = invoice.entries.some(
-          (entry) => entry.jobs.length > 0,
-        );
-        const hasOverheadEntry = invoice.entries.some(
-          (entry) =>
-            entry.jobs.length === 0 &&
-            entry.invoice.match_status === "overhead_unmatched",
-        );
-        const hasEntryNeedingJob = invoice.entries.some(
-          (entry) =>
-            entry.jobs.length === 0 &&
-            entry.invoice.match_status !== "overhead_unmatched",
-        );
-        if (jobStatus === "assigned" && !hasAssignedEntry) return false;
-        if (jobStatus === "needs_job" && !hasEntryNeedingJob) return false;
-        if (jobStatus === "overhead" && !hasOverheadEntry) return false;
-        if (!normalizedQuery) return true;
-        return [
-          invoice.invoice.owner_name,
-          invoice.invoice.supplier_name,
-          invoice.invoice.invoice_number,
-          invoice.invoice.original_filename,
-          ...invoice.entries.flatMap((entry) => [
-            entry.description,
-            ...entry.jobs.flatMap((job) => [
-              job.name,
-              job.address ?? "",
-            ]),
-          ]),
-        ]
-          .join(" ")
-          .toLocaleLowerCase("en-CA")
-          .includes(normalizedQuery);
+      invoices.flatMap((invoice) => {
+        if (owner !== "all" && invoice.invoice.owner_name !== owner) return [];
+
+        const invoiceMatchesQuery = normalizedQuery
+          ? [
+              invoice.invoice.owner_name,
+              invoice.invoice.supplier_name,
+              invoice.invoice.invoice_number,
+              invoice.invoice.original_filename,
+            ]
+              .join(" ")
+              .toLocaleLowerCase("en-CA")
+              .includes(normalizedQuery)
+          : true;
+        const visibleEntries = invoice.entries.filter((entry) => {
+          if (type !== "all" && entry.entry_type !== type) return false;
+          if (jobStatus !== "all" && jobStatusForEntry(entry) !== jobStatus) {
+            return false;
+          }
+          return (
+            !normalizedQuery ||
+            invoiceMatchesQuery ||
+            entryMatchesQuery(entry, normalizedQuery)
+          );
+        });
+
+        return visibleEntries.length ? [{ invoice, visibleEntries }] : [];
       }),
     [invoices, jobStatus, normalizedQuery, owner, type],
+  );
+  const visibleEntryCount = filtered.reduce(
+    (total, result) => total + result.visibleEntries.length,
+    0,
   );
 
   const toggle = (invoiceId: string) => {
@@ -227,13 +240,19 @@ export function InvoiceDocumentsTable({
             onChange={(event) =>
               setJobStatus(event.currentTarget.value as JobFilter)
             }
-            aria-label="Filter invoices by job-link status"
+            aria-label="Filter invoice entries by job-link status"
             className="h-8 min-w-0 flex-1 px-2.5 py-1 text-xs sm:w-[170px]"
           >
-            <option value="all">All job links</option>
-            <option value="assigned">Has job</option>
-            <option value="needs_job">Needs job link</option>
-            <option value="overhead">Overhead / no job</option>
+            <option value="all">All entries ({entries.length})</option>
+            <option value="assigned">
+              Connected to job ({jobCounts.assigned})
+            </option>
+            <option value="needs_job">
+              Not connected to job ({jobCounts.needs_job})
+            </option>
+            <option value="overhead">
+              Overhead / no job ({jobCounts.overhead})
+            </option>
           </Select>
           <Select
             value={owner}
@@ -265,43 +284,50 @@ export function InvoiceDocumentsTable({
             Invoices
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Click an invoice to expand its individual items
+            Expand an invoice to see the job connected to every individual item
           </p>
         </div>
         <Badge tone="neutral">
-          {filtered.length} of {invoices.length}
+          {filtered.length} invoices · {visibleEntryCount} entries
         </Badge>
       </div>
 
       {filtered.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1220px] text-left text-sm">
+          <table className="w-full min-w-[1340px] text-left text-sm">
             <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
               <tr>
                 <th className="w-10 px-4 py-3 font-medium" aria-label="Expand" />
                 <th className="px-4 py-3 font-medium">Date</th>
                 <th className="px-4 py-3 font-medium">Invoice owner</th>
                 <th className="px-4 py-3 font-medium">Supplier / invoice</th>
-                <th className="px-4 py-3 text-right font-medium">Items</th>
                 <th className="px-4 py-3 text-right font-medium">
-                  Before HST
+                  Items shown
                 </th>
-                <th className="px-4 py-3 text-right font-medium">HST</th>
+                <th className="px-4 py-3 font-medium">Job links</th>
                 <th className="px-4 py-3 text-right font-medium">
-                  After HST
+                  Invoice before HST
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  Invoice HST
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  Invoice after HST
                 </th>
                 <th className="px-4 py-3 font-medium">Payment</th>
                 <th className="px-4 py-3 font-medium">Evidence</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {filtered.map((invoice) => {
-                const isExpanded = expanded.has(invoice.id);
+              {filtered.map(({ invoice, visibleEntries }) => {
+                const isExpanded =
+                  expanded.has(invoice.id) || jobStatus === "needs_job";
                 const evidence = evidenceSummary(invoice);
                 return (
                   <InvoiceRows
                     key={invoice.id}
                     invoice={invoice}
+                    visibleEntries={visibleEntries}
                     expanded={isExpanded}
                     evidence={evidence}
                     onToggle={() => toggle(invoice.id)}
@@ -312,7 +338,7 @@ export function InvoiceDocumentsTable({
           </table>
         </div>
       ) : (
-        <EmptyState>No invoices match these filters.</EmptyState>
+        <EmptyState>No invoice entries match these filters.</EmptyState>
       )}
     </Card>
   );
@@ -345,11 +371,13 @@ function FilterButton({
 
 function InvoiceRows({
   invoice,
+  visibleEntries,
   expanded,
   evidence,
   onToggle,
 }: {
   invoice: InvoiceGroup;
+  visibleEntries: InvoiceEntryRecord[];
   expanded: boolean;
   evidence: ReturnType<typeof evidenceSummary>;
   onToggle: () => void;
@@ -399,7 +427,12 @@ function InvoiceRows({
           ) : null}
         </td>
         <td className="px-4 py-3 text-right tabular-nums">
-          {invoice.entries.length}
+          {visibleEntries.length === invoice.entries.length
+            ? invoice.entries.length
+            : `${visibleEntries.length} of ${invoice.entries.length}`}
+        </td>
+        <td className="max-w-[210px] px-4 py-3">
+          <JobLinkSummary entries={invoice.entries} />
         </td>
         <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
           {money(
@@ -449,8 +482,8 @@ function InvoiceRows({
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={10} className="bg-[var(--color-bg)] px-6 py-4">
-            <InvoiceItems invoice={invoice} />
+          <td colSpan={11} className="bg-[var(--color-bg)] px-6 py-4">
+            <InvoiceItems invoice={invoice} entries={visibleEntries} />
           </td>
         </tr>
       ) : null}
@@ -458,7 +491,30 @@ function InvoiceRows({
   );
 }
 
-function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
+function JobLinkSummary({ entries }: { entries: InvoiceEntryRecord[] }) {
+  const counts = jobLinkCounts(entries);
+  return (
+    <div className="flex flex-wrap gap-1">
+      {counts.assigned ? (
+        <Badge tone="good">{counts.assigned} connected</Badge>
+      ) : null}
+      {counts.needs_job ? (
+        <Badge tone="warn">{counts.needs_job} not connected</Badge>
+      ) : null}
+      {counts.overhead ? (
+        <Badge tone="neutral">{counts.overhead} overhead</Badge>
+      ) : null}
+    </div>
+  );
+}
+
+function InvoiceItems({
+  invoice,
+  entries,
+}: {
+  invoice: InvoiceGroup;
+  entries: InvoiceEntryRecord[];
+}) {
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">
@@ -467,7 +523,9 @@ function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
             Invoice items
           </div>
           <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-            {invoice.invoice.original_filename}
+            {entries.length === invoice.entries.length
+              ? `${entries.length} entries · ${invoice.invoice.original_filename}`
+              : `Showing ${entries.length} of ${invoice.entries.length} entries · ${invoice.invoice.original_filename}`}
           </div>
         </div>
         <Link
@@ -494,7 +552,7 @@ function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {invoice.entries.map((entry) => (
+            {entries.map((entry) => (
               <tr key={entry.id} className="align-top">
                 <td className="max-w-[360px] px-4 py-3">
                   <Link
@@ -522,25 +580,35 @@ function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
                 <td className="max-w-[300px] px-4 py-3">
                   {entry.jobs.length ? (
                     entry.jobs.map((job) => (
-                        <div key={job.companycam_project_id}>
-                          <Link
-                            href={`/projects/${encodeURIComponent(
-                              job.companycam_project_id,
-                            )}`}
-                            onClick={(event) => event.stopPropagation()}
-                            className="font-medium text-[var(--color-brand-strong)] hover:underline"
-                          >
-                            {job.name}
-                          </Link>
+                      <div key={job.companycam_project_id}>
+                        <Link
+                          href={`/projects/${encodeURIComponent(
+                            job.companycam_project_id,
+                          )}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="font-medium text-[var(--color-brand-strong)] hover:underline"
+                        >
+                          {job.name}
+                        </Link>
+                        {job.address ? (
                           <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                            {money(
-                              job.allocated_amount,
-                              entry.invoice.currency,
-                            )}{" "}
-                            allocated
+                            {job.address}
                           </div>
+                        ) : null}
+                        <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+                          {money(
+                            job.allocated_amount,
+                            entry.invoice.currency,
+                          )}{" "}
+                          allocated
                         </div>
-                      ))
+                        {job.needs_review ? (
+                          <div className="mt-1">
+                            <Badge tone="warn">Job link needs review</Badge>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
                   ) : entry.invoice.match_status ===
                     "overhead_unmatched" ? (
                     <Badge tone="neutral">Overhead / no job</Badge>
