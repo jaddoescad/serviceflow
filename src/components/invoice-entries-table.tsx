@@ -68,18 +68,39 @@ function paymentLabel(entry: InvoiceEntryRecord) {
   return "Unpaid";
 }
 
+function entryAmounts(entry: InvoiceEntryRecord, projectId?: string) {
+  if (!projectId) {
+    return {
+      beforeTax: entry.amount_before_tax,
+      afterTax: entry.amount_before_tax + entry.tax_amount,
+    };
+  }
+
+  const allocation = entry.jobs.find(
+    (job) => job.companycam_project_id === projectId,
+  );
+  const beforeTax = allocation?.allocated_amount ?? 0;
+  const allocatedTax =
+    entry.amount_before_tax === 0
+      ? 0
+      : entry.tax_amount * (beforeTax / entry.amount_before_tax);
+  return { beforeTax, afterTax: beforeTax + allocatedTax };
+}
+
 export function InvoiceEntriesTable({
   entries,
   initialType = "labour",
   title = "Invoice entries",
   subtitle = "Each row is one item inside an archived source invoice",
   showJobs = true,
+  projectId,
 }: {
   entries: InvoiceEntryRecord[];
   initialType?: TypeFilter;
   title?: string;
   subtitle?: string;
   showJobs?: boolean;
+  projectId?: string;
 }) {
   const [type, setType] = useState<TypeFilter>(initialType);
   const [owner, setOwner] = useState("all");
@@ -224,11 +245,13 @@ export function InvoiceEntriesTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {filtered.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="align-top hover:bg-[var(--color-surface-2)]"
-                >
+              {filtered.map((entry) => {
+                const amounts = entryAmounts(entry, projectId);
+                return (
+                  <tr
+                    key={entry.id}
+                    className="align-top hover:bg-[var(--color-surface-2)]"
+                  >
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-[var(--color-muted)]">
                     {fmtDate(
                       entry.service_started_on ??
@@ -310,16 +333,10 @@ export function InvoiceEntriesTable({
                         : "—"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
-                    {money(
-                      entry.amount_before_tax,
-                      entry.invoice.currency,
-                    )}
+                    {money(amounts.beforeTax, entry.invoice.currency)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
-                    {money(
-                      entry.amount_before_tax + entry.tax_amount,
-                      entry.invoice.currency,
-                    )}
+                    {money(amounts.afterTax, entry.invoice.currency)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <Badge
@@ -335,6 +352,30 @@ export function InvoiceEntriesTable({
                     >
                       {paymentLabel(entry)}
                     </Badge>
+                    {entry.invoice.payment_status === "partially_paid" ? (
+                      <div className="mt-1 text-[11px] text-[var(--color-muted)]">
+                        Invoice-level payment; no job order assumed
+                      </div>
+                    ) : null}
+                    {entry.invoice.payments.length ? (
+                      <div className="mt-1 space-y-0.5">
+                        {entry.invoice.payments.map((payment) => (
+                          <Link
+                            key={payment.financial_transaction_id}
+                            href={`/financials/transactions/${encodeURIComponent(
+                              payment.financial_transaction_id,
+                            )}`}
+                            className="block text-[11px] font-medium text-[var(--color-brand-strong)] hover:underline"
+                          >
+                            Bank payment {fmtDate(payment.posted_on)} →
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-[11px] text-[var(--color-muted)]">
+                        No bank payment linked
+                      </div>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <Badge tone={evidenceTone(entry)}>
@@ -349,8 +390,9 @@ export function InvoiceEntriesTable({
                       </Link>
                     </div>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

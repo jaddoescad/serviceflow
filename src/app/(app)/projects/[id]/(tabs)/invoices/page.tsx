@@ -14,6 +14,16 @@ import { fmtCurrencyTotals } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+function addCurrencyTotals(
+  left: Record<"CAD" | "USD", number>,
+  right: Record<"CAD" | "USD", number>,
+) {
+  return {
+    CAD: left.CAD + right.CAD,
+    USD: left.USD + right.USD,
+  };
+}
+
 export default async function ProjectInvoicesPage({
   params,
 }: {
@@ -34,6 +44,13 @@ export default async function ProjectInvoicesPage({
   );
   const historicalEntries = entries.filter(
     (entry) => !isInvoiceInCurrentJob(entry.invoice, summary.jobStartedOn),
+  );
+  const notFullySettledTotals = addCurrencyTotals(
+    summary.confirmedUnpaidTotals,
+    summary.partialSettlementTotals,
+  );
+  const partialSettlementAmount = fmtCurrencyTotals(
+    summary.partialSettlementTotals,
   );
 
   return (
@@ -56,47 +73,48 @@ export default async function ProjectInvoicesPage({
       <PageHeader title={shell.name} subtitle={shell.address ?? undefined} />
       <ProjectTabs projectId={projectId} projectName={shell.name} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
-          label="Labour invoices"
-          value={
-            summary.hasUnallocatedSharedInvoices &&
-            summary.totals.CAD === 0 &&
-            summary.totals.USD === 0
-              ? "Needs allocation"
-              : fmtCurrencyTotals(summary.totals)
-          }
-          hint="pre-tax amount"
-          tone={summary.hasUnallocatedSharedInvoices ? "warn" : "neutral"}
+          label="Invoiced job cost"
+          value={fmtCurrencyTotals(summary.totals)}
+          hint="all allocated entries · before HST"
         />
         <Kpi
-          label="Invoices"
-          value={summary.invoiceCount}
-          hint="latest version counted"
+          label="Confirmed paid"
+          value={fmtCurrencyTotals(summary.confirmedPaidTotals)}
+          hint="entries on fully paid invoices"
+          tone="good"
         />
         <Kpi
-          label="Linked files"
-          value={summary.linkedFileCount}
+          label="Not fully settled"
+          value={fmtCurrencyTotals(notFullySettledTotals)}
           hint={
-            summary.historicalLinkedFileCount > 0
-              ? `${summary.historicalLinkedFileCount} previous-job files excluded`
-              : summary.hasDuplicateVersions
-              ? "includes duplicate/revised files"
-              : "source invoice files"
+            summary.partialSettlementTotals.CAD !== 0 ||
+            summary.partialSettlementTotals.USD !== 0
+              ? `${partialSettlementAmount} is on partially paid invoices`
+              : "entries on unpaid invoices"
           }
+          tone={
+            notFullySettledTotals.CAD !== 0 ||
+            notFullySettledTotals.USD !== 0
+              ? "warn"
+              : "neutral"
+          }
+        />
+        <Kpi
+          label="Evidence chain"
+          value={`${summary.invoiceCount} ${
+            summary.invoiceCount === 1 ? "invoice" : "invoices"
+          }`}
+          hint={`${summary.entryCount} entries · ${summary.paymentEvidenceCount} bank payments`}
         />
       </div>
 
-      {summary.hasUnallocatedSharedInvoices || summary.needsReview ? (
+      {summary.needsReview ? (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn)]">
           <Badge tone="warn">Review</Badge>
-          {summary.hasUnallocatedSharedInvoices
-            ? `${summary.unallocatedSharedInvoiceCount} shared ${
-                summary.unallocatedSharedInvoiceCount === 1
-                  ? "invoice is"
-                  : "invoices are"
-              } excluded from the total until the pre-tax amount is allocated to this job.`
-            : "At least one invoice-to-job association is marked for review."}
+          At least one invoice entry, job allocation, or invoice settlement
+          needs review.
         </div>
       ) : null}
 
@@ -104,8 +122,9 @@ export default async function ProjectInvoicesPage({
         entries={currentEntries}
         initialType="all"
         title="Current job invoice entries"
-        subtitle="Every item allocated to this job, with its source invoice one click away"
+        subtitle="The job cost comes from these entry allocations; payment and bank evidence stays attached to the parent invoice"
         showJobs={false}
+        projectId={projectId}
       />
 
       {historicalEntries.length > 0 ? (
@@ -116,6 +135,7 @@ export default async function ProjectInvoicesPage({
             title="Previous job invoice entries"
             subtitle="Linked to the same customer project, but excluded from the current job budget and labour totals"
             showJobs={false}
+            projectId={projectId}
           />
         </div>
       ) : null}

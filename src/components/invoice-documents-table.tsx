@@ -10,6 +10,7 @@ import type {
 } from "@/lib/invoice-entry-queries";
 
 type TypeFilter = "all" | InvoiceEntryType;
+type JobFilter = "all" | "assigned" | "needs_job" | "overhead";
 type InvoiceGroup = {
   id: string;
   invoice: InvoiceEntryRecord["invoice"];
@@ -110,6 +111,7 @@ export function InvoiceDocumentsTable({
   const invoices = useMemo(() => groupInvoices(entries), [entries]);
   const [type, setType] = useState<TypeFilter>("all");
   const [owner, setOwner] = useState("all");
+  const [jobStatus, setJobStatus] = useState<JobFilter>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
@@ -150,6 +152,22 @@ export function InvoiceDocumentsTable({
         ) {
           return false;
         }
+        const hasAssignedEntry = invoice.entries.some(
+          (entry) => entry.jobs.length > 0,
+        );
+        const hasOverheadEntry = invoice.entries.some(
+          (entry) =>
+            entry.jobs.length === 0 &&
+            entry.invoice.match_status === "overhead_unmatched",
+        );
+        const hasEntryNeedingJob = invoice.entries.some(
+          (entry) =>
+            entry.jobs.length === 0 &&
+            entry.invoice.match_status !== "overhead_unmatched",
+        );
+        if (jobStatus === "assigned" && !hasAssignedEntry) return false;
+        if (jobStatus === "needs_job" && !hasEntryNeedingJob) return false;
+        if (jobStatus === "overhead" && !hasOverheadEntry) return false;
         if (!normalizedQuery) return true;
         return [
           invoice.invoice.owner_name,
@@ -168,7 +186,7 @@ export function InvoiceDocumentsTable({
           .toLocaleLowerCase("en-CA")
           .includes(normalizedQuery);
       }),
-    [invoices, normalizedQuery, owner, type],
+    [invoices, jobStatus, normalizedQuery, owner, type],
   );
 
   const toggle = (invoiceId: string) => {
@@ -204,6 +222,19 @@ export function InvoiceDocumentsTable({
           )}
         </div>
         <div className="flex w-full items-center gap-2 sm:w-auto">
+          <Select
+            value={jobStatus}
+            onChange={(event) =>
+              setJobStatus(event.currentTarget.value as JobFilter)
+            }
+            aria-label="Filter invoices by job-link status"
+            className="h-8 min-w-0 flex-1 px-2.5 py-1 text-xs sm:w-[170px]"
+          >
+            <option value="all">All job links</option>
+            <option value="assigned">Has job</option>
+            <option value="needs_job">Needs job link</option>
+            <option value="overhead">Overhead / no job</option>
+          </Select>
           <Select
             value={owner}
             onChange={(event) => setOwner(event.currentTarget.value)}
@@ -399,6 +430,18 @@ function InvoiceRows({
           >
             {paymentLabel(invoice.invoice)}
           </Badge>
+          {invoice.invoice.payments.map((payment) => (
+            <Link
+              key={payment.financial_transaction_id}
+              href={`/financials/transactions/${encodeURIComponent(
+                payment.financial_transaction_id,
+              )}`}
+              onClick={(event) => event.stopPropagation()}
+              className="mt-1 block text-[11px] font-medium text-[var(--color-brand-strong)] hover:underline"
+            >
+              Bank {fmtDate(payment.posted_on)} →
+            </Link>
+          ))}
         </td>
         <td className="whitespace-nowrap px-4 py-3">
           <Badge tone={evidence.tone}>{evidence.label}</Badge>
@@ -477,8 +520,8 @@ function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
                   </Badge>
                 </td>
                 <td className="max-w-[300px] px-4 py-3">
-                  {entry.jobs.length
-                    ? entry.jobs.map((job) => (
+                  {entry.jobs.length ? (
+                    entry.jobs.map((job) => (
                         <div key={job.companycam_project_id}>
                           <Link
                             href={`/projects/${encodeURIComponent(
@@ -489,9 +532,21 @@ function InvoiceItems({ invoice }: { invoice: InvoiceGroup }) {
                           >
                             {job.name}
                           </Link>
+                          <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+                            {money(
+                              job.allocated_amount,
+                              entry.invoice.currency,
+                            )}{" "}
+                            allocated
+                          </div>
                         </div>
                       ))
-                    : "Not assigned"}
+                  ) : entry.invoice.match_status ===
+                    "overhead_unmatched" ? (
+                    <Badge tone="neutral">Overhead / no job</Badge>
+                  ) : (
+                    <Badge tone="warn">Needs job link</Badge>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                   {entry.quantity_hours != null

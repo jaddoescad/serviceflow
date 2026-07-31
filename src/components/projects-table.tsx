@@ -396,28 +396,12 @@ export function ProjectsTable({
                     </td>
                     <td
                       className="whitespace-nowrap px-2.5 py-2.5 text-right font-medium tabular-nums"
-                      title={
-                        r.labourInvoices.hasUnallocatedSharedInvoices
-                          ? "Shared invoices are excluded until their pre-tax amount is allocated to this job."
-                          : "Pre-tax amount from the latest linked invoice versions."
-                      }
+                      title="Pre-tax job cost from current invoice-entry allocations."
                     >
-                      {r.labourInvoices.hasUnallocatedSharedInvoices &&
-                      r.labourInvoices.totals.CAD === 0 &&
-                      r.labourInvoices.totals.USD === 0 ? (
-                        <span className="text-[var(--color-warn)]">
-                          Needs allocation
-                        </span>
-                      ) : (
-                        fmtCurrencyTotals(r.labourInvoices.totals)
-                      )}
-                      {r.labourInvoices.hasUnallocatedSharedInvoices ? (
+                      {fmtCurrencyTotals(r.labourInvoices.totals)}
+                      {r.labourInvoices.needsReview ? (
                         <div className="text-[10px] font-normal text-[var(--color-warn)]">
-                          {r.labourInvoices.unallocatedSharedInvoiceCount} shared{" "}
-                          {r.labourInvoices.unallocatedSharedInvoiceCount === 1
-                            ? "invoice"
-                            : "invoices"}{" "}
-                          excluded
+                          Entry or settlement needs review
                         </div>
                       ) : null}
                     </td>

@@ -8,14 +8,16 @@ export const dynamic = "force-dynamic";
 export default async function InvoicesPage() {
   const [, entries] = await Promise.all([requireStaff(), getInvoiceEntries()]);
   const sourceInvoices = new Set(entries.map((entry) => entry.invoice_id)).size;
-  const exactEntries = entries.filter(
-    (entry) => entry.source_kind === "extracted",
+  const linkedEntries = entries.filter((entry) => entry.jobs.length > 0).length;
+  const overheadEntries = entries.filter(
+    (entry) =>
+      entry.jobs.length === 0 &&
+      entry.invoice.match_status === "overhead_unmatched",
   ).length;
-  const derivedEntries = entries.filter(
-    (entry) => entry.source_kind === "legacy_project_link",
-  ).length;
-  const needsExtraction = entries.filter(
-    (entry) => entry.source_kind === "legacy_invoice_total",
+  const needsJobReview = entries.filter(
+    (entry) =>
+      entry.jobs.length === 0 &&
+      entry.invoice.match_status !== "overhead_unmatched",
   ).length;
 
   return (
@@ -31,22 +33,21 @@ export default async function InvoicesPage() {
           hint={`${entries.length} individual items`}
         />
         <Kpi
-          label="Exact invoice items"
-          value={exactEntries}
-          hint="transcribed from the invoice"
-          tone={exactEntries ? "good" : "neutral"}
+          label="Job-linked items"
+          value={linkedEntries}
+          hint={`of ${entries.length} invoice items`}
+          tone={linkedEntries ? "good" : "neutral"}
         />
         <Kpi
-          label="Derived job items"
-          value={derivedEntries}
-          hint="preserved legacy job-dollar matches"
-          tone={derivedEntries ? "warn" : "neutral"}
+          label="Overhead / no job"
+          value={overheadEntries}
+          hint="explicitly classified outside job cost"
         />
         <Kpi
-          label="Needs item extraction"
-          value={needsExtraction}
-          hint="visible placeholders, never hidden"
-          tone={needsExtraction ? "warn" : "good"}
+          label="Needs job link"
+          value={needsJobReview}
+          hint="not counted in any job yet"
+          tone={needsJobReview ? "warn" : "good"}
         />
       </div>
       <InvoiceDocumentsTable entries={entries} />

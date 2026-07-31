@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type InvoiceEntryType =
@@ -52,6 +53,13 @@ export type InvoiceEntryRecord = {
     paid_amount: number;
     payment_status: "paid" | "partially_paid" | "unpaid" | "overpaid";
     verification_status: "needs_information" | "needs_review" | "verified";
+    payments: Array<{
+      financial_transaction_id: string;
+      allocated_amount: number;
+      posted_on: string;
+      description: string;
+      counterparty: string | null;
+    }>;
   };
   jobs: Array<{
     companycam_project_id: string;
@@ -100,6 +108,17 @@ type EntryVerification = Pick<
   InvoiceEntryRecord["invoice"],
   "paid_amount" | "payment_status" | "verification_status"
 >;
+
+type StoredPayment = {
+  invoice_id: string;
+  financial_transaction_id: string;
+  allocated_amount: number;
+  financial_transactions: {
+    posted_on: string;
+    description: string;
+    counterparty: string | null;
+  } | null;
+};
 
 function dateKey(entry: InvoiceEntryRecord): string {
   return (
@@ -150,9 +169,9 @@ function currentInvoiceIds(rows: StoredEntry[]): Set<string> {
   return new Set([...currentByGroup.values()].map((invoice) => invoice.id));
 }
 
-export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
+const queryInvoiceEntries = cache(async (): Promise<InvoiceEntryRecord[]> => {
   const supabase = await createClient();
-  const [entriesResult, verificationResult] = await Promise.all([
+  const [entriesResult, verificationResult, paymentsResult] = await Promise.all([
     supabase
       .from("labour_invoice_lines")
       .select(
@@ -214,10 +233,26 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
       .select(
         "invoice_id,paid_amount,payment_status,verification_status",
       ),
+    supabase
+      .from("labour_payment_allocations")
+      .select(
+        `
+          invoice_id,
+          financial_transaction_id,
+          allocated_amount,
+          financial_transactions (
+            posted_on,
+            description,
+            counterparty
+          )
+        `,
+      )
+      .is("reversed_at", null),
   ]);
 
   if (entriesResult.error) throw entriesResult.error;
   if (verificationResult.error) throw verificationResult.error;
+  if (paymentsResult.error) throw paymentsResult.error;
 
   const verificationByInvoice = new Map<string, EntryVerification>(
     (verificationResult.data ?? []).map((row) => [
@@ -233,6 +268,22 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
   );
 
   const storedEntries = (entriesResult.data ?? []) as unknown as StoredEntry[];
+  const paymentsByInvoice = new Map<
+    string,
+    InvoiceEntryRecord["invoice"]["payments"]
+  >();
+  for (const value of (paymentsResult.data ?? []) as unknown as StoredPayment[]) {
+    const payments = paymentsByInvoice.get(value.invoice_id) ?? [];
+    payments.push({
+      financial_transaction_id: value.financial_transaction_id,
+      allocated_amount: Number(value.allocated_amount),
+      posted_on: value.financial_transactions?.posted_on ?? "",
+      description: value.financial_transactions?.description ?? "",
+      counterparty: value.financial_transactions?.counterparty ?? null,
+    });
+    paymentsByInvoice.set(value.invoice_id, payments);
+  }
+
   const visibleInvoiceIds = currentInvoiceIds(storedEntries);
   const entries = storedEntries
     .filter((row) => visibleInvoiceIds.has(row.invoice_id))
@@ -279,6 +330,13 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
           payment_status: verification?.payment_status ?? "unpaid",
           verification_status:
             verification?.verification_status ?? "needs_information",
+          payments: (paymentsByInvoice.get(row.invoice_id) ?? []).sort(
+            (left, right) =>
+              left.posted_on.localeCompare(right.posted_on) ||
+              left.financial_transaction_id.localeCompare(
+                right.financial_transaction_id,
+              ),
+          ),
         },
         jobs: row.labour_invoice_line_allocations.map((allocation) => ({
           companycam_project_id: allocation.companycam_project_id,
@@ -308,6 +366,10 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
       ) ||
       left.line_number - right.line_number,
   );
+});
+
+export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
+  return queryInvoiceEntries();
 }
 
 export async function getInvoiceEntriesForProject(
