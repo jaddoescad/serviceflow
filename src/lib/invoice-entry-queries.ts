@@ -43,7 +43,10 @@ export type InvoiceEntryRecord = {
     amount_before_tax: number;
     tax_amount: number;
     amount_after_tax: number;
+    document_type: string;
+    match_status: string;
     original_filename: string;
+    duplicate_group_id: string | null;
     duplicate_group_size: number;
     owner_name: string;
     paid_amount: number;
@@ -71,6 +74,9 @@ type StoredEntry = Omit<InvoiceEntryRecord, "invoice" | "jobs"> & {
         | "verification_status"
       > & {
         amount_paid: number;
+        document_type: string;
+        match_status: string;
+        duplicate_group_id: string | null;
         labour_contractors: {
           employee_profiles: {
             full_name: string;
@@ -102,6 +108,46 @@ function dateKey(entry: InvoiceEntryRecord): string {
     entry.invoice.source_date ??
     ""
   );
+}
+
+function currentInvoiceIds(rows: StoredEntry[]): Set<string> {
+  const currentByGroup = new Map<
+    string,
+    NonNullable<StoredEntry["labour_invoices"]>
+  >();
+
+  for (const row of rows) {
+    const invoice = row.labour_invoices;
+    if (
+      !invoice ||
+      invoice.document_type !== "invoice" ||
+      invoice.match_status === "supporting_document"
+    ) {
+      continue;
+    }
+
+    const groupId = invoice.duplicate_group_id ?? invoice.id;
+    const current = currentByGroup.get(groupId);
+    if (!current) {
+      currentByGroup.set(groupId, invoice);
+      continue;
+    }
+
+    const invoiceDate = invoice.source_date ?? invoice.invoice_date ?? "";
+    const currentDate = current.source_date ?? current.invoice_date ?? "";
+    const invoiceAmount = Number(invoice.amount_paid ?? 0);
+    const currentAmount = Number(current.amount_paid ?? 0);
+    if (
+      invoiceDate > currentDate ||
+      (invoiceDate === currentDate &&
+        (invoiceAmount > currentAmount ||
+          (invoiceAmount === currentAmount && invoice.id > current.id)))
+    ) {
+      currentByGroup.set(groupId, invoice);
+    }
+  }
+
+  return new Set([...currentByGroup.values()].map((invoice) => invoice.id));
 }
 
 export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
@@ -138,7 +184,10 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
             amount_before_tax,
             tax_amount,
             amount_paid,
+            document_type,
+            match_status,
             original_filename,
+            duplicate_group_id,
             duplicate_group_size,
             labour_contractors (
               employee_profiles (
@@ -183,9 +232,12 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
     ]),
   );
 
-  const entries = (entriesResult.data ?? [])
+  const storedEntries = (entriesResult.data ?? []) as unknown as StoredEntry[];
+  const visibleInvoiceIds = currentInvoiceIds(storedEntries);
+  const entries = storedEntries
+    .filter((row) => visibleInvoiceIds.has(row.invoice_id))
     .map((value): InvoiceEntryRecord | null => {
-      const row = value as unknown as StoredEntry;
+      const row = value;
       if (!row.labour_invoices) return null;
       const verification = verificationByInvoice.get(row.invoice_id);
       const {
