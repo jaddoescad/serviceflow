@@ -143,6 +143,23 @@ function formatAsOf(value: string) {
   });
 }
 
+function isDocumentedException(transaction: FinancialTransaction) {
+  return (
+    transaction.source_details.overpayment_status === "confirmed" ||
+    transaction.source_details.invoice_evidence_status != null
+  );
+}
+
+function requiresReview(transaction: FinancialTransaction) {
+  if (isDocumentedException(transaction)) return false;
+
+  return (
+    transaction.review_status !== "reconciled" ||
+    (transaction.payment_verification != null &&
+      transaction.payment_verification.payment_status !== "fully_allocated")
+  );
+}
+
 export default async function FinancialsPage({
   searchParams,
 }: {
@@ -197,7 +214,13 @@ export default async function FinancialsPage({
     : "all";
   const query = firstParam(params.q).trim().slice(0, 120);
   const requestedStatus = firstParam(params.status) || "all";
-  const statusOptions = ["all", "needs_review", "reconciled", "paid"] as const;
+  const statusOptions = [
+    "all",
+    "needs_review",
+    "exceptions",
+    "reconciled",
+    "paid",
+  ] as const;
   const status = isOneOf(requestedStatus, statusOptions)
     ? requestedStatus
     : "all";
@@ -247,15 +270,15 @@ export default async function FinancialsPage({
       (item) => item.kind === "no_document_required",
     );
     const isMissingEvidence = !hasMatchedEvidence && !hasNoDocumentRequired;
+    const isException = isDocumentedException(transaction);
     const matchesStatus =
       status === "all" ||
       (status === "paid" && hasPaidInvoice) ||
-      (status === "reconciled" && transaction.review_status === "reconciled") ||
-      (status === "needs_review" &&
-        (transaction.review_status !== "reconciled" ||
-          (transaction.payment_verification != null &&
-            transaction.payment_verification.payment_status !==
-              "fully_allocated")));
+      (status === "exceptions" && isException) ||
+      (status === "reconciled" &&
+        transaction.review_status === "reconciled" &&
+        !isException) ||
+      (status === "needs_review" && requiresReview(transaction));
     const matchesEvidence =
       evidence === "all" ||
       (evidence === "matched" && hasMatchedEvidence) ||
@@ -344,10 +367,13 @@ export default async function FinancialsPage({
     ...categoryTotals.map((item) => item.amount),
   );
   const reconciled = periodTransactions.filter(
-    (transaction) => transaction.review_status === "reconciled",
+    (transaction) =>
+      transaction.review_status === "reconciled" &&
+      !isDocumentedException(transaction),
   ).length;
-  const needsReview = periodTransactions.filter(
-    (transaction) => transaction.review_status !== "reconciled",
+  const needsReview = periodTransactions.filter(requiresReview).length;
+  const documentedExceptions = periodTransactions.filter(
+    isDocumentedException,
   ).length;
 
   return (
@@ -356,11 +382,18 @@ export default async function FinancialsPage({
         title="Financials"
         subtitle="Consolidated chequing, e-transfer, TD Visa, and live bank-feed activity"
         actions={
-          needsReview ? (
-            <Badge tone="warn">Live feed · {needsReview} to review</Badge>
-          ) : (
-            <Badge tone="good">Accountant reconciled</Badge>
-          )
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {needsReview ? (
+              <Badge tone="warn">Live feed · {needsReview} to review</Badge>
+            ) : (
+              <Badge tone="good">No unresolved reviews</Badge>
+            )}
+            {documentedExceptions ? (
+              <Badge tone="neutral">
+                {documentedExceptions} documented exceptions
+              </Badge>
+            ) : null}
+          </div>
         }
       />
 
@@ -405,8 +438,8 @@ export default async function FinancialsPage({
         <Kpi
           label="Ledger coverage"
           value={periodTransactions.length}
-          hint={`${reconciled} reconciled · ${needsReview} to review`}
-          tone={reconciled === periodTransactions.length ? "good" : "warn"}
+          hint={`${reconciled} reconciled · ${needsReview} to review · ${documentedExceptions} exceptions`}
+          tone={needsReview === 0 ? "good" : "warn"}
         />
       </div>
 

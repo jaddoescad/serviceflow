@@ -12,7 +12,12 @@ export type FinancialFilters = {
   category: string;
   counterparty: string;
   query: string;
-  status: "all" | "needs_review" | "reconciled" | "paid";
+  status:
+    | "all"
+    | "needs_review"
+    | "exceptions"
+    | "reconciled"
+    | "paid";
   transactionType: "all" | "income" | "expense" | "transfer" | "credit";
   evidence: "all" | "matched" | "no_document" | "missing";
 };
@@ -114,7 +119,7 @@ export function FinancialFilterBar({
             </Select>
           </Field>
         </div>
-        <div className="w-[145px]">
+        <div className="w-[170px]">
           <Field label="Payment / review">
             <Select
               name="status"
@@ -124,6 +129,7 @@ export function FinancialFilterBar({
             >
               <option value="all">All statuses</option>
               <option value="needs_review">Needs review</option>
+              <option value="exceptions">Exceptions</option>
               <option value="paid">Paid invoice</option>
               <option value="reconciled">Reconciled</option>
             </Select>
