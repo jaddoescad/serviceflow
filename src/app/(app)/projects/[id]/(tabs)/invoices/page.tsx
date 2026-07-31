@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
 import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
+import { JobAccountingChain } from "@/components/customer-revenue-evidence";
 import { Badge } from "@/components/ui";
+import { getProjectCustomerRevenue } from "@/lib/customer-revenue";
 import { getProjectShell } from "@/lib/project-data";
 import { getInvoiceEntriesForProject } from "@/lib/invoice-entry-queries";
 import {
@@ -31,10 +33,11 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
-  const [shell, entries, summary] = await Promise.all([
+  const [shell, entries, summary, customerRevenue] = await Promise.all([
     getProjectShell(projectId),
     getInvoiceEntriesForProject(projectId),
     getProjectLabourInvoiceSummary(projectId),
+    getProjectCustomerRevenue(projectId),
   ]);
 
   if (!shell) notFound();
@@ -72,6 +75,12 @@ export default async function ProjectInvoicesPage({
 
       <PageHeader title={shell.name} subtitle={shell.address ?? undefined} />
       <ProjectTabs projectId={projectId} projectName={shell.name} />
+
+      <JobAccountingChain
+        revenue={customerRevenue}
+        labourEntries={currentEntries}
+        labourSummary={summary}
+      />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi

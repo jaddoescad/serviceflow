@@ -72,6 +72,16 @@ function reviewLabel(transaction: FinancialTransaction) {
   if (transaction.source_details.transfer_status === "cancelled") {
     return "Cancelled";
   }
+  const customerRevenue = transaction.customer_revenue_verification;
+  if (customerRevenue?.payment_status === "fully_allocated") {
+    return "Customer invoice matched";
+  }
+  if (customerRevenue?.payment_status === "partially_allocated") {
+    return "Partially matched";
+  }
+  if (customerRevenue?.payment_status === "unmatched") {
+    return "Customer invoice missing";
+  }
   if (transaction.source_details.overpayment_status === "confirmed") {
     return "Overpayment";
   }
@@ -117,6 +127,10 @@ function reviewTone(
   if (transaction.source_details.transfer_status === "cancelled") {
     return "neutral";
   }
+  const customerRevenue = transaction.customer_revenue_verification;
+  if (customerRevenue?.payment_status === "fully_allocated") return "good";
+  if (customerRevenue?.payment_status === "partially_allocated") return "warn";
+  if (customerRevenue?.payment_status === "unmatched") return "bad";
   if (transaction.source_details.overpayment_status === "confirmed") {
     return "bad";
   }

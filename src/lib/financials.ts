@@ -76,6 +76,13 @@ export type PaymentVerificationSummary = {
     | "needs_review";
 };
 
+export type CustomerRevenueVerificationSummary = {
+  invoice_count: number;
+  allocated_amount: number;
+  unallocated_amount: number;
+  payment_status: "unmatched" | "partially_allocated" | "fully_allocated";
+};
+
 export type FinancialTransaction = {
   id: string;
   posted_on: string;
@@ -95,6 +102,7 @@ export type FinancialTransaction = {
   source_details: FinancialSourceDetails;
   evidence: FinancialEvidence[];
   payment_verification: PaymentVerificationSummary | null;
+  customer_revenue_verification: CustomerRevenueVerificationSummary | null;
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -122,7 +130,10 @@ type FinancialSourceData = {
 
 type StoredFinancialTransaction = Omit<
   FinancialTransaction,
-  "source_details" | "evidence" | "payment_verification"
+  | "source_details"
+  | "evidence"
+  | "payment_verification"
+  | "customer_revenue_verification"
 > & {
   source_data: FinancialSourceData | null;
 };
@@ -364,15 +375,18 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
 
   const storedTransactions =
     transactions as unknown as StoredFinancialTransaction[];
-  const [verificationResult, allocationResult] = await Promise.all([
+  const [verificationResult, allocationResult, customerRevenueResult] =
+    await Promise.all([
     supabase.from("labour_payment_verification").select("*"),
     supabase
       .from("labour_payment_allocations")
       .select("financial_transaction_id,invoice_id,allocated_amount")
       .is("reversed_at", null),
-  ]);
+      supabase.from("customer_revenue_verification").select("*"),
+    ]);
   if (verificationResult.error) throw verificationResult.error;
   if (allocationResult.error) throw allocationResult.error;
+  if (customerRevenueResult.error) throw customerRevenueResult.error;
 
   const allocations = (allocationResult.data ?? []) as Array<{
     financial_transaction_id: string;
@@ -433,6 +447,17 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
       } as PaymentVerificationSummary,
     ]),
   );
+  const customerRevenueByTransaction = new Map(
+    (customerRevenueResult.data ?? []).map((row) => [
+      row.financial_transaction_id,
+      {
+        invoice_count: Number(row.invoice_count),
+        allocated_amount: Number(row.allocated_amount),
+        unallocated_amount: Number(row.unallocated_amount),
+        payment_status: row.payment_status,
+      } as CustomerRevenueVerificationSummary,
+    ]),
+  );
   const allocationsByTransaction = new Map<
     string,
     Array<{
@@ -465,6 +490,8 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
         ),
         payment_verification:
           verificationByTransaction.get(transaction.id) ?? null,
+        customer_revenue_verification:
+          customerRevenueByTransaction.get(transaction.id) ?? null,
       }),
     ),
   };

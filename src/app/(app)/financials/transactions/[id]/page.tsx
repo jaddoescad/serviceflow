@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CustomerRevenueTransactionEvidence } from "@/components/customer-revenue-evidence";
 import { PaymentEvidence } from "@/components/settlement-evidence";
 import { Badge } from "@/components/ui";
 import { PageHeader } from "@/components/kpi";
 import { requireStaff } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
+import { getCustomerRevenueTransactionEvidence } from "@/lib/customer-revenue";
 import { getLabourPaymentEvidence } from "@/lib/settlements";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +18,10 @@ export default async function FinancialTransactionEvidencePage({
 }) {
   const { id } = await params;
   const transactionId = decodeURIComponent(id);
-  const [, payment] = await Promise.all([
+  const [, payment, customerRevenue] = await Promise.all([
     requireStaff(),
     getLabourPaymentEvidence(transactionId),
+    getCustomerRevenueTransactionEvidence(transactionId),
   ]);
 
   if (!payment) notFound();
@@ -45,7 +48,13 @@ export default async function FinancialTransactionEvidencePage({
   const hasBankSupportedExpense =
     payment.transaction.expense_evidence_status === "bank_supported_no_itc" &&
     payment.transaction.review_status === "reconciled";
-  const settlementLabel = payment.transaction.is_overpayment
+  const settlementLabel = customerRevenue
+    ? customerRevenue.verification.payment_status === "fully_allocated"
+      ? "Customer invoice matched"
+      : customerRevenue.verification.payment_status === "partially_allocated"
+        ? "Partially matched"
+        : "Customer invoice missing"
+    : payment.transaction.is_overpayment
     ? "Overpayment"
     : payment.transaction.partial_no_invoice_residual
       ? "Partial match · balance has no invoice"
@@ -89,7 +98,15 @@ export default async function FinancialTransactionEvidencePage({
         actions={
           <Badge
             tone={
-              payment.transaction.is_overpayment
+              customerRevenue
+                ? customerRevenue.verification.payment_status ===
+                  "fully_allocated"
+                  ? "good"
+                  : customerRevenue.verification.payment_status ===
+                      "partially_allocated"
+                    ? "warn"
+                    : "bad"
+                : payment.transaction.is_overpayment
                 ? "bad"
                 : hasMissingSubcontractorInvoice
                   ? "bad"
@@ -104,7 +121,11 @@ export default async function FinancialTransactionEvidencePage({
           </Badge>
         }
       />
-      <PaymentEvidence payment={payment} />
+      {customerRevenue ? (
+        <CustomerRevenueTransactionEvidence evidence={customerRevenue} />
+      ) : (
+        <PaymentEvidence payment={payment} />
+      )}
     </>
   );
 }

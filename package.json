@@ -15,6 +15,7 @@
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
     "audit:invoice-job-links": "node scripts/audit-invoice-entry-job-links.mjs",
     "reconcile:exact-invoice-job-links": "node scripts/backfill-exact-invoice-entry-job-links.mjs",
+    "reconcile:customer-revenue": "node scripts/reconcile-customer-revenue.mjs",
     "reconcile:software-subscriptions": "node scripts/reconcile-software-subscriptions.mjs",
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
