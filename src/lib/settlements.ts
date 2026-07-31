@@ -139,6 +139,7 @@ export type LabourPaymentEvidence = {
     is_overpayment: boolean;
     has_no_invoice: boolean;
     invoice_not_found: boolean;
+    partial_no_invoice_residual: boolean;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -656,6 +657,9 @@ export async function getLabourPaymentEvidence(
       invoice_not_found:
         transaction.source_data?.reconciliation_research?.status ===
         "invoice_not_found",
+      partial_no_invoice_residual:
+        transaction.source_data?.reconciliation_research?.status ===
+        "partial_invoice_allocation_with_no_invoice_residual",
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

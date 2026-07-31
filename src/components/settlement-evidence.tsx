@@ -459,6 +459,25 @@ export function PaymentEvidence({
   payment: LabourPaymentEvidence;
 }) {
   const verification = payment.verification;
+  const hasFullyAllocatedBonus =
+    verification != null &&
+    Number(verification.invoice_allocated_amount) <= 0 &&
+    Number(verification.unallocated_amount) <= 0.005 &&
+    Number(verification.bonus_allocated_amount) > 0;
+  const hasFullyAllocatedOtherSettlement =
+    verification != null &&
+    Number(verification.invoice_allocated_amount) <= 0 &&
+    Number(verification.unallocated_amount) <= 0.005 &&
+    Number(verification.other_allocated_amount) > 0;
+  const hasMissingSubcontractorInvoice =
+    payment.transaction.category === "Subcontractors" &&
+    !payment.transaction.is_overpayment &&
+    !payment.transaction.has_no_invoice &&
+    !payment.transaction.invoice_not_found &&
+    !payment.transaction.partial_no_invoice_residual &&
+    !hasFullyAllocatedBonus &&
+    !hasFullyAllocatedOtherSettlement &&
+    Number(verification?.invoice_allocated_amount ?? 0) <= 0;
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -491,6 +510,8 @@ export function PaymentEvidence({
           tone={
             payment.transaction.is_overpayment
               ? "bad"
+              : hasMissingSubcontractorInvoice
+                ? "bad"
               : verification?.payment_status === "fully_allocated"
                 ? "good"
                 : verification?.payment_status === "needs_review"
@@ -500,11 +521,19 @@ export function PaymentEvidence({
         >
           {payment.transaction.is_overpayment
             ? "Overpayment"
+            : payment.transaction.partial_no_invoice_residual
+              ? "Partial match · balance has no invoice"
             : payment.transaction.has_no_invoice
               ? "No invoice provided"
               : payment.transaction.invoice_not_found
                 ? "Invoice not found"
-              : statusLabel(verification?.payment_status ?? "unmatched")}
+                : hasFullyAllocatedBonus
+                  ? "Bonus paid"
+                  : hasFullyAllocatedOtherSettlement
+                    ? "Settled without invoice"
+                : hasMissingSubcontractorInvoice
+                  ? "Invoice missing"
+                  : statusLabel(verification?.payment_status ?? "unmatched")}
         </Badge>
         <Badge
           tone={

@@ -23,6 +23,45 @@ export default async function FinancialTransactionEvidencePage({
 
   if (!payment) notFound();
 
+  const hasFullyAllocatedBonus =
+    payment.verification != null &&
+    Number(payment.verification.invoice_allocated_amount) <= 0 &&
+    Number(payment.verification.unallocated_amount) <= 0.005 &&
+    Number(payment.verification.bonus_allocated_amount) > 0;
+  const hasFullyAllocatedOtherSettlement =
+    payment.verification != null &&
+    Number(payment.verification.invoice_allocated_amount) <= 0 &&
+    Number(payment.verification.unallocated_amount) <= 0.005 &&
+    Number(payment.verification.other_allocated_amount) > 0;
+  const hasMissingSubcontractorInvoice =
+    payment.transaction.category === "Subcontractors" &&
+    !payment.transaction.is_overpayment &&
+    !payment.transaction.has_no_invoice &&
+    !payment.transaction.invoice_not_found &&
+    !payment.transaction.partial_no_invoice_residual &&
+    !hasFullyAllocatedBonus &&
+    !hasFullyAllocatedOtherSettlement &&
+    Number(payment.verification?.invoice_allocated_amount ?? 0) <= 0;
+  const settlementLabel = payment.transaction.is_overpayment
+    ? "Overpayment"
+    : payment.transaction.partial_no_invoice_residual
+      ? "Partial match · balance has no invoice"
+      : payment.transaction.has_no_invoice
+        ? "No invoice"
+        : payment.transaction.invoice_not_found
+          ? "Invoice not found"
+          : hasFullyAllocatedBonus
+            ? "Bonus paid"
+            : hasFullyAllocatedOtherSettlement
+              ? "Settled without invoice"
+              : hasMissingSubcontractorInvoice
+                ? "Invoice missing"
+                : (payment.verification?.payment_status
+                    ?.replace("unidentified", "Recipient not verified")
+                    .replaceAll("_", " ")
+                    .replace(/^\w/, (character) => character.toUpperCase()) ??
+                  "Needs review");
+
   return (
     <>
       <div className="mb-4">
@@ -45,18 +84,14 @@ export default async function FinancialTransactionEvidencePage({
             tone={
               payment.transaction.is_overpayment
                 ? "bad"
-                : payment.verification?.payment_status === "fully_allocated"
-                  ? "good"
-                  : "warn"
+                : hasMissingSubcontractorInvoice
+                  ? "bad"
+                  : payment.verification?.payment_status === "fully_allocated"
+                    ? "good"
+                    : "warn"
             }
           >
-            {payment.transaction.is_overpayment
-              ? "Overpayment"
-              : (payment.verification?.payment_status
-                  ?.replace("unidentified", "Recipient not verified")
-                  .replaceAll("_", " ")
-                  .replace(/^\w/, (character) => character.toUpperCase()) ??
-                "Needs review")}
+            {settlementLabel}
           </Badge>
         }
       />

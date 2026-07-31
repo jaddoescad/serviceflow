@@ -50,6 +50,24 @@ function transactionLabel(transaction: FinancialTransaction) {
   return "Expense";
 }
 
+function nonInvoiceSettlementLabel(transaction: FinancialTransaction) {
+  const verification = transaction.payment_verification;
+  if (
+    verification == null ||
+    Number(verification.invoice_allocated_amount) > 0 ||
+    Number(verification.unallocated_amount) > 0.005
+  ) {
+    return null;
+  }
+  if (Number(verification.bonus_allocated_amount) > 0) {
+    return "Bonus paid";
+  }
+  if (Number(verification.other_allocated_amount) > 0) {
+    return "Settled without invoice";
+  }
+  return null;
+}
+
 function reviewLabel(transaction: FinancialTransaction) {
   if (transaction.source_details.transfer_status === "cancelled") {
     return "Cancelled";
@@ -66,6 +84,22 @@ function reviewLabel(transaction: FinancialTransaction) {
     transaction.source_details.invoice_evidence_status === "invoice_not_found"
   ) {
     return "Invoice not found";
+  }
+  if (
+    transaction.source_details.invoice_evidence_status ===
+    "partial_no_invoice_residual"
+  ) {
+    return "Partial match · balance has no invoice";
+  }
+  const nonInvoiceLabel = nonInvoiceSettlementLabel(transaction);
+  if (nonInvoiceLabel) return nonInvoiceLabel;
+  if (
+    transaction.category === "Subcontractors" &&
+    Number(
+      transaction.payment_verification?.invoice_allocated_amount ?? 0,
+    ) <= 0
+  ) {
+    return "Invoice missing";
   }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "Fully matched";
@@ -89,9 +123,21 @@ function reviewTone(
   if (
     transaction.source_details.invoice_evidence_status ===
       "no_invoice_provided" ||
-    transaction.source_details.invoice_evidence_status === "invoice_not_found"
+    transaction.source_details.invoice_evidence_status ===
+      "invoice_not_found" ||
+    transaction.source_details.invoice_evidence_status ===
+      "partial_no_invoice_residual"
   ) {
     return "warn";
+  }
+  if (nonInvoiceSettlementLabel(transaction)) return "neutral";
+  if (
+    transaction.category === "Subcontractors" &&
+    Number(
+      transaction.payment_verification?.invoice_allocated_amount ?? 0,
+    ) <= 0
+  ) {
+    return "bad";
   }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "good";

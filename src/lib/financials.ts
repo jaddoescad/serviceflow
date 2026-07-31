@@ -46,6 +46,7 @@ export type FinancialSourceDetails = {
   invoice_evidence_status:
     | "no_invoice_provided"
     | "invoice_not_found"
+    | "partial_no_invoice_residual"
     | null;
 };
 
@@ -155,6 +156,10 @@ function normalizeSourceDetails(
     !Array.isArray(sourceData.reconciliation_research)
       ? sourceData.reconciliation_research
       : null;
+  const reconciliationStatus =
+    reconciliationResearch && "status" in reconciliationResearch
+      ? reconciliationResearch.status
+      : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -174,12 +179,13 @@ function normalizeSourceDetails(
         ? "confirmed"
         : null,
     invoice_evidence_status:
-      reconciliationResearch &&
-      "status" in reconciliationResearch &&
-      (reconciliationResearch.status === "no_invoice_provided" ||
-        reconciliationResearch.status === "invoice_not_found")
-        ? reconciliationResearch.status
-        : null,
+      reconciliationStatus === "no_invoice_provided" ||
+      reconciliationStatus === "invoice_not_found"
+        ? reconciliationStatus
+        : reconciliationStatus ===
+            "partial_invoice_allocation_with_no_invoice_residual"
+          ? "partial_no_invoice_residual"
+          : null,
   };
 }
 

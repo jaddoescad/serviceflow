@@ -144,14 +144,38 @@ function formatAsOf(value: string) {
 }
 
 function isDocumentedException(transaction: FinancialTransaction) {
+  const verification = transaction.payment_verification;
+  const hasFullyAllocatedNonInvoiceSettlement =
+    verification != null &&
+    Number(verification.invoice_allocated_amount) <= 0 &&
+    Number(verification.unallocated_amount) <= 0.005 &&
+    Number(verification.bonus_allocated_amount) +
+      Number(verification.other_allocated_amount) >
+      0;
+
   return (
     transaction.source_details.overpayment_status === "confirmed" ||
-    transaction.source_details.invoice_evidence_status != null
+    transaction.source_details.invoice_evidence_status != null ||
+    hasFullyAllocatedNonInvoiceSettlement
   );
 }
 
 function requiresReview(transaction: FinancialTransaction) {
-  if (isDocumentedException(transaction)) return false;
+  if (
+    isDocumentedException(transaction) ||
+    transaction.source_details.transfer_status === "cancelled"
+  ) {
+    return false;
+  }
+
+  if (
+    transaction.category === "Subcontractors" &&
+    Number(
+      transaction.payment_verification?.invoice_allocated_amount ?? 0,
+    ) <= 0
+  ) {
+    return true;
+  }
 
   return (
     transaction.review_status !== "reconciled" ||
