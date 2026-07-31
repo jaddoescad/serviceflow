@@ -41,6 +41,7 @@ export type FinancialSourceDetails = {
   authorized_on: string | null;
   pending: boolean;
   reference: string | null;
+  transfer_status: "cancelled" | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -101,6 +102,7 @@ type FinancialSourceData = {
   bank_category?: unknown;
   authorized_date?: unknown;
   bank_sync_transaction_id?: unknown;
+  cancelled_e_transfer?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -128,12 +130,24 @@ function normalizeSourceDetails(
   sourceData: FinancialSourceData | null,
 ): FinancialSourceDetails {
   const reference = stringValue(sourceData?.bank_sync_transaction_id);
+  const cancellation =
+    sourceData?.cancelled_e_transfer &&
+    typeof sourceData.cancelled_e_transfer === "object" &&
+    !Array.isArray(sourceData.cancelled_e_transfer)
+      ? sourceData.cancelled_e_transfer
+      : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
     authorized_on: stringValue(sourceData?.authorized_date),
     pending: sourceData?.pending === true,
     reference: reference ? reference.slice(-12) : null,
+    transfer_status:
+      cancellation &&
+      "status" in cancellation &&
+      cancellation.status === "cancelled"
+        ? "cancelled"
+        : null,
   };
 }
 
