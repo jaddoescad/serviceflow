@@ -231,8 +231,9 @@ const residualPayments = transactions
             }
           : null,
       invoice_evidence_status:
-        reconciliationResearch.status === "no_invoice_provided"
-          ? "no_invoice_provided"
+        reconciliationResearch.status === "no_invoice_provided" ||
+        reconciliationResearch.status === "invoice_not_found"
+          ? reconciliationResearch.status
           : null,
       transaction_notes: transaction.notes,
       confirmation_method: paymentRecord?.confirmation_method ?? null,
@@ -321,6 +322,16 @@ const contractorResiduals = [...groups.values()]
           0,
         ),
       ),
+      invoice_not_found_amount: money(
+        group.residual_payments.reduce(
+          (total, payment) =>
+            total +
+            (payment.invoice_evidence_status === "invoice_not_found"
+              ? payment.unallocated_amount
+              : 0),
+          0,
+        ),
+      ),
     },
   }))
   .sort(
@@ -397,11 +408,26 @@ console.log(
             0,
           ),
         ),
+        invoice_not_found_payments: residualPayments.filter(
+          (payment) =>
+            payment.invoice_evidence_status === "invoice_not_found",
+        ).length,
+        invoice_not_found_amount: money(
+          residualPayments.reduce(
+            (total, payment) =>
+              total +
+              (payment.invoice_evidence_status === "invoice_not_found"
+                ? payment.unallocated_amount
+                : 0),
+            0,
+          ),
+        ),
         unresolved_unallocated_amount: money(
           residualPayments.reduce(
             (total, payment) =>
               total +
-              (payment.invoice_evidence_status === "no_invoice_provided"
+              (payment.invoice_evidence_status === "no_invoice_provided" ||
+              payment.invoice_evidence_status === "invoice_not_found"
                 ? 0
                 : payment.unallocated_amount),
             0,

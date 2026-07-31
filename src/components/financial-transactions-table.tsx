@@ -62,6 +62,11 @@ function reviewLabel(transaction: FinancialTransaction) {
   ) {
     return "No invoice";
   }
+  if (
+    transaction.source_details.invoice_evidence_status === "invoice_not_found"
+  ) {
+    return "Invoice not found";
+  }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "Fully matched";
   if (status === "partially_allocated") return "Partially matched";
@@ -82,7 +87,9 @@ function reviewTone(
     return "bad";
   }
   if (
-    transaction.source_details.invoice_evidence_status === "no_invoice_provided"
+    transaction.source_details.invoice_evidence_status ===
+      "no_invoice_provided" ||
+    transaction.source_details.invoice_evidence_status === "invoice_not_found"
   ) {
     return "warn";
   }

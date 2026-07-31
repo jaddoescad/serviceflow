@@ -217,12 +217,12 @@ export function InvoiceEvidence({
           ) : invoice.signedUrl ? (
             <div className="border-t border-[var(--color-border)] px-5 py-8 text-sm">
               <div className="font-medium text-[var(--color-heading)]">
-                Exact source archived as an email file
+                Exact source archived in its original format
               </div>
               <p className="mt-1 max-w-2xl text-[var(--color-muted)]">
-                Email files do not preview reliably in the browser. Use Open
-                source to download the archived file; the invoice entries and
-                comparisons remain visible below.
+                This file type does not preview reliably in the browser. Use
+                Open source to download the archived file; the invoice entries
+                and comparisons remain visible below.
               </p>
             </div>
           ) : (
@@ -502,6 +502,8 @@ export function PaymentEvidence({
             ? "Overpayment"
             : payment.transaction.has_no_invoice
               ? "No invoice provided"
+              : payment.transaction.invoice_not_found
+                ? "Invoice not found"
               : statusLabel(verification?.payment_status ?? "unmatched")}
         </Badge>
         <Badge

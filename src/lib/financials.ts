@@ -43,7 +43,10 @@ export type FinancialSourceDetails = {
   reference: string | null;
   transfer_status: "cancelled" | null;
   overpayment_status: "confirmed" | null;
-  invoice_evidence_status: "no_invoice_provided" | null;
+  invoice_evidence_status:
+    | "no_invoice_provided"
+    | "invoice_not_found"
+    | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -173,8 +176,9 @@ function normalizeSourceDetails(
     invoice_evidence_status:
       reconciliationResearch &&
       "status" in reconciliationResearch &&
-      reconciliationResearch.status === "no_invoice_provided"
-        ? "no_invoice_provided"
+      (reconciliationResearch.status === "no_invoice_provided" ||
+        reconciliationResearch.status === "invoice_not_found")
+        ? reconciliationResearch.status
         : null,
   };
 }
