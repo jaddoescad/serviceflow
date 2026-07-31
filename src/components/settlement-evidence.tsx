@@ -15,7 +15,9 @@ const currency = new Intl.NumberFormat("en-CA", {
 });
 
 function money(value: number | null | undefined) {
-  return value == null || !Number.isFinite(value) ? "—" : currency.format(value);
+  return value == null || !Number.isFinite(value)
+    ? "—"
+    : currency.format(value);
 }
 
 function signedMoney(value: number | null | undefined) {
@@ -42,40 +44,46 @@ function paymentTone(
 }
 
 function statusLabel(status: string) {
-  return {
-    verified: "Numbers verified",
-    needs_review: "Numbers need review",
-    needs_information: "Needs information",
-    unpaid: "Unpaid",
-    partially_paid: "Partially paid",
-    paid: "Paid",
-    overpaid: "Overpaid",
-    unidentified: "Recipient not verified",
-    unmatched: "No invoice or bonus matched",
-    partially_allocated: "Partially allocated",
-    fully_allocated: "Fully allocated",
-  }[status] ?? status.replaceAll("_", " ");
+  return (
+    {
+      verified: "Numbers verified",
+      needs_review: "Numbers need review",
+      needs_information: "Needs information",
+      unpaid: "Unpaid",
+      partially_paid: "Partially paid",
+      paid: "Paid",
+      overpaid: "Overpaid",
+      unidentified: "Recipient not verified",
+      unmatched: "No invoice or bonus matched",
+      partially_allocated: "Partially allocated",
+      fully_allocated: "Fully allocated",
+    }[status] ?? status.replaceAll("_", " ")
+  );
 }
 
 function entryTypeLabel(entryType: string) {
-  return {
-    labour: "Labour",
-    material: "Material",
-    bonus: "Bonus",
-    commission: "Commission",
-    expense: "Expense",
-    other: "Other",
-    unclassified: "Unclassified",
-  }[entryType] ?? entryType;
+  return (
+    {
+      labour: "Labour",
+      material: "Material",
+      bonus: "Bonus",
+      commission: "Commission",
+      expense: "Expense",
+      other: "Other",
+      unclassified: "Unclassified",
+    }[entryType] ?? entryType
+  );
 }
 
 function entrySourceLabel(sourceKind: string) {
-  return {
-    extracted: "Exact source entry",
-    manual: "Manually entered",
-    legacy_project_link: "Derived from job match",
-    legacy_invoice_total: "Exact lines needed",
-  }[sourceKind] ?? sourceKind;
+  return (
+    {
+      extracted: "Exact source entry",
+      manual: "Manually entered",
+      legacy_project_link: "Derived from job match",
+      legacy_invoice_total: "Exact lines needed",
+    }[sourceKind] ?? sourceKind
+  );
 }
 
 function Difference({
@@ -128,7 +136,10 @@ export function InvoiceEvidence({
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Value label="Invoice total" value={money(verification.invoice_amount)} />
+        <Value
+          label="Invoice total"
+          value={money(verification.invoice_amount)}
+        />
         <Value label="Bank payments" value={money(verification.paid_amount)} />
         <Value
           label="Amount remaining"
@@ -235,8 +246,12 @@ export function InvoiceEvidence({
                 <th className="px-4 py-3 font-medium">Date / invoice entry</th>
                 <th className="px-4 py-3 font-medium">Job</th>
                 <th className="px-4 py-3 font-medium">Backend shift</th>
-                <th className="px-4 py-3 text-right font-medium">Invoice hours</th>
-                <th className="px-4 py-3 text-right font-medium">Backend hours</th>
+                <th className="px-4 py-3 text-right font-medium">
+                  Invoice hours
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  Backend hours
+                </th>
                 <th className="px-4 py-3 text-right font-medium">Rate</th>
                 <th className="px-4 py-3 text-right font-medium">Amount</th>
                 <th className="px-4 py-3 text-right font-medium">Difference</th>
@@ -326,8 +341,8 @@ export function InvoiceEvidence({
                             {entry.worker_name}
                           </div>
                           <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-                            {fmtTime(entry.started_at)}–{fmtTime(entry.ended_at)} ·{" "}
-                            {entry.status}
+                            {fmtTime(entry.started_at)}–
+                            {fmtTime(entry.ended_at)} · {entry.status}
                           </div>
                         </div>
                       ))}
@@ -353,7 +368,11 @@ export function InvoiceEvidence({
                           : "text-[var(--color-good)]"
                       }`}
                     >
-                      {hoursDifference > 0 ? "+" : hoursDifference < 0 ? "−" : ""}
+                      {hoursDifference > 0
+                        ? "+"
+                        : hoursDifference < 0
+                          ? "−"
+                          : ""}
                       {fmtHours(Math.abs(hoursDifference))}
                     </td>
                   </tr>
@@ -409,7 +428,8 @@ export function InvoiceEvidence({
                   </div>
                   <div className="mt-1 text-xs text-[var(--color-muted)]">
                     {fmtDate(payment.posted_on)} · {payment.account_name} ••••{" "}
-                    {payment.account_last_four ?? "—"} · {payment.source_filename}
+                    {payment.account_last_four ?? "—"} ·{" "}
+                    {payment.source_filename}
                   </div>
                 </div>
                 <div className="text-right">
@@ -442,7 +462,10 @@ export function PaymentEvidence({
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Value label="Bank payment" value={money(Math.abs(payment.transaction.amount))} />
+        <Value
+          label="Bank payment"
+          value={money(Math.abs(payment.transaction.amount))}
+        />
         <Value
           label="Invoices"
           value={money(verification?.invoice_allocated_amount ?? 0)}
@@ -456,23 +479,34 @@ export function PaymentEvidence({
         />
         <Value
           label="Unallocated"
-          value={money(verification?.unallocated_amount ?? Math.abs(payment.transaction.amount))}
+          value={money(
+            verification?.unallocated_amount ??
+              Math.abs(payment.transaction.amount),
+          )}
         />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Badge
           tone={
-            verification?.payment_status === "fully_allocated"
-              ? "good"
-              : verification?.payment_status === "needs_review"
-                ? "bad"
-                : "warn"
+            payment.transaction.is_overpayment
+              ? "bad"
+              : verification?.payment_status === "fully_allocated"
+                ? "good"
+                : verification?.payment_status === "needs_review"
+                  ? "bad"
+                  : "warn"
           }
         >
-          {statusLabel(verification?.payment_status ?? "unmatched")}
+          {payment.transaction.is_overpayment
+            ? "Overpayment"
+            : statusLabel(verification?.payment_status ?? "unmatched")}
         </Badge>
-        <Badge tone={verification?.recipient_status === "confirmed" ? "good" : "warn"}>
+        <Badge
+          tone={
+            verification?.recipient_status === "confirmed" ? "good" : "warn"
+          }
+        >
           {verification?.recipient_status === "confirmed"
             ? "Recipient confirmed"
             : "Recipient not verified"}
@@ -485,19 +519,30 @@ export function PaymentEvidence({
           subtitle="The imported bank row is the payment source"
         />
         <dl className="grid gap-x-6 gap-y-4 p-5 text-sm sm:grid-cols-2 xl:grid-cols-3">
-          <Detail label="Posted" value={fmtDate(payment.transaction.posted_on)} />
+          <Detail
+            label="Posted"
+            value={fmtDate(payment.transaction.posted_on)}
+          />
           <Detail
             label="Account"
             value={`${payment.transaction.account_name} •••• ${
               payment.transaction.account_last_four ?? "—"
             }`}
           />
-          <Detail label="Bank description" value={payment.transaction.description} />
+          <Detail
+            label="Bank description"
+            value={payment.transaction.description}
+          />
           <Detail
             label="Counterparty"
-            value={payment.transaction.counterparty ?? "Recipient not in bank row"}
+            value={
+              payment.transaction.counterparty ?? "Recipient not in bank row"
+            }
           />
-          <Detail label="Source file" value={payment.transaction.source_filename} />
+          <Detail
+            label="Source file"
+            value={payment.transaction.source_filename}
+          />
           <Detail
             label="Source checksum"
             value={
@@ -507,6 +552,11 @@ export function PaymentEvidence({
             }
           />
         </dl>
+        {payment.transaction.notes ? (
+          <p className="border-t border-[var(--color-border)] px-5 py-4 text-sm text-[var(--color-muted)]">
+            {payment.transaction.notes}
+          </p>
+        ) : null}
       </Card>
 
       <Card>

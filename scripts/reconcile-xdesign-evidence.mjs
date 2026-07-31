@@ -14,57 +14,57 @@ const APPLY = process.argv.includes("--apply");
 const NOW = new Date().toISOString();
 
 const EXISTING_INVOICES = {
-  "8584": {
+  8584: {
     id: "404d9e86-745b-4142-bdfb-43d428b0211f",
     gross: 169.5,
   },
-  "8585": {
+  8585: {
     id: "a720a14f-aace-464d-89e6-5aa6f8645f28",
     gross: 1593.3,
   },
-  "8586": {
+  8586: {
     id: "7584089c-caa2-4233-aa4d-d37352c12f8f",
     gross: 372.9,
     sourceMessageId: "19ea6b97a37118c6",
   },
-  "8589": {
+  8589: {
     id: "ba0bece0-6efb-49d7-a879-4768794736a9",
     gross: 372.9,
     sourceMessageId: "19ec58bd8a520e9f",
   },
-  "8597": {
+  8597: {
     id: "c3a378dd-86e0-4826-bc2e-12e792163e6e",
     gross: 305.1,
   },
-  "8598": {
+  8598: {
     id: "d52e8834-c45e-4408-8993-c05a33cac934",
     gross: 644.1,
   },
-  "8599": {
+  8599: {
     id: "05550900-0a54-41f3-ad07-509fd224a6e4",
     gross: 508.5,
   },
-  "8600": {
+  8600: {
     id: "a753666e-78e9-4345-acb3-da6e25d07bbc",
     gross: 915.3,
   },
-  "8601": {
+  8601: {
     id: "34d2b7bc-5e76-4b6a-9f33-19c30ab06b5e",
     gross: 339,
   },
-  "8602": {
+  8602: {
     id: "32e8b90e-22e1-4145-a7e2-797079c582ef",
     gross: 372.9,
   },
-  "8603": {
+  8603: {
     id: "4dfa4e22-8d24-448d-835d-2f98f9348586",
     gross: 678,
   },
-  "8604": {
+  8604: {
     id: "009639eb-e73e-412d-82e0-5f965df79e9f",
     gross: 474.6,
   },
-  "8605": {
+  8605: {
     id: "37a145f1-c5fa-44f8-b468-b5cb3bd3351d",
     gross: 237.3,
   },
@@ -285,17 +285,17 @@ GST/ HST Number: 79764 4168 RT0001`,
 
 const ALLOCATIONS = [
   {
-    paymentKey: "n2H",
+    paymentKey: "JrB",
     invoiceNumber: "8586",
     amount: 372.9,
     methods: [
       "verified_contractor_identity",
-      "exact_after_hst_amount_cents",
+      "user_confirmed_payment_order",
+      "unique_exact_invoice_sum",
       "td_payment_confirmation",
-      "payment_memo",
+      "bank_record",
     ],
-    note:
-      "TD confirmation memo names Danielle Hards and the amount exactly equals updated invoice #8586.",
+    note: "Ottawa Painters confirmed JrB $542.40 is the correct grouped payment: invoice #8584 $169.50 plus updated invoice #8586 $372.90. The later n2H transfer is the $372.90 overpayment.",
   },
   {
     paymentKey: "fq4",
@@ -307,8 +307,7 @@ const ALLOCATIONS = [
       "td_payment_confirmation",
       "payment_memo",
     ],
-    note:
-      "TD confirmation memo names Jen Payne; this payment is the $330.00 pre-HST component of invoice #8589.",
+    note: "TD confirmation memo names Jen Payne; this payment is the $330.00 pre-HST component of invoice #8589.",
   },
   {
     paymentKey: "pKE",
@@ -321,8 +320,7 @@ const ALLOCATIONS = [
       "payment_memo",
       "wave_paid_receipt",
     ],
-    note:
-      "TD memo names Christian Boulet plus Jen Payne tax; Wave receipt 19ecd4ba0cbe53ce confirms $1,593.30 paid on invoice #8585.",
+    note: "TD memo names Christian Boulet plus Jen Payne tax; Wave receipt 19ecd4ba0cbe53ce confirms $1,593.30 paid on invoice #8585.",
   },
   {
     paymentKey: "pKE",
@@ -335,8 +333,7 @@ const ALLOCATIONS = [
       "payment_memo",
       "wave_paid_receipt",
     ],
-    note:
-      "TD memo explicitly includes taxes from Jen Payne; Wave receipt 19ecd4beb5f518f8 confirms the final $42.90 on invoice #8589.",
+    note: "TD memo explicitly includes taxes from Jen Payne; Wave receipt 19ecd4beb5f518f8 confirms the final $42.90 on invoice #8589.",
   },
   {
     paymentKey: "6jd",
@@ -348,8 +345,7 @@ const ALLOCATIONS = [
       "same_day_wave_receipts",
       "td_payment_confirmation",
     ],
-    note:
-      "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d0f98e895a30.",
+    note: "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d0f98e895a30.",
   },
   {
     paymentKey: "6jd",
@@ -361,8 +357,7 @@ const ALLOCATIONS = [
       "same_day_wave_receipts",
       "td_payment_confirmation",
     ],
-    note:
-      "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d10215047428.",
+    note: "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d10215047428.",
   },
   {
     paymentKey: "6jd",
@@ -374,8 +369,7 @@ const ALLOCATIONS = [
       "same_day_wave_receipts",
       "td_payment_confirmation",
     ],
-    note:
-      "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d10753e045ab.",
+    note: "Part of the exact $1,796.00 four-invoice total confirmed by TD and same-day Wave paid receipt 19f6d10753e045ab.",
   },
   {
     paymentKey: "6jd",
@@ -387,8 +381,7 @@ const ALLOCATIONS = [
       "same_day_wave_receipts",
       "td_payment_confirmation",
     ],
-    note:
-      "Final component of the exact $1,796.00 four-invoice total; invoice #8600 is completed by the separate $577.00 transfer and Wave receipt 19f6d10b76c1d63e.",
+    note: "Final component of the exact $1,796.00 four-invoice total; invoice #8600 is completed by the separate $577.00 transfer and Wave receipt 19f6d10b76c1d63e.",
   },
   {
     paymentKey: "DNe",
@@ -400,8 +393,7 @@ const ALLOCATIONS = [
       "same_day_wave_receipt",
       "td_payment_confirmation",
     ],
-    note:
-      "Completes invoice #8600 together with $338.30 from transfer 6jd; exact combined invoice total is $915.30.",
+    note: "Completes invoice #8600 together with $338.30 from transfer 6jd; exact combined invoice total is $915.30.",
   },
   {
     paymentKey: "Brg",
@@ -424,8 +416,7 @@ const ALLOCATIONS = [
       "updated_invoice_version",
       "same_day_td_confirmation",
     ],
-    note:
-      "Part of the unique exact $2,101.80 total; allocation uses updated invoice #8602 for $372.90.",
+    note: "Part of the unique exact $2,101.80 total; allocation uses updated invoice #8602 for $372.90.",
   },
   {
     paymentKey: "Brg",
@@ -470,8 +461,7 @@ const ALLOCATIONS = [
       "same_day_td_confirmation",
       "wave_paid_receipt",
     ],
-    note:
-      "Exact same-day TD transfer and Wave paid receipt 19f9f5c1f06a7eb7 for invoice #8606.",
+    note: "Exact same-day TD transfer and Wave paid receipt 19f9f5c1f06a7eb7 for invoice #8606.",
   },
   {
     paymentKey: "ZSw",
@@ -483,8 +473,7 @@ const ALLOCATIONS = [
       "same_day_td_confirmation",
       "wave_paid_receipt",
     ],
-    note:
-      "Exact same-day TD transfer and Wave paid receipt 19fa926a8493b7e6 for invoice #8607.",
+    note: "Exact same-day TD transfer and Wave paid receipt 19fa926a8493b7e6 for invoice #8607.",
   },
 ];
 
@@ -631,9 +620,8 @@ for (const invoice of NEW_INVOICES) {
     `PDF size changed for invoice #${invoice.invoiceNumber}.`,
   );
   assert(
-    cents(
-      invoice.lines.reduce((total, line) => total + line.amount, 0),
-    ) === cents(invoice.beforeTax),
+    cents(invoice.lines.reduce((total, line) => total + line.amount, 0)) ===
+      cents(invoice.beforeTax),
     `Invoice #${invoice.invoiceNumber} line subtotal is invalid.`,
   );
   assert(
@@ -706,15 +694,15 @@ const wrongAllocation = await selectSingle(
   db
     .from("labour_payment_allocations")
     .select("*")
-    .eq("id", "9ff39a2f-7e35-49b2-b70a-240c1c7edf34"),
-  "incorrect JrB allocation",
+    .eq("id", "6a79c517-195f-479d-868c-6fb838c4eca4"),
+  "incorrect n2H allocation",
 );
 assert(
   wrongAllocation.financial_transaction_id ===
-    "ef0b5397-97da-4f20-b094-07a305363b55" &&
+    "b01979d2-f2fb-4053-859a-5063d93b3b6e" &&
     wrongAllocation.invoice_id === EXISTING_INVOICES["8586"].id &&
     cents(wrongAllocation.allocated_amount) === cents(372.9),
-  "The reviewed JrB allocation has changed.",
+  "The reviewed n2H allocation has changed.",
 );
 
 const dryRun = {
@@ -734,12 +722,10 @@ const dryRun = {
     payment_allocations_ensured: ALLOCATIONS.length,
   },
   deliberate_exception: {
-    payment: "SEND E-TFR ***JrB",
-    payment_amount: 542.4,
-    proven_invoice: "#8584",
-    proven_amount: 169.5,
-    unexplained_amount: 372.9,
-    treatment: "leave unallocated and needs_review",
+    payment: "SEND E-TFR ***n2H",
+    payment_amount: 372.9,
+    classification: "confirmed overpayment",
+    treatment: "leave unallocated and needs_review pending refund or credit",
   },
 };
 console.log(JSON.stringify(dryRun, null, 2));
@@ -1125,7 +1111,7 @@ for (const superseded of SUPERSEDED_INVOICES) {
 
 if (wrongAllocation.reversed_at == null) {
   const reversalReason =
-    "Reversed after TD memo showed JrB was for Mike Ralph and Sonya Lee; updated invoice #8586 is instead exactly paid by n2H.";
+    "Ottawa Painters confirmed n2H is the $372.90 overpayment; invoice #8586 belongs to the correct grouped JrB $542.40 payment.";
   const reversal = await db
     .from("labour_payment_allocations")
     .update({
@@ -1187,22 +1173,22 @@ const verificationResult = await db
   .in("financial_transaction_id", paymentIds);
 if (verificationResult.error) throw verificationResult.error;
 for (const verification of verificationResult.data ?? []) {
-  const isJrB =
+  const isOverpayment =
     verification.financial_transaction_id ===
-    "ef0b5397-97da-4f20-b094-07a305363b55";
-  if (isJrB) {
+    "b01979d2-f2fb-4053-859a-5063d93b3b6e";
+  if (isOverpayment) {
     assert(
-      verification.payment_status === "partially_allocated" &&
+      verification.payment_status === "unmatched" &&
         cents(verification.unallocated_amount) === cents(372.9) &&
-        cents(verification.total_allocated_amount) === cents(169.5),
-      "JrB exception no longer has the expected $372.90 open balance.",
+        cents(verification.total_allocated_amount) === 0,
+      "n2H no longer has the expected $372.90 overpayment balance.",
     );
     const review = await db
       .from("financial_transactions")
       .update({
         review_status: "needs_review",
         notes:
-          "Recipient verified as XDesign. $169.50 is proven against invoice #8584; the remaining $372.90 has no supporting invoice or approved bonus and remains open.",
+          "Confirmed $372.90 XDesign overpayment. Invoice #8586 is already settled as part of the correct JrB $542.40 payment; retain this bank expense pending refund or supplier credit.",
       })
       .eq("id", verification.financial_transaction_id);
     if (review.error) throw review.error;
@@ -1287,8 +1273,7 @@ const invoiceVerification = await db
 if (invoiceVerification.error) throw invoiceVerification.error;
 const unpaidCanonical = (invoiceVerification.data ?? []).filter(
   (invoice) =>
-    invoice.payment_status !== "paid" ||
-    cents(invoice.amount_remaining) !== 0,
+    invoice.payment_status !== "paid" || cents(invoice.amount_remaining) !== 0,
 );
 assert(
   unpaidCanonical.length === 0,
@@ -1341,7 +1326,7 @@ console.log(
       ).length,
       unresolved_amount: unresolvedTotal / 100,
       unresolved_evidence:
-        "SEND E-TFR ***JrB: $372.90 remains unallocated pending a real invoice, approved bonus, refund, or correction.",
+        "SEND E-TFR ***n2H: confirmed $372.90 overpayment pending refund or supplier credit.",
     },
     null,
     2,

@@ -54,6 +54,9 @@ function reviewLabel(transaction: FinancialTransaction) {
   if (transaction.source_details.transfer_status === "cancelled") {
     return "Cancelled";
   }
+  if (transaction.source_details.overpayment_status === "confirmed") {
+    return "Overpayment";
+  }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "Fully matched";
   if (status === "partially_allocated") return "Partially matched";
@@ -69,6 +72,9 @@ function reviewTone(
 ): "good" | "warn" | "bad" | "neutral" {
   if (transaction.source_details.transfer_status === "cancelled") {
     return "neutral";
+  }
+  if (transaction.source_details.overpayment_status === "confirmed") {
+    return "bad";
   }
   const status = transaction.payment_verification?.payment_status;
   if (status === "fully_allocated") return "good";

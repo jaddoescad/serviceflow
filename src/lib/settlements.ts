@@ -139,6 +139,7 @@ export type LabourPaymentEvidence = {
     review_status: string;
     running_balance: number | null;
     notes: string | null;
+    is_overpayment: boolean;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -423,8 +424,7 @@ async function getInvoiceEvidenceWithClient(
       unit_price: line.unit_price == null ? null : Number(line.unit_price),
       quantity_hours:
         line.quantity_hours == null ? null : Number(line.quantity_hours),
-      hourly_rate:
-        line.hourly_rate == null ? null : Number(line.hourly_rate),
+      hourly_rate: line.hourly_rate == null ? null : Number(line.hourly_rate),
       amount_before_tax: Number(line.amount_before_tax),
       tax_amount: Number(line.tax_amount),
       jobs: jobsByLine.get(line.id) ?? [],
@@ -441,9 +441,7 @@ export async function getLabourInvoiceEvidence(
   return getInvoiceEvidenceWithClient(supabase, invoiceId);
 }
 
-export async function getInvoiceEntryEvidence(
-  entryId: string,
-): Promise<{
+export async function getInvoiceEntryEvidence(entryId: string): Promise<{
   entry: InvoiceLineEvidence;
   invoice: LabourInvoiceEvidence;
 } | null> {
@@ -457,10 +455,7 @@ export async function getInvoiceEntryEvidence(
   if (error) throw error;
   if (!data) return null;
 
-  const invoice = await getInvoiceEvidenceWithClient(
-    supabase,
-    data.invoice_id,
-  );
+  const invoice = await getInvoiceEvidenceWithClient(supabase, data.invoice_id);
   if (!invoice) return null;
 
   const entry = invoice.lines.find((line) => line.id === entryId);
@@ -494,6 +489,7 @@ export async function getLabourPaymentEvidence(
           review_status,
           running_balance,
           notes,
+          source_data,
           financial_accounts (
             name,
             last_four
@@ -609,6 +605,11 @@ export async function getLabourPaymentEvidence(
     review_status: string;
     running_balance: number | null;
     notes: string | null;
+    source_data: {
+      confirmed_overpayment?: {
+        status?: string;
+      };
+    } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
       original_filename: string;
@@ -645,6 +646,8 @@ export async function getLabourPaymentEvidence(
           ? null
           : Number(transaction.running_balance),
       notes: transaction.notes,
+      is_overpayment:
+        transaction.source_data?.confirmed_overpayment?.status === "confirmed",
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:
@@ -692,8 +695,7 @@ export async function getLabourPaymentEvidence(
           "Unknown project",
         formula_version: row.labour_bonus_payables?.formula_version ?? "—",
         approved_at: row.labour_bonus_payables?.approved_at ?? "",
-        calculation_note:
-          row.labour_bonus_payables?.calculation_note ?? null,
+        calculation_note: row.labour_bonus_payables?.calculation_note ?? null,
       };
     }),
     otherAllocations: (otherAllocationsResult.data ?? []).map((value) => {

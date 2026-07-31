@@ -43,16 +43,20 @@ export default async function FinancialTransactionEvidencePage({
         actions={
           <Badge
             tone={
-              payment.verification?.payment_status === "fully_allocated"
-                ? "good"
-                : "warn"
+              payment.transaction.is_overpayment
+                ? "bad"
+                : payment.verification?.payment_status === "fully_allocated"
+                  ? "good"
+                  : "warn"
             }
           >
-            {payment.verification?.payment_status
-              ?.replace("unidentified", "Recipient not verified")
-              .replaceAll("_", " ")
-              .replace(/^\w/, (character) => character.toUpperCase()) ??
-              "Needs review"}
+            {payment.transaction.is_overpayment
+              ? "Overpayment"
+              : (payment.verification?.payment_status
+                  ?.replace("unidentified", "Recipient not verified")
+                  .replaceAll("_", " ")
+                  .replace(/^\w/, (character) => character.toUpperCase()) ??
+                "Needs review")}
           </Badge>
         }
       />
