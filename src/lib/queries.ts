@@ -99,40 +99,68 @@ export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient();
   const projectColumns =
     "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,is_lead,companycam_updated_at";
-  const [activeResult, completedBudgetResult] = await Promise.all([
-    supabase
-      .from("companycam_projects")
-      .select(projectColumns)
-      .eq("is_archived", false)
-      .eq("is_lead", false)
-      .order("companycam_updated_at", { ascending: false, nullsFirst: false })
-      .limit(1000),
-    supabase
-      .from("project_budgets")
-      .select("companycam_project_id")
-      .not("labour_closed_at", "is", null),
-  ]);
+  const [activeResult, completedBudgetResult, currentDripJobsResult] =
+    await Promise.all([
+      supabase
+        .from("companycam_projects")
+        .select(projectColumns)
+        .eq("is_archived", false)
+        .eq("is_lead", false)
+        .order("companycam_updated_at", {
+          ascending: false,
+          nullsFirst: false,
+        })
+        .limit(1000),
+      supabase
+        .from("project_budgets")
+        .select("companycam_project_id")
+        .not("labour_closed_at", "is", null),
+      supabase
+        .from("customer_invoices")
+        .select("companycam_project_id")
+        .eq("is_archived_job", false)
+        .not("companycam_project_id", "is", null),
+    ]);
 
   if (activeResult.error) {
     throw new Error(`projects: ${activeResult.error.message}`);
   }
   if (completedBudgetResult.error) {
-    throw new Error(`completed project budgets: ${completedBudgetResult.error.message}`);
+    throw new Error(
+      `completed project budgets: ${completedBudgetResult.error.message}`,
+    );
+  }
+  if (currentDripJobsResult.error) {
+    throw new Error(
+      `current DripJobs projects: ${currentDripJobsResult.error.message}`,
+    );
   }
 
   const activeProjects = (activeResult.data ?? []) as Project[];
-  const activeIds = new Set(activeProjects.map((project) => project.companycam_id));
-  const completedProjectIds = (completedBudgetResult.data ?? [])
-    .map((budget) => budget.companycam_project_id)
-    .filter((projectId) => !activeIds.has(projectId));
+  const activeIds = new Set(
+    activeProjects.map((project) => project.companycam_id),
+  );
+  const additionalProjectIds = [
+    ...(completedBudgetResult.data ?? []).map(
+      (budget) => budget.companycam_project_id,
+    ),
+    ...(currentDripJobsResult.data ?? []).map(
+      (invoice) => invoice.companycam_project_id,
+    ),
+  ].filter((projectId): projectId is string => Boolean(projectId));
+  const archivedOrCurrentProjectIds = [
+    ...new Set(
+      additionalProjectIds.filter((projectId) => !activeIds.has(projectId)),
+    ),
+  ];
 
-  if (completedProjectIds.length === 0) return activeProjects;
+  if (archivedOrCurrentProjectIds.length === 0) return activeProjects;
 
   const { data: archivedCompletedData, error: archivedCompletedError } =
     await supabase
       .from("companycam_projects")
       .select(projectColumns)
-      .in("companycam_id", completedProjectIds)
+      .in("companycam_id", archivedOrCurrentProjectIds)
       .eq("is_lead", false)
       .order("companycam_updated_at", { ascending: false, nullsFirst: false });
 
