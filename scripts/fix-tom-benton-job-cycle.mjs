@@ -69,8 +69,14 @@ const db = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const [projects, customerInvoices, lines, existingAllocations, currentBudget] =
-  await Promise.all([
+const [
+  projects,
+  customerInvoices,
+  lines,
+  existingAllocations,
+  currentBudget,
+  completedBudget,
+] = await Promise.all([
     db
       .from("companycam_projects")
       .select("companycam_id,name,formatted_address,is_archived,companycam_status")
@@ -106,6 +112,10 @@ const [projects, customerInvoices, lines, existingAllocations, currentBudget] =
       .from("project_budgets")
       .select("*")
       .eq("companycam_project_id", CURRENT_PROJECT_ID),
+    db
+      .from("project_budgets")
+      .select("*")
+      .eq("companycam_project_id", COMPLETED_PROJECT_ID),
   ]);
 
 const projectRows = assertNoError("projects", projects);
@@ -113,6 +123,7 @@ const customerInvoiceRows = assertNoError("customer invoices", customerInvoices)
 const lineRows = assertNoError("invoice lines", lines);
 const allocationRows = assertNoError("existing allocations", existingAllocations);
 const currentBudgetRows = assertNoError("current budget", currentBudget);
+const completedBudgetRows = assertNoError("completed budget", completedBudget);
 
 assert(projectRows.length === 2, "Expected both Tom Benton project rows.");
 assert(
@@ -186,6 +197,15 @@ const plan = {
       labour_closed_at: null,
     },
   },
+  completedProjectBudget: {
+    before: completedBudgetRows[0] ?? null,
+    after: {
+      companycam_project_id: COMPLETED_PROJECT_ID,
+      amount_including_tax: 3110,
+      labour_allocation_percent: 40,
+      labour_closed_at: completedBudgetRows[0]?.labour_closed_at ?? null,
+    },
+  },
 };
 console.log(JSON.stringify(plan, null, 2));
 
@@ -252,8 +272,25 @@ assertNoError(
   ),
 );
 
-const [verifiedAllocations, verifiedProjectLink, verifiedBudget] =
-  await Promise.all([
+assertNoError(
+  "completed project budget update",
+  await db
+    .from("project_budgets")
+    .update({
+      amount_including_tax: 3110,
+      notes:
+        "DripJobs proposal 2390920; customer invoice #371133; verified physical invoice subtotal before HST $3,110.00, HST $494.13, total $3,604.13.",
+      updated_at: now,
+    })
+    .eq("companycam_project_id", COMPLETED_PROJECT_ID),
+);
+
+const [
+  verifiedAllocations,
+  verifiedProjectLink,
+  verifiedBudget,
+  verifiedCompletedBudget,
+] = await Promise.all([
     db
       .from("labour_invoice_line_allocations")
       .select(
@@ -276,6 +313,12 @@ const [verifiedAllocations, verifiedProjectLink, verifiedBudget] =
         "companycam_project_id,amount_including_tax,labour_allocation_percent,labour_invoice_job_started_on,labour_closed_at,notes",
       )
       .eq("companycam_project_id", CURRENT_PROJECT_ID),
+    db
+      .from("project_budgets")
+      .select(
+        "companycam_project_id,amount_including_tax,labour_allocation_percent,labour_invoice_job_started_on,labour_closed_at,notes",
+      )
+      .eq("companycam_project_id", COMPLETED_PROJECT_ID),
   ]);
 
 const verifiedAllocationRows = assertNoError(
@@ -287,6 +330,10 @@ const verifiedProjectLinkRows = assertNoError(
   verifiedProjectLink,
 );
 const verifiedBudgetRows = assertNoError("verify current budget", verifiedBudget);
+const verifiedCompletedBudgetRows = assertNoError(
+  "verify completed budget",
+  verifiedCompletedBudget,
+);
 assert(
   verifiedAllocationRows.length === 3 &&
     Math.abs(
@@ -309,6 +356,13 @@ assert(
     verifiedBudgetRows[0].labour_invoice_job_started_on === "2026-07-28",
   "Post-write current budget verification failed.",
 );
+assert(
+  verifiedCompletedBudgetRows.length === 1 &&
+    Number(verifiedCompletedBudgetRows[0].amount_including_tax) === 3110 &&
+    verifiedCompletedBudgetRows[0].labour_closed_at ===
+      completedBudgetRows[0]?.labour_closed_at,
+  "Post-write completed budget verification failed.",
+);
 
 console.log(
   JSON.stringify(
@@ -317,6 +371,7 @@ console.log(
       allocations: verifiedAllocationRows,
       invoiceProjectLink: verifiedProjectLinkRows[0],
       currentProjectBudget: verifiedBudgetRows[0],
+      completedProjectBudget: verifiedCompletedBudgetRows[0],
     },
     null,
     2,
