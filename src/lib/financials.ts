@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { MaterialPaymentVerificationSummary } from "@/lib/materials";
 
 export type FinancialAccount = {
   id: string;
@@ -30,7 +31,8 @@ export type FinancialEvidence = {
     | "bank_record"
     | "business_expense"
     | "no_document_required"
-    | "labour_invoice";
+    | "labour_invoice"
+    | "material_invoice";
   label: string;
   detail: string;
   status: "confirmed" | "source";
@@ -109,6 +111,7 @@ export type FinancialTransaction = {
   evidence: FinancialEvidence[];
   payment_verification: PaymentVerificationSummary | null;
   customer_revenue_verification: CustomerRevenueVerificationSummary | null;
+  material_payment_verification: MaterialPaymentVerificationSummary | null;
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -142,6 +145,7 @@ type StoredFinancialTransaction = Omit<
   | "evidence"
   | "payment_verification"
   | "customer_revenue_verification"
+  | "material_payment_verification"
 > & {
   source_data: FinancialSourceData | null;
 };
@@ -154,6 +158,15 @@ type EvidenceLabourInvoice = {
   amount_paid: number | null;
   original_filename: string;
   storage_path: string;
+};
+
+type EvidenceMaterialInvoice = {
+  id: string;
+  supplier_name: string;
+  invoice_number: string;
+  invoice_date: string;
+  po_number: string | null;
+  original_filename: string;
 };
 
 function stringValue(value: unknown) {
@@ -293,6 +306,10 @@ function buildEvidence(
     invoice: EvidenceLabourInvoice & { signed_url: string | null };
     amount: number;
   }>,
+  materialAllocations: Array<{
+    invoice: EvidenceMaterialInvoice;
+    amount: number;
+  }>,
 ): FinancialEvidence[] {
   const evidence: FinancialEvidence[] = [];
 
@@ -306,6 +323,18 @@ function buildEvidence(
       status: "confirmed",
       amount,
       href: `/invoices/${encodeURIComponent(invoice.id)}`,
+      filename: invoice.original_filename,
+    });
+  }
+
+  for (const { invoice, amount } of materialAllocations) {
+    evidence.push({
+      kind: "material_invoice",
+      label: `${invoice.supplier_name} · Invoice #${invoice.invoice_number}`,
+      detail: `${invoice.invoice_date}${invoice.po_number ? ` · PO ${invoice.po_number}` : ""}`,
+      status: "confirmed",
+      amount,
+      href: `/material-invoices/${encodeURIComponent(invoice.id)}`,
       filename: invoice.original_filename,
     });
   }
@@ -452,7 +481,13 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
 
   const storedTransactions =
     transactions as unknown as StoredFinancialTransaction[];
-  const [verificationResult, allocationResult, customerRevenueResult] =
+  const [
+    verificationResult,
+    allocationResult,
+    customerRevenueResult,
+    materialVerificationResult,
+    materialAllocationResult,
+  ] =
     await Promise.all([
     supabase.from("labour_payment_verification").select("*"),
     supabase
@@ -460,10 +495,17 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
       .select("financial_transaction_id,invoice_id,allocated_amount")
       .is("reversed_at", null),
       supabase.from("customer_revenue_verification").select("*"),
+      supabase.from("material_payment_verification").select("*"),
+      supabase
+        .from("material_payment_allocations")
+        .select("financial_transaction_id,material_invoice_id,allocated_amount")
+        .is("reversed_at", null),
     ]);
   if (verificationResult.error) throw verificationResult.error;
   if (allocationResult.error) throw allocationResult.error;
   if (customerRevenueResult.error) throw customerRevenueResult.error;
+  if (materialVerificationResult.error) throw materialVerificationResult.error;
+  if (materialAllocationResult.error) throw materialAllocationResult.error;
 
   const allocations = (allocationResult.data ?? []) as Array<{
     financial_transaction_id: string;
@@ -477,6 +519,17 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     string,
     EvidenceLabourInvoice & { signed_url: string | null }
   >();
+  const materialAllocations = (materialAllocationResult.data ?? []) as Array<{
+    financial_transaction_id: string;
+    material_invoice_id: string;
+    allocated_amount: number;
+  }>;
+  const materialInvoiceIds = [
+    ...new Set(
+      materialAllocations.map((allocation) => allocation.material_invoice_id),
+    ),
+  ];
+  const materialInvoiceById = new Map<string, EvidenceMaterialInvoice>();
 
   if (labourInvoiceIds.length) {
     const invoiceResult = await supabase
@@ -501,6 +554,30 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
       invoiceById.set(invoice.id, {
         ...invoice,
         signed_url: signedUrlByPath.get(invoice.storage_path) ?? null,
+      });
+    }
+  }
+
+  if (materialInvoiceIds.length) {
+    const materialInvoiceResult = await supabase
+      .from("material_invoices")
+      .select(
+        "id,supplier_name,invoice_number,invoice_date,po_number,material_invoice_documents(original_filename)",
+      )
+      .in("id", materialInvoiceIds);
+    if (materialInvoiceResult.error) throw materialInvoiceResult.error;
+    for (const invoice of materialInvoiceResult.data ?? []) {
+      const document = Array.isArray(invoice.material_invoice_documents)
+        ? invoice.material_invoice_documents[0]
+        : invoice.material_invoice_documents;
+      materialInvoiceById.set(invoice.id, {
+        id: invoice.id,
+        supplier_name: invoice.supplier_name,
+        invoice_number: invoice.invoice_number,
+        invoice_date: invoice.invoice_date,
+        po_number: invoice.po_number,
+        original_filename:
+          document?.original_filename ?? "Archived material invoice",
       });
     }
   }
@@ -535,6 +612,18 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
       } as CustomerRevenueVerificationSummary,
     ]),
   );
+  const materialVerificationByTransaction = new Map(
+    (materialVerificationResult.data ?? []).map((row) => [
+      row.financial_transaction_id,
+      {
+        invoice_count: Number(row.invoice_count),
+        payment_amount: Number(row.payment_amount),
+        allocated_amount: Number(row.allocated_amount),
+        unallocated_amount: Number(row.unallocated_amount),
+        payment_status: row.payment_status,
+      } as MaterialPaymentVerificationSummary,
+    ]),
+  );
   const allocationsByTransaction = new Map<
     string,
     Array<{
@@ -553,6 +642,21 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     });
     allocationsByTransaction.set(allocation.financial_transaction_id, values);
   }
+  const materialAllocationsByTransaction = new Map<
+    string,
+    Array<{ invoice: EvidenceMaterialInvoice; amount: number }>
+  >();
+  for (const allocation of materialAllocations) {
+    const invoice = materialInvoiceById.get(allocation.material_invoice_id);
+    if (!invoice) continue;
+    const values =
+      materialAllocationsByTransaction.get(allocation.financial_transaction_id) ?? [];
+    values.push({ invoice, amount: Number(allocation.allocated_amount) });
+    materialAllocationsByTransaction.set(
+      allocation.financial_transaction_id,
+      values,
+    );
+  }
 
   return {
     accounts: (accountsResult.data ?? []) as FinancialAccount[],
@@ -564,11 +668,14 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
         evidence: buildEvidence(
           { ...transaction, source_data: sourceData },
           allocationsByTransaction.get(transaction.id) ?? [],
+          materialAllocationsByTransaction.get(transaction.id) ?? [],
         ),
         payment_verification:
           verificationByTransaction.get(transaction.id) ?? null,
         customer_revenue_verification:
           customerRevenueByTransaction.get(transaction.id) ?? null,
+        material_payment_verification:
+          materialVerificationByTransaction.get(transaction.id) ?? null,
       }),
     ),
   };

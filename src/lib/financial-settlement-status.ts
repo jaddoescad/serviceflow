@@ -9,6 +9,12 @@ export type SettlementFacts = {
     | "partially_allocated"
     | "fully_allocated"
     | null;
+  materialPaymentStatus?:
+    | "unmatched"
+    | "partially_allocated"
+    | "fully_allocated"
+    | "needs_review"
+    | null;
   overpaymentConfirmed?: boolean;
   invoiceEvidenceStatus?:
     | "no_invoice_provided"
@@ -127,6 +133,17 @@ export function resolveSettlementStatus(
     };
   }
 
+  if (facts.materialPaymentStatus === "fully_allocated") {
+    return { bucket: "fully_matched", label: "Fully matched", tone: "good" };
+  }
+  if (
+    facts.materialPaymentStatus === "partially_allocated" ||
+    facts.materialPaymentStatus === "unmatched" ||
+    facts.materialPaymentStatus === "needs_review"
+  ) {
+    return { bucket: "needs_review", label: "Needs review", tone: "warn" };
+  }
+
   if (facts.paymentStatus === "fully_allocated") {
     const invoiceAmount = Number(facts.invoiceAllocatedAmount ?? 0);
     const bonusAmount = Number(facts.bonusAllocatedAmount ?? 0);
@@ -191,6 +208,13 @@ export type TransactionSettlementInput = {
   customer_revenue_verification: {
     payment_status: "unmatched" | "partially_allocated" | "fully_allocated";
   } | null;
+  material_payment_verification: {
+    payment_status:
+      | "unmatched"
+      | "partially_allocated"
+      | "fully_allocated"
+      | "needs_review";
+  } | null;
 };
 
 export function getTransactionSettlementStatus(
@@ -205,6 +229,8 @@ export function getTransactionSettlementStatus(
       transaction.source_details.customer_revenue_exception_needs_review,
     customerRevenueStatus:
       transaction.customer_revenue_verification?.payment_status ?? null,
+    materialPaymentStatus:
+      transaction.material_payment_verification?.payment_status ?? null,
     overpaymentConfirmed:
       transaction.source_details.overpayment_status === "confirmed",
     invoiceEvidenceStatus:

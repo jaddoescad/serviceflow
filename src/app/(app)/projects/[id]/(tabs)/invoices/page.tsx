@@ -4,6 +4,7 @@ import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
 import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
 import { JobAccountingChain } from "@/components/customer-revenue-evidence";
+import { ProjectMaterialInvoices } from "@/components/project-material-invoices";
 import { Badge } from "@/components/ui";
 import { getProjectCustomerRevenue } from "@/lib/customer-revenue";
 import { getProjectShell } from "@/lib/project-data";
@@ -13,6 +14,7 @@ import {
   isInvoiceInCurrentJob,
 } from "@/lib/invoice-queries";
 import { fmtCurrencyTotals } from "@/lib/format";
+import { getProjectMaterialInvoices } from "@/lib/materials";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +35,12 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
-  const [shell, entries, summary, customerRevenue] = await Promise.all([
+  const [shell, entries, summary, customerRevenue, materialInvoices] = await Promise.all([
     getProjectShell(projectId),
     getInvoiceEntriesForProject(projectId),
     getProjectLabourInvoiceSummary(projectId),
     getProjectCustomerRevenue(projectId),
+    getProjectMaterialInvoices(projectId),
   ]);
 
   if (!shell) notFound();
@@ -135,6 +138,8 @@ export default async function ProjectInvoicesPage({
         showJobs={false}
         projectId={projectId}
       />
+
+      <ProjectMaterialInvoices invoices={materialInvoices} />
 
       {historicalEntries.length > 0 ? (
         <div className="mt-6">

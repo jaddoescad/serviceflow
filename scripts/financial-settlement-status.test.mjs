@@ -102,6 +102,32 @@ test("unmatched customer income uses the canonical needs-review state", () => {
   });
 });
 
+test("a statement-backed material payment is fully matched", () => {
+  const result = resolveSettlementStatus({
+    materialPaymentStatus: "fully_allocated",
+  });
+  assert.deepEqual(result, {
+    bucket: "fully_matched",
+    label: "Fully matched",
+    tone: "good",
+  });
+});
+
+test("an incomplete material payment remains in review", () => {
+  for (const materialPaymentStatus of [
+    "unmatched",
+    "partially_allocated",
+    "needs_review",
+  ]) {
+    const result = resolveSettlementStatus({ materialPaymentStatus });
+    assert.deepEqual(result, {
+      bucket: "needs_review",
+      label: "Needs review",
+      tone: "warn",
+    });
+  }
+});
+
 test("every needs-review reason uses the same amber tone", () => {
   const cases = [
     { invoiceEvidenceStatus: "invoice_not_found" },
@@ -111,6 +137,9 @@ test("every needs-review reason uses the same amber tone", () => {
     { paymentStatus: "unidentified" },
     { paymentStatus: "unmatched" },
     { paymentStatus: "needs_review" },
+    { materialPaymentStatus: "partially_allocated" },
+    { materialPaymentStatus: "unmatched" },
+    { materialPaymentStatus: "needs_review" },
   ];
   for (const facts of cases) {
     const result = resolveSettlementStatus(facts);

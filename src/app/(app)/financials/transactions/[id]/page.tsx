@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CustomerRevenueTransactionEvidence } from "@/components/customer-revenue-evidence";
 import { PaymentEvidence } from "@/components/settlement-evidence";
+import { MaterialPaymentEvidenceView } from "@/components/material-payment-evidence";
 import { StatusText } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { getCustomerRevenueTransactionEvidence } from "@/lib/customer-revenue";
 import { resolveSettlementStatus } from "@/lib/financial-settlement-status";
 import { getLabourPaymentEvidence } from "@/lib/settlements";
+import { getMaterialPaymentEvidence } from "@/lib/materials";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +20,11 @@ export default async function FinancialTransactionEvidencePage({
 }) {
   const { id } = await params;
   const transactionId = decodeURIComponent(id);
-  const [, payment, customerRevenue] = await Promise.all([
+  const [, payment, customerRevenue, materialPayment] = await Promise.all([
     requireStaff(),
     getLabourPaymentEvidence(transactionId),
     getCustomerRevenueTransactionEvidence(transactionId),
+    getMaterialPaymentEvidence(transactionId),
   ]);
 
   if (!payment) notFound();
@@ -43,6 +46,8 @@ export default async function FinancialTransactionEvidencePage({
       payment.transaction.customer_revenue_exception_needs_review,
     customerRevenueStatus:
       customerRevenue?.verification.payment_status ?? null,
+    materialPaymentStatus:
+      materialPayment?.verification.payment_status ?? null,
     overpaymentConfirmed: payment.transaction.is_overpayment,
     invoiceEvidenceStatus: payment.transaction.has_no_invoice
       ? "no_invoice_provided"
@@ -116,6 +121,11 @@ export default async function FinancialTransactionEvidencePage({
           evidence={customerRevenue}
           receivedFrom={payment.transaction.counterparty}
           exception={customerRevenueException}
+        />
+      ) : materialPayment ? (
+        <MaterialPaymentEvidenceView
+          evidence={materialPayment}
+          transaction={payment.transaction}
         />
       ) : (
         <PaymentEvidence payment={payment} />
