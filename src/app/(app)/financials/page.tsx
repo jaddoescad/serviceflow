@@ -41,8 +41,10 @@ const percent = new Intl.NumberFormat("en-CA", {
 });
 
 const labourCategories = new Set([
+  "Colour consultation",
   "Labour",
   "Payroll",
+  "Pressure washing",
   "Subcontractors",
   "Wages & salaries",
 ]);
