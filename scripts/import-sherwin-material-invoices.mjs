@@ -89,6 +89,13 @@ function findLastMatch(text, expression) {
   return matches.length ? matches.at(-1) : null;
 }
 
+function isLineHeader(line) {
+  return (
+    (line.includes("SALES NUMBER") && line.includes("DESCRIPTION") && line.includes("VALUE")) ||
+    (line.includes("# VENTE") && line.includes("DESCRIPTION") && line.includes("VALEUR"))
+  );
+}
+
 function parseDueOn(text, invoiceDate) {
   const match = text.match(/DUE ON\s+([A-Z]+)\.?\s+(\d{1,2})(?:ST|ND|RD|TH)?/i);
   if (!match || !invoiceDate) return null;
@@ -107,16 +114,17 @@ function parseDueOn(text, invoiceDate) {
 function lineColumns(page) {
   const header = page
     .split("\n")
-    .find((line) => line.includes("SALES NUMBER") && line.includes("DESCRIPTION") && line.includes("VALUE"));
+    .find(isLineHeader);
   if (!header) return null;
+  const french = header.includes("# VENTE");
   return {
-    sales: header.indexOf("SALES NUMBER"),
-    size: header.indexOf("SIZE"),
-    product: header.indexOf("PRODUCT"),
+    sales: header.indexOf(french ? "# VENTE" : "SALES NUMBER"),
+    size: header.indexOf(french ? "FORMAT" : "SIZE"),
+    product: header.indexOf(french ? "PRODUIT" : "PRODUCT"),
     description: header.indexOf("DESCRIPTION"),
-    quantity: header.indexOf("QTY"),
-    price: header.indexOf("PRICE"),
-    value: header.indexOf("VALUE"),
+    quantity: header.indexOf(french ? "QTE" : "QTY"),
+    price: header.indexOf(french ? "PRIX" : "PRICE"),
+    value: header.indexOf(french ? "VALEUR" : "VALUE"),
   };
 }
 
@@ -142,13 +150,11 @@ function parseLines(page, invoiceSubtotal, invoiceTax) {
   const columns = lineColumns(page);
   if (!columns) return [];
   const rows = page.split("\n");
-  const headerIndex = rows.findIndex(
-    (line) => line.includes("SALES NUMBER") && line.includes("DESCRIPTION") && line.includes("VALUE"),
-  );
+  const headerIndex = rows.findIndex(isLineHeader);
   const lines = [];
   let current = null;
   for (const row of rows.slice(headerIndex + 1)) {
-    if (row.includes("Thank You")) break;
+    if (row.includes("Thank You") || /^\s*Merci\b/i.test(row)) break;
     if (row.includes("SUBTOTAL BEFORE TAX") || row.includes("CORRECTED TOTALS")) continue;
     if (/^\s*[.*-]{12,}/.test(row)) continue;
 
@@ -222,12 +228,12 @@ function parseLines(page, invoiceSubtotal, invoiceTax) {
 }
 
 function parseInvoicePage(page, pageNumber) {
-  if (!/\b(?:INVOICE|CREDIT|CORRECT|FACTURE)\b/.test(page) || !page.includes("SALES NUMBER")) return null;
+  if (!/\b(?:INVOICE|CREDIT|CORRECT|FACTURE)\b/.test(page) || !page.split("\n").some(isLineHeader)) return null;
   const invoiceNumber = page.match(/\bNo\.\s*([A-Z0-9-]+)/i)?.[1] ?? null;
-  const accountNumber = page.match(/ACCOUNT:\s*([0-9-]+)/i)?.[1] ?? null;
+  const accountNumber = page.match(/(?:ACCOUNT|COMPTE):\s*([0-9-]+)/i)?.[1] ?? null;
   const storeNumber = page.match(/\bStore\s+(\d+)/i)?.[1] ?? null;
   const invoiceDate = isoDate(page.match(/\bDATE:\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]);
-  const invoiceTime = page.match(/\bTIME:\s*(\d{1,2}:\d{2})\s*(AM|PM)/i);
+  const invoiceTime = page.match(/\b(?:TIME|HEURE):\s*(\d{1,2}:\d{2})\s*(AM|PM)/i);
   const poNumber = page.match(/\bPO#[ \t]*([^\n\r]*)/i)?.[1]?.trim() || null;
   const orderNumber = page.match(/\bORDER:\s*([^\s\n\r]+)/i)?.[1]?.trim() ?? null;
   const subtotalMatch = findLastMatch(
@@ -264,6 +270,7 @@ function parseInvoicePage(page, pageNumber) {
     lines.length > 0;
   const receivedBy =
     page.match(/MERCHANDISE RECEIVED IN GOOD ORDER BY:\s*\n\s*([^\n\r]+)/i)?.[1]?.trim() ??
+    page.match(/MARCHANDISE RECUE EN BON ETAT PAR:\s*\n\s*([^\n\r]+)/i)?.[1]?.trim() ??
     page.match(/ORDERED BY:\s*([^\n\r]+)/i)?.[1]?.trim() ??
     null;
 

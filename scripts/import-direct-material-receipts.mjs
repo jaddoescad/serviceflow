@@ -277,7 +277,115 @@ function parseHomeDepot(file) {
   };
 }
 
+function parseDecoratorsChoice(file) {
+  const text = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" });
+  const page = text.split("\f").find((value) => value.trim()) ?? text;
+  const invoiceNumber = page.match(/\bSale\s+(\d+)\s+\d+\s*$/im)?.[1] ?? null;
+  const dateTime = page.match(/\b(\d{2})\.(\d{2})\.(\d{2})\s+(\d{1,2}:\d{2})\s+(AM|PM)\b/i);
+  const subtotal = money(page.match(/\bSubtotal:\s*([\d,.]+)/i)?.[1]);
+  const tax = money(page.match(/\b13%\s+HST#[^:]*:\s*([\d,.]+)/i)?.[1]);
+  const total = money(page.match(/\bTotal Due:\s*([\d,.]+)/i)?.[1]);
+  if (!invoiceNumber || !dateTime || subtotal == null || tax == null || total == null) {
+    throw new Error(`Could not parse Decorator's Choice receipt ${path.basename(file)}`);
+  }
+
+  const lines = [];
+  let current = null;
+  for (const row of page.split("\n")) {
+    const product = row.match(
+      /^\s*([A-Z0-9-]+)\s+(.+?)\s+([\d,.]+)\s+EA\s+([\d.]+)\s+([\d,.]+)\s*$/i,
+    );
+    if (product && money(product[5]) > 0) {
+      current = {
+        line_number: lines.length + 1,
+        line_type: "product",
+        sales_number: product[1],
+        size: product[2].match(/^([\d.]+L)\b/i)?.[1] ?? null,
+        product_code: product[1],
+        description: product[2].trim(),
+        color_code: null,
+        color_name: null,
+        quantity: Number(product[4]),
+        unit_price: money(product[3]),
+        gross_amount: money(product[5]),
+        discount_amount: 0,
+        amount_before_tax: money(product[5]),
+        source_text: row.trim(),
+        source_payload: { extraction: "source_text_pdf" },
+        needs_review: false,
+      };
+      lines.push(current);
+      continue;
+    }
+    const note = row.match(/^\s*NOTES\s+([A-Z0-9-]+)\s+(.+?)\s+0\.00\s+EA/i);
+    if (current && note) {
+      current.color_code = note[1];
+      current.color_name = note[2].trim();
+      current.source_text += `\n${row.trim()}`;
+    }
+  }
+  if (!lines.length) throw new Error(`No Decorator's Choice products in ${path.basename(file)}`);
+  const lineSubtotal = roundMoney(lines.reduce((sum, line) => sum + line.amount_before_tax, 0));
+  if (Math.abs(lineSubtotal - subtotal) > 0.02) {
+    throw new Error(`Decorator's Choice line subtotal mismatch in ${path.basename(file)}`);
+  }
+
+  const rawHour = Number(dateTime[4].split(":")[0]);
+  const hour = (rawHour % 12) + (dateTime[5].toUpperCase() === "PM" ? 12 : 0);
+  const poNumber = page.match(/^\s*TAG\s+[^\n/]+\/\s*([^\n]+?)\s+0\.00\s+EA/im)?.[1]?.trim() ?? null;
+  const cashier = page.match(/\d{2}\.\d{2}\.\d{2}\s+\d{1,2}:\d{2}\s+(?:AM|PM)\s*\n\s*([^\n]+)/i)?.[1]?.trim() ?? null;
+  return {
+    source_system: "gmail_decorators_choice_receipt",
+    external_invoice_id: `decorators-choice:${invoiceNumber}`,
+    supplier_name: "Decorator's Choice Paint & Decor",
+    account_number: null,
+    job_account: null,
+    invoice_number: invoiceNumber,
+    invoice_type: "cash_receipt",
+    invoice_date: isoCanadianDate(dateTime[3], dateTime[2], dateTime[1]),
+    invoice_time: `${String(hour).padStart(2, "0")}:${dateTime[4].split(":")[1]}:00`,
+    due_on: isoCanadianDate(dateTime[3], dateTime[2], dateTime[1]),
+    po_number: poNumber,
+    order_number: null,
+    store_number: "Innes",
+    store_address: "1495 Innes Road, Ottawa, ON K1B 1C5",
+    received_by: cashier,
+    currency: "CAD",
+    amount_before_tax: subtotal,
+    tax_amount: tax,
+    total_amount: total,
+    extraction_status: "verified",
+    source_text: text,
+    source_payload: { paid_in_full: /Paid in full/i.test(page), original_format: "text_pdf" },
+    lines: allocateTax(lines, tax, subtotal),
+  };
+}
+
 const prestonManifest = {
+  "IMG_6313.jpeg": {
+    original_filename: "IMG_6313.jpeg",
+    supplier_name: "Sherwin-Williams Canada",
+    source_system: "gmail_sherwin_store_receipt",
+    invoice_number: "0449-2",
+    invoice_date: "2025-08-13",
+    invoice_time: "16:59:00",
+    po_number: "SCOTT",
+    amount_before_tax: 166.33,
+    tax_amount: 21.62,
+    total_amount: 187.95,
+    store_number: "768804",
+    store_address: "462 Hazeldean Road, Ottawa, ON K2L 1V3",
+    received_by: "Eliana",
+    lines: [
+      ["6508-65017", "PM 200 0 EG EXTRA 3.8L", 1, 43.95, 43.95, "SW6204", "Sea Salt"],
+      ["6508-65017", "PM 200 0 EG EXTRA 3.8L", 1, 43.95, 43.95, "SW7008", "Alabaster"],
+      ["6501-86950", "PM 200 0 EG ULTRA 3.8L", 1, 43.95, 43.95, "SW6991", "Black Magic"],
+      ["1023-78494", "Peel & Stick Evergreen Fog", 2, 4.95, 8.41, "SW9130", "Evergreen Fog", false, 9.90, -1.49],
+      ["6510-34852", "Master Yellow Stripe 4-inch roller cover", 1, 13.99, 11.89, null, null, false, 13.99, -2.10],
+      ["180-6678", "Frame 16-inch mini roller", 1, 7.19, 6.11, null, null, false, 7.19, -1.08],
+      ["6510-73587", "Sherwin-Williams glove promo pack", 1, 9.49, 8.07, null, null, false, 9.49, -1.42],
+    ],
+  },
   "WhatsApp_Image_2026-03-24_at_1.22.20_PM.jpeg": {
     original_filename: "WhatsApp Image 2026-03-24 at 1.22.20 PM.jpeg",
     supplier_name: "The Home Depot",
@@ -441,8 +549,8 @@ function parsePreston(file, originalFilename) {
     color_name: line[6] ?? null,
     quantity: line[2],
     unit_price: line[3],
-    gross_amount: line[4],
-    discount_amount: 0,
+    gross_amount: line[8] ?? line[4],
+    discount_amount: line[9] ?? 0,
     amount_before_tax: line[4],
     source_text: line.filter(Boolean).join(" · "),
     source_payload: { extraction: "audited_from_source_image_or_pdf" },
@@ -455,6 +563,8 @@ function parsePreston(file, originalFilename) {
       ? `preston:${manifest.invoice_number}`
       : sourceSystem === "gmail_home_depot_receipt"
         ? `home-depot:${manifest.invoice_number}:${manifest.invoice_date}`
+        : sourceSystem === "gmail_sherwin_store_receipt"
+          ? `sherwin-store-receipt:${manifest.invoice_number}:${manifest.invoice_date}`
         : `canadian-tire:${manifest.invoice_number}`;
   return {
     source_system: sourceSystem,
@@ -465,13 +575,13 @@ function parsePreston(file, originalFilename) {
     invoice_number: manifest.invoice_number,
     invoice_type: originalFilename === "InvoiceOR020440.PDF" ? "charge_invoice" : "cash_receipt",
     invoice_date: manifest.invoice_date,
-    invoice_time: null,
+    invoice_time: manifest.invoice_time ?? null,
     due_on: originalFilename === "InvoiceOR020440.PDF" ? null : manifest.invoice_date,
     po_number: manifest.po_number,
     order_number: null,
     store_number: manifest.store_number ?? "PPC-Orleans",
     store_address: manifest.store_address ?? "2023 Tenth Line Road, Orleans, ON K4A 4C5",
-    received_by: null,
+    received_by: manifest.received_by ?? null,
     currency: "CAD",
     amount_before_tax: manifest.amount_before_tax,
     tax_amount: manifest.tax_amount,
@@ -502,7 +612,7 @@ function assertInvoice(invoice, filename) {
 }
 
 function fileMetadata(filename) {
-  const match = filename.match(/^(home-depot|preston)--([^-]+)--(.+)$/);
+  const match = filename.match(/^(home-depot|preston|decorators-choice|sherwin)--([^-]+)--(.+)$/);
   if (!match) throw new Error(`Unexpected supplier filename ${filename}`);
   return { vendor: match[1], messageId: match[2], originalFilename: match[3] };
 }
@@ -510,6 +620,10 @@ function fileMetadata(filename) {
 const sourceFiles = readdirSync(sourceDir)
   .filter((filename) => {
     if (filename.startsWith("home-depot--")) return true;
+    if (filename.startsWith("decorators-choice--")) return true;
+    if (filename.startsWith("sherwin--")) {
+      return Boolean(prestonManifest[fileMetadata(filename).originalFilename]);
+    }
     if (!filename.startsWith("preston--")) return false;
     return Boolean(prestonManifest[fileMetadata(filename).originalFilename]);
   })
@@ -524,15 +638,24 @@ const parsed = sourceFiles.map((filename) => {
         metadata.originalFilename.toLowerCase().endsWith(".html")
         ? parseHomeDepotOrderHtml(filePath)
         : parseHomeDepot(filePath)
-      : parsePreston(filePath, metadata.originalFilename);
+      : metadata.vendor === "decorators-choice"
+        ? parseDecoratorsChoice(filePath)
+        : parsePreston(filePath, metadata.originalFilename);
   assertInvoice(invoice, filename);
   const originalFilename = invoice.source_payload?.original_filename ?? metadata.originalFilename;
   const storageVendor =
     invoice.supplier_name === "The Home Depot"
       ? "home-depot"
+      : invoice.supplier_name === "Sherwin-Williams Canada"
+        ? "sherwin"
       : invoice.supplier_name === "Canadian Tire"
         ? "canadian-tire"
-        : "preston";
+        : invoice.supplier_name === "Decorator's Choice Paint & Decor"
+          ? "decorators-choice"
+          : "preston";
+  const pageCount = metadata.originalFilename.toLowerCase().endsWith(".pdf")
+    ? Number(execFileSync("pdfinfo", [filePath], { encoding: "utf8" }).match(/^Pages:\s+(\d+)/m)?.[1] ?? 1)
+    : 1;
   return {
     ...metadata,
     originalFilename,
@@ -548,6 +671,7 @@ const parsed = sourceFiles.map((filename) => {
             metadata.originalFilename.toLowerCase().endsWith(".html")
           ? "text/html"
           : "image/jpeg",
+    pageCount,
     invoice,
   };
 });
@@ -571,7 +695,7 @@ const report = {
   mode: apply ? "apply" : "dry-run",
   source_files: parsed.length,
   suppliers: Object.fromEntries(
-    ["The Home Depot", "Preston Paint Center", "Canadian Tire"].map((supplier) => [
+    ["The Home Depot", "Preston Paint Center", "Canadian Tire", "Decorator's Choice Paint & Decor", "Sherwin-Williams Canada"].map((supplier) => [
       supplier,
       parsed.filter((file) => file.invoice.supplier_name === supplier).length,
     ]),
@@ -632,7 +756,7 @@ if (apply) {
           content_sha256: file.sha256,
           storage_bucket: "material-invoices",
           storage_path: storagePath,
-          page_count: 1,
+          page_count: file.pageCount,
           extracted_text: file.invoice.source_text,
           source_payload: { gmail_message_id: file.messageId, supplier: file.invoice.supplier_name },
         })
@@ -651,7 +775,7 @@ if (apply) {
           document_id: documentId,
           ...Object.fromEntries(Object.entries(invoice).filter(([key]) => key !== "lines")),
           source_page_start: 1,
-          source_page_end: 1,
+          source_page_end: file.pageCount,
           source_payload: {
             ...invoice.source_payload,
             gmail_message_id: file.messageId,

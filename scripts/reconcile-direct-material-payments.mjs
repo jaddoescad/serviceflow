@@ -45,6 +45,12 @@ function vendorMatches(invoice, transaction) {
   if (invoice.supplier_name === "The Home Depot") return /home depot/.test(text);
   if (invoice.supplier_name === "Preston Paint Center") return /preston paint/.test(text);
   if (invoice.supplier_name === "Canadian Tire") return /canadian tire/.test(text);
+  if (invoice.supplier_name === "Sherwin-Williams Canada") {
+    return /sherwin(?:-williams| williams)/.test(text);
+  }
+  if (invoice.supplier_name === "Decorator's Choice Paint & Decor") {
+    return /decorator.?s choice|decortor.?s choice/.test(text);
+  }
   return false;
 }
 
@@ -86,6 +92,8 @@ const [invoices, transactions, allocations] = await Promise.all([
         "gmail_home_depot_order",
         "gmail_preston_material_receipt",
         "gmail_canadian_tire_receipt",
+        "gmail_decorators_choice_receipt",
+        "gmail_sherwin_store_receipt",
       ])
       .gt("total_amount", 0)
       .order("invoice_date"),

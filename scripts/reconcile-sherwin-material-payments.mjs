@@ -110,7 +110,6 @@ const [documents, invoices, transactions, paymentAllocations, creditAllocations]
           "id,document_id,invoice_number,invoice_date,invoice_time,invoice_type,total_amount,supplier_name",
         )
         .eq("supplier_name", "Sherwin-Williams Canada")
-        .gte("invoice_date", "2025-12-01")
         .order("invoice_date")
         .order("invoice_time"),
     ),
@@ -123,8 +122,6 @@ const [documents, invoices, transactions, paymentAllocations, creditAllocations]
         .eq("transaction_type", "expense")
         .eq("is_transfer", false)
         .lt("amount", 0)
-        .gte("posted_on", "2026-01-01")
-        .lte("posted_on", "2026-07-31")
         .order("posted_on")
         .order("id"),
     ),
@@ -192,7 +189,9 @@ const monthlyAudit = statements.map((statement) => {
 
 const bankGroups = [];
 const assignedBankIds = new Set();
-let previousStatementDate = "2025-12-31";
+let previousStatementDate = statements.length
+  ? datePlusDays(`${statements[0].asOf.slice(0, 7)}-01`, -1)
+  : "0001-01-01";
 for (const statement of statements.filter((row) => row.payments > 0)) {
   const candidates = bankPayments.filter(
     (payment) =>

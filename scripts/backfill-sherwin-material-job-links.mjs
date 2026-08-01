@@ -240,6 +240,58 @@ function matchInvoice(invoice, jobs, projectIdByProposal) {
       candidates: [],
     };
   }
+  const auditedInvoiceProjects = new Map([
+    [
+      "gmail_decorators_choice_receipt|401120|2026-05-12",
+      {
+        proposalId: "2649627",
+        note:
+          "Gmail 19e2142f0e120e13 confirms Joelle Moncrieff's May 13 change order for DripJobs proposal 2649627; this Benjamin Moore receipt and Sherwin invoice 4719-5 share PO JOELLE and OC-45 Swiss Coffee immediately before the May 14 job start",
+      },
+    ],
+    [
+      "sherwin_daily_email|4719-5|2026-05-13",
+      {
+        proposalId: "2649627",
+        note:
+          "Gmail 19e2142f0e120e13 confirms Joelle Moncrieff's May 13 change order for DripJobs proposal 2649627; this invoice and Decorator's Choice receipt 401120 share PO JOELLE and OC-45 Swiss Coffee immediately before the May 14 job start",
+      },
+    ],
+  ]);
+  const auditedProject = auditedInvoiceProjects.get(
+    `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`,
+  );
+  if (auditedProject) {
+    const auditedJob = jobs.find(
+      (job) => String(job.proposal_id) === auditedProject.proposalId,
+    );
+    if (!auditedJob) {
+      throw new Error(
+        `Audited material invoice ${invoice.invoice_number} has no DripJobs proposal ${auditedProject.proposalId}.`,
+      );
+    }
+    const temporal = temporalScore(invoice.invoice_date, auditedJob);
+    return {
+      kind: "matched",
+      job: auditedJob,
+      projectId: projectIdByProposal.get(auditedJob.proposal_uuid),
+      method: "manual",
+      base: 100,
+      temporal,
+      score: 100 + temporal,
+      matchingNote: auditedProject.note,
+      candidates: [
+        {
+          job: auditedJob,
+          projectId: projectIdByProposal.get(auditedJob.proposal_uuid),
+          method: "manual",
+          base: 100,
+          temporal,
+          score: 100 + temporal,
+        },
+      ],
+    };
+  }
   const auditedPoAliases = new Map([
     ["luke nickson", "2372277"],
     ["luck nickson", "2372277"],
