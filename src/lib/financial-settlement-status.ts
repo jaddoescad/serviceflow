@@ -89,7 +89,7 @@ export function resolveSettlementStatus(
     return {
       bucket: "needs_review",
       label: "Needs review",
-      tone: "bad",
+      tone: "warn",
     };
   }
 
@@ -123,7 +123,7 @@ export function resolveSettlementStatus(
     return {
       bucket: "needs_review",
       label: "Needs review",
-      tone: "bad",
+      tone: "warn",
     };
   }
 
@@ -147,14 +147,14 @@ export function resolveSettlementStatus(
     return {
       bucket: "needs_review",
       label: "Needs review",
-      tone: "bad",
+      tone: "warn",
     };
   }
   if (facts.paymentStatus === "unmatched") {
-    return { bucket: "needs_review", label: "Needs review", tone: "bad" };
+    return { bucket: "needs_review", label: "Needs review", tone: "warn" };
   }
   if (facts.paymentStatus === "needs_review") {
-    return { bucket: "needs_review", label: "Needs review", tone: "bad" };
+    return { bucket: "needs_review", label: "Needs review", tone: "warn" };
   }
 
   return { bucket: "needs_review", label: "Needs review", tone: "warn" };

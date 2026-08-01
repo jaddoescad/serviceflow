@@ -89,7 +89,7 @@ test("unmatched payments use the canonical needs-review state", () => {
   assert.deepEqual(result, {
     bucket: "needs_review",
     label: "Needs review",
-    tone: "bad",
+    tone: "warn",
   });
 });
 
@@ -98,8 +98,26 @@ test("unmatched customer income uses the canonical needs-review state", () => {
   assert.deepEqual(result, {
     bucket: "needs_review",
     label: "Needs review",
-    tone: "bad",
+    tone: "warn",
   });
+});
+
+test("every needs-review reason uses the same amber tone", () => {
+  const cases = [
+    { invoiceEvidenceStatus: "invoice_not_found" },
+    { customerRevenueStatus: "partially_allocated" },
+    { customerRevenueStatus: "unmatched" },
+    { paymentStatus: "partially_allocated" },
+    { paymentStatus: "unidentified" },
+    { paymentStatus: "unmatched" },
+    { paymentStatus: "needs_review" },
+  ];
+  for (const facts of cases) {
+    const result = resolveSettlementStatus(facts);
+    assert.equal(result.bucket, "needs_review");
+    assert.equal(result.label, "Needs review");
+    assert.equal(result.tone, "warn");
+  }
 });
 
 test("a complete non-invoice allocation is a custom resolved state", () => {
