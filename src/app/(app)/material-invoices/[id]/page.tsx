@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/kpi";
 import { Badge, Card, CardHeader, Stat, StatGrid } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
+import { materialClassificationLabel } from "@/lib/material-classification";
 import { getMaterialInvoice } from "@/lib/materials";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export default async function MaterialInvoicePage({
         actions={
           <div className="flex items-center gap-2">
             <Badge tone={allocated ? "good" : "warn"}>
-              {allocated ? "Job cost allocated" : "Needs job"}
+              {allocated ? "Fully classified" : "Needs job"}
             </Badge>
             <Badge tone={settled ? "good" : "warn"}>
               {settled
@@ -91,8 +92,8 @@ export default async function MaterialInvoicePage({
 
         <Card className="overflow-hidden">
           <CardHeader
-            title="Invoice lines and job costing"
-            subtitle="Every product line stays tied to its source invoice; unallocated lines do not enter a job cost"
+            title="Invoice lines and cost classification"
+            subtitle="Every product line stays tied to its source invoice; general paint supplies remain separate from job-specific costs"
             right={<Badge tone="neutral">{invoice.lines.length} lines</Badge>}
           />
           <div className="overflow-x-auto">
@@ -105,7 +106,7 @@ export default async function MaterialInvoicePage({
                   <th className="px-4 py-2.5 text-right font-medium">Before HST</th>
                   <th className="px-4 py-2.5 text-right font-medium">HST</th>
                   <th className="px-4 py-2.5 text-right font-medium">Total</th>
-                  <th className="px-4 py-2.5 font-medium">Job / overhead</th>
+                  <th className="px-4 py-2.5 font-medium">Job / classification</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
@@ -153,7 +154,7 @@ export default async function MaterialInvoicePage({
                               </Link>
                             ) : (
                               <span key={allocation.id} className="text-[var(--color-muted)]">
-                                {allocation.overheadCategory ?? "Overhead"}
+                                {materialClassificationLabel(allocation.overheadCategory)}
                               </span>
                             ),
                           )}

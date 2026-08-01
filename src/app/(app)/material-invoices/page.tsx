@@ -38,7 +38,7 @@ export default async function MaterialInvoicesPage() {
           tone={settled ? "good" : "neutral"}
         />
         <Kpi
-          label="Job / overhead allocated"
+          label="Job / general supplies allocated"
           value={allocated}
           hint="line totals fully classified"
           tone={allocated ? "good" : "neutral"}

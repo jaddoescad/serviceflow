@@ -233,7 +233,7 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
   if (["supplies", "shop supplies", "office supplies"].includes(po)) {
     return {
       kind: "overhead",
-      category: "Shop supplies",
+      category: "General paint supplies",
       method: "overhead_rule",
       confidence: 1,
       candidates: [],
@@ -1099,12 +1099,12 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
     [
       "sherwin_daily_email|1281-6|2026-05-27",
       {
-        category: "Mixed overhead",
+        category: "General paint supplies",
         categories: [
-          ["106009", "Shop supplies"],
-          ["559554400", "Shop supplies"],
+          ["106009", "General paint supplies"],
+          ["559554400", "General paint supplies"],
           ["R360", "Tools & equipment"],
-          ["SD150-5", "Shop supplies"],
+          ["SD150-5", "General paint supplies"],
         ],
         evidence:
           "Sherwin-Williams invoice 1281-6 · reusable Radius 360 sanding tool plus unassigned general tape, applicator, and sanding supplies, with no customer or job reference",
@@ -1127,10 +1127,10 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
     [
       "sherwin_daily_email|9704-1|2025-12-15",
       {
-        category: "Mixed overhead",
+        category: "General paint supplies",
         categories: [
           ["CP-040NA", "Tools & equipment"],
-          ["71162", "Shop supplies"],
+          ["71162", "General paint supplies"],
           [null, "Tools & equipment"],
         ],
         evidence:
@@ -1141,10 +1141,10 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
     [
       "sherwin_daily_email|6460-5|2026-03-09",
       {
-        category: "Shop supplies",
+        category: "General paint supplies",
         categories: [
-          ["71164", "Shop supplies"],
-          ["WL41100A", "Shop supplies"],
+          ["71164", "General paint supplies"],
+          ["WL41100A", "General paint supplies"],
         ],
         evidence:
           "Sherwin-Williams invoice 6460-5 · generic DryDex spackling and painter's tape received by crew member Alaa, with no customer, colour, or job reference",
@@ -1154,7 +1154,7 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
     [
       "sherwin_daily_email|7494-0|2026-05-04",
       {
-        category: "Shop supplies",
+        category: "General paint supplies",
         expectedLineCount: 5,
         evidence:
           "Sherwin-Williams invoice 7494-0 · trash bags, general tape, roller frame, tray liners, and reusable tray received by crew member Audrey, with no customer, colour, or job reference",
@@ -1202,7 +1202,7 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
     return null;
   }
   const categoryByProductCode = new Map([
-    ["1000738387", "Shop supplies"],
+    ["1000738387", "General paint supplies"],
     ["1001237109", "Tools & equipment"],
   ]);
   if (
@@ -1213,7 +1213,7 @@ function auditedLineOverheadPlan(invoice, invoiceLines) {
   }
   return {
     kind: "overhead",
-    category: "Mixed overhead",
+    category: "General paint supplies",
     method: "overhead_rule",
     confidence: 1,
     lineOverheadCategories: Object.fromEntries(categoryByProductCode),
@@ -1376,12 +1376,12 @@ const report = {
   ambiguous_invoices: ambiguous.length,
   unmatched_invoices: unmatched.length,
   planned_by_customer: Object.fromEntries(
-    [...new Set(plans.map((plan) => plan.project_name ?? `Overhead: ${plan.overhead_category}`))]
+    [...new Set(plans.map((plan) => plan.project_name ?? plan.overhead_category))]
       .sort()
       .map((name) => [
         name,
         plans.filter(
-          (plan) => (plan.project_name ?? `Overhead: ${plan.overhead_category}`) === name,
+          (plan) => (plan.project_name ?? plan.overhead_category) === name,
         ).length,
       ]),
   ),

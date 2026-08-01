@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, Select } from "@/components/ui";
+import {
+  GENERAL_PAINT_SUPPLIES_LABEL,
+  materialClassificationLabel,
+} from "@/lib/material-classification";
 import type { MaterialInvoiceListRow } from "@/lib/materials";
 
-type JobFilter = "all" | "job" | "overhead" | "needs_job";
+type JobFilter = "all" | "job" | "general_supplies" | "needs_job";
 type PaymentFilter = "all" | "settled" | "open";
 
 const CAD_FORMATTER = new Intl.NumberFormat("en-CA", {
@@ -32,7 +36,7 @@ function jobState(invoice: MaterialInvoiceListRow): Exclude<JobFilter, "all"> {
     return "needs_job";
   }
   if (invoice.jobs.length) return "job";
-  if (invoice.overheadCategories.length) return "overhead";
+  if (invoice.overheadCategories.length) return "general_supplies";
   return "needs_job";
 }
 
@@ -60,8 +64,8 @@ function jobLabel(invoice: MaterialInvoiceListRow) {
   if (state === "needs_job") {
     return { label: "Needs job", tone: "warn" as const };
   }
-  if (state === "overhead") {
-    return { label: "Overhead", tone: "neutral" as const };
+  if (state === "general_supplies") {
+    return { label: GENERAL_PAINT_SUPPLIES_LABEL, tone: "neutral" as const };
   }
   return {
     label:
@@ -100,6 +104,9 @@ export function MaterialInvoicesTable({
           invoice.documentFilename,
           ...invoice.jobs.map((item) => item.name),
           ...invoice.overheadCategories,
+          ...(invoice.overheadCategories.length
+            ? [GENERAL_PAINT_SUPPLIES_LABEL]
+            : []),
         ]
           .join(" ")
           .toLocaleLowerCase("en-CA")
@@ -132,7 +139,7 @@ export function MaterialInvoicesTable({
         >
           <option value="all">All job states</option>
           <option value="job">Connected to job</option>
-          <option value="overhead">Overhead</option>
+          <option value="general_supplies">General paint supplies</option>
           <option value="needs_job">Needs job</option>
         </Select>
         <Select
@@ -170,7 +177,7 @@ export function MaterialInvoicesTable({
                 <th className="px-4 py-2.5 text-right font-medium">Before HST</th>
                 <th className="px-4 py-2.5 text-right font-medium">HST</th>
                 <th className="px-4 py-2.5 text-right font-medium">After HST</th>
-                <th className="px-4 py-2.5 font-medium">Job costing</th>
+                <th className="px-4 py-2.5 font-medium">Cost classification</th>
                 <th className="px-4 py-2.5 font-medium">Settlement</th>
               </tr>
             </thead>
@@ -203,7 +210,9 @@ export function MaterialInvoicesTable({
                       </div>
                       <div className="mt-0.5 truncate text-xs text-[var(--color-muted)]">
                         {invoice.jobs.map((item) => item.name).join(", ") ||
-                          invoice.overheadCategories.join(", ") ||
+                          invoice.overheadCategories
+                            .map(materialClassificationLabel)
+                            .join(", ") ||
                           "No allocation"}
                       </div>
                     </td>
