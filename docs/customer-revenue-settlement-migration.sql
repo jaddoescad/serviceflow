@@ -2,6 +2,13 @@
 --
 -- Source-of-truth rules:
 --   * customer_invoices and their children preserve the DripJobs source.
+--   * one DripJobs proposal UUID is one accounting job, even when CompanyCam
+--     is missing or one CompanyCam project is reused for multiple proposals.
+--   * companycam_project_id is a legacy compatibility key. A value such as
+--     dripjobs-<proposal id> is used when a separate accounting identity is
+--     required; CompanyCam remains supporting operational evidence.
+--   * the archived physical invoice subtotal is the pre-HST job value used by
+--     project_budgets. Neither the proposal estimate nor invoice gross is used.
 --   * financial_transactions remains the bank-ledger source.
 --   * customer_invoice_bank_allocations is the only settlement bridge.
 --   * allocations are append-only; corrections are explicit reversals.

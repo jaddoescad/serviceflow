@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { buildDripJobsProjectIdentity } from "./lib/dripjobs-job-identity.mjs";
 
 const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
 const SOURCE_SYSTEM = "dripjobs";
@@ -261,21 +262,8 @@ const [projects, transactions, existingAllocations] = await Promise.all([
 const projectsById = new Map(
   projects.map((project) => [String(project.companycam_id), project]),
 );
-const projectIdByProposal = new Map();
-for (const job of jobs) {
-  const explicitId = job.companycam_project_id
-    ? String(job.companycam_project_id)
-    : null;
-  if (explicitId && !projectsById.has(explicitId)) {
-    throw new Error(
-      `DripJobs proposal ${job.proposal_id} links missing CompanyCam project ${explicitId}.`,
-    );
-  }
-  projectIdByProposal.set(
-    job.proposal_uuid,
-    explicitId ?? `dripjobs-${job.proposal_id}`,
-  );
-}
+const { projectIdByProposal, collisions: companyCamReuseCollisions } =
+  buildDripJobsProjectIdentity(jobs, new Set(projectsById.keys()));
 
 const projectsToCreate = jobs.filter(
   (job) => !projectsById.has(projectIdByProposal.get(job.proposal_uuid)),
@@ -383,6 +371,7 @@ const plan = {
     resolved_invoice_projects: new Set(
       invoices.map((invoice) => projectIdByProposal.get(invoice.proposal_uuid)),
     ).size,
+    companycam_reuse_collisions: companyCamReuseCollisions,
   },
   bank_matching: {
     painting_revenue_rows: transactions.length,
