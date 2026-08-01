@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CustomerRevenueTransactionEvidence } from "@/components/customer-revenue-evidence";
-import { FinancialSettlementControl } from "@/components/financial-settlement-control";
 import { PaymentEvidence } from "@/components/settlement-evidence";
 import { StatusText } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
@@ -37,7 +36,6 @@ export default async function FinancialTransactionEvidencePage({
       }
     : null;
   const settlement = resolveSettlementStatus({
-    manualResolution: payment.transaction.manual_settlement_resolution,
     transferCancelled: payment.transaction.transfer_cancelled,
     customerExceptionKind:
       payment.transaction.customer_revenue_exception_kind,
@@ -57,10 +55,12 @@ export default async function FinancialTransactionEvidencePage({
       payment.transaction.expense_evidence_status === "bank_supported_no_itc",
     expenseEvidenceLabel:
       payment.transaction.expense_evidence_status === "bank_supported_no_itc"
-        ? payment.transaction.transaction_type === "credit"
-          ? "Subscription credit"
-          : "Software expense"
+        ? payment.transaction.expense_evidence_label ??
+          (payment.transaction.transaction_type === "credit"
+            ? "Subscription credit"
+            : "Documented expense")
         : null,
+    documentExceptionLabel: payment.transaction.document_exception_label,
     noDocumentRequired: payment.transaction.category === "Bank fees",
     paymentStatus: payment.verification?.payment_status ?? null,
     invoiceAllocatedAmount: payment.verification?.invoice_allocated_amount,
@@ -110,14 +110,6 @@ export default async function FinancialTransactionEvidencePage({
           {payment.transaction.account_name} ••••{" "}
           {payment.transaction.account_last_four ?? "—"}
         </p>
-      </div>
-      <div className="mb-4">
-        <FinancialSettlementControl
-          transactionId={payment.transaction.id}
-          bucket={settlement.bucket}
-          label={settlement.label}
-          manualResolution={payment.transaction.manual_settlement_resolution}
-        />
       </div>
       {customerRevenue ? (
         <CustomerRevenueTransactionEvidence

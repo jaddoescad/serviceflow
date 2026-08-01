@@ -15,6 +15,22 @@ test("a legacy reviewed flag cannot create a settlement", () => {
   });
 });
 
+test("a legacy manual override cannot create a settlement", () => {
+  assert.deepEqual(
+    resolveSettlementStatus({
+      manualResolution: {
+        status: "confirmed",
+        label: "No invoice",
+      },
+    }),
+    {
+      bucket: "needs_review",
+      label: "Needs review",
+      tone: "warn",
+    },
+  );
+});
+
 test("complete invoice allocations are fully matched", () => {
   assert.equal(
     resolveSettlementStatus({
@@ -25,20 +41,29 @@ test("complete invoice allocations are fully matched", () => {
   );
 });
 
-test("manual no-invoice evidence is a custom resolved state", () => {
+test("stored invoice evidence creates a custom no-invoice state", () => {
   const result = resolveSettlementStatus({
-    manualResolution: {
-      status: "confirmed",
-      kind: "no_invoice",
-      label: "No invoice",
-      note: "Owner confirmed no supplier invoice exists.",
-      amount: 5193.05,
-      confirmed_by: "admin",
-      confirmed_at: "2026-08-01T12:00:00.000Z",
-    },
+    invoiceEvidenceStatus: "no_invoice_provided",
   });
   assert.equal(result.bucket, "custom");
   assert.equal(result.label, "No invoice");
+});
+
+test("bank-supported overhead uses its accounting label", () => {
+  const result = resolveSettlementStatus({
+    expenseEvidenceConfirmed: true,
+    expenseEvidenceLabel: "Recruiting expense",
+  });
+  assert.equal(result.bucket, "custom");
+  assert.equal(result.label, "Recruiting expense");
+});
+
+test("a credit-card transfer is a documented custom state", () => {
+  const result = resolveSettlementStatus({
+    documentExceptionLabel: "Credit card payment",
+  });
+  assert.equal(result.bucket, "custom");
+  assert.equal(result.label, "Credit card payment");
 });
 
 test("an invoice that should exist but was not found remains in review", () => {
@@ -57,4 +82,3 @@ test("a complete non-invoice allocation is a custom resolved state", () => {
   assert.equal(result.bucket, "custom");
   assert.equal(result.label, "Settled without invoice");
 });
-

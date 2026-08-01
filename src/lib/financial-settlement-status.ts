@@ -1,59 +1,6 @@
 export type SettlementBucket = "fully_matched" | "needs_review" | "custom";
 
-export type ManualSettlementKind =
-  | "no_invoice"
-  | "sales_commission"
-  | "customer_refund"
-  | "owner_transfer"
-  | "bank_or_processing_fee"
-  | "other_documented";
-
-export const manualSettlementOptions: ReadonlyArray<{
-  value: ManualSettlementKind;
-  label: string;
-}> = [
-  { value: "no_invoice", label: "No invoice" },
-  { value: "sales_commission", label: "Sales commission" },
-  { value: "customer_refund", label: "Customer refund" },
-  { value: "owner_transfer", label: "Owner / employee transfer" },
-  { value: "bank_or_processing_fee", label: "Bank / processing fee" },
-  { value: "other_documented", label: "Other documented reason" },
-];
-
-export type ManualSettlementResolution = {
-  status: "confirmed";
-  kind: ManualSettlementKind;
-  label: string;
-  note: string;
-  amount: number;
-  confirmed_by: string;
-  confirmed_at: string;
-};
-
-export function parseManualSettlementResolution(
-  value: unknown,
-): ManualSettlementResolution | null {
-  if (value == null || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const candidate = value as Record<string, unknown>;
-  if (
-    candidate.status !== "confirmed" ||
-    typeof candidate.kind !== "string" ||
-    !manualSettlementOptions.some((option) => option.value === candidate.kind) ||
-    typeof candidate.label !== "string" ||
-    typeof candidate.note !== "string" ||
-    typeof candidate.amount !== "number" ||
-    typeof candidate.confirmed_by !== "string" ||
-    typeof candidate.confirmed_at !== "string"
-  ) {
-    return null;
-  }
-  return candidate as ManualSettlementResolution;
-}
-
 export type SettlementFacts = {
-  manualResolution?: ManualSettlementResolution | null;
   transferCancelled?: boolean;
   customerExceptionKind?: string | null;
   customerExceptionNeedsReview?: boolean;
@@ -70,6 +17,7 @@ export type SettlementFacts = {
     | null;
   expenseEvidenceConfirmed?: boolean;
   expenseEvidenceLabel?: string | null;
+  documentExceptionLabel?: string | null;
   noDocumentRequired?: boolean;
   paymentStatus?:
     | "unidentified"
@@ -112,14 +60,6 @@ function customerExceptionLabel(kind: string) {
 export function resolveSettlementStatus(
   facts: SettlementFacts,
 ): SettlementDisplay {
-  if (facts.manualResolution?.status === "confirmed") {
-    return {
-      bucket: "custom",
-      label: facts.manualResolution.label,
-      tone: "neutral",
-    };
-  }
-
   if (facts.transferCancelled) {
     return { bucket: "custom", label: "Cancelled", tone: "neutral" };
   }
@@ -157,6 +97,14 @@ export function resolveSettlementStatus(
     return {
       bucket: "custom",
       label: facts.expenseEvidenceLabel ?? "Documented expense",
+      tone: "neutral",
+    };
+  }
+
+  if (facts.documentExceptionLabel) {
+    return {
+      bucket: "custom",
+      label: facts.documentExceptionLabel,
       tone: "neutral",
     };
   }
@@ -223,9 +171,10 @@ export type TransactionSettlementInput = {
       | "partial_no_invoice_residual"
       | null;
     expense_evidence_status: "bank_supported_no_itc" | null;
+    expense_evidence_label: string | null;
+    document_exception_label: string | null;
     customer_revenue_exception_kind: string | null;
     customer_revenue_exception_needs_review: boolean;
-    manual_settlement_resolution: ManualSettlementResolution | null;
   };
   evidence: Array<{ kind: string }>;
   payment_verification: {
@@ -248,8 +197,6 @@ export function getTransactionSettlementStatus(
   transaction: TransactionSettlementInput,
 ): SettlementDisplay {
   return resolveSettlementStatus({
-    manualResolution:
-      transaction.source_details.manual_settlement_resolution,
     transferCancelled:
       transaction.source_details.transfer_status === "cancelled",
     customerExceptionKind:
@@ -268,10 +215,13 @@ export function getTransactionSettlementStatus(
     expenseEvidenceLabel:
       transaction.source_details.expense_evidence_status ===
       "bank_supported_no_itc"
-        ? transaction.transaction_type === "credit"
-          ? "Subscription credit"
-          : "Software expense"
+        ? transaction.source_details.expense_evidence_label ??
+          (transaction.transaction_type === "credit"
+            ? "Subscription credit"
+            : "Documented expense")
         : null,
+    documentExceptionLabel:
+      transaction.source_details.document_exception_label,
     noDocumentRequired: transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     ),

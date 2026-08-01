@@ -1,8 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  parseManualSettlementResolution,
-  type ManualSettlementResolution,
-} from "@/lib/financial-settlement-status";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -151,10 +147,13 @@ export type LabourPaymentEvidence = {
     partial_no_invoice_residual: boolean;
     expense_evidence_status: "bank_supported_no_itc" | null;
     expense_evidence_vendor: string | null;
+    expense_evidence_label: string | null;
+    expense_evidence_detail: string | null;
+    document_exception_label: string | null;
+    document_exception_detail: string | null;
     customer_revenue_exception_kind: string | null;
     customer_revenue_exception_detail: string | null;
     customer_revenue_exception_needs_review: boolean;
-    manual_settlement_resolution: ManualSettlementResolution | null;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -641,6 +640,13 @@ export async function getLabourPaymentEvidence(
       expense_evidence?: {
         status?: string;
         vendor?: string;
+        label?: string;
+        detail?: string;
+      };
+      document_exception?: {
+        status?: string;
+        label?: string;
+        detail?: string;
       };
       customer_revenue_exception?: {
         status?: string;
@@ -648,7 +654,6 @@ export async function getLabourPaymentEvidence(
         resolution?: string;
         review?: boolean;
       };
-      manual_settlement_resolution?: unknown;
     } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
@@ -712,6 +717,24 @@ export async function getLabourPaymentEvidence(
         typeof transaction.source_data?.expense_evidence?.vendor === "string"
           ? transaction.source_data.expense_evidence.vendor
           : null,
+      expense_evidence_label:
+        typeof transaction.source_data?.expense_evidence?.label === "string"
+          ? transaction.source_data.expense_evidence.label
+          : null,
+      expense_evidence_detail:
+        typeof transaction.source_data?.expense_evidence?.detail === "string"
+          ? transaction.source_data.expense_evidence.detail
+          : null,
+      document_exception_label:
+        transaction.source_data?.document_exception?.status === "confirmed" &&
+        typeof transaction.source_data.document_exception.label === "string"
+          ? transaction.source_data.document_exception.label
+          : null,
+      document_exception_detail:
+        transaction.source_data?.document_exception?.status === "confirmed" &&
+        typeof transaction.source_data.document_exception.detail === "string"
+          ? transaction.source_data.document_exception.detail
+          : null,
       customer_revenue_exception_kind:
         transaction.source_data?.customer_revenue_exception?.status ===
           "confirmed" &&
@@ -730,9 +753,6 @@ export async function getLabourPaymentEvidence(
         transaction.source_data?.customer_revenue_exception?.status ===
           "confirmed" &&
         transaction.source_data.customer_revenue_exception.review === true,
-      manual_settlement_resolution: parseManualSettlementResolution(
-        transaction.source_data?.manual_settlement_resolution,
-      ),
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

@@ -1,8 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  parseManualSettlementResolution,
-  type ManualSettlementResolution,
-} from "@/lib/financial-settlement-status";
 
 export type FinancialAccount = {
   id: string;
@@ -58,9 +54,12 @@ export type FinancialSourceDetails = {
     | null;
   expense_evidence_status: "bank_supported_no_itc" | null;
   expense_evidence_vendor: string | null;
+  expense_evidence_label: string | null;
+  expense_evidence_detail: string | null;
+  document_exception_label: string | null;
+  document_exception_detail: string | null;
   customer_revenue_exception_kind: string | null;
   customer_revenue_exception_needs_review: boolean;
-  manual_settlement_resolution: ManualSettlementResolution | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -133,8 +132,8 @@ type FinancialSourceData = {
   confirmed_overpayment?: unknown;
   reconciliation_research?: unknown;
   expense_evidence?: unknown;
+  document_exception?: unknown;
   customer_revenue_exception?: unknown;
-  manual_settlement_resolution?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -201,6 +200,24 @@ function normalizeSourceDetails(
     expenseEvidence && "vendor" in expenseEvidence
       ? expenseEvidence.vendor
       : null;
+  const expenseEvidenceLabel =
+    expenseEvidence && "label" in expenseEvidence
+      ? expenseEvidence.label
+      : null;
+  const expenseEvidenceDetail =
+    expenseEvidence && "detail" in expenseEvidence
+      ? expenseEvidence.detail
+      : null;
+  const documentException =
+    sourceData?.document_exception &&
+    typeof sourceData.document_exception === "object" &&
+    !Array.isArray(sourceData.document_exception)
+      ? sourceData.document_exception
+      : null;
+  const documentExceptionStatus =
+    documentException && "status" in documentException
+      ? documentException.status
+      : null;
   const customerRevenueException =
     sourceData?.customer_revenue_exception &&
     typeof sourceData.customer_revenue_exception === "object" &&
@@ -211,9 +228,6 @@ function normalizeSourceDetails(
     customerRevenueException && "status" in customerRevenueException
       ? customerRevenueException.status
       : null;
-  const manualResolution = parseManualSettlementResolution(
-    sourceData?.manual_settlement_resolution,
-  );
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -245,6 +259,20 @@ function normalizeSourceDetails(
         ? "bank_supported_no_itc"
         : null,
     expense_evidence_vendor: stringValue(expenseEvidenceVendor),
+    expense_evidence_label: stringValue(expenseEvidenceLabel),
+    expense_evidence_detail: stringValue(expenseEvidenceDetail),
+    document_exception_label:
+      documentExceptionStatus === "confirmed" &&
+      documentException != null &&
+      "label" in documentException
+        ? stringValue(documentException.label)
+        : null,
+    document_exception_detail:
+      documentExceptionStatus === "confirmed" &&
+      documentException != null &&
+      "detail" in documentException
+        ? stringValue(documentException.detail)
+        : null,
     customer_revenue_exception_kind:
       customerRevenueExceptionStatus === "confirmed" &&
       customerRevenueException != null &&
@@ -256,7 +284,6 @@ function normalizeSourceDetails(
       customerRevenueException != null &&
       "review" in customerRevenueException &&
       customerRevenueException.review === true,
-    manual_settlement_resolution: manualResolution,
   };
 }
 
@@ -305,13 +332,29 @@ function buildEvidence(
     evidence.push({
       kind: "business_expense",
       label:
-        transaction.transaction_type === "credit"
+        sourceDetails.expense_evidence_label ??
+        (transaction.transaction_type === "credit"
           ? `${vendor} subscription credit`
-          : `${vendor} software subscription`,
+          : `${vendor} software subscription`),
       detail:
-        transaction.transaction_type === "credit"
+        sourceDetails.expense_evidence_detail ??
+        (transaction.transaction_type === "credit"
           ? "The posted business credit-card record confirms this vendor credit. It offsets software overhead; no HST adjustment is claimed without a supplier credit note."
-          : "The posted business credit-card record confirms the vendor and amount. It is software overhead; no HST input tax credit is claimed without a supplier receipt.",
+          : "The posted business credit-card record confirms the vendor and amount. It is software overhead; no HST input tax credit is claimed without a supplier receipt."),
+      status: "confirmed",
+      amount: Math.abs(Number(transaction.amount)),
+      href: null,
+      filename: transaction.financial_imports.original_filename,
+    });
+  }
+
+  if (sourceDetails.document_exception_label) {
+    evidence.push({
+      kind: "no_document_required",
+      label: sourceDetails.document_exception_label,
+      detail:
+        sourceDetails.document_exception_detail ??
+        "The posted bank record is the supporting evidence; no separate supplier document is required.",
       status: "confirmed",
       amount: Math.abs(Number(transaction.amount)),
       href: null,
