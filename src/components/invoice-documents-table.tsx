@@ -11,6 +11,7 @@ import type {
 
 type TypeFilter = "all" | InvoiceEntryType;
 type JobFilter = "all" | "assigned" | "needs_job" | "overhead";
+type Tone = "neutral" | "good" | "warn" | "bad" | "brand";
 type InvoiceGroup = {
   id: string;
   invoice: InvoiceEntryRecord["invoice"];
@@ -37,6 +38,14 @@ const TYPE_ORDER: InvoiceEntryType[] = [
   "unclassified",
 ];
 
+const TONE_COLORS: Record<Tone, string> = {
+  neutral: "var(--color-muted)",
+  good: "var(--color-good)",
+  warn: "var(--color-warn)",
+  bad: "var(--color-bad)",
+  brand: "var(--color-brand-strong)",
+};
+
 function money(value: number, currency: string) {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
@@ -48,34 +57,42 @@ function invoiceDate(invoice: InvoiceGroup["invoice"]) {
   return invoice.invoice_date ?? invoice.source_date ?? "";
 }
 
-function paymentLabel(invoice: InvoiceGroup["invoice"]) {
-  if (invoice.payment_status === "paid") return "Paid";
+function paymentStatus(invoice: InvoiceGroup["invoice"]): {
+  label: string;
+  tone: Tone;
+} {
+  if (invoice.payment_status === "paid") return { label: "Paid", tone: "good" };
   if (invoice.payment_status === "partially_paid") {
-    return `${money(invoice.paid_amount, invoice.currency)} matched`;
+    return {
+      label: `${money(invoice.paid_amount, invoice.currency)} matched`,
+      tone: "warn",
+    };
   }
-  if (invoice.payment_status === "overpaid") return "Overpaid";
-  return "Unpaid";
+  if (invoice.payment_status === "overpaid") {
+    return { label: "Overpaid", tone: "bad" };
+  }
+  return { label: "Unpaid", tone: "neutral" };
 }
 
-function evidenceSummary(invoice: InvoiceGroup) {
+function evidenceSummary(invoice: InvoiceGroup): { label: string; tone: Tone } {
   if (
     invoice.entries.some(
       (entry) => entry.source_kind === "legacy_invoice_total",
     )
   ) {
-    return { label: "Items need extraction", tone: "bad" as const };
+    return { label: "Needs extraction", tone: "bad" };
   }
   if (
     invoice.entries.some(
       (entry) => entry.source_kind === "legacy_project_link",
     )
   ) {
-    return { label: "Derived items", tone: "warn" as const };
+    return { label: "Derived items", tone: "warn" };
   }
   if (invoice.entries.every((entry) => entry.source_kind === "extracted")) {
-    return { label: "Exact source items", tone: "good" as const };
+    return { label: "Exact items", tone: "good" };
   }
-  return { label: "Manually entered", tone: "brand" as const };
+  return { label: "Manual entry", tone: "brand" };
 }
 
 function jobStatusForEntry(entry: InvoiceEntryRecord): Exclude<JobFilter, "all"> {
@@ -93,6 +110,14 @@ function entryMatchesQuery(entry: InvoiceEntryRecord, query: string) {
     .join(" ")
     .toLocaleLowerCase("en-CA")
     .includes(query);
+}
+
+function quantityLabel(entry: InvoiceEntryRecord) {
+  if (entry.quantity_hours != null) return fmtHours(entry.quantity_hours);
+  if (entry.quantity != null) {
+    return `${entry.quantity.toLocaleString("en-CA")} ${entry.unit ?? ""}`.trim();
+  }
+  return null;
 }
 
 function jobLinkCounts(entries: InvoiceEntryRecord[]) {
@@ -127,6 +152,19 @@ function groupInvoices(entries: InvoiceEntryRecord[]): InvoiceGroup[] {
         "en-CA",
         { numeric: true },
       ),
+  );
+}
+
+function StatusDot({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-[var(--color-text)]">
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: TONE_COLORS[tone] }}
+      />
+      {children}
+    </span>
   );
 }
 
@@ -294,28 +332,26 @@ export function InvoiceDocumentsTable({
 
       {filtered.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1340px] text-left text-sm">
-            <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
+          <table className="w-full min-w-[1240px] text-left text-[13px]">
+            <thead className="border-b border-[var(--color-border)] text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
               <tr>
-                <th className="w-10 px-4 py-3 font-medium" aria-label="Expand" />
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Invoice owner</th>
-                <th className="px-4 py-3 font-medium">Supplier / invoice</th>
-                <th className="px-4 py-3 text-right font-medium">
-                  Items shown
+                <th className="w-10 px-3 py-2.5 font-medium" aria-label="Expand" />
+                <th className="w-24 px-3 py-2.5 font-medium">Date</th>
+                <th className="px-3 py-2.5 font-medium">Invoice owner</th>
+                <th className="px-3 py-2.5 font-medium">Supplier / invoice</th>
+                <th className="px-3 py-2.5 text-right font-medium">Items</th>
+                <th className="px-3 py-2.5 font-medium">Job links</th>
+                <th className="border-l border-[var(--color-border)] px-3 py-2.5 text-right font-medium">
+                  Before HST
                 </th>
-                <th className="px-4 py-3 font-medium">Job links</th>
-                <th className="px-4 py-3 text-right font-medium">
-                  Invoice before HST
+                <th className="px-3 py-2.5 text-right font-medium">HST</th>
+                <th className="px-3 py-2.5 text-right font-medium">
+                  After HST
                 </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  Invoice HST
+                <th className="border-l border-[var(--color-border)] px-3 py-2.5 font-medium">
+                  Payment
                 </th>
-                <th className="px-4 py-3 text-right font-medium">
-                  Invoice after HST
-                </th>
-                <th className="px-4 py-3 font-medium">Payment</th>
-                <th className="px-4 py-3 font-medium">Evidence</th>
+                <th className="px-3 py-2.5 font-medium">Evidence</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
@@ -379,9 +415,12 @@ function InvoiceRows({
   invoice: InvoiceGroup;
   visibleEntries: InvoiceEntryRecord[];
   expanded: boolean;
-  evidence: ReturnType<typeof evidenceSummary>;
+  evidence: { label: string; tone: Tone };
   onToggle: () => void;
 }) {
+  const counts = jobLinkCounts(invoice.entries);
+  const payment = paymentStatus(invoice.invoice);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -396,246 +435,179 @@ function InvoiceRows({
         onClick={onToggle}
         onKeyDown={handleKeyDown}
         className={cn(
-          "cursor-pointer align-top outline-none hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-brand-soft)]",
+          "cursor-pointer align-top outline-none transition-colors hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-brand-soft)]",
           expanded && "bg-[var(--color-surface-2)]",
         )}
       >
-        <td className="px-4 py-3 text-[var(--color-brand-strong)]">
-          <span aria-hidden="true">{expanded ? "▾" : "›"}</span>
+        <td className="px-3 py-3.5">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] text-[var(--color-muted)] transition-transform",
+              expanded &&
+                "rotate-90 bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]",
+            )}
+          >
+            ›
+          </span>
         </td>
-        <td className="whitespace-nowrap px-4 py-3 tabular-nums text-[var(--color-muted)]">
+        <td className="whitespace-nowrap px-3 py-3.5 text-xs tabular-nums text-[var(--color-muted)]">
           {fmtDate(invoiceDate(invoice.invoice))}
         </td>
-        <td className="max-w-[190px] px-4 py-3 font-medium text-[var(--color-heading)]">
+        <td
+          className="max-w-[170px] truncate px-3 py-3.5 text-[var(--color-text)]"
+          title={invoice.invoice.owner_name}
+        >
           {invoice.invoice.owner_name}
         </td>
-        <td className="max-w-[240px] px-4 py-3">
+        <td className="max-w-[240px] px-3 py-3.5">
           <Link
             href={`/invoices/${encodeURIComponent(invoice.id)}`}
             onClick={(event) => event.stopPropagation()}
-            className="font-medium text-[var(--color-brand-strong)] hover:underline"
+            className="text-sm font-medium text-[var(--color-brand-strong)] hover:underline"
           >
             {invoice.invoice.supplier_name}
           </Link>
-          <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Invoice #{invoice.invoice.invoice_number}
+          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
+            <span>#{invoice.invoice.invoice_number}</span>
+            {invoice.invoice.duplicate_group_size > 1 ? (
+              <span className="font-medium text-[var(--color-warn)]">
+                Duplicate
+              </span>
+            ) : null}
           </div>
-          {invoice.invoice.duplicate_group_size > 1 ? (
-            <div className="mt-1">
-              <Badge tone="warn">Version / duplicate</Badge>
-            </div>
-          ) : null}
         </td>
-        <td className="px-4 py-3 text-right tabular-nums">
+        <td className="whitespace-nowrap px-3 py-3.5 text-right tabular-nums text-[var(--color-muted)]">
           {visibleEntries.length === invoice.entries.length
             ? invoice.entries.length
             : `${visibleEntries.length} of ${invoice.entries.length}`}
         </td>
-        <td className="max-w-[210px] px-4 py-3">
-          <JobLinkSummary entries={invoice.entries} />
+        <td className="whitespace-nowrap px-3 py-3.5 text-[11px] font-medium leading-4">
+          {counts.assigned ? (
+            <div className="text-[var(--color-good)]">
+              {counts.assigned} connected
+            </div>
+          ) : null}
+          {counts.needs_job ? (
+            <div className="text-[var(--color-warn)]">
+              {counts.needs_job} need{counts.needs_job === 1 ? "s" : ""} job
+            </div>
+          ) : null}
+          {counts.overhead ? (
+            <div className="text-[var(--color-muted)]">
+              {counts.overhead} overhead
+            </div>
+          ) : null}
         </td>
-        <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
+        <td className="whitespace-nowrap border-l border-[var(--color-border)] px-3 py-3.5 text-right tabular-nums text-[var(--color-text)]">
           {money(
             invoice.invoice.amount_before_tax,
             invoice.invoice.currency,
           )}
         </td>
-        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+        <td className="whitespace-nowrap px-3 py-3.5 text-right tabular-nums text-[var(--color-muted)]">
           {money(invoice.invoice.tax_amount, invoice.invoice.currency)}
         </td>
-        <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">
+        <td className="whitespace-nowrap px-3 py-3.5 text-right font-semibold tabular-nums text-[var(--color-heading)]">
           {money(
             invoice.invoice.amount_after_tax,
             invoice.invoice.currency,
           )}
         </td>
-        <td className="whitespace-nowrap px-4 py-3">
-          <Badge
-            tone={
-              invoice.invoice.payment_status === "paid"
-                ? "good"
-                : invoice.invoice.payment_status === "partially_paid"
-                  ? "warn"
-                  : invoice.invoice.payment_status === "overpaid"
-                    ? "bad"
-                    : "neutral"
-            }
-          >
-            {paymentLabel(invoice.invoice)}
-          </Badge>
-          {invoice.invoice.payments.map((payment) => (
+        <td className="whitespace-nowrap border-l border-[var(--color-border)] px-3 py-3.5">
+          <StatusDot tone={payment.tone}>{payment.label}</StatusDot>
+          {invoice.invoice.payments.map((paymentLink) => (
             <Link
-              key={payment.financial_transaction_id}
+              key={paymentLink.financial_transaction_id}
               href={`/financials/transactions/${encodeURIComponent(
-                payment.financial_transaction_id,
+                paymentLink.financial_transaction_id,
               )}`}
               onClick={(event) => event.stopPropagation()}
-              className="mt-1 block text-[11px] font-medium text-[var(--color-brand-strong)] hover:underline"
+              className="mt-1 block pl-3 text-[11px] font-medium text-[var(--color-brand-strong)] hover:underline"
             >
-              Bank {fmtDate(payment.posted_on)} →
+              Bank {fmtDate(paymentLink.posted_on)} →
             </Link>
           ))}
         </td>
-        <td className="whitespace-nowrap px-4 py-3">
-          <Badge tone={evidence.tone}>{evidence.label}</Badge>
+        <td className="whitespace-nowrap px-3 py-3.5">
+          <StatusDot tone={evidence.tone}>{evidence.label}</StatusDot>
         </td>
       </tr>
-      {expanded ? (
-        <tr>
-          <td colSpan={11} className="bg-[var(--color-bg)] px-6 py-4">
-            <InvoiceItems invoice={invoice} entries={visibleEntries} />
-          </td>
-        </tr>
-      ) : null}
+      {expanded
+        ? visibleEntries.map((entry) => (
+            <EntryRow key={entry.id} entry={entry} />
+          ))
+        : null}
     </>
   );
 }
 
-function JobLinkSummary({ entries }: { entries: InvoiceEntryRecord[] }) {
-  const counts = jobLinkCounts(entries);
+function EntryRow({ entry }: { entry: InvoiceEntryRecord }) {
+  const quantity = quantityLabel(entry);
   return (
-    <div className="flex flex-wrap gap-1">
-      {counts.assigned ? (
-        <Badge tone="good">{counts.assigned} connected</Badge>
-      ) : null}
-      {counts.needs_job ? (
-        <Badge tone="warn">{counts.needs_job} not connected</Badge>
-      ) : null}
-      {counts.overhead ? (
-        <Badge tone="neutral">{counts.overhead} overhead</Badge>
-      ) : null}
-    </div>
-  );
-}
-
-function InvoiceItems({
-  invoice,
-  entries,
-}: {
-  invoice: InvoiceGroup;
-  entries: InvoiceEntryRecord[];
-}) {
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="flex items-center justify-between gap-4 border-b border-[var(--color-border)] px-4 py-3">
-        <div>
-          <div className="text-sm font-semibold text-[var(--color-heading)]">
-            Invoice items
-          </div>
-          <div className="mt-0.5 text-xs text-[var(--color-muted)]">
-            {entries.length === invoice.entries.length
-              ? `${entries.length} entries · ${invoice.invoice.original_filename}`
-              : `Showing ${entries.length} of ${invoice.entries.length} entries · ${invoice.invoice.original_filename}`}
-          </div>
-        </div>
+    <tr className="bg-[var(--color-bg)] align-top">
+      <td className="py-2.5" />
+      <td className="py-2.5" />
+      <td className="py-2.5" />
+      <td className="max-w-[240px] px-3 py-2.5">
         <Link
-          href={`/invoices/${encodeURIComponent(invoice.id)}`}
-          onClick={(event) => event.stopPropagation()}
-          className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
+          href={`/invoices/entries/${encodeURIComponent(entry.id)}`}
+          className="font-medium text-[var(--color-text)] hover:text-[var(--color-brand-strong)] hover:underline"
         >
-          View full invoice + source →
+          {entry.description}
         </Link>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-xs">
-          <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] uppercase tracking-wide text-[var(--color-muted)]">
-            <tr>
-              <th className="px-4 py-2.5 font-medium">Item</th>
-              <th className="px-4 py-2.5 font-medium">Type</th>
-              <th className="px-4 py-2.5 font-medium">Job</th>
-              <th className="px-4 py-2.5 text-right font-medium">
-                Hours / quantity
-              </th>
-              <th className="px-4 py-2.5 text-right font-medium">
-                Before HST
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
-            {entries.map((entry) => (
-              <tr key={entry.id} className="align-top">
-                <td className="max-w-[360px] px-4 py-3">
-                  <Link
-                    href={`/invoices/entries/${encodeURIComponent(entry.id)}`}
-                    onClick={(event) => event.stopPropagation()}
-                    className="font-medium text-[var(--color-brand-strong)] hover:underline"
-                  >
-                    {entry.description}
-                  </Link>
-                  <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                    Item {entry.line_number}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge
-                    tone={
-                      entry.entry_type === "unclassified"
-                        ? "bad"
-                        : "neutral"
-                    }
-                  >
-                    {TYPE_LABELS[entry.entry_type]}
-                  </Badge>
-                </td>
-                <td className="max-w-[300px] px-4 py-3">
-                  {entry.jobs.length ? (
-                    entry.jobs.map((job) => (
-                      <div key={job.companycam_project_id}>
-                        <Link
-                          href={`/projects/${encodeURIComponent(
-                            job.companycam_project_id,
-                          )}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="font-medium text-[var(--color-brand-strong)] hover:underline"
-                        >
-                          {job.name}
-                        </Link>
-                        {job.address ? (
-                          <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                            {job.address}
-                          </div>
-                        ) : null}
-                        <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                          {money(
-                            job.allocated_amount,
-                            entry.invoice.currency,
-                          )}{" "}
-                          allocated
-                        </div>
-                        {job.needs_review ? (
-                          <div className="mt-1">
-                            <Badge tone="warn">Job link needs review</Badge>
-                          </div>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : entry.invoice.match_status ===
-                    "overhead_unmatched" ? (
-                    <Badge tone="neutral">Overhead / no job</Badge>
-                  ) : (
-                    <Badge tone="warn">Needs job link</Badge>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                  {entry.quantity_hours != null
-                    ? fmtHours(entry.quantity_hours)
-                    : entry.quantity != null
-                      ? `${entry.quantity.toLocaleString("en-CA")} ${
-                          entry.unit ?? ""
-                        }`.trim()
-                      : "—"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">
-                  {money(
-                    entry.amount_before_tax,
-                    entry.invoice.currency,
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+          Item {entry.line_number} ·{" "}
+          <span
+            className={
+              entry.entry_type === "unclassified"
+                ? "font-medium text-[var(--color-bad)]"
+                : undefined
+            }
+          >
+            {TYPE_LABELS[entry.entry_type]}
+          </span>
+          {quantity ? ` · ${quantity}` : ""}
+        </div>
+      </td>
+      <td className="py-2.5" />
+      <td className="max-w-[220px] px-3 py-2.5 text-[11px] font-medium leading-4">
+        {entry.jobs.length ? (
+          entry.jobs.map((job) => (
+            <div key={job.companycam_project_id} className="truncate">
+              <Link
+                href={`/projects/${encodeURIComponent(
+                  job.companycam_project_id,
+                )}`}
+                title={job.address ?? undefined}
+                className="text-[var(--color-brand-strong)] hover:underline"
+              >
+                {job.name}
+              </Link>
+              {entry.jobs.length > 1 ? (
+                <span className="text-[var(--color-muted)] tabular-nums">
+                  {" "}
+                  · {money(job.allocated_amount, entry.invoice.currency)}
+                </span>
+              ) : null}
+              {job.needs_review ? (
+                <span className="text-[var(--color-warn)]"> · review</span>
+              ) : null}
+            </div>
+          ))
+        ) : entry.invoice.match_status === "overhead_unmatched" ? (
+          <span className="text-[var(--color-muted)]">Overhead</span>
+        ) : (
+          <span className="text-[var(--color-warn)]">Needs job link</span>
+        )}
+      </td>
+      <td className="whitespace-nowrap border-l border-[var(--color-border)] px-3 py-2.5 text-right tabular-nums text-[var(--color-text)]">
+        {money(entry.amount_before_tax, entry.invoice.currency)}
+      </td>
+      <td className="py-2.5" />
+      <td className="py-2.5" />
+      <td className="border-l border-[var(--color-border)] py-2.5" />
+      <td className="py-2.5" />
+    </tr>
   );
 }

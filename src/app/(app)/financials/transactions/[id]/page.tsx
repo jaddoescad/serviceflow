@@ -2,8 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CustomerRevenueTransactionEvidence } from "@/components/customer-revenue-evidence";
 import { PaymentEvidence } from "@/components/settlement-evidence";
-import { Badge } from "@/components/ui";
-import { PageHeader } from "@/components/kpi";
+import { StatusText } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { getCustomerRevenueTransactionEvidence } from "@/lib/customer-revenue";
@@ -78,6 +77,26 @@ export default async function FinancialTransactionEvidencePage({
                       .replace(/^\w/, (character) => character.toUpperCase()) ??
                     "Needs review");
 
+  const money = new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: payment.transaction.currency || "CAD",
+  });
+  const statusTone = customerRevenue
+    ? customerRevenue.verification.payment_status === "fully_allocated"
+      ? ("good" as const)
+      : customerRevenue.verification.payment_status === "partially_allocated"
+        ? ("warn" as const)
+        : ("bad" as const)
+    : payment.transaction.is_overpayment
+      ? ("bad" as const)
+      : hasMissingSubcontractorInvoice
+        ? ("bad" as const)
+        : hasBankSupportedExpense
+          ? ("good" as const)
+          : payment.verification?.payment_status === "fully_allocated"
+            ? ("good" as const)
+            : ("warn" as const);
+
   return (
     <>
       <div className="mb-4">
@@ -88,39 +107,34 @@ export default async function FinancialTransactionEvidencePage({
           ← Financials
         </Link>
       </div>
-      <PageHeader
-        title={
-          payment.transaction.counterparty ?? payment.transaction.description
-        }
-        subtitle={`${fmtDate(payment.transaction.posted_on)} · ${
-          payment.transaction.account_name
-        } •••• ${payment.transaction.account_last_four ?? "—"}`}
-        actions={
-          <Badge
-            tone={
-              customerRevenue
-                ? customerRevenue.verification.payment_status ===
-                  "fully_allocated"
-                  ? "good"
-                  : customerRevenue.verification.payment_status ===
-                      "partially_allocated"
-                    ? "warn"
-                    : "bad"
-                : payment.transaction.is_overpayment
-                ? "bad"
-                : hasMissingSubcontractorInvoice
-                  ? "bad"
-                  : hasBankSupportedExpense
-                    ? "good"
-                    : payment.verification?.payment_status === "fully_allocated"
-                      ? "good"
-                      : "warn"
-            }
-          >
-            {settlementLabel}
-          </Badge>
-        }
-      />
+      <div className="mb-5">
+        <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
+          <span className="font-display text-3xl font-bold tracking-tight tabular-nums text-[var(--color-heading)]">
+            {money.format(Math.abs(payment.transaction.amount))}
+          </span>
+          <span className="text-base font-semibold text-[var(--color-heading)]">
+            {payment.transaction.transaction_type === "income" ? "←" : "→"}{" "}
+            {payment.transaction.counterparty ??
+              payment.transaction.description}
+            {payment.contractor?.worker_name ? (
+              <span className="font-normal text-[var(--color-muted)]">
+                {" "}
+                · {payment.contractor.worker_name}
+              </span>
+            ) : null}
+          </span>
+          {statusTone !== "good" ? (
+            <span className="ml-auto">
+              <StatusText tone={statusTone}>{settlementLabel}</StatusText>
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-[13px] text-[var(--color-muted)]">
+          {fmtDate(payment.transaction.posted_on)} ·{" "}
+          {payment.transaction.account_name} ••••{" "}
+          {payment.transaction.account_last_four ?? "—"}
+        </p>
+      </div>
       {customerRevenue ? (
         <CustomerRevenueTransactionEvidence evidence={customerRevenue} />
       ) : (

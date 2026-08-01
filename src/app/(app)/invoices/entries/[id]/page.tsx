@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { InvoiceEvidence } from "@/components/settlement-evidence";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { Badge } from "@/components/ui";
+import { StatusText } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { fmtDate, fmtHours } from "@/lib/format";
 import { getInvoiceEntryEvidence } from "@/lib/settlements";
@@ -60,13 +60,14 @@ export default async function InvoiceEntryEvidencePage({
           invoice.verification.invoice_number
         } · ${fmtDate(invoice.verification.invoice_date)}`}
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Badge
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+            <StatusText
               tone={entry.entry_type === "unclassified" ? "bad" : "neutral"}
+              className="capitalize"
             >
               {entry.entry_type.replaceAll("_", " ")}
-            </Badge>
-            <Badge
+            </StatusText>
+            <StatusText
               tone={
                 entry.source_kind === "extracted"
                   ? "good"
@@ -78,7 +79,7 @@ export default async function InvoiceEntryEvidencePage({
               }
             >
               {evidenceLabel(entry.source_kind)}
-            </Badge>
+            </StatusText>
           </div>
         }
       />

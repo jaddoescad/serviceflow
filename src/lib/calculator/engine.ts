@@ -45,8 +45,26 @@ export type ExteriorRates = {
 };
 
 export type CalculatorRates = {
+  /** Version of the company-default pricing schedule; quote snapshots may omit it. */
+  companyDefaultsVersion?: number;
   interior: InteriorRates;
   exterior: ExteriorRates;
+};
+
+export const COMPANY_DEFAULTS_VERSION = 2;
+export const INTERIOR_FUTURE_JOB_MULTIPLIER = 0.93;
+
+const LEGACY_INTERIOR_DEFAULTS: InteriorRates = {
+  paintTiers: { hp: 1.15, superPaint: 1.265, duration: 1.38 },
+  ceiling: 1.38,
+  door: 103.5,
+  trimPerCoat: 2.3,
+  crown: 1.265,
+  popcorn: 8.625,
+  closet: 212.75,
+  thirdCoatFactor: 0.35,
+  labourPercent: 0.4,
+  hourlyRate: 37.5,
 };
 
 export const PAINT_TIER_LABELS: Record<PaintTierId, string> = {
@@ -139,14 +157,16 @@ export const CATALOG_BY_ID: Record<string, ExteriorCatalogItem> = Object.fromEnt
 );
 
 export const DEFAULT_RATES: CalculatorRates = {
+  companyDefaultsVersion: COMPANY_DEFAULTS_VERSION,
   interior: {
-    paintTiers: { hp: 1.15, superPaint: 1.265, duration: 1.38 },
-    ceiling: 1.38,
-    door: 103.5,
-    trimPerCoat: 2.3,
-    crown: 1.265,
-    popcorn: 8.625,
-    closet: 212.75,
+    // Seven percent below the prior schedule for quotes created from v2 onward.
+    paintTiers: { hp: 1.0695, superPaint: 1.17645, duration: 1.2834 },
+    ceiling: 1.2834,
+    door: 96.255,
+    trimPerCoat: 2.139,
+    crown: 1.17645,
+    popcorn: 8.02125,
+    closet: 197.8575,
     thirdCoatFactor: 0.35,
     labourPercent: 0.4,
     hourlyRate: 37.5,
@@ -503,7 +523,13 @@ export function computeTotals(state: Quote): CalculatorTotals {
 export function mergeRates(saved: Partial<CalculatorRates> | undefined): CalculatorRates {
   const base = structuredClone(DEFAULT_RATES);
   if (!saved) return base;
+  // Missing fields on a pre-v2 quote must inherit the schedule that existed
+  // when that quote was created, not today's lower future-job defaults.
+  if (saved.companyDefaultsVersion !== COMPANY_DEFAULTS_VERSION) {
+    base.interior = structuredClone(LEGACY_INTERIOR_DEFAULTS);
+  }
   return {
+    companyDefaultsVersion: saved.companyDefaultsVersion,
     interior: {
       ...base.interior,
       ...saved.interior,
@@ -519,6 +545,27 @@ export function mergeRates(saved: Partial<CalculatorRates> | undefined): Calcula
       production: { ...base.exterior.production, ...saved.exterior?.production },
     },
   };
+}
+
+/**
+ * Upgrades the mutable company-default schedule exactly once. Existing quote
+ * snapshots deliberately use mergeRates() instead, so their prices do not move.
+ */
+export function mergeCompanyRates(saved: Partial<CalculatorRates> | undefined): CalculatorRates {
+  if (!saved) return structuredClone(DEFAULT_RATES);
+
+  const merged = mergeRates(saved);
+  if (saved.companyDefaultsVersion === COMPANY_DEFAULTS_VERSION) return merged;
+
+  const interior = merged.interior;
+  for (const tier of Object.keys(interior.paintTiers) as Array<keyof typeof interior.paintTiers>) {
+    interior.paintTiers[tier] *= INTERIOR_FUTURE_JOB_MULTIPLIER;
+  }
+  for (const key of ["ceiling", "door", "trimPerCoat", "crown", "popcorn", "closet"] as const) {
+    interior[key] *= INTERIOR_FUTURE_JOB_MULTIPLIER;
+  }
+  merged.companyDefaultsVersion = COMPANY_DEFAULTS_VERSION;
+  return merged;
 }
 
 /** Revives one quote-shaped blob; also accepts the old v1 top-level state. */

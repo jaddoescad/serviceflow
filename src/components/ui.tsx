@@ -53,6 +53,110 @@ const badgeTones: Record<BadgeTone, string> = {
   brand: "bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]",
 };
 
+const dotTones: Record<BadgeTone, string> = {
+  neutral: "var(--color-muted)",
+  good: "var(--color-good)",
+  warn: "var(--color-warn)",
+  bad: "var(--color-bad)",
+  brand: "var(--color-brand-strong)",
+};
+
+/** Quiet status indicator: small colored dot + plain text. Preferred over
+ * Badge wherever several statuses sit near each other. */
+export function StatusText({
+  tone = "neutral",
+  children,
+  className,
+}: {
+  tone?: BadgeTone;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text)]",
+        className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: dotTones[tone] }}
+      />
+      {children}
+    </span>
+  );
+}
+
+/** One figure inside a StatGrid band. */
+export function Stat({
+  label,
+  value,
+  hint,
+  tone = "neutral",
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  tone?: "neutral" | "good" | "warn" | "bad";
+}) {
+  const toneColor = {
+    neutral: "text-[var(--color-heading)]",
+    good: "text-[var(--color-good)]",
+    warn: "text-[var(--color-warn)]",
+    bad: "text-[var(--color-bad)]",
+  }[tone];
+  return (
+    <div className="bg-[var(--color-surface)] px-4 py-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 font-display text-lg font-semibold tabular-nums",
+          toneColor,
+        )}
+      >
+        {value}
+      </div>
+      {hint ? (
+        <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Hairline-divided band of Stats — one container instead of a card farm. */
+export function StatGrid({
+  columns = 4,
+  children,
+  className,
+}: {
+  columns?: 2 | 3 | 4;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const cols = {
+    2: "sm:grid-cols-2",
+    3: "sm:grid-cols-3",
+    4: "sm:grid-cols-2 xl:grid-cols-4",
+  }[columns];
+  return (
+    <div
+      className={cn(
+        "grid gap-px overflow-hidden bg-[var(--color-border)]",
+        cols,
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Badge({
   tone = "neutral",
   children,

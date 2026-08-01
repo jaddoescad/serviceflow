@@ -7,6 +7,7 @@ import {
   CalculatorRates,
   ProjectCalculator,
   Quote,
+  mergeCompanyRates,
   mergeRates,
   reviveProjectCalculator,
 } from "@/lib/calculator/engine";
@@ -154,7 +155,9 @@ export async function loadCalculator(projectId: string): Promise<LoadCalculatorR
   return {
     ok: true,
     doc: calcRes.data ? reviveProjectCalculator(calcRes.data.doc) : null,
-    companyRates: mergeRates((settingsRes.data?.rates as Partial<CalculatorRates> | undefined) ?? undefined),
+    companyRates: mergeCompanyRates(
+      (settingsRes.data?.rates as Partial<CalculatorRates> | undefined) ?? undefined,
+    ),
     defaultCalculator: defaultCalculatorRes.selection,
     defaultCalculatorError: defaultCalculatorRes.error,
   };

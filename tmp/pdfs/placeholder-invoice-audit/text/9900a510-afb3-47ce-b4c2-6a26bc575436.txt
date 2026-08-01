@@ -1,0 +1,19 @@
+Invoice #INV-001
+BILL TO                     PAYMENT METHOD - WISE
+Ottawa Painters             Kimberly Pel Abelgas
+License# 767449168 RT0001   abelgaskimberlypel@gmail.com
+2377 Walkey Rd              +63909 0303
+Ottawa, ON K1G 3H1          wisetag: @kimberlya245
+(613) 801 - 8282
+
+
+
+
+ Description                Days            Rate / hr      Amount (USD)
+
+
+ Project Coordinator           24             $10       $1,920.00
+
+
+
+                                              Total     $1,920.00

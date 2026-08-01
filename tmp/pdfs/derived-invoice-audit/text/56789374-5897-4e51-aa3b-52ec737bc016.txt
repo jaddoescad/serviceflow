@@ -1,0 +1,41 @@
+                                                   Invoice
+Ottawa Painters                                                             Invoice #                      327949
+info@paintersottawa.com                                                     Invoice Date                 9/30/2025
+(613) 700-1531                                                              Balance Due                $16,385.00
+2337 Walkley Rd                                                                              PaintTastic Pro Inc
+Ottawa, ON K1G                                                              Remit Payment To 343 Preston St
+                                                                                             Ottawa, ON K1S 1N4
+
+
+
+
+PaintTastic Pro Inc
+343 Preston St
+Ottawa, ON K1S 1N4
+Phone: (613) 812-1111
+
+  Product / Service                         Quantity      Price        Subtotal       Tax           Total
+
+  36 MarchBrook Circle                      1.00          $14,500.00   $14,500.00     $1,885.00     $16,385.00
+  Exterior Painting for MacrhBrook Circle
+
+  Proposal #
+
+  2002431
+
+  Date
+
+  8/27/2025
+
+
+  SubTotal                                   $14,500.00
+
+  Tax                                         $1,885.00
+
+  Total                                      $16,385.00
+
+
+
+Service Address
+
+2337 Walkley Rd, Ottawa, ON, K1G
