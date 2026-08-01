@@ -172,7 +172,7 @@ function recurringOverheadRule(transaction) {
     ["CompanyCam", ["companycam"], "Software & subscriptions", "Software subscription", "software_subscription"],
     ["QuickBooks Online", ["qbooks", "quickbooks", "intuit"], "Software & subscriptions", "Software subscription", "software_subscription"],
     ["Perspective Software", ["perspective software"], "Software & subscriptions", "Software subscription", "software_subscription"],
-    ["Google Workspace", ["workspace_pain", "google workspace"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Google Workspace", ["google*workspace", "workspace_pain", "google workspace"], "Software & subscriptions", "Software subscription", "software_subscription"],
     ["Zapier", ["zapier"], "Software & subscriptions", "Software subscription", "software_subscription"],
     ["Connecteam", ["connecteam"], "Software & subscriptions", "Software subscription", "software_subscription"],
     ["OpenAI", ["openai", "chatgpt"], "Software & subscriptions", "Software subscription", "software_subscription"],

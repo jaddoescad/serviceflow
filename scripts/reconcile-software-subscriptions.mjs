@@ -10,13 +10,28 @@ const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
 const ADMIN_USER_ID = "97b8cd3f-ec14-418b-81e5-837a64be906e";
 const CONFIRMED_ON = "2026-07-31";
 const APPLY = process.argv.includes("--apply");
+const GOOGLE_WORKSPACE_PAYMENT_EVIDENCE = new Map([
+  [
+    "e3a409ca-7099-47be-b363-42b3abf3ccaf",
+    {
+      gmail_message_id: "19c61a7016b3c324",
+      payment_date: "2026-02-15",
+      amount: 62.38,
+      payments_profile_id: "6126-0365-9633",
+      source: "Google Payments email",
+    },
+  ],
+]);
 
 const SOFTWARE_VENDORS = [
   { name: "DripJobs CRM", terms: ["dripjobs"] },
   { name: "CompanyCam", terms: ["companycam"] },
   { name: "QuickBooks Online", terms: ["qbooks", "quickbooks", "intuit"] },
   { name: "Perspective Software", terms: ["perspective software"] },
-  { name: "Google Workspace", terms: ["workspace_pain", "google workspace"] },
+  {
+    name: "Google Workspace",
+    terms: ["google*workspace", "workspace_pain", "google workspace"],
+  },
   { name: "Zapier", terms: ["zapier"] },
   { name: "Connecteam", terms: ["connecteam"] },
   { name: "OpenAI", terms: ["openai", "chatgpt"] },
@@ -123,22 +138,55 @@ if (projectRef !== TARGET_PROJECT_REF) {
 const db = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const result = await db
-  .from("financial_transactions")
-  .select(
-    "id,posted_on,description,counterparty,amount,tax_amount,net_amount,currency,transaction_type,category,review_status,notes,source_data,financial_accounts!inner(name,last_four,account_type)",
-  )
-  .eq("category", "Software & subscriptions")
-  .order("posted_on", { ascending: true });
-if (result.error) throw result.error;
+const transactionSelect =
+  "id,posted_on,transaction_on,description,counterparty,amount,tax_amount,net_amount,currency,transaction_type,category,review_status,notes,source_data,financial_accounts!inner(name,last_four,account_type)";
+const [softwareResult, knownMisclassificationResult] = await Promise.all([
+  db
+    .from("financial_transactions")
+    .select(transactionSelect)
+    .eq("category", "Software & subscriptions")
+    .order("posted_on", { ascending: true }),
+  db
+    .from("financial_transactions")
+    .select(transactionSelect)
+    .in("id", [...GOOGLE_WORKSPACE_PAYMENT_EVIDENCE.keys()]),
+]);
+if (softwareResult.error) throw softwareResult.error;
+if (knownMisclassificationResult.error) {
+  throw knownMisclassificationResult.error;
+}
+const transactionsById = new Map(
+  [...(softwareResult.data ?? []), ...(knownMisclassificationResult.data ?? [])]
+    .map((transaction) => [transaction.id, transaction]),
+);
+const transactions = [...transactionsById.values()].sort((left, right) =>
+  String(left.posted_on).localeCompare(String(right.posted_on)),
+);
 
 const candidates = [];
 const skipped = [];
-for (const transaction of result.data ?? []) {
+for (const transaction of transactions) {
   const vendor = vendorFor(transaction);
+  const gmailPaymentEvidence = GOOGLE_WORKSPACE_PAYMENT_EVIDENCE.get(
+    transaction.id,
+  );
+  if (
+    gmailPaymentEvidence &&
+    (transaction.transaction_on !== gmailPaymentEvidence.payment_date ||
+      cents(Math.abs(Number(transaction.amount))) !==
+        cents(gmailPaymentEvidence.amount) ||
+      transaction.source_data?.original_description !==
+        "GOOGLE*WORKSPACE PAINT")
+  ) {
+    throw new Error(
+      `Google Workspace payment evidence no longer matches transaction ${transaction.id}.`,
+    );
+  }
   const account = transaction.financial_accounts;
   const reason = vendor
-    ? `${vendor.name} is a user-confirmed business software subscription. The posted business credit-card row proves the vendor, date, and amount; HST remains zero because no supplier tax document is attached.`
+    ? gmailPaymentEvidence
+      ? `Google Payments Gmail ${gmailPaymentEvidence.gmail_message_id} confirms the CA$${gmailPaymentEvidence.amount.toFixed(2)} Google Workspace payment on ${gmailPaymentEvidence.payment_date}; the posted business credit-card row has the exact date, amount, and GOOGLE*WORKSPACE descriptor. HST remains zero because no supplier tax invoice is attached.`
+      : `${vendor.name} is a user-confirmed business software subscription. The posted business credit-card row proves the vendor, date, and amount; HST remains zero because no supplier tax document is attached.`
     : "No recognized software vendor rule.";
   const validDirection =
     (Number(transaction.amount) < 0 && transaction.transaction_type === "expense") ||
@@ -176,15 +224,23 @@ for (const transaction of result.data ?? []) {
       ? "software_subscription_credit"
       : "software_subscription",
     vendor: vendor.name,
-    evidence: "posted_business_credit_card_record",
+    evidence: gmailPaymentEvidence
+      ? "posted_business_credit_card_record_and_google_payment_email"
+      : "posted_business_credit_card_record",
     tax_treatment: "no_itc_claimed",
     supplier_document_status: "not_attached",
-    source: "Ottawa Painters administrator confirmation",
+    source: gmailPaymentEvidence
+      ? "Google Payments Gmail and posted business credit-card record"
+      : "Ottawa Painters administrator confirmation",
+    ...(gmailPaymentEvidence
+      ? { gmail_payment_evidence: gmailPaymentEvidence }
+      : {}),
     confirmed_by: ADMIN_USER_ID,
     confirmed_on: CONFIRMED_ON,
     reason,
   };
   const desired = {
+    category: "Software & subscriptions",
     counterparty: vendor.name,
     review_status: "reconciled",
     notes: desiredNote(transaction.notes, note),
