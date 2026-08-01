@@ -107,7 +107,7 @@ const [documents, invoices, transactions, paymentAllocations, creditAllocations]
       db
         .from("material_invoices")
         .select(
-          "id,document_id,invoice_number,invoice_date,invoice_time,invoice_type,total_amount,supplier_name",
+          "id,document_id,source_system,invoice_number,invoice_date,invoice_time,invoice_type,total_amount,supplier_name",
         )
         .eq("supplier_name", "Sherwin-Williams Canada")
         .order("invoice_date")
@@ -156,8 +156,15 @@ const bankPayments = transactions.filter(
     /sherwin/.test(sherwinText(transaction)),
 );
 
+// Monthly Sherwin statements cover purchases charged to the account. A store
+// cash/card receipt is a separate settlement chain and must not inflate either
+// the statement's monthly charges or the FIFO balance paid by the statement.
+const accountInvoices = invoices.filter(
+  (invoice) => invoice.source_system === "sherwin_daily_email",
+);
+
 const monthlyInvoiceTotals = new Map();
-for (const invoice of invoices) {
+for (const invoice of accountInvoices) {
   const month = monthOf(invoice.invoice_date);
   const current = monthlyInvoiceTotals.get(month) ?? { charges: 0, credits: 0, count: 0 };
   const amount = cents(invoice.total_amount);
@@ -243,7 +250,7 @@ for (const allocation of creditAllocations) {
   );
 }
 
-const chargeBalances = invoices
+const chargeBalances = accountInvoices
   .filter((invoice) => cents(invoice.total_amount) > 0)
   .map((invoice) => ({
     invoice,
@@ -268,7 +275,7 @@ function allocateToOpenCharges(amount, effectiveDate, allocationFactory) {
 }
 
 const settlementEvents = [];
-for (const credit of invoices.filter((invoice) => cents(invoice.total_amount) < 0)) {
+for (const credit of accountInvoices.filter((invoice) => cents(invoice.total_amount) < 0)) {
   const residual = Math.abs(cents(credit.total_amount)) - (usedByCredit.get(credit.id) ?? 0);
   if (residual > 0) settlementEvents.push({ type: "credit", date: credit.invoice_date, credit, residual });
 }
@@ -360,6 +367,8 @@ const report = {
   evidence: {
     statements: statements.length,
     invoices: invoices.length,
+    statement_account_invoices: accountInvoices.length,
+    direct_store_receipts_excluded: invoices.length - accountInvoices.length,
     sherwin_bank_payments: bankPayments.length,
   },
   monthly_audit: monthlyAudit,

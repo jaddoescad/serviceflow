@@ -230,7 +230,6 @@ function temporalScore(invoiceDate, job) {
 
 function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
   const po = normalized(invoice.po_number);
-  if (!po) return { kind: "unmatched", reason: "PO missing", candidates: [] };
   if (["supplies", "shop supplies", "office supplies"].includes(po)) {
     return {
       kind: "overhead",
@@ -247,8 +246,118 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
         projectId: "105848213",
         customerName: "Shezara Ali",
         proposalId: "2873427",
+        source: "gmail_dripjobs_acceptance_and_companycam_project",
+        sourcePayload: {
+          gmail_message_id: "19fb9dc9e6a1c167",
+        },
         note:
           "Gmail 19fb9dc9e6a1c167 confirms DripJobs proposal 2873427 was accepted for Shezara Ali on 2026-07-31; this same-day Sherwin invoice uses PO ALI, while CompanyCam project 105848213 is the current unarchived Shezara Ali job at 314 Central Park Dr #805",
+      },
+    ],
+    [
+      "sherwin_daily_email|3720-4|2026-03-02",
+      {
+        projectId: "99786158",
+        customerName: "Krista Colwell",
+        proposalId: "2512085",
+        allowArchived: true,
+        source: "audited_supplier_credit_chain_and_companycam_project",
+        sourcePayload: {
+          related_invoice_numbers: ["5600-4", "3751-9", "9238-8"],
+          returned_product_code: "K36TQ8454",
+          returned_colour: "SW9179 Anchors Aweigh",
+        },
+        note:
+          "This no-PO credit returns the same K36TQ8454 SW9179 Anchors Aweigh gallon charged on same-day PO COLWILL invoice 5600-4; that charge and the next two PO COLWILL invoices 3751-9 and 9238-8 are allocated to CompanyCam project 99786158 for Krista Colwell, so the related credit belongs to the same job",
+      },
+    ],
+    [
+      "sherwin_daily_email|2900-6|2025-10-14",
+      {
+        projectId: "dripjobs-2101292",
+        customerName: "Jeffrey Roy / Jeffrey Ian — proposal 2101292 (completed)",
+        proposalId: "2101292",
+        allowArchived: true,
+        source: "gmail_dripjobs_recovered_accounting_job",
+        sourcePayload: {
+          appointment_gmail_message_id: "1997be08a3fe7614",
+          proposal_accepted_gmail_message_id: "199a066563102fa1",
+          customer_acceptance_gmail_message_id: "199bf003818d5875",
+          receipt_gmail_message_id: "199e817b6c323cc5",
+        },
+        note:
+          "DripJobs Gmail 199a066563102fa1 confirms Jeffrey Ian accepted proposal 2101292, the same customer's appointment Gmail 1997be08a3fe7614 gives 10 Lynhurst Ave, and Gmail thread 19998a6515e7f0cb schedules the weather-dependent exterior work; this October 14 receipt uses PO JEFFREY and contains Rare Gray exterior wood primer",
+      },
+    ],
+    [
+      "sherwin_daily_email|0793-3|2025-08-21",
+      {
+        projectId: "dripjobs-1889052",
+        customerName: "Scott MacEwen — proposal 1889052 (completed)",
+        proposalId: "1889052",
+        allowArchived: true,
+        source: "gmail_colour_confirmation_and_recovered_dripjobs_job",
+        sourcePayload: {
+          colour_gmail_message_ids: [
+            "1989ff693f9eb3ea",
+            "198a02943f47dfb8",
+          ],
+          related_receipt_invoice_number: "0449-2",
+        },
+        note:
+          "Scott MacEwen's Gmail colour thread 1989ff693f9eb3ea and 198a02943f47dfb8 explicitly confirms SW7008 Alabaster as the main wall colour for recovered DripJobs proposal 1889052; this PO SCOTT receipt contains five gallons of that exact colour and predates the next Alabaster batch by four days",
+      },
+    ],
+    [
+      "sherwin_daily_email|0984-8|2025-08-25",
+      {
+        projectId: "dripjobs-1889052",
+        customerName: "Scott MacEwen — proposal 1889052 (completed)",
+        proposalId: "1889052",
+        allowArchived: true,
+        source: "gmail_colour_confirmation_and_receipt_product_chain",
+        sourcePayload: {
+          colour_gmail_message_ids: [
+            "1989ff693f9eb3ea",
+            "198a02943f47dfb8",
+          ],
+          related_receipt_invoice_number: "0793-3",
+          received_by: "REZA",
+        },
+        note:
+          "Scott MacEwen's Gmail colour thread explicitly confirms SW7008 Alabaster as the main wall colour for recovered DripJobs proposal 1889052; this no-PO receipt contains ten gallons of Alabaster primer and wall paint, was received by the same purchaser as the August 21 PO SCOTT Alabaster receipt, and is the next business-day batch for the same verified job",
+      },
+    ],
+    [
+      "sherwin_daily_email|8554-9|2026-01-26",
+      {
+        projectId: "97797370",
+        customerName: "Graeme Archibald",
+        proposalId: null,
+        allowLead: true,
+        allowArchived: true,
+        source: "gmail_dripjobs_work_order_and_companycam_project",
+        sourcePayload: {
+          work_order_gmail_message_ids: ["19be640b5fc7594c", "19be79ce821ecbde"],
+        },
+        note:
+          "Gmail 19be640b5fc7594c and 19be79ce821ecbde are DripJobs work orders for Graeme Archibald at 1874 Playfair Dr sent January 22; this January 26 receipt uses the exact PO GRAEME ARCHIBALD and belongs to the existing same-name, same-address CompanyCam project 97797370",
+      },
+    ],
+    [
+      "sherwin_daily_email|8550-7|2026-01-26",
+      {
+        projectId: "97797370",
+        customerName: "Graeme Archibald",
+        proposalId: null,
+        allowLead: true,
+        allowArchived: true,
+        source: "gmail_dripjobs_work_order_and_companycam_project",
+        sourcePayload: {
+          work_order_gmail_message_ids: ["19be640b5fc7594c", "19be79ce821ecbde"],
+        },
+        note:
+          "Gmail 19be640b5fc7594c and 19be79ce821ecbde are DripJobs work orders for Graeme Archibald at 1874 Playfair Dr sent January 22; this second January 26 receipt uses the misspelled PO GAEME ARCHIBALD and belongs to the existing same-name, same-address CompanyCam project 97797370",
       },
     ],
   ]);
@@ -261,8 +370,8 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       !project ||
       normalized(project.name) !== normalized(auditedDirectProject.customerName) ||
       project.is_deleted ||
-      project.is_lead ||
-      project.is_archived
+      (!auditedDirectProject.allowLead && project.is_lead) ||
+      (!auditedDirectProject.allowArchived && project.is_archived)
     ) {
       throw new Error(
         `Audited material invoice ${invoice.invoice_number} no longer has the expected active CompanyCam project ${auditedDirectProject.projectId}.`,
@@ -282,9 +391,9 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       projectId: project.companycam_id,
       method: "manual",
       confidence: 1,
-      source: "gmail_dripjobs_acceptance_and_companycam_project",
+      source: auditedDirectProject.source,
       sourcePayload: {
-        gmail_message_id: "19fb9dc9e6a1c167",
+        ...auditedDirectProject.sourcePayload,
         companycam_project_id: project.companycam_id,
       },
       base: 100,
@@ -417,6 +526,21 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       },
     ],
     [
+      "sherwin_daily_email|3095-0|2026-06-30",
+      {
+        proposalId: "2481008",
+        source: "gmail_colour_consultation_exact_product_match",
+        sourcePayload: {
+          colour_gmail_message_id: "19d311dc2c91295c",
+          colour_code: "SW7020",
+          colour_name: "Black Fox",
+          surface: "front door exterior",
+        },
+        note:
+          "Darlene's colour-consultation email 19d311dc2c91295c explicitly specifies SW7020 Black Fox for Yacoub Abdulla's front-door exterior; this no-PO receipt contains the exact SW7020 Black Fox Emerald Urethane product and was purchased during the verified DripJobs proposal 2481008 job window",
+      },
+    ],
+    [
       "sherwin_daily_email|0434-2|2026-04-25",
       {
         proposalId: "2492310",
@@ -454,6 +578,40 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
         proposalId: "2258601",
         note:
           "Gmail 19aa1acda9393187 confirms Rick Piche accepted DripJobs proposal 2258601; this invoice uses the misspelled PO RICKPINCH and was purchased during the verified 2025-12-15 through 2025-12-19 job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|0744-8|2025-12-15",
+      {
+        proposalId: "2283227",
+        source: "gmail_customer_payment_address_and_dripjobs_job",
+        sourcePayload: {
+          scheduled_job_gmail_message_id: "19ae4d55666e607d",
+          final_payment_gmail_message_id: "19b27ababfa11db6",
+          proposal_gmail_message_id: "19acb3258c08d746",
+          receipt_po: "JAY",
+          received_by: "ANAS",
+        },
+        note:
+          "Interac Gmail 19ae4d55666e607d identifies Jason Wong's December 15 job at 233 Anyolite Private, Gmail 19b27ababfa11db6 confirms the final payment for that same address on December 16, and Gmail 19acb3258c08d746 carries DripJobs proposal 2283227 for Jay Wong; this December 15 Sherwin receipt uses PO JAY and contains the custom-matched paint and supplies for that uniquely identified job",
+      },
+    ],
+    [
+      "sherwin_daily_email|5251-6|2026-05-20",
+      {
+        proposalId: "2721303",
+        source: "audited_receipt_scope_and_subcontractor_invoice_match",
+        sourcePayload: {
+          customer_issue_gmail_message_id: "19e55b3266710e7a",
+          customer_payment_gmail_message_id: "19eb1adb038675f8",
+          receipt_description: "MTC BROWN WINDOWS",
+          receipt_received_by: "FRANK",
+          subcontractor_invoice_number: "108",
+          subcontractor_scope: "paint walls 1 frame, 2 windows, 1 door",
+          project_address: "126 Versilia Dr",
+        },
+        note:
+          "This May 20 Sherwin receipt is explicitly described as MTC BROWN WINDOWS and contains a custom industrial DTM coating; Bailey Muldner's DripJobs proposal 2721303 at 126 Versilia Dr is the only contemporaneous project whose scope includes window sills and a laundry window frame, AMG invoice 108 independently lists Bailey's 1 frame, 2 windows, and 1 door, Gmail 19e55b3266710e7a documents paint issues at 126 Versilia on May 23, and Gmail 19eb1adb038675f8 confirms the Bailey customer payment",
       },
     ],
     [
@@ -593,11 +751,201 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       },
     ],
     [
+      "sherwin_daily_email|5460-3|2026-02-25",
+      {
+        proposalId: "2503613",
+        note:
+          "This no-PO colour exchange returns the same A87WQ1351 Cloud White gallon charged on same-day PO SINGH invoice 5459-5 and replaces it with A87WQ1351 Agreeable Gray; the replacement colour also appears on PO SINGH invoice 2906-1, and both named invoices are allocated to DripJobs proposal 2503613",
+      },
+    ],
+    [
       "sherwin_daily_email|5689-3|2026-03-10",
       {
         proposalId: "2484669",
         note:
           "Gmail 19cbaa3e06fcbf8e is the Gregg Alexander colour consultation and specifies SW6672 Morning Sun; this invoice uses the phonetic PO ALEXANDRIA, contains Morning Sun, and was purchased during the verified DripJobs proposal 2484669 job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|8821-4|2026-03-18",
+      {
+        proposalId: "2413005",
+        note:
+          "Gmail 19cbfa3a37449cda specifies SW7012 Creamy for Laura Van Cleef's project; this Frank receipt contains the exact SW7012 Creamy during the verified job window, matching PO VAN CLEEF invoices 6019-6, 8842-0, and 9082-2 already allocated to DripJobs proposal 2413005",
+      },
+    ],
+    [
+      "sherwin_daily_email|8910-5|2026-03-20",
+      {
+        proposalId: "2413005",
+        note:
+          "Gmail 19cbfa3a37449cda specifies SW7036 Accessible Beige for Laura Van Cleef's project; this Frank receipt contains the exact Accessible Beige and matching ProClassic trim paint during the verified job window, consistent with PO VAN CLEEF invoice 6019-6 already allocated to DripJobs proposal 2413005",
+      },
+    ],
+    [
+      "sherwin_daily_email|6464-4|2026-03-30",
+      {
+        proposalId: "2484669",
+        note:
+          "This no-PO credit exchanges SW6672 Morning Sun from same-day PO ALEXANDER invoice 6406-5; the exact colour is confirmed for Gregg Alexander by Gmail 19cbaa3e06fcbf8e and also appears on PO ALEXANDER/ALEXANDRIA invoices 5800-0 and 5689-3 already allocated to DripJobs proposal 2484669",
+      },
+    ],
+    [
+      "sherwin_daily_email|0184-3|2026-04-15",
+      {
+        proposalId: "2687681",
+        note:
+          "This no-PO Frank receipt contains five gallons of A87WQ1351 SW7570 Egret White on Michael Sheridan's verified first job day; the exact product and colour appear on previous-day PO SHERIDAN invoice 0152-0 and later PO MICHAEL SHERIDAN/MICHAEL invoices 0369-0 and 1125-9, all allocated to DripJobs proposal 2687681",
+      },
+    ],
+    [
+      "sherwin_daily_email|0478-9|2026-04-27",
+      {
+        proposalId: "2547732",
+        note:
+          "This no-PO correction returns the exact Honied White, Intimate White, and Liveable Green samples charged on same-day PO LUNDIN invoice 0470-6; those colours continue on PO LUNDIN invoices 8732-7 and 8761-6, all allocated to DripJobs proposal 2547732",
+      },
+    ],
+    [
+      "gmail_preston_material_receipt|OR018281|2026-04-30",
+      {
+        proposalId: "2453791",
+        note:
+          "Gmail thread 19dcee446a0fda21 confirms Roslyn Adu/Mulongo selected Benjamin Moore OC-45 Swiss Coffee and specifically requested Benjamin Moore paint for her basement project; this Preston Paint Center receipt contains the exact Swiss Coffee product on the verified April 30 first job day for DripJobs proposal 2453791",
+      },
+    ],
+    [
+      "sherwin_daily_email|5999-3|2026-05-22",
+      {
+        proposalId: "2790387",
+        note:
+          "This no-PO receipt contains custom solid stain labelled MTC TAREQ; Gmail thread 19e42137e30b11e6 is the May 19 DripJobs work order for TAREQ Shiblaq at 1327 S Beach Blvd, while Gmail 19e50f62f56c1a30 and Interac Gmail 19e50f162502a7a1 confirm final payment for that exact address and invoice on the receipt date",
+      },
+    ],
+    [
+      "sherwin_daily_email|1268-3|2026-05-26",
+      {
+        proposalId: "2822094",
+        note:
+          "Gmail 19e473034487ce8e is David Rennie's colour consultation and specifies SW6254 Lazy Gray, while Gmail 19e517eece8eed0b is the Sherwin-Williams order under PO Rennie containing the same colour; this no-PO Steven follow-up gallon contains the exact SW6254 Lazy Gray during the verified 52 Royal Oak project window",
+      },
+    ],
+    [
+      "sherwin_daily_email|6319-3|2026-05-29",
+      {
+        proposalId: "2685506",
+        note:
+          "Gmail 19e503076402b595 is Ottawa Painters' Sherwin-Williams order under PO Snelling and includes ProClassic white trim paint; this Camilo follow-up invoice contains the same ProClassic product during Lee Snelling's verified job window, and Grutenco invoice GT-INV-202606-01 identifies Camilo's labour on the Lee Snelling job",
+      },
+    ],
+    [
+      "sherwin_daily_email|7905-5|2026-05-15",
+      {
+        proposalId: "2649627",
+        note:
+          "Gmail thread 19e051bdd4bb0ef6 confirms Joelle Moncrieff selected Benjamin Moore HC-173 Edgecomb Gray for the trim and doors at 1297 Vinette Rd during the May 13-16 project; this Camilo receipt contains the exact HC-173 Edgecomb Gray match and was purchased during that verified job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|1015-8|2026-05-19",
+      {
+        proposalId: "2656060",
+        note:
+          "Gmail thread 19e02f19f45f073d is the Sherwin-Williams order for Dever Jylha under PO Jylha and includes a SW6794 Flyway sample; this Camilo follow-up invoice contains one gallon of the exact SW6794 Flyway during the verified 64 Lillico Dr project window",
+      },
+    ],
+    [
+      "sherwin_daily_email|6168-4|2026-05-26",
+      {
+        proposalId: "2685506",
+        note:
+          "Gmail 19e503076402b595 is Ottawa Painters' May 22 Sherwin-Williams order under PO Snelling for seven gallons of SW7036 Accessible Beige; this Camilo follow-up invoice contains three gallons of the exact SW7036 Accessible Beige for Lee Snelling's DripJobs proposal 2685506",
+      },
+    ],
+    [
+      "sherwin_daily_email|9191-5|2026-06-08",
+      {
+        proposalId: "2846697",
+        note:
+          "Gmail 19e5fbb0cf94fc83 confirms Mehaly Marinakis accepted DripJobs proposal 2846697 and Gmail 19e935d0e671306a confirms the 88 Spruce Street project started Monday June 8; this same-day Scott receipt uses the phonetic PO MARINAICUS",
+      },
+    ],
+    [
+      "sherwin_daily_email|0836-0|2026-06-16",
+      {
+        proposalId: "2808200",
+        note:
+          "Gmail thread 19e4b39b78eb0b48 confirms Tyler Duncan's June 16 project at 547 Via Mattino Way used SW6993 Black of Night and SW9521 Simple Stone; this invoice contains both exact colours and was purchased on the verified first job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|7111-3|2026-06-17",
+      {
+        proposalId: "2808200",
+        note:
+          "Gmail thread 19e4b39b78eb0b48 confirms Tyler Duncan's project at 547 Via Mattino Way used SW9521 Simple Stone; this follow-up invoice contains the exact colour and was purchased on the second verified project day",
+      },
+    ],
+    [
+      "sherwin_daily_email|2482-9|2026-07-08",
+      {
+        proposalId: "2818842",
+        note:
+          "DripJobs proposal 2818842 is Phil Anido's exterior stucco project at 11 Lambton Ave scheduled to start July 8; this same-day invoice uses PO STUCCO EXT and contains four gallons of Duration exterior paint in SW2805 Renwick Beige",
+      },
+    ],
+    [
+      "sherwin_daily_email|4181-8|2026-07-17",
+      {
+        proposalId: "3022357",
+        note:
+          "Gmail 19f6c19b5e4f1b0a is Darlene Hall-Barrett's July 16 colour consultation for Lorraine Ulrick and specifies SW6102 Portobello; this next-day Camilo invoice uses the phonetic PO LAURIEN and contains the exact SW6102 Portobello for DripJobs proposal 3022357",
+      },
+    ],
+    [
+      "sherwin_daily_email|3906-9|2026-07-07",
+      {
+        proposalId: "2831558",
+        note:
+          "This no-PO same-day product exchange returns K36WQ1051 Pure White charged on PO BENOIT invoice 3905-1 and replaces it with Duration Matte; the identical Pure White product appears on PO BENOIT invoices 9466-6 and 9597-8, all allocated to Diane Benoit's DripJobs proposal 2831558",
+      },
+    ],
+    [
+      "sherwin_daily_email|6747-2|2026-04-09",
+      {
+        proposalId: "2604777",
+        source: "audited_supplier_sample_to_job_paint_chain",
+        sourcePayload: {
+          related_invoice_number: "7206-1",
+          shared_colours: [
+            "Benjamin Moore 2126-50 Gray Timber Wolf",
+            "Benjamin Moore 2121-40 Silver Half Dollar",
+          ],
+        },
+        note:
+          "This no-PO sample receipt contains Gray Timber Wolf, Silver Half Dollar, and Pike's Peak Gray four days before Janet Morris's verified first job day; PO MORRIS invoice 7206-1 then purchased full gallons of the exact Gray Timber Wolf and Silver Half Dollar colours for DripJobs proposal 2604777, proving the entire three-colour selection batch belongs to Janet's job",
+      },
+    ],
+    [
+      "sherwin_daily_email|8135-4|2026-06-08",
+      {
+        proposalId: "2818188",
+        source: "gmail_subcontractor_work_order_and_receipt_purchaser",
+        sourcePayload: {
+          work_order_gmail_message_id: "19e9a056075e7999",
+          received_by: "CAMILO",
+          actual_job_start_date: "2026-06-08",
+        },
+        note:
+          "Gmail 19e9a056075e7999 records Camilo Alvarez/Grutenco accepting the Kirsty Harris work order at 1502 Tonilee Dr on Friday June 5 and explicitly confirms a Monday June 8 start; this June 8 masking-paper and contractor-tape receipt was received by Camilo, so it is job preparation for DripJobs proposal 2818188 despite the later stale dates in the DripJobs export",
+      },
+    ],
+    [
+      "sherwin_daily_email|8969-3|2026-07-31",
+      {
+        proposalId: "2959424",
+        note:
+          "Gmail 19ed16aaf1d74dbd confirms Mehaly Marinakis accepted the separate exterior-painting proposal 2959424, and Gmail 19fb7ecd7d4b12cf records its July 31 postponement; this July 31 Scott receipt uses the phonetic PO MEHLAY and contains Duration exterior paint purchased for that scheduled project",
       },
     ],
   ]);
@@ -620,6 +968,8 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       projectId: projectIdByProposal.get(auditedJob.proposal_uuid),
       method: "manual",
       confidence: 1,
+      source: auditedProject.source,
+      sourcePayload: auditedProject.sourcePayload,
       base: 100,
       temporal,
       score: 100 + temporal,
@@ -636,6 +986,7 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       ],
     };
   }
+  if (!po) return { kind: "unmatched", reason: "PO missing", candidates: [] };
   const auditedPoAliases = new Map([
     ["luke nickson", "2372277"],
     ["luck nickson", "2372277"],
@@ -693,9 +1044,10 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
   const runnerUp = candidates[1];
   const strongName = best.base >= 86;
   const decisive = !runnerUp || best.score - runnerUp.score >= 12;
-  const uniqueFirstName = best.base === 76 && (!runnerUp || runnerUp.base < 76);
+  // A bare first name is often the purchaser/crew member rather than the
+  // customer (for example, PO SCOTT can mean Scott Madden).  It is only safe
+  // when the receipt is tightly aligned with the customer's actual job dates.
   const decisiveFirstName =
-    invoice.supplier_name === "The Home Depot" &&
     best.base === 76 &&
     decisive &&
     best.temporal >= 25 &&
@@ -703,7 +1055,7 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
   const uniqueFuzzy = best.base >= 80 && !runnerUp && best.temporal >= 20;
   if (
     (strongName && decisive && best.score >= 86) ||
-    ((uniqueFirstName || decisiveFirstName) && best.score >= 84) ||
+    (decisiveFirstName && best.score >= 101) ||
     (uniqueFuzzy && best.score >= 100)
   ) {
     return { kind: "matched", ...best, candidates: candidates.slice(0, 3) };
@@ -716,6 +1068,133 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
 }
 
 function auditedLineOverheadPlan(invoice, invoiceLines) {
+  const invoiceKey = `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`;
+  const auditedInvoicePlans = new Map([
+    [
+      "gmail_canadian_tire_receipt|422-20260406-010177|2026-04-06",
+      {
+        category: "Tools & equipment",
+        categories: [
+          ["069-1076-0", "Tools & equipment"],
+          ["398-6931-2", "Tools & equipment"],
+        ],
+        evidence:
+          "Canadian Tire receipt 422-20260406-010177 · alkaline equipment battery and its environmental fee, with no customer or job reference",
+        source: "audited_canadian_tire_equipment_purchase",
+      },
+    ],
+    [
+      "sherwin_daily_email|3069-4|2026-04-10",
+      {
+        category: "Supplier correction",
+        categories: [
+          ["B20W1151", "Supplier correction"],
+          ["B20WQ1151", "Supplier correction"],
+        ],
+        evidence:
+          "Sherwin-Williams invoice 3069-4 · equal return and replacement of the same ProClassic product, producing a documented zero-dollar supplier SKU correction",
+        source: "audited_zero_value_supplier_correction",
+      },
+    ],
+    [
+      "sherwin_daily_email|1281-6|2026-05-27",
+      {
+        category: "Mixed overhead",
+        categories: [
+          ["106009", "Shop supplies"],
+          ["559554400", "Shop supplies"],
+          ["R360", "Tools & equipment"],
+          ["SD150-5", "Shop supplies"],
+        ],
+        evidence:
+          "Sherwin-Williams invoice 1281-6 · reusable Radius 360 sanding tool plus unassigned general tape, applicator, and sanding supplies, with no customer or job reference",
+        source: "audited_unassigned_shop_tool_purchase",
+      },
+    ],
+    [
+      "sherwin_daily_email|8564-9|2026-06-04",
+      {
+        category: "Crew workwear",
+        categories: [
+          ["SH12352", "Crew workwear"],
+          ["SH12355", "Crew workwear"],
+        ],
+        evidence:
+          "Sherwin-Williams invoice 8564-9 · two pairs of painter pants for Michael and Anas, which are crew workwear rather than customer-job materials",
+        source: "audited_crew_workwear_purchase",
+      },
+    ],
+    [
+      "sherwin_daily_email|9704-1|2025-12-15",
+      {
+        category: "Mixed overhead",
+        categories: [
+          ["CP-040NA", "Tools & equipment"],
+          ["71162", "Shop supplies"],
+          [null, "Tools & equipment"],
+        ],
+        evidence:
+          "Sherwin-Williams invoice 9704-1 · reusable angle brush and stainless multi-tool plus general DryDex spackling, ordered by crew member Anas with no customer, colour, or job reference",
+        source: "audited_crew_shop_tool_purchase",
+      },
+    ],
+    [
+      "sherwin_daily_email|6460-5|2026-03-09",
+      {
+        category: "Shop supplies",
+        categories: [
+          ["71164", "Shop supplies"],
+          ["WL41100A", "Shop supplies"],
+        ],
+        evidence:
+          "Sherwin-Williams invoice 6460-5 · generic DryDex spackling and painter's tape received by crew member Alaa, with no customer, colour, or job reference",
+        source: "audited_unassigned_shop_consumables",
+      },
+    ],
+    [
+      "sherwin_daily_email|7494-0|2026-05-04",
+      {
+        category: "Shop supplies",
+        expectedLineCount: 5,
+        evidence:
+          "Sherwin-Williams invoice 7494-0 · trash bags, general tape, roller frame, tray liners, and reusable tray received by crew member Audrey, with no customer, colour, or job reference",
+        source: "audited_unassigned_shop_consumables",
+      },
+    ],
+  ]);
+  const auditedInvoicePlan = auditedInvoicePlans.get(invoiceKey);
+  if (auditedInvoicePlan) {
+    const categoryByProductCode = auditedInvoicePlan.categories
+      ? new Map(auditedInvoicePlan.categories)
+      : null;
+    if (categoryByProductCode) {
+      if (
+        invoiceLines.length !== categoryByProductCode.size ||
+        invoiceLines.some(
+          (line) => !categoryByProductCode.has(line.product_code),
+        )
+      ) {
+        throw new Error(
+          `Audited overhead invoice ${invoice.invoice_number} line evidence changed; refusing allocation.`,
+        );
+      }
+    } else if (invoiceLines.length !== auditedInvoicePlan.expectedLineCount) {
+      throw new Error(
+        `Audited overhead invoice ${invoice.invoice_number} line count changed; refusing allocation.`,
+      );
+    }
+    return {
+      kind: "overhead",
+      category: auditedInvoicePlan.category,
+      method: "overhead_rule",
+      confidence: 1,
+      lineOverheadCategories: categoryByProductCode
+        ? Object.fromEntries(categoryByProductCode)
+        : null,
+      evidence: auditedInvoicePlan.evidence,
+      source: auditedInvoicePlan.source,
+    };
+  }
   if (
     invoice.source_system !== "gmail_home_depot_order" ||
     invoice.external_invoice_id !== "home-depot-order:240846171"
