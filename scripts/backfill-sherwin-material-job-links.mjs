@@ -228,7 +228,7 @@ function temporalScore(invoiceDate, job) {
   return 0;
 }
 
-function matchInvoice(invoice, jobs, projectIdByProposal) {
+function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
   const po = normalized(invoice.po_number);
   if (!po) return { kind: "unmatched", reason: "PO missing", candidates: [] };
   if (["supplies", "shop supplies", "office supplies"].includes(po)) {
@@ -238,6 +238,68 @@ function matchInvoice(invoice, jobs, projectIdByProposal) {
       method: "overhead_rule",
       confidence: 1,
       candidates: [],
+    };
+  }
+  const auditedDirectProjects = new Map([
+    [
+      "sherwin_daily_email|8970-1|2026-07-31",
+      {
+        projectId: "105848213",
+        customerName: "Shezara Ali",
+        proposalId: "2873427",
+        note:
+          "Gmail 19fb9dc9e6a1c167 confirms DripJobs proposal 2873427 was accepted for Shezara Ali on 2026-07-31; this same-day Sherwin invoice uses PO ALI, while CompanyCam project 105848213 is the current unarchived Shezara Ali job at 314 Central Park Dr #805",
+      },
+    ],
+  ]);
+  const auditedDirectProject = auditedDirectProjects.get(
+    `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`,
+  );
+  if (auditedDirectProject) {
+    const project = projectsById.get(auditedDirectProject.projectId);
+    if (
+      !project ||
+      normalized(project.name) !== normalized(auditedDirectProject.customerName) ||
+      project.is_deleted ||
+      project.is_lead ||
+      project.is_archived
+    ) {
+      throw new Error(
+        `Audited material invoice ${invoice.invoice_number} no longer has the expected active CompanyCam project ${auditedDirectProject.projectId}.`,
+      );
+    }
+    const job = {
+      customer_name: auditedDirectProject.customerName,
+      address: project.formatted_address,
+      proposal_id: auditedDirectProject.proposalId,
+      proposal_uuid: null,
+      job_start_date: "N/A",
+      job_completion_date: "N/A",
+    };
+    return {
+      kind: "matched",
+      job,
+      projectId: project.companycam_id,
+      method: "manual",
+      source: "gmail_dripjobs_acceptance_and_companycam_project",
+      sourcePayload: {
+        gmail_message_id: "19fb9dc9e6a1c167",
+        companycam_project_id: project.companycam_id,
+      },
+      base: 100,
+      temporal: 27,
+      score: 127,
+      matchingNote: auditedDirectProject.note,
+      candidates: [
+        {
+          job,
+          projectId: project.companycam_id,
+          method: "manual",
+          base: 100,
+          temporal: 27,
+          score: 127,
+        },
+      ],
     };
   }
   const auditedInvoiceProjects = new Map([
@@ -428,7 +490,13 @@ const db = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 const [projects, invoices, lines, activeAllocations] = await Promise.all([
-  fetchAll(() => db.from("companycam_projects").select("companycam_id,name")),
+  fetchAll(() =>
+    db
+      .from("companycam_projects")
+      .select(
+        "companycam_id,name,formatted_address,is_archived,is_deleted,is_lead",
+      ),
+  ),
   fetchAll(() =>
       db
         .from("material_invoices")
@@ -452,6 +520,9 @@ const { projectIdByProposal } = buildDripJobsProjectIdentity(
   jobs,
   new Set(projects.map((project) => String(project.companycam_id))),
 );
+const projectsById = new Map(
+  projects.map((project) => [String(project.companycam_id), project]),
+);
 const linesByInvoice = new Map();
 for (const line of lines) {
   const values = linesByInvoice.get(line.material_invoice_id) ?? [];
@@ -471,7 +542,9 @@ for (const invoice of invoices) {
     continue;
   }
   const lineOverheadPlan = auditedLineOverheadPlan(invoice, invoiceLines);
-  const match = lineOverheadPlan ?? matchInvoice(invoice, jobs, projectIdByProposal);
+  const match =
+    lineOverheadPlan ??
+    matchInvoice(invoice, jobs, projectIdByProposal, projectsById);
   const auditRow = {
     invoice_id: invoice.id,
     supplier_name: invoice.supplier_name,
@@ -522,6 +595,8 @@ for (const invoice of invoices) {
     proposal_id: String(match.job.proposal_id),
     proposal_uuid: match.job.proposal_uuid,
     method: match.method,
+    source: match.source ?? null,
+    source_payload: match.sourcePayload ?? null,
     matching_note: match.matchingNote ?? null,
     confidence: Math.min(1, match.score / 127),
     lines: invoiceLines,
@@ -605,8 +680,9 @@ if (apply) {
       source_payload: {
         source:
           plan.kind === "job"
-            ? "verified_dripjobs_export_2026-07-31"
+            ? plan.source ?? "verified_dripjobs_export_2026-07-31"
             : plan.source ?? "documented_supplier_po_rule",
+        ...(plan.source_payload ?? {}),
         proposal_uuid: plan.proposal_uuid,
         proposal_id: plan.proposal_id,
         customer_name: plan.project_name,
