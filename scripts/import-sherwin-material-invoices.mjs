@@ -234,7 +234,15 @@ function parseInvoicePage(page, pageNumber) {
   const storeNumber = page.match(/\bStore\s+(\d+)/i)?.[1] ?? null;
   const invoiceDate = isoDate(page.match(/\bDATE:\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]);
   const invoiceTime = page.match(/\b(?:TIME|HEURE):\s*(\d{1,2}:\d{2})\s*(AM|PM)/i);
-  const poNumber = page.match(/\bPO#[ \t]*([^\n\r]*)/i)?.[1]?.trim() || null;
+  const poMatch = page.match(
+    /\bPO#[ \t]*([^\n\r]*)(?:\r?\n[ \t]+(?!ORDER:)([^\n\r]*))?\r?\n[ \t]*ORDER:/i,
+  );
+  const poNumber =
+    (poMatch
+      ? [poMatch[1], poMatch[2]].filter(Boolean).join(" ")
+      : page.match(/\bPO#[ \t]*([^\n\r]*)/i)?.[1] ?? "")
+      .replace(/\s+/g, " ")
+      .trim() || null;
   const orderNumber = page.match(/\bORDER:\s*([^\s\n\r]+)/i)?.[1]?.trim() ?? null;
   const subtotalMatch = findLastMatch(
     page,

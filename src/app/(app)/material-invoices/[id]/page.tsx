@@ -16,6 +16,19 @@ function money(value: number, currency = "CAD") {
   }).format(value);
 }
 
+function evidenceUrl(
+  signedUrl: string | null,
+  pageStart: number | null,
+) {
+  if (!signedUrl || !pageStart || pageStart <= 1) return signedUrl;
+  return `${signedUrl}#page=${pageStart}`;
+}
+
+function pageLabel(pageStart: number | null, pageEnd: number | null) {
+  if (!pageStart || !pageEnd) return null;
+  return pageStart === pageEnd ? `Page ${pageStart}` : `Pages ${pageStart}-${pageEnd}`;
+}
+
 export default async function MaterialInvoicePage({
   params,
 }: {
@@ -32,6 +45,13 @@ export default async function MaterialInvoicePage({
   const settled = Math.abs(invoice.amountRemaining) <= 0.02;
   const allocated =
     Math.abs(invoice.jobAllocatedTotal - invoice.totalAmount) <= 0.02;
+  const primarySourceUrl = evidenceUrl(
+    invoice.document.signedUrl,
+    invoice.document.sourcePageStart,
+  );
+  const supportingEvidence = invoice.evidence.filter(
+    (evidence) => evidence.role !== "primary_invoice",
+  );
 
   return (
     <>
@@ -255,24 +275,28 @@ export default async function MaterialInvoicePage({
 
         <Card className="overflow-hidden">
           <CardHeader
-            title="Original supplier document"
-            subtitle={`${invoice.document.originalFilename} · SHA-256 ${invoice.document.contentSha256.slice(0, 16)}…`}
+            title={
+              invoice.document.sourceSystem === "derived_sherwin_invoice_pdf"
+                ? "Invoice-specific source"
+                : "Original supplier document"
+            }
+            subtitle={`${invoice.document.label} · ${invoice.document.originalFilename} · SHA-256 ${invoice.document.contentSha256.slice(0, 16)}…`}
             right={
-              invoice.document.signedUrl ? (
+              primarySourceUrl ? (
                 <a
-                  href={invoice.document.signedUrl}
+                  href={primarySourceUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
                 >
-                  Open source
+                  Open invoice PDF
                 </a>
               ) : null
             }
           />
-          {invoice.document.signedUrl ? (
+          {primarySourceUrl ? (
             <iframe
-              src={invoice.document.signedUrl}
+              src={primarySourceUrl}
               title={`Material invoice ${invoice.invoiceNumber}`}
               className="h-[680px] w-full bg-white"
             />
@@ -282,6 +306,85 @@ export default async function MaterialInvoicePage({
             </p>
           )}
         </Card>
+
+        {invoice.portalRecord || supportingEvidence.length ? (
+          <Card className="overflow-hidden">
+            <CardHeader
+              title="Supporting evidence"
+              subtitle="Portal confirmation and unchanged source batches remain separate from the invoice-specific PDF"
+              right={<Badge tone="neutral">{supportingEvidence.length} files</Badge>}
+            />
+            <div className="divide-y divide-[var(--color-border)]">
+              {invoice.portalRecord ? (
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                  <div>
+                    <div className="font-medium text-[var(--color-heading)]">
+                      Sherwin PRO+ portal row {invoice.portalRecord.rowNumber}
+                    </div>
+                    <div className="mt-1 text-xs text-[var(--color-muted)]">
+                      Store {invoice.portalRecord.storeNumber} · {invoice.portalRecord.portalType} · PO {invoice.portalRecord.poNumber || "not entered"}
+                    </div>
+                    {invoice.portalRecord.matchDifferences.length ? (
+                      <div className="mt-2 text-xs text-[var(--color-warn)]">
+                        Portal and physical source differ on {invoice.portalRecord.matchDifferences
+                          .map((difference) => difference.field ?? "one field")
+                          .join(", ")}; both values remain preserved.
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-[var(--color-good)]">
+                        Invoice number, date, PO, and total match the physical source.
+                      </div>
+                    )}
+                  </div>
+                  <Badge
+                    tone={
+                      invoice.portalRecord.matchStatus === "matched" ? "good" : "warn"
+                    }
+                  >
+                    {money(invoice.portalRecord.totalAmount, invoice.currency)}
+                  </Badge>
+                </div>
+              ) : null}
+              {supportingEvidence.map((evidence) => {
+                const sourceUrl = evidenceUrl(
+                  evidence.signedUrl,
+                  evidence.sourcePageStart,
+                );
+                const pages = pageLabel(
+                  evidence.sourcePageStart,
+                  evidence.sourcePageEnd,
+                );
+                return (
+                  <div
+                    key={evidence.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"
+                  >
+                    <div>
+                      <div className="font-medium text-[var(--color-heading)]">
+                        {evidence.label}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--color-muted)]">
+                        {[evidence.originalFilename, pages, `SHA-256 ${evidence.contentSha256.slice(0, 16)}…`]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    </div>
+                    {sourceUrl ? (
+                      <a
+                        href={sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
+                      >
+                        {evidence.role === "portal_export" ? "Open CSV" : "Open batch source"}
+                      </a>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        ) : null}
       </div>
     </>
   );

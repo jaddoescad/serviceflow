@@ -63,6 +63,41 @@ export type MaterialInvoiceLine = {
   allocations: MaterialLineAllocation[];
 };
 
+export type MaterialInvoiceEvidence = {
+  id: string;
+  documentId: string;
+  role: "primary_invoice" | "supporting_batch" | "portal_export";
+  label: string;
+  sourcePageStart: number | null;
+  sourcePageEnd: number | null;
+  sourceSystem: string;
+  sourceReference: string | null;
+  originalFilename: string;
+  mimeType: string;
+  contentSha256: string;
+  storagePath: string;
+  signedUrl: string | null;
+  pageCount: number | null;
+};
+
+export type MaterialPortalRecord = {
+  id: string;
+  sourceDocumentId: string;
+  rowNumber: number;
+  invoiceNumber: string;
+  invoiceDate: string;
+  storeNumber: string;
+  poNumber: string | null;
+  totalAmount: number;
+  portalType: string;
+  matchStatus: "matched" | "matched_with_difference";
+  matchDifferences: Array<{
+    field?: string;
+    portal?: unknown;
+    physical_invoice?: unknown;
+  }>;
+};
+
 export type MaterialInvoiceDetail = MaterialInvoiceListRow & {
   accountNumber: string | null;
   dueOn: string | null;
@@ -71,15 +106,9 @@ export type MaterialInvoiceDetail = MaterialInvoiceListRow & {
   receivedBy: string | null;
   currency: string;
   extractionStatus: string;
-  document: {
-    id: string;
-    sourceReference: string | null;
-    originalFilename: string;
-    contentSha256: string;
-    storagePath: string;
-    signedUrl: string | null;
-    pageCount: number | null;
-  };
+  document: MaterialInvoiceEvidence;
+  evidence: MaterialInvoiceEvidence[];
+  portalRecord: MaterialPortalRecord | null;
   lines: MaterialInvoiceLine[];
   payments: Array<{
     id: string;
@@ -107,6 +136,14 @@ export type MaterialInvoiceDetail = MaterialInvoiceListRow & {
     allocatedAmount: number;
     evidenceReference: string | null;
   }>;
+};
+
+export type MaterialPortalEvidenceSummary = {
+  totalRows: number;
+  matchedRows: number;
+  matchedWithDifferenceRows: number;
+  sourceMissingRows: number;
+  sourceMissingTotal: number;
 };
 
 export type MaterialPaymentVerificationSummary = {
@@ -211,6 +248,49 @@ type InvoiceHeaderRow = {
     | null;
 };
 
+type PrimaryEvidenceIndexRow = {
+  material_invoice_id: string;
+  document_id: string;
+  material_invoice_documents:
+    | { original_filename: string }
+    | Array<{ original_filename: string }>
+    | null;
+};
+
+type RawEvidenceLink = {
+  id: string;
+  material_invoice_id: string;
+  document_id: string;
+  evidence_role: MaterialInvoiceEvidence["role"];
+  source_page_start: number | null;
+  source_page_end: number | null;
+  evidence_label: string;
+  material_invoice_documents:
+    | {
+        id: string;
+        source_system: string;
+        source_reference: string | null;
+        original_filename: string;
+        mime_type: string;
+        content_sha256: string;
+        storage_bucket: string;
+        storage_path: string;
+        page_count: number | null;
+      }
+    | Array<{
+        id: string;
+        source_system: string;
+        source_reference: string | null;
+        original_filename: string;
+        mime_type: string;
+        content_sha256: string;
+        storage_bucket: string;
+        storage_path: string;
+        page_count: number | null;
+      }>
+    | null;
+};
+
 type AllocationIndexRow = {
   allocation_scope: "job" | "overhead";
   companycam_project_id: string | null;
@@ -244,7 +324,7 @@ type RawLineAllocation = {
 
 export async function getMaterialInvoices(): Promise<MaterialInvoiceListRow[]> {
   const supabase = await createClient();
-  const [verificationRows, headerRows, allocationRows] = await Promise.all([
+  const [verificationRows, headerRows, allocationRows, primaryEvidenceRows] = await Promise.all([
     fetchAll<VerificationRow>(() =>
       supabase
         .from("material_invoice_verification")
@@ -265,7 +345,25 @@ export async function getMaterialInvoices(): Promise<MaterialInvoiceListRow[]> {
         )
         .is("reversed_at", null),
     ),
+    fetchAll<PrimaryEvidenceIndexRow>(() =>
+      supabase
+        .from("material_invoice_evidence_links")
+        .select(
+          "material_invoice_id,document_id,material_invoice_documents(original_filename)",
+        )
+        .eq("evidence_role", "primary_invoice"),
+    ),
   ]);
+
+  const primaryFilenameByInvoice = new Map(
+    primaryEvidenceRows.map((row) => [
+      row.material_invoice_id,
+      one(row.material_invoice_documents)?.original_filename ?? "Invoice-specific PDF",
+    ]),
+  );
+  const primaryDocumentIdByInvoice = new Map(
+    primaryEvidenceRows.map((row) => [row.material_invoice_id, row.document_id]),
+  );
 
   const filenameByInvoice = new Map(
     headerRows.map((row) => [
@@ -313,8 +411,14 @@ export async function getMaterialInvoices(): Promise<MaterialInvoiceListRow[]> {
     creditUsedAmount: Number(row.credit_used_amount),
     amountRemaining: Number(row.amount_remaining),
     verificationStatus: row.verification_status,
-    documentId: documentIdByInvoice.get(row.material_invoice_id) ?? row.material_invoice_id,
-    documentFilename: filenameByInvoice.get(row.material_invoice_id) ?? "Archived invoice",
+    documentId:
+      primaryDocumentIdByInvoice.get(row.material_invoice_id) ??
+      documentIdByInvoice.get(row.material_invoice_id) ??
+      row.material_invoice_id,
+    documentFilename:
+      primaryFilenameByInvoice.get(row.material_invoice_id) ??
+      filenameByInvoice.get(row.material_invoice_id) ??
+      "Archived invoice",
     jobs: [...(jobsByInvoice.get(row.material_invoice_id) ?? new Map()).entries()].map(
       ([id, name]) => ({ id, name }),
     ),
@@ -324,16 +428,48 @@ export async function getMaterialInvoices(): Promise<MaterialInvoiceListRow[]> {
   }));
 }
 
+export async function getMaterialPortalEvidenceSummary(): Promise<MaterialPortalEvidenceSummary> {
+  const supabase = await createClient();
+  const rows = await fetchAll<{
+    match_status: "matched" | "matched_with_difference" | "source_missing";
+    total_amount: number;
+  }>(() =>
+    supabase
+      .from("material_supplier_portal_records")
+      .select("match_status,total_amount"),
+  );
+  return {
+    totalRows: rows.length,
+    matchedRows: rows.filter((row) => row.match_status === "matched").length,
+    matchedWithDifferenceRows: rows.filter(
+      (row) => row.match_status === "matched_with_difference",
+    ).length,
+    sourceMissingRows: rows.filter((row) => row.match_status === "source_missing").length,
+    sourceMissingTotal: rows
+      .filter((row) => row.match_status === "source_missing")
+      .reduce((sum, row) => sum + Number(row.total_amount), 0),
+  };
+}
+
 export async function getMaterialInvoice(
   invoiceId: string,
 ): Promise<MaterialInvoiceDetail | null> {
   const supabase = await createClient();
-  const [invoiceResult, verificationResult, linesResult, paymentsResult, creditsInResult, creditsOutResult] =
+  const [
+    invoiceResult,
+    verificationResult,
+    linesResult,
+    paymentsResult,
+    creditsInResult,
+    creditsOutResult,
+    evidenceResult,
+    portalResult,
+  ] =
     await Promise.all([
       supabase
         .from("material_invoices")
         .select(
-          "*,material_invoice_documents(id,source_reference,original_filename,content_sha256,storage_bucket,storage_path,page_count)",
+          "*,material_invoice_documents(id,source_system,source_reference,original_filename,mime_type,content_sha256,storage_bucket,storage_path,page_count)",
         )
         .eq("id", invoiceId)
         .maybeSingle(),
@@ -366,6 +502,22 @@ export async function getMaterialInvoice(
         .select("id,charge_material_invoice_id,allocated_amount,evidence_reference")
         .eq("credit_material_invoice_id", invoiceId)
         .is("reversed_at", null),
+      supabase
+        .from("material_invoice_evidence_links")
+        .select(
+          "id,material_invoice_id,document_id,evidence_role,source_page_start,source_page_end,evidence_label,material_invoice_documents(id,source_system,source_reference,original_filename,mime_type,content_sha256,storage_bucket,storage_path,page_count)",
+        )
+        .eq("material_invoice_id", invoiceId)
+        .order("evidence_role"),
+      supabase
+        .from("material_supplier_portal_records")
+        .select(
+          "id,source_document_id,source_row_number,invoice_number,transaction_date,store_number,po_number,total_amount,portal_type,match_status,match_differences",
+        )
+        .eq("material_invoice_id", invoiceId)
+        .order("last_seen_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
   for (const result of [
     invoiceResult,
@@ -374,6 +526,8 @@ export async function getMaterialInvoice(
     paymentsResult,
     creditsInResult,
     creditsOutResult,
+    evidenceResult,
+    portalResult,
   ]) {
     if (result.error) throw result.error;
   }
@@ -388,9 +542,54 @@ export async function getMaterialInvoice(
       | null,
   );
   if (!rawDocument) return null;
-  const signed = await supabase.storage
-    .from(String(rawDocument.storage_bucket))
-    .createSignedUrl(String(rawDocument.storage_path), 60 * 60);
+  const rawEvidenceLinks = (evidenceResult.data ?? []) as unknown as RawEvidenceLink[];
+  const evidenceLinks = rawEvidenceLinks.length
+    ? rawEvidenceLinks
+    : [
+        {
+          id: `fallback-${invoiceId}`,
+          material_invoice_id: invoiceId,
+          document_id: String(rawDocument.id),
+          evidence_role: "primary_invoice" as const,
+          source_page_start:
+            rawInvoice.source_page_start == null ? null : Number(rawInvoice.source_page_start),
+          source_page_end:
+            rawInvoice.source_page_end == null ? null : Number(rawInvoice.source_page_end),
+          evidence_label: "Archived supplier document",
+          material_invoice_documents: rawDocument as RawEvidenceLink["material_invoice_documents"],
+        },
+      ];
+  const signedEvidence = await Promise.all(
+    evidenceLinks.map(async (link) => {
+      const document = one(link.material_invoice_documents);
+      if (!document) return null;
+      const signed = await supabase.storage
+        .from(String(document.storage_bucket))
+        .createSignedUrl(String(document.storage_path), 60 * 60);
+      return {
+        id: link.id,
+        documentId: document.id,
+        role: link.evidence_role,
+        label: link.evidence_label,
+        sourcePageStart: link.source_page_start,
+        sourcePageEnd: link.source_page_end,
+        sourceSystem: document.source_system,
+        sourceReference: document.source_reference,
+        originalFilename: document.original_filename,
+        mimeType: document.mime_type,
+        contentSha256: document.content_sha256,
+        storagePath: document.storage_path,
+        signedUrl: signed.data?.signedUrl ?? null,
+        pageCount: document.page_count == null ? null : Number(document.page_count),
+      } satisfies MaterialInvoiceEvidence;
+    }),
+  );
+  const evidence = signedEvidence.filter(
+    (item): item is MaterialInvoiceEvidence => item != null,
+  );
+  const primaryEvidence =
+    evidence.find((item) => item.role === "primary_invoice") ?? evidence[0];
+  if (!primaryEvidence) return null;
 
   const creditInvoiceIds = (creditsInResult.data ?? []).map(
     (row) => row.credit_material_invoice_id,
@@ -470,8 +669,8 @@ export async function getMaterialInvoice(
     creditUsedAmount: Number(rawVerification.credit_used_amount),
     amountRemaining: Number(rawVerification.amount_remaining),
     verificationStatus: rawVerification.verification_status,
-    documentId: String(rawDocument.id),
-    documentFilename: String(rawDocument.original_filename),
+    documentId: primaryEvidence.documentId,
+    documentFilename: primaryEvidence.originalFilename,
     jobs: [...jobs.entries()].map(([id, name]) => ({ id, name })),
     overheadCategories: [...overhead],
     accountNumber: String(rawInvoice.account_number ?? "") || null,
@@ -481,15 +680,25 @@ export async function getMaterialInvoice(
     receivedBy: String(rawInvoice.received_by ?? "") || null,
     currency: String(rawInvoice.currency ?? "CAD"),
     extractionStatus: String(rawInvoice.extraction_status ?? "needs_review"),
-    document: {
-      id: String(rawDocument.id),
-      sourceReference: String(rawDocument.source_reference ?? "") || null,
-      originalFilename: String(rawDocument.original_filename),
-      contentSha256: String(rawDocument.content_sha256),
-      storagePath: String(rawDocument.storage_path),
-      signedUrl: signed.data?.signedUrl ?? null,
-      pageCount: rawDocument.page_count == null ? null : Number(rawDocument.page_count),
-    },
+    document: primaryEvidence,
+    evidence,
+    portalRecord: portalResult.data
+      ? {
+          id: portalResult.data.id,
+          sourceDocumentId: portalResult.data.source_document_id,
+          rowNumber: Number(portalResult.data.source_row_number),
+          invoiceNumber: portalResult.data.invoice_number,
+          invoiceDate: portalResult.data.transaction_date,
+          storeNumber: portalResult.data.store_number,
+          poNumber: portalResult.data.po_number,
+          totalAmount: Number(portalResult.data.total_amount),
+          portalType: portalResult.data.portal_type,
+          matchStatus: portalResult.data.match_status as MaterialPortalRecord["matchStatus"],
+          matchDifferences: Array.isArray(portalResult.data.match_differences)
+            ? (portalResult.data.match_differences as MaterialPortalRecord["matchDifferences"])
+            : [],
+        }
+      : null,
     lines,
     payments: (paymentsResult.data ?? []).map((payment) => {
       const transaction = one(payment.financial_transactions);

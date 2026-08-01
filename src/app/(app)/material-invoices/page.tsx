@@ -1,12 +1,19 @@
 import { Kpi, PageHeader } from "@/components/kpi";
 import { MaterialInvoicesTable } from "@/components/material-invoices-table";
 import { requireStaff } from "@/lib/auth";
-import { getMaterialInvoices } from "@/lib/materials";
+import {
+  getMaterialInvoices,
+  getMaterialPortalEvidenceSummary,
+} from "@/lib/materials";
 
 export const dynamic = "force-dynamic";
 
 export default async function MaterialInvoicesPage() {
-  const [, invoices] = await Promise.all([requireStaff(), getMaterialInvoices()]);
+  const [, invoices, portalEvidence] = await Promise.all([
+    requireStaff(),
+    getMaterialInvoices(),
+    getMaterialPortalEvidenceSummary(),
+  ]);
   const settled = invoices.filter(
     (invoice) => Math.abs(invoice.amountRemaining) <= 0.02,
   ).length;
@@ -25,7 +32,7 @@ export default async function MaterialInvoicesPage() {
         title="Material invoices"
         subtitle="Supplier documents, product lines, job costs, credits, and bank-payment evidence"
       />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
           label="Invoices"
           value={invoices.length}
@@ -48,6 +55,19 @@ export default async function MaterialInvoicesPage() {
           value={needsJob}
           hint="kept out of job costing until resolved"
           tone={needsJob ? "warn" : "good"}
+        />
+        <Kpi
+          label="Portal source gaps"
+          value={portalEvidence.sourceMissingRows}
+          hint={
+            portalEvidence.sourceMissingRows
+              ? `${new Intl.NumberFormat("en-CA", {
+                  style: "currency",
+                  currency: "CAD",
+                }).format(portalEvidence.sourceMissingTotal)} listed without a physical PDF`
+              : `${portalEvidence.totalRows} portal rows have physical evidence`
+          }
+          tone={portalEvidence.sourceMissingRows ? "warn" : "good"}
         />
       </div>
       <MaterialInvoicesTable invoices={invoices} />
