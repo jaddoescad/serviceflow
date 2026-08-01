@@ -36,6 +36,7 @@ function normalized(value) {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/\bnorth\b/g, "n")
     .replace(
       /\b(street|st\.?|road|rd\.?|avenue|ave\.?|crescent|cres\.?|court|ct\.?|drive|dr\.?|boulevard|blvd\.?|private|pvt\.?|lane|ln\.?|way|terrace|terr\.?)\b/g,
       " ",
@@ -89,18 +90,82 @@ function nameParts(job) {
   };
 }
 
+function addressParts(value) {
+  const tokens = normalized(value).split(" ").filter(Boolean);
+  if (!/^\d+[a-z]?$/.test(tokens[0] ?? "")) {
+    return { civic: "", streetTokens: [], compactStreet: "" };
+  }
+  const cityTokens = new Set([
+    "ottawa",
+    "gatineau",
+    "orleans",
+    "nepean",
+    "russell",
+    "casselman",
+    "greely",
+    "gloucester",
+    "kanata",
+    "stittsville",
+    "rockland",
+    "clarence",
+  ]);
+  const cityIndex = tokens.findIndex((token, index) => index > 0 && cityTokens.has(token));
+  const streetTokens = tokens.slice(1, cityIndex > 1 ? cityIndex : undefined);
+  return {
+    civic: tokens[0],
+    streetTokens,
+    compactStreet: streetTokens.join(""),
+  };
+}
+
+function addressScore(po, address) {
+  const poAddress = addressParts(po);
+  const jobAddress = addressParts(address);
+  if (
+    !poAddress.civic ||
+    poAddress.civic !== jobAddress.civic ||
+    poAddress.compactStreet.length < 3 ||
+    jobAddress.compactStreet.length < 3
+  ) {
+    return 0;
+  }
+  const comparableJobStreet = jobAddress.streetTokens
+    .slice(0, poAddress.streetTokens.length)
+    .join("");
+  if (
+    poAddress.compactStreet === comparableJobStreet ||
+    comparableJobStreet.includes(poAddress.compactStreet) ||
+    poAddress.compactStreet.includes(comparableJobStreet)
+  ) {
+    return 100;
+  }
+  const distance = levenshtein(poAddress.compactStreet, comparableJobStreet);
+  const maxDistance = Math.max(poAddress.compactStreet.length, comparableJobStreet.length) >= 8 ? 2 : 1;
+  if (distance <= maxDistance) return 96;
+  const sharedStreetToken = poAddress.streetTokens.some(
+    (token) => token.length >= 4 && jobAddress.streetTokens.includes(token),
+  );
+  return sharedStreetToken ? 92 : 0;
+}
+
+function fuzzyFullNameScore(po, fullName) {
+  const poTokens = po.split(" ").filter(Boolean);
+  const nameTokens = fullName.split(" ").filter(Boolean);
+  if (poTokens.length < 2 || nameTokens.length < 2) return 0;
+  const distances = poTokens.map((poToken) =>
+    Math.min(...nameTokens.map((nameToken) => levenshtein(poToken, nameToken))),
+  );
+  if (distances[0] <= 1 && distances.every((distance) => distance <= 1)) return 91;
+  return 0;
+}
+
 function baseScore(po, job) {
   const names = nameParts(job);
   const compactPo = po.replace(/\s+/g, "");
   const compactLast = names.last.replace(/\s+/g, "");
   if (!po) return { score: 0, method: "customer_exact" };
-  if (
-    /\d/.test(po) &&
-    names.address.length >= 5 &&
-    (names.address.includes(po) || po.includes(names.address))
-  ) {
-    return { score: 100, method: "address_exact" };
-  }
+  const matchedAddressScore = addressScore(po, job.address);
+  if (matchedAddressScore) return { score: matchedAddressScore, method: "address_exact" };
   if (po === names.full) return { score: 100, method: "customer_exact" };
   if (po === names.last) return { score: 92, method: "customer_exact" };
   if (po === names.first && po.length >= 4) {
@@ -121,6 +186,8 @@ function baseScore(po, job) {
   ) {
     return { score: 86, method: "customer_exact" };
   }
+  const fullNameFuzzy = fuzzyFullNameScore(po, names.full);
+  if (fullNameFuzzy) return { score: fullNameFuzzy, method: "customer_exact" };
   const poLast = po.split(" ").at(-1) ?? "";
   if (poLast.length >= 5 && names.last.length >= 5) {
     const distance = levenshtein(poLast, names.last);
@@ -139,13 +206,18 @@ function temporalScore(invoiceDate, job) {
   if (started && completed) {
     const fromStart = dateDistance(invoiceDate, started);
     const fromCompletion = dateDistance(invoiceDate, completed);
-    if (fromStart >= -21 && fromCompletion <= 21) return 35;
-    if (fromStart >= -45 && fromCompletion <= 45) return 20;
+    if (fromStart >= 0 && fromCompletion <= 0) return 45;
+    if (fromStart >= -7 && fromStart < 0) return 30;
+    if (fromStart >= -21 && fromStart < -7) return 18;
+    if (fromCompletion > 0 && fromCompletion <= 14) return 25;
+    if (fromStart >= -45 && fromCompletion <= 45) return 10;
     return -35;
   }
   if (started) {
     const fromStart = dateDistance(invoiceDate, started);
-    if (fromStart >= -21 && fromStart <= 60) return 25;
+    if (fromStart >= 0 && fromStart <= 60) return 35;
+    if (fromStart >= -7 && fromStart < 0) return 25;
+    if (fromStart >= -21 && fromStart < -7) return 15;
     if (fromStart < -45) return -20;
   }
   if (created) {
@@ -166,6 +238,40 @@ function matchInvoice(invoice, jobs, projectIdByProposal) {
       method: "overhead_rule",
       confidence: 1,
       candidates: [],
+    };
+  }
+  const auditedPoAliases = new Map([
+    ["luke nickson", "2372277"],
+    ["luck nickson", "2372277"],
+    ["orokovsky", "2418171"],
+    ["lecalire", "3006955"],
+    ["loraine", "3022357"],
+    ["lorraine don", "3022357"],
+  ]);
+  const aliasProposalId = auditedPoAliases.get(po);
+  if (aliasProposalId) {
+    const aliasJob = jobs.find((job) => String(job.proposal_id) === aliasProposalId);
+    if (!aliasJob) throw new Error(`Audited PO alias ${po} has no DripJobs proposal ${aliasProposalId}.`);
+    const temporal = temporalScore(invoice.invoice_date, aliasJob);
+    return {
+      kind: "matched",
+      job: aliasJob,
+      projectId: projectIdByProposal.get(aliasJob.proposal_uuid),
+      method: "customer_exact",
+      base: 100,
+      temporal,
+      score: 100 + temporal,
+      matchingNote: `Audited PO spelling alias to DripJobs proposal ${aliasProposalId}`,
+      candidates: [
+        {
+          job: aliasJob,
+          projectId: projectIdByProposal.get(aliasJob.proposal_uuid),
+          method: "customer_exact",
+          base: 100,
+          temporal,
+          score: 100 + temporal,
+        },
+      ],
     };
   }
   const candidates = jobs
@@ -213,6 +319,34 @@ function matchInvoice(invoice, jobs, projectIdByProposal) {
   };
 }
 
+function auditedLineOverheadPlan(invoice, invoiceLines) {
+  if (
+    invoice.source_system !== "gmail_home_depot_order" ||
+    invoice.external_invoice_id !== "home-depot-order:240846171"
+  ) {
+    return null;
+  }
+  const categoryByProductCode = new Map([
+    ["1000738387", "Shop supplies"],
+    ["1001237109", "Tools & equipment"],
+  ]);
+  if (
+    invoiceLines.length !== categoryByProductCode.size ||
+    invoiceLines.some((line) => !categoryByProductCode.has(line.product_code))
+  ) {
+    throw new Error("Home Depot order 240846171 line evidence changed; refusing allocation.");
+  }
+  return {
+    kind: "overhead",
+    category: "Mixed overhead",
+    method: "overhead_rule",
+    confidence: 1,
+    lineOverheadCategories: Object.fromEntries(categoryByProductCode),
+    evidence: "Home Depot order 240846171 · audited item-purpose classification",
+    source: "audited_home_depot_order_240846171",
+  };
+}
+
 async function fetchAll(queryFactory, pageSize = 1000) {
   const rows = [];
   for (let page = 0; page < 100; page += 1) {
@@ -246,13 +380,13 @@ const [projects, invoices, lines, activeAllocations] = await Promise.all([
   fetchAll(() =>
       db
         .from("material_invoices")
-      .select("id,supplier_name,invoice_number,invoice_date,po_number,total_amount")
+      .select("id,source_system,external_invoice_id,supplier_name,invoice_number,invoice_date,po_number,total_amount")
       .order("invoice_date"),
   ),
   fetchAll(() =>
     db
       .from("material_invoice_lines")
-      .select("id,material_invoice_id,amount_before_tax,tax_amount,total_amount")
+      .select("id,material_invoice_id,product_code,description,amount_before_tax,tax_amount,total_amount")
       .order("line_number"),
   ),
   fetchAll(() =>
@@ -284,7 +418,8 @@ for (const invoice of invoices) {
   if (!invoiceLines.length || invoiceLines.some((line) => allocatedLineIds.has(line.id))) {
     continue;
   }
-  const match = matchInvoice(invoice, jobs, projectIdByProposal);
+  const lineOverheadPlan = auditedLineOverheadPlan(invoice, invoiceLines);
+  const match = lineOverheadPlan ?? matchInvoice(invoice, jobs, projectIdByProposal);
   const auditRow = {
     invoice_id: invoice.id,
     supplier_name: invoice.supplier_name,
@@ -315,6 +450,9 @@ for (const invoice of invoices) {
         project_id: null,
         project_name: null,
         overhead_category: match.category,
+        line_overhead_categories: match.lineOverheadCategories ?? null,
+        evidence: match.evidence ?? null,
+        source: match.source ?? null,
         method: match.method,
         confidence: match.confidence,
         lines: invoiceLines,
@@ -332,6 +470,7 @@ for (const invoice of invoices) {
     proposal_id: String(match.job.proposal_id),
     proposal_uuid: match.job.proposal_uuid,
     method: match.method,
+    matching_note: match.matchingNote ?? null,
     confidence: Math.min(1, match.score / 127),
     lines: invoiceLines,
   });
@@ -381,6 +520,7 @@ const report = {
           project_id: plan.project_id,
           project_name: plan.project_name,
           overhead_category: plan.overhead_category,
+          line_overhead_categories: plan.line_overhead_categories,
           score: plan.candidates[0]?.score ?? null,
         })),
       }
@@ -396,26 +536,34 @@ if (apply) {
       material_invoice_line_id: line.id,
       allocation_scope: plan.kind,
       companycam_project_id: plan.kind === "job" ? plan.project_id : null,
-      overhead_category: plan.kind === "overhead" ? plan.overhead_category : null,
+      overhead_category:
+        plan.kind === "overhead"
+          ? plan.line_overhead_categories?.[line.product_code] ?? plan.overhead_category
+          : null,
       allocated_before_tax: Number(line.amount_before_tax),
       allocated_tax: Number(line.tax_amount),
       allocated_total: Number(line.total_amount),
       allocation_method: plan.method,
       evidence_reference:
         plan.kind === "job"
-          ? `${plan.supplier_name} PO# ${plan.po} · DripJobs proposal ${plan.proposal_id}`
-          : `${plan.supplier_name} PO# ${plan.po} · documented supplies rule`,
+          ? `${plan.supplier_name} PO# ${plan.po} · ${plan.matching_note ? `${plan.matching_note} · ` : ""}DripJobs proposal ${plan.proposal_id}`
+          : plan.evidence ?? `${plan.supplier_name} PO# ${plan.po} · documented supplies rule`,
       confidence: plan.confidence,
       needs_review: false,
       source_payload: {
         source:
           plan.kind === "job"
             ? "verified_dripjobs_export_2026-07-31"
-            : "documented_supplier_po_rule",
+            : plan.source ?? "documented_supplier_po_rule",
         proposal_uuid: plan.proposal_uuid,
         proposal_id: plan.proposal_id,
         customer_name: plan.project_name,
-        matching_rule: "PO customer/address plus job-date disambiguation",
+        matching_rule:
+          plan.kind === "job"
+            ? plan.matching_note ?? "PO customer/address plus job-date disambiguation"
+            : plan.line_overhead_categories
+              ? "Audited receipt line-item purpose"
+              : "Supplier PO supplies rule",
       },
     })),
   );

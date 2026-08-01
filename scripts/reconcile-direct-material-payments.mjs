@@ -83,6 +83,7 @@ const [invoices, transactions, allocations] = await Promise.all([
       )
       .in("source_system", [
         "gmail_home_depot_receipt",
+        "gmail_home_depot_order",
         "gmail_preston_material_receipt",
         "gmail_canadian_tire_receipt",
       ])

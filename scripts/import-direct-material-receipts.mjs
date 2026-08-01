@@ -60,6 +60,129 @@ function isoCanadianDate(day, month, year) {
   return `${fullYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function decodeHtmlText(value) {
+  return String(value ?? "")
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isoEnglishDate(value) {
+  const match = String(value ?? "").match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/);
+  if (!match) return null;
+  const month = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+  ].indexOf(match[1].toLowerCase());
+  if (month < 0) return null;
+  return `${match[3]}-${String(month + 1).padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+}
+
+function parseHomeDepotOrderHtml(file) {
+  const html = readFileSync(file, "utf8");
+  const orderNumber = decodeHtmlText(html.match(/<b>Order Number:<\/b>\s*([^<]+)/i)?.[1]);
+  const invoiceDate = isoEnglishDate(
+    decodeHtmlText(html.match(/<b>Order Date:<\/b>\s*([^<]+)/i)?.[1]),
+  );
+  const subtotal = money(
+    html.match(/<b>Order Subtotal<\/b>[\s\S]*?<td[^>]*>\s*\$([\d,.]+)/i)?.[1],
+  );
+  const tax = money(html.match(/<b>HST<\/b>[\s\S]*?<td[^>]*>\s*\$([\d,.]+)/i)?.[1]);
+  const total = money(
+    html.match(/<b>Order Total<\/b>[\s\S]*?<td[^>]*>\s*\$([\d,.]+)/i)?.[1],
+  );
+  if (!orderNumber || !invoiceDate || subtotal == null || tax == null || total == null) {
+    throw new Error(`Could not parse Home Depot online order ${path.basename(file)}`);
+  }
+
+  const itemPattern =
+    /<a href="\/product\/[^"]+"[\s\S]*?<td valign="top"[^>]*>([\s\S]*?)<br>[\s\S]*?<b>Model Number\s*<\/b><\/td>\s*<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<b>Store SKU<\/b>\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>[\s\S]*?<b>Item Price<\/b>\s*<\/td>\s*<td[^>]*>[\s\S]*?\$([\d,.]+)[\s\S]*?<b>Quantity<\/b>\s*<\/td>\s*<td[^>]*>\s*([\d.]+)[\s\S]*?<b>Item Total<\/b>\s*<\/td>\s*<td[^>]*>\s*\$([\d,.]+)/gi;
+  const lines = [...html.matchAll(itemPattern)].map((match, index) => ({
+    line_number: index + 1,
+    line_type: "product",
+    sales_number: decodeHtmlText(match[3]),
+    size: null,
+    product_code: decodeHtmlText(match[3]),
+    description: decodeHtmlText(match[1]),
+    color_code: null,
+    color_name: null,
+    quantity: Number(match[5]),
+    unit_price: money(match[4]),
+    gross_amount: money(match[6]),
+    discount_amount: 0,
+    amount_before_tax: money(match[6]),
+    source_text: [
+      decodeHtmlText(match[1]),
+      `Model ${decodeHtmlText(match[2])}`,
+      `SKU ${decodeHtmlText(match[3])}`,
+      `${match[5]} × $${match[4]}`,
+    ].join(" · "),
+    source_payload: {
+      model_number: decodeHtmlText(match[2]),
+      store_sku: decodeHtmlText(match[3]),
+      extraction: "source_html",
+    },
+    needs_review: false,
+  }));
+  if (!lines.length) throw new Error(`No Home Depot online-order products in ${path.basename(file)}`);
+  const lineSubtotal = roundMoney(lines.reduce((sum, line) => sum + line.amount_before_tax, 0));
+  if (Math.abs(lineSubtotal - subtotal) > 0.02) {
+    throw new Error(`Home Depot online-order subtotal mismatch in ${path.basename(file)}`);
+  }
+
+  const storeLabel = decodeHtmlText(html.match(/<span class="store">([\s\S]*?)<\/span>/i)?.[1]);
+  const storeNumber = storeLabel.match(/(\d{4})$/)?.[1] ?? null;
+  const alternatePickupPerson = decodeHtmlText(
+    html.match(/<b>Alternate Pick-Up Person:<\/b>\s*([^<]+)/i)?.[1],
+  );
+  const cardLastFour = html.match(/VISA\s*:\s*X+(\d{4})/i)?.[1] ?? null;
+  return {
+    source_system: "gmail_home_depot_order",
+    external_invoice_id: `home-depot-order:${orderNumber}`,
+    supplier_name: "The Home Depot",
+    account_number: null,
+    job_account: null,
+    invoice_number: orderNumber,
+    invoice_type: "cash_receipt",
+    invoice_date: invoiceDate,
+    invoice_time: null,
+    due_on: invoiceDate,
+    po_number: null,
+    order_number: orderNumber,
+    store_number: storeNumber,
+    store_address: storeLabel || null,
+    received_by: alternatePickupPerson || null,
+    currency: "CAD",
+    amount_before_tax: subtotal,
+    tax_amount: tax,
+    total_amount: total,
+    extraction_status: "verified",
+    source_text: decodeHtmlText(html),
+    source_payload: {
+      order_number: orderNumber,
+      card_last_four: cardLastFour,
+      alternate_pickup_person: alternatePickupPerson || null,
+      original_format: "home_depot_order_email_html",
+    },
+    lines: allocateTax(lines, tax, subtotal),
+  };
+}
+
 function parseHomeDepot(file) {
   const text = execFileSync("pdftotext", ["-layout", file, "-"], { encoding: "utf8" });
   const header = text.match(
@@ -397,7 +520,10 @@ const parsed = sourceFiles.map((filename) => {
   const buffer = readFileSync(filePath);
   const invoice =
     metadata.vendor === "home-depot"
-      ? parseHomeDepot(filePath)
+      ? metadata.originalFilename.toLowerCase().endsWith(".htm") ||
+        metadata.originalFilename.toLowerCase().endsWith(".html")
+        ? parseHomeDepotOrderHtml(filePath)
+        : parseHomeDepot(filePath)
       : parsePreston(filePath, metadata.originalFilename);
   assertInvoice(invoice, filename);
   const originalFilename = invoice.source_payload?.original_filename ?? metadata.originalFilename;
@@ -415,7 +541,13 @@ const parsed = sourceFiles.map((filename) => {
     filePath,
     buffer,
     sha256: createHash("sha256").update(buffer).digest("hex"),
-    mimeType: metadata.originalFilename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/jpeg",
+    mimeType:
+      metadata.originalFilename.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : metadata.originalFilename.toLowerCase().endsWith(".htm") ||
+            metadata.originalFilename.toLowerCase().endsWith(".html")
+          ? "text/html"
+          : "image/jpeg",
     invoice,
   };
 });
