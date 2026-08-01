@@ -448,6 +448,158 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
           "Gmail 19f438f7124473a8 confirms Daniel Leung selected Benjamin Moore Sea Salt on 2026-07-08; Preston invoice OR020440 contains CSP-95 Sea Salt, uses PO SCOTT for Daniel's project manager Scott Madden, and was purchased on the verified 2026-07-09 first job day for DripJobs proposal 2930976",
       },
     ],
+    [
+      "sherwin_daily_email|0780-2|2025-12-16",
+      {
+        proposalId: "2258601",
+        note:
+          "Gmail 19aa1acda9393187 confirms Rick Piche accepted DripJobs proposal 2258601; this invoice uses the misspelled PO RICKPINCH and was purchased during the verified 2025-12-15 through 2025-12-19 job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|0485-5|2026-01-09",
+      {
+        proposalId: "2360010",
+        note:
+          "Gmail 19b8eba07a72cf6e confirms Justin Arcand accepted DripJobs proposal 2360010; this invoice uses the phonetic PO JUSTIN ARKENT and was purchased three days before the verified 2026-01-12 job start",
+      },
+    ],
+    [
+      "sherwin_daily_email|8494-8|2026-01-23",
+      {
+        proposalId: "2355250",
+        note:
+          "Gmail 19b945d8e0a984be confirms Jillian Morgan accepted DripJobs proposal 2355250 at 151 Bay St #602; this invoice uses PO BAY ST and was purchased one day before the verified job start",
+      },
+    ],
+    [
+      "sherwin_daily_email|6243-2|2026-03-23",
+      {
+        proposalId: "2366060",
+        note:
+          "Gmail 19c6c0845483cbeb confirms Noah Rossman accepted DripJobs proposal 2366060; this invoice uses the phonetic PO NOAH ROSEMOND and was purchased on the final scheduled day of the March 18 through March 23 job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|0966-7|2026-03-27",
+      {
+        proposalId: "2492310",
+        note:
+          "This invoice uses the phonetic PO JUSTIN WAGNER and was purchased during the verified Justin Wagar job for DripJobs proposal 2492310; Gmail 19c9a796bc1e3e56 provides the related 56 Sandhurst Ct work order sent to Polaris/Reza",
+      },
+    ],
+    [
+      "sherwin_daily_email|7123-1|2026-05-05",
+      {
+        proposalId: "2641607",
+        note:
+          "Gmail 19d58adaec53f817 confirms Joelle Boutros accepted DripJobs proposal 2641607 at 236 Trailsedge Way; this invoice's PO 326 TRAILSEDGE contains a one-digit address error and was purchased on the verified first scheduled job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|7631-7|2026-05-08",
+      {
+        proposalId: "2641607",
+        note:
+          "Gmail 19d58adaec53f817 confirms Joelle Boutros accepted DripJobs proposal 2641607 at 236 Trailsedge Way; this invoice's PO 234 TRAILSEDGE contains a one-digit address error and was purchased on the verified final scheduled job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|4657-7|2026-05-08",
+      {
+        proposalId: "2641607",
+        note:
+          "Gmail 19d58adaec53f817 confirms Joelle Boutros accepted DripJobs proposal 2641607 at 236 Trailsedge Way; this invoice's PO 234 TRAILSEDGE WAY contains a one-digit address error and was purchased on the verified final scheduled job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|7902-5|2026-05-13",
+      {
+        proposalId: "2656060",
+        note:
+          "Gmail 19d4527c9c7e5396 identifies Dever Jylha's DripJobs work order 2656060 at 64 Lillico Dr; this invoice uses the exact address PO 64 LILLICO DR and was purchased during the verified job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|7921-5|2026-05-14",
+      {
+        proposalId: "2656060",
+        note:
+          "Gmail 19d4527c9c7e5396 identifies Dever Jylha's DripJobs work order 2656060 at 64 Lillico Dr; this invoice uses the exact address PO 64 LILLICO and was purchased on the verified first recorded job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|7988-1|2026-05-19",
+      {
+        proposalId: "2597493",
+        note:
+          "Gmail 19d83fd2aa5a959d confirms Daniel Leblanc accepted DripJobs proposal 2597493 at 499 N Russell Rd; this invoice uses PO 499 NORTH RUSSEL RD and was purchased during the verified job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|5873-0|2026-05-20",
+      {
+        proposalId: "2597493",
+        note:
+          "Gmail 19d83fd2aa5a959d confirms Daniel Leblanc accepted DripJobs proposal 2597493 at 499 N Russell Rd; this invoice uses the misspelled PO 499 RUSSLE ROAD and was purchased during the verified job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|4845-8|2026-05-21",
+      {
+        proposalId: "2597493",
+        note:
+          "Gmail 19d83fd2aa5a959d confirms Daniel Leblanc accepted DripJobs proposal 2597493 at 499 N Russell Rd; this invoice uses the abbreviated PO 499 NORTH ROS and was purchased during the verified job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|2616-9|2025-10-30",
+      {
+        proposalId: "1865720",
+        note:
+          "This invoice uses the misspelled PO NICOLI, was received by REZA, and contains SW6211 Rainwashed immediately before Nicole Richard's verified DripJobs proposal 1865720 job; Gmail 19a4b8331eedb626 confirms the completed job and final payment",
+      },
+    ],
+    [
+      "sherwin_daily_email|4134-8|2025-11-02",
+      {
+        proposalId: "2140736",
+        note:
+          "This invoice uses the phonetic PO SHERLA, was received by ANAS on the same date as the verified PO SHEILA purchase, and contains Latitude exterior paint for Sheila McSwiggan's exterior-painting proposal 2140736 confirmed in Gmail 199cad819892e31b",
+      },
+    ],
+    [
+      "sherwin_daily_email|9863-7|2025-11-17",
+      {
+        proposalId: "2230810",
+        note:
+          "Gmail 19a6efc671beaaf9 specifies Ionic Ivory, Wheat Grass, Ancestral Gold, Accessible Beige, and Pure White for Elizabeth McCrea's general walls and trim; this PO ELIZABETH MCRAY invoice contains those exact colours, identifying proposal 2230810 rather than the separate ensuite-only proposal",
+      },
+    ],
+    [
+      "sherwin_daily_email|2402-1|2026-02-13",
+      {
+        proposalId: "2374940",
+        note:
+          "Gmail 19bfa707b799816e confirms Marilyn Hingorani selected SW7566 Westhighland White throughout 68 Tartan Dr; this invoice uses the abbreviated PO MARLEN, contains Westhighland White, and was purchased immediately before the verified DripJobs proposal 2374940 job",
+      },
+    ],
+    [
+      "sherwin_daily_email|6836-3|2026-02-25",
+      {
+        proposalId: "2510231",
+        note:
+          "Gmail 19c8b864f8f6ccbc confirms Claire Colbert's DripJobs proposal 2510231, which includes popcorn-ceiling removal; this invoice uses PO CLAIRE-CORONATION, contains joint compound and preparation supplies, and was purchased on the verified first scheduled job day",
+      },
+    ],
+    [
+      "sherwin_daily_email|5689-3|2026-03-10",
+      {
+        proposalId: "2484669",
+        note:
+          "Gmail 19cbaa3e06fcbf8e is the Gregg Alexander colour consultation and specifies SW6672 Morning Sun; this invoice uses the phonetic PO ALEXANDRIA, contains Morning Sun, and was purchased during the verified DripJobs proposal 2484669 job window",
+      },
+    ],
   ]);
   const auditedProject = auditedInvoiceProjects.get(
     `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`,
