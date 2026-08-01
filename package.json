@@ -15,6 +15,7 @@
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
     "audit:invoice-job-links": "node scripts/audit-invoice-entry-job-links.mjs",
     "audit:customer-revenue": "node scripts/audit-customer-revenue-evidence.mjs",
+    "audit:unmatched-material-evidence": "node scripts/audit-unmatched-material-evidence.mjs",
     "reconcile:exact-invoice-job-links": "node scripts/backfill-exact-invoice-entry-job-links.mjs",
     "reconcile:customer-revenue": "node scripts/reconcile-customer-revenue.mjs",
     "reconcile:customer-revenue-evidence": "node scripts/reconcile-customer-revenue-evidence.mjs",
