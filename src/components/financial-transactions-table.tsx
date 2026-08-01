@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 import { Badge, Card, CardHeader } from "@/components/ui";
+import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
 import type { FinancialTransaction } from "@/lib/financials";
 
 const money = new Intl.NumberFormat("en-CA", {
@@ -50,143 +51,14 @@ function transactionLabel(transaction: FinancialTransaction) {
   return "Expense";
 }
 
-function nonInvoiceSettlementLabel(transaction: FinancialTransaction) {
-  const verification = transaction.payment_verification;
-  if (
-    verification == null ||
-    Number(verification.invoice_allocated_amount) > 0 ||
-    Number(verification.unallocated_amount) > 0.005
-  ) {
-    return null;
-  }
-  if (Number(verification.bonus_allocated_amount) > 0) {
-    return "Bonus paid";
-  }
-  if (Number(verification.other_allocated_amount) > 0) {
-    return "Settled without invoice";
-  }
-  return null;
-}
-
 function reviewLabel(transaction: FinancialTransaction) {
-  if (transaction.source_details.transfer_status === "cancelled") {
-    return "Cancelled";
-  }
-  const customerException =
-    transaction.source_details.customer_revenue_exception_kind;
-  if (customerException === "refunded_deposit") return "Deposit refunded";
-  if (customerException === "paired_refund") return "Matched after refund";
-  if (
-    customerException === "overpayment" ||
-    customerException === "rounding_overpayment"
-  ) {
-    return "Customer overpayment";
-  }
-  if (customerException === "processor_invoice_composition_missing") {
-    return "Processor batch needs invoices";
-  }
-  if (
-    customerException === "invoice_missing" ||
-    customerException === "legacy_invoice_not_imported"
-  ) {
-    return "Customer identified · invoice missing";
-  }
-  const customerRevenue = transaction.customer_revenue_verification;
-  if (customerRevenue?.payment_status === "fully_allocated") {
-    return "Customer invoice matched";
-  }
-  if (customerRevenue?.payment_status === "partially_allocated") {
-    return "Partially matched";
-  }
-  if (customerRevenue?.payment_status === "unmatched") {
-    return "Customer invoice missing";
-  }
-  if (transaction.source_details.overpayment_status === "confirmed") {
-    return "Overpayment";
-  }
-  if (
-    transaction.source_details.invoice_evidence_status === "no_invoice_provided"
-  ) {
-    return "No invoice";
-  }
-  if (
-    transaction.source_details.invoice_evidence_status === "invoice_not_found"
-  ) {
-    return "Invoice not found";
-  }
-  if (
-    transaction.source_details.invoice_evidence_status ===
-    "partial_no_invoice_residual"
-  ) {
-    return "Partial match · balance has no invoice";
-  }
-  const nonInvoiceLabel = nonInvoiceSettlementLabel(transaction);
-  if (nonInvoiceLabel) return nonInvoiceLabel;
-  if (
-    transaction.category === "Subcontractors" &&
-    Number(
-      transaction.payment_verification?.invoice_allocated_amount ?? 0,
-    ) <= 0
-  ) {
-    return "Invoice missing";
-  }
-  const status = transaction.payment_verification?.payment_status;
-  if (status === "fully_allocated") return "Fully matched";
-  if (status === "partially_allocated") return "Partially matched";
-  if (status === "unidentified") return "Recipient not verified";
-  if (status === "unmatched") return "Payment unmatched";
-  if (status === "needs_review") return "Allocation error";
-  if (transaction.review_status === "reconciled") return "Reconciled";
-  return "Needs review";
+  return getTransactionSettlementStatus(transaction).label;
 }
 
 function reviewTone(
   transaction: FinancialTransaction,
 ): "good" | "warn" | "bad" | "neutral" {
-  if (transaction.source_details.transfer_status === "cancelled") {
-    return "neutral";
-  }
-  const customerException =
-    transaction.source_details.customer_revenue_exception_kind;
-  if (
-    customerException &&
-    !transaction.source_details.customer_revenue_exception_needs_review
-  ) {
-    return "good";
-  }
-  if (customerException) return "warn";
-  const customerRevenue = transaction.customer_revenue_verification;
-  if (customerRevenue?.payment_status === "fully_allocated") return "good";
-  if (customerRevenue?.payment_status === "partially_allocated") return "warn";
-  if (customerRevenue?.payment_status === "unmatched") return "bad";
-  if (transaction.source_details.overpayment_status === "confirmed") {
-    return "bad";
-  }
-  if (
-    transaction.source_details.invoice_evidence_status ===
-      "no_invoice_provided" ||
-    transaction.source_details.invoice_evidence_status ===
-      "invoice_not_found" ||
-    transaction.source_details.invoice_evidence_status ===
-      "partial_no_invoice_residual"
-  ) {
-    return "warn";
-  }
-  if (nonInvoiceSettlementLabel(transaction)) return "neutral";
-  if (
-    transaction.category === "Subcontractors" &&
-    Number(
-      transaction.payment_verification?.invoice_allocated_amount ?? 0,
-    ) <= 0
-  ) {
-    return "bad";
-  }
-  const status = transaction.payment_verification?.payment_status;
-  if (status === "fully_allocated") return "good";
-  if (status === "needs_review") return "bad";
-  if (status) return "warn";
-  if (transaction.review_status === "reconciled") return "good";
-  return transaction.review_status === "needs_review" ? "warn" : "neutral";
+  return getTransactionSettlementStatus(transaction).tone;
 }
 
 export function FinancialTransactionsTable({

@@ -1,4 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  parseManualSettlementResolution,
+  type ManualSettlementResolution,
+} from "@/lib/financial-settlement-status";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -136,10 +140,12 @@ export type LabourPaymentEvidence = {
     currency: string;
     transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
+    is_transfer: boolean;
     review_status: string;
     running_balance: number | null;
     notes: string | null;
     is_overpayment: boolean;
+    transfer_cancelled: boolean;
     has_no_invoice: boolean;
     invoice_not_found: boolean;
     partial_no_invoice_residual: boolean;
@@ -148,6 +154,7 @@ export type LabourPaymentEvidence = {
     customer_revenue_exception_kind: string | null;
     customer_revenue_exception_detail: string | null;
     customer_revenue_exception_needs_review: boolean;
+    manual_settlement_resolution: ManualSettlementResolution | null;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -497,6 +504,7 @@ export async function getLabourPaymentEvidence(
           currency,
           transaction_type,
           category,
+          is_transfer,
           review_status,
           running_balance,
           notes,
@@ -616,11 +624,15 @@ export async function getLabourPaymentEvidence(
     currency: string;
     transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
+    is_transfer: boolean;
     review_status: string;
     running_balance: number | null;
     notes: string | null;
     source_data: {
       confirmed_overpayment?: {
+        status?: string;
+      };
+      cancelled_e_transfer?: {
         status?: string;
       };
       reconciliation_research?: {
@@ -636,6 +648,7 @@ export async function getLabourPaymentEvidence(
         resolution?: string;
         review?: boolean;
       };
+      manual_settlement_resolution?: unknown;
     } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
@@ -670,6 +683,7 @@ export async function getLabourPaymentEvidence(
       currency: transaction.currency,
       transaction_type: transaction.transaction_type,
       category: transaction.category,
+      is_transfer: transaction.is_transfer,
       review_status: transaction.review_status,
       running_balance:
         transaction.running_balance == null
@@ -678,6 +692,8 @@ export async function getLabourPaymentEvidence(
       notes: transaction.notes,
       is_overpayment:
         transaction.source_data?.confirmed_overpayment?.status === "confirmed",
+      transfer_cancelled:
+        transaction.source_data?.cancelled_e_transfer?.status === "cancelled",
       has_no_invoice:
         transaction.source_data?.reconciliation_research?.status ===
         "no_invoice_provided",
@@ -714,6 +730,9 @@ export async function getLabourPaymentEvidence(
         transaction.source_data?.customer_revenue_exception?.status ===
           "confirmed" &&
         transaction.source_data.customer_revenue_exception.review === true,
+      manual_settlement_resolution: parseManualSettlementResolution(
+        transaction.source_data?.manual_settlement_resolution,
+      ),
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

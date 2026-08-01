@@ -15,9 +15,8 @@ export type FinancialFilters = {
   status:
     | "all"
     | "needs_review"
-    | "exceptions"
-    | "reconciled"
-    | "paid";
+    | "fully_matched"
+    | "custom";
   transactionType: "all" | "income" | "expense" | "transfer" | "credit";
   evidence: "all" | "matched" | "no_document" | "missing";
 };
@@ -128,10 +127,9 @@ export function FinancialFilterBar({
               onChange={applySelectFilter}
             >
               <option value="all">All statuses</option>
+              <option value="fully_matched">Fully matched</option>
               <option value="needs_review">Needs review</option>
-              <option value="exceptions">Exceptions</option>
-              <option value="paid">Paid invoice</option>
-              <option value="reconciled">Reconciled</option>
+              <option value="custom">Custom resolved</option>
             </Select>
           </Field>
         </div>

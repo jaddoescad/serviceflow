@@ -1,4 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  parseManualSettlementResolution,
+  type ManualSettlementResolution,
+} from "@/lib/financial-settlement-status";
 
 export type FinancialAccount = {
   id: string;
@@ -56,6 +60,7 @@ export type FinancialSourceDetails = {
   expense_evidence_vendor: string | null;
   customer_revenue_exception_kind: string | null;
   customer_revenue_exception_needs_review: boolean;
+  manual_settlement_resolution: ManualSettlementResolution | null;
 };
 
 export type PaymentVerificationSummary = {
@@ -129,6 +134,7 @@ type FinancialSourceData = {
   reconciliation_research?: unknown;
   expense_evidence?: unknown;
   customer_revenue_exception?: unknown;
+  manual_settlement_resolution?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -205,6 +211,9 @@ function normalizeSourceDetails(
     customerRevenueException && "status" in customerRevenueException
       ? customerRevenueException.status
       : null;
+  const manualResolution = parseManualSettlementResolution(
+    sourceData?.manual_settlement_resolution,
+  );
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -247,6 +256,7 @@ function normalizeSourceDetails(
       customerRevenueException != null &&
       "review" in customerRevenueException &&
       customerRevenueException.review === true,
+    manual_settlement_resolution: manualResolution,
   };
 }
 

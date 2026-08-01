@@ -894,15 +894,18 @@ export function PaymentEvidence({
     );
   }
   const purposeParts = [...purposeTotals.entries()].sort((a, b) => b[1] - a[1]);
-  const purposeValue = purposeParts.length
-    ? purposeParts.map(([label]) => label).join(" + ")
-    : transaction.is_overpayment
-      ? "Overpayment"
-      : transaction.has_no_invoice
-        ? "No invoice provided"
-        : transaction.invoice_not_found
-          ? "Invoice not found"
-          : "Not yet matched";
+  const manualResolution = transaction.manual_settlement_resolution;
+  const purposeValue = manualResolution
+    ? manualResolution.label
+    : purposeParts.length
+      ? purposeParts.map(([label]) => label).join(" + ")
+      : transaction.is_overpayment
+        ? "Overpayment"
+        : transaction.has_no_invoice
+          ? "No invoice provided"
+          : transaction.invoice_not_found
+            ? "Invoice not found"
+            : "Not yet matched";
 
   const unallocatedAmount = Number(
     verification?.unallocated_amount ?? Math.abs(transaction.amount),
@@ -915,20 +918,23 @@ export function PaymentEvidence({
   const recipientConfirmed =
     verification?.recipient_status === "confirmed" && payment.contractor;
 
-  const unmatchedReason = transaction.is_overpayment
-    ? "This payment exceeds every invoice on file for this contractor — the balance is treated as an overpayment."
-    : transaction.partial_no_invoice_residual
-      ? "Part of this payment matches an invoice; the remaining balance has no invoice behind it."
-      : transaction.has_no_invoice
-        ? "The contractor did not provide an invoice for this payment."
-        : transaction.invoice_not_found
-          ? "An invoice should exist for this payment but has not been located."
-          : "No invoice, bonus, or other settlement is matched to this payment yet.";
+  const unmatchedReason = manualResolution
+    ? manualResolution.note
+    : transaction.is_overpayment
+      ? "This payment exceeds every invoice on file for this contractor — the balance is treated as an overpayment."
+      : transaction.partial_no_invoice_residual
+        ? "Part of this payment matches an invoice; the remaining balance has no invoice behind it."
+        : transaction.has_no_invoice
+          ? "The contractor did not provide an invoice for this payment."
+          : transaction.invoice_not_found
+            ? "An invoice should exist for this payment but has not been located."
+            : "No invoice, bonus, or other settlement is matched to this payment yet.";
 
   const hasTargets =
     payment.invoices.length > 0 ||
     payment.bonuses.length > 0 ||
-    payment.otherAllocations.length > 0;
+    payment.otherAllocations.length > 0 ||
+    manualResolution != null;
   const documents = payment.invoices.filter((invoice) => invoice.signedUrl);
 
   return (
@@ -1008,7 +1014,14 @@ export function PaymentEvidence({
           }
         />
       ))}
-      {!hasTargets || unallocatedAmount > 0.005 ? (
+      {manualResolution ? (
+        <TargetRowCard
+          title={`Custom · ${manualResolution.label}`}
+          sub={manualResolution.note}
+          amount={money(manualResolution.amount)}
+        />
+      ) : null}
+      {!hasTargets || (!manualResolution && unallocatedAmount > 0.005) ? (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
             <p className="text-[13px] text-[var(--color-muted)]">

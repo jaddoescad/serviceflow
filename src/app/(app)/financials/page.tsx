@@ -15,6 +15,7 @@ import {
   type FinancialAccount,
   type FinancialTransaction,
 } from "@/lib/financials";
+import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
 
 export const dynamic = "force-dynamic";
 
@@ -143,47 +144,6 @@ function formatAsOf(value: string) {
   });
 }
 
-function isDocumentedException(transaction: FinancialTransaction) {
-  const verification = transaction.payment_verification;
-  const hasFullyAllocatedNonInvoiceSettlement =
-    verification != null &&
-    Number(verification.invoice_allocated_amount) <= 0 &&
-    Number(verification.unallocated_amount) <= 0.005 &&
-    Number(verification.bonus_allocated_amount) +
-      Number(verification.other_allocated_amount) >
-      0;
-
-  return (
-    transaction.source_details.overpayment_status === "confirmed" ||
-    transaction.source_details.invoice_evidence_status != null ||
-    hasFullyAllocatedNonInvoiceSettlement
-  );
-}
-
-function requiresReview(transaction: FinancialTransaction) {
-  if (
-    isDocumentedException(transaction) ||
-    transaction.source_details.transfer_status === "cancelled"
-  ) {
-    return false;
-  }
-
-  if (
-    transaction.category === "Subcontractors" &&
-    Number(
-      transaction.payment_verification?.invoice_allocated_amount ?? 0,
-    ) <= 0
-  ) {
-    return true;
-  }
-
-  return (
-    transaction.review_status !== "reconciled" ||
-    (transaction.payment_verification != null &&
-      transaction.payment_verification.payment_status !== "fully_allocated")
-  );
-}
-
 export default async function FinancialsPage({
   searchParams,
 }: {
@@ -241,9 +201,8 @@ export default async function FinancialsPage({
   const statusOptions = [
     "all",
     "needs_review",
-    "exceptions",
-    "reconciled",
-    "paid",
+    "fully_matched",
+    "custom",
   ] as const;
   const status = isOneOf(requestedStatus, statusOptions)
     ? requestedStatus
@@ -285,9 +244,7 @@ export default async function FinancialsPage({
   );
   const normalizedQuery = query.toLocaleLowerCase("en-CA");
   const displayedTransactions = periodTransactions.filter((transaction) => {
-    const hasPaidInvoice =
-      Number(transaction.payment_verification?.invoice_allocated_amount ?? 0) >
-      0;
+    const settlement = getTransactionSettlementStatus(transaction);
     const hasMatchedEvidence =
       Number(transaction.payment_verification?.total_allocated_amount ?? 0) > 0 ||
       transaction.evidence.some(
@@ -299,15 +256,9 @@ export default async function FinancialsPage({
       (item) => item.kind === "no_document_required",
     );
     const isMissingEvidence = !hasMatchedEvidence && !hasNoDocumentRequired;
-    const isException = isDocumentedException(transaction);
     const matchesStatus =
       status === "all" ||
-      (status === "paid" && hasPaidInvoice) ||
-      (status === "exceptions" && isException) ||
-      (status === "reconciled" &&
-        transaction.review_status === "reconciled" &&
-        !isException) ||
-      (status === "needs_review" && requiresReview(transaction));
+      settlement.bucket === status;
     const matchesEvidence =
       evidence === "all" ||
       (evidence === "matched" && hasMatchedEvidence) ||
@@ -395,15 +346,16 @@ export default async function FinancialsPage({
     0,
     ...categoryTotals.map((item) => item.amount),
   );
-  const reconciled = periodTransactions.filter(
-    (transaction) =>
-      transaction.review_status === "reconciled" &&
-      !isDocumentedException(transaction),
-  ).length;
-  const needsReview = periodTransactions.filter(requiresReview).length;
-  const documentedExceptions = periodTransactions.filter(
-    isDocumentedException,
-  ).length;
+  const settlementCounts = periodTransactions.reduce(
+    (counts, transaction) => {
+      counts[getTransactionSettlementStatus(transaction).bucket] += 1;
+      return counts;
+    },
+    { fully_matched: 0, needs_review: 0, custom: 0 },
+  );
+  const fullyMatched = settlementCounts.fully_matched;
+  const needsReview = settlementCounts.needs_review;
+  const customResolved = settlementCounts.custom;
 
   return (
     <>
@@ -417,9 +369,9 @@ export default async function FinancialsPage({
             ) : (
               <Badge tone="good">No unresolved reviews</Badge>
             )}
-            {documentedExceptions ? (
+            {customResolved ? (
               <Badge tone="neutral">
-                {documentedExceptions} documented exceptions
+                {customResolved} custom resolved
               </Badge>
             ) : null}
           </div>
@@ -467,7 +419,7 @@ export default async function FinancialsPage({
         <Kpi
           label="Ledger coverage"
           value={periodTransactions.length}
-          hint={`${reconciled} reconciled · ${needsReview} to review · ${documentedExceptions} exceptions`}
+          hint={`${fullyMatched} fully matched · ${needsReview} to review · ${customResolved} custom`}
           tone={needsReview === 0 ? "good" : "warn"}
         />
       </div>
