@@ -67,7 +67,7 @@ export function resolveSettlementStatus(
   if (facts.customerExceptionKind) {
     const label = customerExceptionLabel(facts.customerExceptionKind);
     return facts.customerExceptionNeedsReview
-      ? { bucket: "needs_review", label, tone: "warn" }
+      ? { bucket: "needs_review", label: "Needs review", tone: "warn" }
       : { bucket: "custom", label, tone: "neutral" };
   }
 
@@ -88,7 +88,7 @@ export function resolveSettlementStatus(
   if (facts.invoiceEvidenceStatus === "invoice_not_found") {
     return {
       bucket: "needs_review",
-      label: "Invoice not found",
+      label: "Needs review",
       tone: "bad",
     };
   }
@@ -117,12 +117,12 @@ export function resolveSettlementStatus(
     return { bucket: "fully_matched", label: "Fully matched", tone: "good" };
   }
   if (facts.customerRevenueStatus === "partially_allocated") {
-    return { bucket: "needs_review", label: "Partially matched", tone: "warn" };
+    return { bucket: "needs_review", label: "Needs review", tone: "warn" };
   }
   if (facts.customerRevenueStatus === "unmatched") {
     return {
       bucket: "needs_review",
-      label: "Customer invoice missing",
+      label: "Needs review",
       tone: "bad",
     };
   }
@@ -141,20 +141,20 @@ export function resolveSettlementStatus(
     return { bucket: "fully_matched", label: "Fully matched", tone: "good" };
   }
   if (facts.paymentStatus === "partially_allocated") {
-    return { bucket: "needs_review", label: "Partially matched", tone: "warn" };
+    return { bucket: "needs_review", label: "Needs review", tone: "warn" };
   }
   if (facts.paymentStatus === "unidentified") {
     return {
       bucket: "needs_review",
-      label: "Recipient not verified",
+      label: "Needs review",
       tone: "bad",
     };
   }
   if (facts.paymentStatus === "unmatched") {
-    return { bucket: "needs_review", label: "Payment unmatched", tone: "bad" };
+    return { bucket: "needs_review", label: "Needs review", tone: "bad" };
   }
   if (facts.paymentStatus === "needs_review") {
-    return { bucket: "needs_review", label: "Allocation error", tone: "bad" };
+    return { bucket: "needs_review", label: "Needs review", tone: "bad" };
   }
 
   return { bucket: "needs_review", label: "Needs review", tone: "warn" };

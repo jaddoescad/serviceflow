@@ -71,7 +71,25 @@ test("an invoice that should exist but was not found remains in review", () => {
     invoiceEvidenceStatus: "invoice_not_found",
   });
   assert.equal(result.bucket, "needs_review");
-  assert.equal(result.label, "Invoice not found");
+  assert.equal(result.label, "Needs review");
+});
+
+test("unmatched payments use the canonical needs-review state", () => {
+  const result = resolveSettlementStatus({ paymentStatus: "unmatched" });
+  assert.deepEqual(result, {
+    bucket: "needs_review",
+    label: "Needs review",
+    tone: "bad",
+  });
+});
+
+test("unmatched customer income uses the canonical needs-review state", () => {
+  const result = resolveSettlementStatus({ customerRevenueStatus: "unmatched" });
+  assert.deepEqual(result, {
+    bucket: "needs_review",
+    label: "Needs review",
+    tone: "bad",
+  });
 });
 
 test("a complete non-invoice allocation is a custom resolved state", () => {
