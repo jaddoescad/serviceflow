@@ -75,7 +75,7 @@ function CustomerInvoiceDetails({
               {money(invoice.total_amount)}
             </div>
             <div className="text-xs tabular-nums text-[var(--color-muted)]">
-              {money(invoice.bank_paid_amount)} bank matched
+              {money(invoice.bank_paid_amount)} credited to invoice
             </div>
           </div>
           <span className="text-[var(--color-muted)] transition-transform group-open:rotate-180">
@@ -96,7 +96,7 @@ function CustomerInvoiceDetails({
             {statusLabel(invoice.verification_status)}
           </Badge>
           <span className="text-xs text-[var(--color-muted)]">
-            DripJobs recorded {money(invoice.source_paid_amount)} paid · bank evidence {money(invoice.bank_paid_amount)}
+            DripJobs recorded {money(invoice.source_paid_amount)} paid · verified invoice credit {money(invoice.bank_paid_amount)} · bank cash {money(invoice.bank_cash_amount)}
           </span>
           {invoice.signed_url ? (
             <a
@@ -180,7 +180,7 @@ function CustomerInvoiceDetails({
                     </span>
                   </span>
                   <span className="shrink-0 font-semibold tabular-nums text-[var(--color-good)]">
-                    {money(payment.allocated_amount)}
+                    {money(payment.allocated_amount)} bank cash
                   </span>
                 </Link>
               ))}
@@ -303,8 +303,8 @@ export function JobAccountingChain({
         />
         <ChainStage
           label="2 · Income in bank"
-          value={money(revenue.bank_paid_amount)}
-          detail={`${revenue.bank_payment_count} linked bank row${revenue.bank_payment_count === 1 ? "" : "s"} · ${money(revenue.amount_remaining)} invoice balance`}
+          value={money(revenue.bank_cash_amount)}
+          detail={`${revenue.bank_payment_count} linked bank row${revenue.bank_payment_count === 1 ? "" : "s"} · ${money(revenue.processing_fee_amount)} fees · ${money(revenue.amount_remaining)} invoice balance`}
           state={
             revenue.bank_payment_count === 0
               ? "missing"
@@ -529,7 +529,7 @@ function CustomerInvoiceStatement({
                       : "text-[var(--color-muted)]"
                   }`}
                 >
-                  −{money(payment.allocated_amount)}
+                  −{money(payment.invoice_applied_amount)}
                 </span>
               </summary>
               <div className="mb-1.5 ml-4 space-y-0.5 text-xs text-[var(--color-muted)]">
@@ -550,7 +550,11 @@ function CustomerInvoiceStatement({
                   </div>
                 ) : null}
                 <div>
-                  Bank row {money(Math.abs(payment.amount))}
+                  Bank cash {money(payment.allocated_amount)}
+                  {Math.abs(payment.processing_fee_amount) > 0.005
+                    ? ` · processor fee ${money(payment.processing_fee_amount)}`
+                    : ""}
+                  {` · bank row ${money(Math.abs(payment.amount))}`}
                   {!isThisTransaction ? (
                     <>
                       {" · "}
@@ -638,11 +642,19 @@ function CustomerInvoiceDocumentCard({
 
 export function CustomerRevenueTransactionEvidence({
   evidence,
+  receivedFrom,
+  exception,
 }: {
   evidence: {
     verification: CustomerRevenueVerification;
     invoices: CustomerInvoiceEvidence[];
   };
+  receivedFrom: string | null;
+  exception: {
+    kind: string;
+    detail: string | null;
+    needsReview: boolean;
+  } | null;
 }) {
   const { verification, invoices } = evidence;
   const transactionId = verification.financial_transaction_id;
@@ -681,7 +693,7 @@ export function CustomerRevenueTransactionEvidence({
           <Stat label="Purpose" value="Customer invoice payment" />
           <Stat
             label="Received from"
-            value={customers.length ? customers.join(", ") : "Unknown"}
+            value={customers.length ? customers.join(", ") : receivedFrom ?? "Unknown"}
           />
         </StatGrid>
       </Card>
@@ -697,11 +709,19 @@ export function CustomerRevenueTransactionEvidence({
       {invoices.length === 0 || unallocated > 0.005 ? (
         <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
-            <p className="text-[13px] text-[var(--color-muted)]">
-              {invoices.length === 0
-                ? "No customer invoice has been allocated to this bank income yet."
-                : "Part of this bank income is not matched to a customer invoice."}
-            </p>
+            <div>
+              <p className="text-[13px] text-[var(--color-muted)]">
+                {exception?.detail ??
+                  (invoices.length === 0
+                    ? "No customer invoice has been allocated to this bank income yet."
+                    : "Part of this bank income is not matched to a customer invoice.")}
+              </p>
+              {exception ? (
+                <p className="mt-1 text-xs font-medium text-[var(--color-heading)]">
+                  {exception.needsReview ? "Evidence gap still needs review" : "Documented settlement exception"}
+                </p>
+              ) : null}
+            </div>
             {invoices.length > 0 ? (
               <span className="font-semibold tabular-nums text-[var(--color-warn)]">
                 {money(unallocated)}

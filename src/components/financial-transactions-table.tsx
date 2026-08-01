@@ -72,6 +72,25 @@ function reviewLabel(transaction: FinancialTransaction) {
   if (transaction.source_details.transfer_status === "cancelled") {
     return "Cancelled";
   }
+  const customerException =
+    transaction.source_details.customer_revenue_exception_kind;
+  if (customerException === "refunded_deposit") return "Deposit refunded";
+  if (customerException === "paired_refund") return "Matched after refund";
+  if (
+    customerException === "overpayment" ||
+    customerException === "rounding_overpayment"
+  ) {
+    return "Customer overpayment";
+  }
+  if (customerException === "processor_invoice_composition_missing") {
+    return "Processor batch needs invoices";
+  }
+  if (
+    customerException === "invoice_missing" ||
+    customerException === "legacy_invoice_not_imported"
+  ) {
+    return "Customer identified · invoice missing";
+  }
   const customerRevenue = transaction.customer_revenue_verification;
   if (customerRevenue?.payment_status === "fully_allocated") {
     return "Customer invoice matched";
@@ -127,6 +146,15 @@ function reviewTone(
   if (transaction.source_details.transfer_status === "cancelled") {
     return "neutral";
   }
+  const customerException =
+    transaction.source_details.customer_revenue_exception_kind;
+  if (
+    customerException &&
+    !transaction.source_details.customer_revenue_exception_needs_review
+  ) {
+    return "good";
+  }
+  if (customerException) return "warn";
   const customerRevenue = transaction.customer_revenue_verification;
   if (customerRevenue?.payment_status === "fully_allocated") return "good";
   if (customerRevenue?.payment_status === "partially_allocated") return "warn";

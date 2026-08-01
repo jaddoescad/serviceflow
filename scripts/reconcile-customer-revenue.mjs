@@ -253,7 +253,7 @@ const [projects, transactions, existingAllocations] = await Promise.all([
     db
       .from("customer_invoice_bank_allocations")
       .select(
-        "id,financial_transaction_id,customer_invoice_id,source_payment_event_id,allocated_amount,reversed_at",
+        "id,financial_transaction_id,customer_invoice_id,source_payment_event_id,allocated_amount,invoice_applied_amount,reversed_at",
       )
       .is("reversed_at", null),
   ),
@@ -619,6 +619,7 @@ const allocationRows = newExactMatches.map(
   customer_invoice_id: storedInvoiceIds.get(event.invoice_uuid),
   source_payment_event_id: storedPaymentIds.get(event.payment_uuid),
   allocated_amount: moneyFromCents(allocation_cents),
+  invoice_applied_amount: moneyFromCents(allocation_cents),
   match_method: [
     "dripjobs_payment_event",
     "exact_amount_cents",

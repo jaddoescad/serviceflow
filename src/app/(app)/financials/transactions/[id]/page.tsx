@@ -47,12 +47,36 @@ export default async function FinancialTransactionEvidencePage({
   const hasBankSupportedExpense =
     payment.transaction.expense_evidence_status === "bank_supported_no_itc" &&
     payment.transaction.review_status === "reconciled";
+  const customerRevenueException = payment.transaction
+    .customer_revenue_exception_kind
+    ? {
+        kind: payment.transaction.customer_revenue_exception_kind,
+        detail: payment.transaction.customer_revenue_exception_detail,
+        needsReview:
+          payment.transaction.customer_revenue_exception_needs_review,
+      }
+    : null;
+  const customerRevenueExceptionLabel =
+    customerRevenueException?.kind === "refunded_deposit"
+      ? "Deposit refunded"
+      : customerRevenueException?.kind === "paired_refund"
+        ? "Matched after refund"
+        : customerRevenueException?.kind === "overpayment" ||
+            customerRevenueException?.kind === "rounding_overpayment"
+          ? "Customer overpayment"
+          : customerRevenueException?.kind ===
+              "processor_invoice_composition_missing"
+            ? "Processor batch needs invoices"
+            : customerRevenueException
+              ? "Customer identified · invoice missing"
+              : null;
   const settlementLabel = customerRevenue
-    ? customerRevenue.verification.payment_status === "fully_allocated"
+    ? customerRevenueExceptionLabel ??
+      (customerRevenue.verification.payment_status === "fully_allocated"
       ? "Customer invoice matched"
       : customerRevenue.verification.payment_status === "partially_allocated"
         ? "Partially matched"
-        : "Customer invoice missing"
+        : "Customer invoice missing")
     : payment.transaction.is_overpayment
     ? "Overpayment"
     : payment.transaction.partial_no_invoice_residual
@@ -82,7 +106,11 @@ export default async function FinancialTransactionEvidencePage({
     currency: payment.transaction.currency || "CAD",
   });
   const statusTone = customerRevenue
-    ? customerRevenue.verification.payment_status === "fully_allocated"
+    ? customerRevenueException
+      ? customerRevenueException.needsReview
+        ? ("warn" as const)
+        : ("good" as const)
+      : customerRevenue.verification.payment_status === "fully_allocated"
       ? ("good" as const)
       : customerRevenue.verification.payment_status === "partially_allocated"
         ? ("warn" as const)
@@ -136,7 +164,11 @@ export default async function FinancialTransactionEvidencePage({
         </p>
       </div>
       {customerRevenue ? (
-        <CustomerRevenueTransactionEvidence evidence={customerRevenue} />
+        <CustomerRevenueTransactionEvidence
+          evidence={customerRevenue}
+          receivedFrom={payment.transaction.counterparty}
+          exception={customerRevenueException}
+        />
       ) : (
         <PaymentEvidence payment={payment} />
       )}

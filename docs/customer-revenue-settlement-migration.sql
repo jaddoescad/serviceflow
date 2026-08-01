@@ -152,6 +152,7 @@ create table if not exists public.customer_invoice_bank_allocations (
   source_payment_event_id uuid
     references public.customer_invoice_payment_events(id) on delete restrict,
   allocated_amount numeric(14,2) not null,
+  invoice_applied_amount numeric(14,2) not null,
   match_method text[] not null,
   confidence text not null default 'confirmed',
   evidence_note text not null,
@@ -163,6 +164,8 @@ create table if not exists public.customer_invoice_bank_allocations (
   inserted_at timestamptz not null default now(),
   constraint customer_invoice_bank_allocations_amount_positive
     check (allocated_amount > 0),
+  constraint customer_invoice_bank_allocations_invoice_amount_positive
+    check (invoice_applied_amount > 0),
   constraint customer_invoice_bank_allocations_confidence_check
     check (confidence in ('confirmed', 'manual')),
   constraint customer_invoice_bank_allocations_reversal_check check (
@@ -213,6 +216,10 @@ declare
   invoice_row public.customer_invoices%rowtype;
   payment_row public.customer_invoice_payment_events%rowtype;
 begin
+  new.invoice_applied_amount := coalesce(
+    new.invoice_applied_amount,
+    new.allocated_amount
+  );
   if new.reversed_at is not null then
     return new;
   end if;
@@ -286,7 +293,7 @@ begin
 
   select total_amount into invoice_amount
   from public.customer_invoices where id = invoice_id;
-  select coalesce(sum(allocated_amount), 0) into active_total
+  select coalesce(sum(invoice_applied_amount), 0) into active_total
   from public.customer_invoice_bank_allocations
   where customer_invoice_id = invoice_id and reversed_at is null;
   if active_total > invoice_amount + 0.005 then
@@ -296,7 +303,7 @@ begin
   if payment_id is not null then
     select amount into payment_amount
     from public.customer_invoice_payment_events where id = payment_id;
-    select coalesce(sum(allocated_amount), 0) into active_total
+    select coalesce(sum(invoice_applied_amount), 0) into active_total
     from public.customer_invoice_bank_allocations
     where source_payment_event_id = payment_id and reversed_at is null;
     if active_total > payment_amount + 0.005 then
@@ -322,6 +329,7 @@ begin
      or new.customer_invoice_id <> old.customer_invoice_id
      or new.source_payment_event_id is distinct from old.source_payment_event_id
      or new.allocated_amount <> old.allocated_amount
+     or new.invoice_applied_amount <> old.invoice_applied_amount
      or new.match_method <> old.match_method
      or new.confidence <> old.confidence
      or new.evidence_note <> old.evidence_note
@@ -346,7 +354,7 @@ as $$
 declare
   active_total numeric;
 begin
-  select coalesce(sum(allocated_amount), 0) into active_total
+  select coalesce(sum(invoice_applied_amount), 0) into active_total
   from public.customer_invoice_bank_allocations
   where customer_invoice_id = new.id and reversed_at is null;
   if active_total > new.total_amount + 0.005 then
@@ -500,19 +508,21 @@ select
   coalesce(payments.payment_event_count, 0)::integer as payment_event_count,
   coalesce(payments.payment_event_total, 0)::numeric(14,2) as payment_event_total,
   coalesce(bank.bank_payment_count, 0)::integer as bank_payment_count,
-  coalesce(bank.bank_paid_amount, 0)::numeric(14,2) as bank_paid_amount,
-  (invoice.total_amount - coalesce(bank.bank_paid_amount, 0))::numeric(14,2) as amount_remaining,
+  coalesce(bank.invoice_paid_amount, 0)::numeric(14,2) as bank_paid_amount,
+  (invoice.total_amount - coalesce(bank.invoice_paid_amount, 0))::numeric(14,2) as amount_remaining,
   case
-    when coalesce(bank.bank_paid_amount, 0) >= invoice.total_amount - 0.005 then 'paid'
-    when coalesce(bank.bank_paid_amount, 0) > 0 then 'partially_paid'
+    when coalesce(bank.invoice_paid_amount, 0) >= invoice.total_amount - 0.005 then 'paid'
+    when coalesce(bank.invoice_paid_amount, 0) > 0 then 'partially_paid'
     else 'unpaid'
   end as bank_payment_status,
   case
     when coalesce(documents.document_count, 0) = 0 then 'needs_information'
     when abs(coalesce(items.item_total, 0) - invoice.total_amount) > 0.02 then 'needs_review'
-    when coalesce(bank.bank_paid_amount, 0) + 0.005 < invoice.source_paid_amount then 'needs_review'
+    when coalesce(bank.invoice_paid_amount, 0) + 0.005 < invoice.source_paid_amount then 'needs_review'
     else 'verified'
-  end as verification_status
+  end as verification_status,
+  coalesce(bank.bank_cash_amount, 0)::numeric(14,2) as bank_cash_amount,
+  coalesce(bank.processing_fee_amount, 0)::numeric(14,2) as processing_fee_amount
 from public.customer_invoices invoice
 left join lateral (
   select
@@ -534,7 +544,11 @@ left join lateral (
   where event.customer_invoice_id = invoice.id
 ) payments on true
 left join lateral (
-  select count(*) as bank_payment_count, sum(allocation.allocated_amount) as bank_paid_amount
+  select
+    count(*) as bank_payment_count,
+    sum(allocation.allocated_amount) as bank_cash_amount,
+    sum(allocation.invoice_applied_amount) as invoice_paid_amount,
+    sum(allocation.invoice_applied_amount - allocation.allocated_amount) as processing_fee_amount
   from public.customer_invoice_bank_allocations allocation
   where allocation.customer_invoice_id = invoice.id and allocation.reversed_at is null
 ) bank on true;

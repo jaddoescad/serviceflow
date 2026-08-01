@@ -145,6 +145,9 @@ export type LabourPaymentEvidence = {
     partial_no_invoice_residual: boolean;
     expense_evidence_status: "bank_supported_no_itc" | null;
     expense_evidence_vendor: string | null;
+    customer_revenue_exception_kind: string | null;
+    customer_revenue_exception_detail: string | null;
+    customer_revenue_exception_needs_review: boolean;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -627,6 +630,12 @@ export async function getLabourPaymentEvidence(
         status?: string;
         vendor?: string;
       };
+      customer_revenue_exception?: {
+        status?: string;
+        kind?: string;
+        resolution?: string;
+        review?: boolean;
+      };
     } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
@@ -687,6 +696,24 @@ export async function getLabourPaymentEvidence(
         typeof transaction.source_data?.expense_evidence?.vendor === "string"
           ? transaction.source_data.expense_evidence.vendor
           : null,
+      customer_revenue_exception_kind:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        typeof transaction.source_data.customer_revenue_exception.kind ===
+          "string"
+          ? transaction.source_data.customer_revenue_exception.kind
+          : null,
+      customer_revenue_exception_detail:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        typeof transaction.source_data.customer_revenue_exception.resolution ===
+          "string"
+          ? transaction.source_data.customer_revenue_exception.resolution
+          : null,
+      customer_revenue_exception_needs_review:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        transaction.source_data.customer_revenue_exception.review === true,
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:

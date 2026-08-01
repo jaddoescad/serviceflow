@@ -54,6 +54,8 @@ export type FinancialSourceDetails = {
     | null;
   expense_evidence_status: "bank_supported_no_itc" | null;
   expense_evidence_vendor: string | null;
+  customer_revenue_exception_kind: string | null;
+  customer_revenue_exception_needs_review: boolean;
 };
 
 export type PaymentVerificationSummary = {
@@ -126,6 +128,7 @@ type FinancialSourceData = {
   confirmed_overpayment?: unknown;
   reconciliation_research?: unknown;
   expense_evidence?: unknown;
+  customer_revenue_exception?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -192,6 +195,16 @@ function normalizeSourceDetails(
     expenseEvidence && "vendor" in expenseEvidence
       ? expenseEvidence.vendor
       : null;
+  const customerRevenueException =
+    sourceData?.customer_revenue_exception &&
+    typeof sourceData.customer_revenue_exception === "object" &&
+    !Array.isArray(sourceData.customer_revenue_exception)
+      ? sourceData.customer_revenue_exception
+      : null;
+  const customerRevenueExceptionStatus =
+    customerRevenueException && "status" in customerRevenueException
+      ? customerRevenueException.status
+      : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -223,6 +236,17 @@ function normalizeSourceDetails(
         ? "bank_supported_no_itc"
         : null,
     expense_evidence_vendor: stringValue(expenseEvidenceVendor),
+    customer_revenue_exception_kind:
+      customerRevenueExceptionStatus === "confirmed" &&
+      customerRevenueException != null &&
+      "kind" in customerRevenueException
+        ? stringValue(customerRevenueException.kind)
+        : null,
+    customer_revenue_exception_needs_review:
+      customerRevenueExceptionStatus === "confirmed" &&
+      customerRevenueException != null &&
+      "review" in customerRevenueException &&
+      customerRevenueException.review === true,
   };
 }
 

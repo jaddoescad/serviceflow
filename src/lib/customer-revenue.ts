@@ -34,6 +34,8 @@ export type CustomerInvoiceEvidence = {
   source_status: string;
   source_url: string | null;
   bank_paid_amount: number;
+  bank_cash_amount: number;
+  processing_fee_amount: number;
   amount_remaining: number;
   bank_payment_status: "unpaid" | "partially_paid" | "paid";
   verification_status: "needs_information" | "needs_review" | "verified";
@@ -58,6 +60,8 @@ export type CustomerInvoiceEvidence = {
   bank_payments: Array<{
     allocation_id: string;
     allocated_amount: number;
+    invoice_applied_amount: number;
+    processing_fee_amount: number;
     evidence_note: string;
     match_method: string[];
     transaction_id: string;
@@ -84,6 +88,8 @@ export type ProjectCustomerRevenue = {
   invoice_tax: number;
   invoice_total: number;
   bank_paid_amount: number;
+  bank_cash_amount: number;
+  processing_fee_amount: number;
   amount_remaining: number;
   bank_payment_count: number;
   needs_review: boolean;
@@ -114,6 +120,8 @@ type StoredInvoice = {
 type InvoiceVerification = {
   customer_invoice_id: string;
   bank_paid_amount: number;
+  bank_cash_amount: number;
+  processing_fee_amount: number;
   amount_remaining: number;
   bank_payment_status: CustomerInvoiceEvidence["bank_payment_status"];
   verification_status: CustomerInvoiceEvidence["verification_status"];
@@ -158,7 +166,7 @@ async function loadInvoiceEvidence(
       supabase
         .from("customer_invoice_verification")
         .select(
-          "customer_invoice_id,bank_paid_amount,amount_remaining,bank_payment_status,verification_status",
+          "customer_invoice_id,bank_paid_amount,bank_cash_amount,processing_fee_amount,amount_remaining,bank_payment_status,verification_status",
         )
         .in("customer_invoice_id", invoiceIds),
       supabase
@@ -182,6 +190,7 @@ async function loadInvoiceEvidence(
             id,
             customer_invoice_id,
             allocated_amount,
+            invoice_applied_amount,
             evidence_note,
             match_method,
             financial_transactions (
@@ -288,6 +297,7 @@ async function loadInvoiceEvidence(
       id: string;
       customer_invoice_id: string;
       allocated_amount: number;
+      invoice_applied_amount: number;
       evidence_note: string;
       match_method: string[];
       financial_transactions: {
@@ -309,6 +319,9 @@ async function loadInvoiceEvidence(
     values.push({
       allocation_id: row.id,
       allocated_amount: Number(row.allocated_amount),
+      invoice_applied_amount: Number(row.invoice_applied_amount),
+      processing_fee_amount:
+        Number(row.invoice_applied_amount) - Number(row.allocated_amount),
       evidence_note: row.evidence_note,
       match_method: row.match_method,
       transaction_id: row.financial_transactions.id,
@@ -357,6 +370,10 @@ async function loadInvoiceEvidence(
         source_status: invoice.source_status,
         source_url: invoice.source_url,
         bank_paid_amount: Number(verification?.bank_paid_amount ?? 0),
+        bank_cash_amount: Number(verification?.bank_cash_amount ?? 0),
+        processing_fee_amount: Number(
+          verification?.processing_fee_amount ?? 0,
+        ),
         amount_remaining: Number(
           verification?.amount_remaining ?? invoice.total_amount,
         ),
@@ -423,6 +440,14 @@ export async function getProjectCustomerRevenue(
     ),
     bank_paid_amount: invoices.reduce(
       (total, invoice) => total + invoice.bank_paid_amount,
+      0,
+    ),
+    bank_cash_amount: invoices.reduce(
+      (total, invoice) => total + invoice.bank_cash_amount,
+      0,
+    ),
+    processing_fee_amount: invoices.reduce(
+      (total, invoice) => total + invoice.processing_fee_amount,
       0,
     ),
     amount_remaining: invoices.reduce(
