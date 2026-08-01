@@ -76,13 +76,13 @@ export function resolveSettlementStatus(
   }
 
   if (facts.invoiceEvidenceStatus === "no_invoice_provided") {
-    return { bucket: "custom", label: "No invoice", tone: "neutral" };
+    return { bucket: "custom", label: "No invoice", tone: "bad" };
   }
   if (facts.invoiceEvidenceStatus === "partial_no_invoice_residual") {
     return {
       bucket: "custom",
       label: "Partial match · balance has no invoice",
-      tone: "neutral",
+      tone: "bad",
     };
   }
   if (facts.invoiceEvidenceStatus === "invoice_not_found") {

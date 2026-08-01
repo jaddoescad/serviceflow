@@ -47,6 +47,16 @@ test("stored invoice evidence creates a custom no-invoice state", () => {
   });
   assert.equal(result.bucket, "custom");
   assert.equal(result.label, "No invoice");
+  assert.equal(result.tone, "bad");
+});
+
+test("a documented no-invoice residual is a red custom state", () => {
+  const result = resolveSettlementStatus({
+    invoiceEvidenceStatus: "partial_no_invoice_residual",
+  });
+  assert.equal(result.bucket, "custom");
+  assert.equal(result.label, "Partial match · balance has no invoice");
+  assert.equal(result.tone, "bad");
 });
 
 test("bank-supported overhead uses its accounting label", () => {

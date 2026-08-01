@@ -21,6 +21,7 @@
     "reconcile:dripjobs-jobs": "node scripts/reconcile-dripjobs-job-source.mjs",
     "reconcile:software-subscriptions": "node scripts/reconcile-software-subscriptions.mjs",
     "reconcile:recurring-overhead": "node scripts/reconcile-recurring-overhead.mjs",
+    "reconcile:confirmed-no-invoice": "node scripts/mark-confirmed-no-invoice-payments.mjs",
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
