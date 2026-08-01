@@ -440,6 +440,14 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
           "Gmail 19dbf99c1a08cdd5 explicitly changes Christian Boulet's DripJobs proposal 2726856 to Benjamin Moore Regal paint; this Preston receipt uses the misspelled PO GOULET and contains four Regal products for that same project",
       },
     ],
+    [
+      "gmail_preston_material_receipt|OR020440|2026-07-09",
+      {
+        proposalId: "2930976",
+        note:
+          "Gmail 19f438f7124473a8 confirms Daniel Leung selected Benjamin Moore Sea Salt on 2026-07-08; Preston invoice OR020440 contains CSP-95 Sea Salt, uses PO SCOTT for Daniel's project manager Scott Madden, and was purchased on the verified 2026-07-09 first job day for DripJobs proposal 2930976",
+      },
+    ],
   ]);
   const auditedProject = auditedInvoiceProjects.get(
     `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`,
