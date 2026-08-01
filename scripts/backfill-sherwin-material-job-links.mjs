@@ -281,6 +281,7 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       job,
       projectId: project.companycam_id,
       method: "manual",
+      confidence: 1,
       source: "gmail_dripjobs_acceptance_and_companycam_project",
       sourcePayload: {
         gmail_message_id: "19fb9dc9e6a1c167",
@@ -319,6 +320,126 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
           "Gmail 19e2142f0e120e13 confirms Joelle Moncrieff's May 13 change order for DripJobs proposal 2649627; this invoice and Decorator's Choice receipt 401120 share PO JOELLE and OC-45 Swiss Coffee immediately before the May 14 job start",
       },
     ],
+    [
+      "sherwin_daily_email|2957-6|2025-10-22",
+      {
+        proposalId: "2002074",
+        note:
+          "Gmail 1997c4a727e12927 confirms Michelle Fotheringham accepted DripJobs proposal 2002074; this Sherwin invoice uses PO MICHELLE on 2025-10-22, three days before the verified 2025-10-25 job date",
+      },
+    ],
+    [
+      "sherwin_daily_email|2676-3|2025-11-01",
+      {
+        proposalId: "1865720",
+        note:
+          "This Sherwin invoice uses PO NICOLE and SW6211 Rainwashed on 2025-11-01, two days before the verified Nicole Richard job for DripJobs proposal 1865720; Gmail 19a4b8331eedb626 confirms Nicole's completion and payment on 2025-11-03",
+      },
+    ],
+    [
+      "sherwin_daily_email|1269-2|2026-02-09",
+      {
+        proposalId: "2373270",
+        note:
+          "Gmail 19bebb99d7a1f0f4 is Darlene's colour consultation for Natasha Kawam and specifies SW6460 Kale Green; this Sherwin invoice uses PO NATASHA and contains Kale Green during the verified DripJobs proposal 2373270 job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|9256-0|2026-03-05",
+      {
+        proposalId: "2492310",
+        note:
+          "Gmail 19c9a796bc1e3e56 sent the Justin Wagar work order at 56 Sandhurst Ct to Polaris/Reza for DripJobs proposal 2492310 on 2026-02-26; this Sherwin invoice uses PO JUSTIN, was received by REZA on 2026-03-05, and contains job-preparation supplies",
+      },
+    ],
+    [
+      "sherwin_daily_email|9410-7|2025-11-02",
+      {
+        proposalId: "2140736",
+        note:
+          "Gmail 199cad819892e31b confirms Sheila McSwiggan accepted DripJobs proposal 2140736 for exterior painting at 65 Arco Way; this Sherwin invoice uses PO SHEILA, contains Latitude exterior paint, and falls before the verified 2025-11-09 final payment and 2025-11-13 project completion",
+      },
+    ],
+    [
+      "sherwin_daily_email|9052-4|2025-11-05",
+      {
+        proposalId: "2196763",
+        note:
+          "Gmail 19a3093129dfbf10 confirms Isabelle Ares accepted DripJobs proposal 2196763 at 10 Panorama Private; this Sherwin invoice uses PO ISABELLE and was received by REZA between proposal acceptance and the Polaris labour invoice for Isabelle in Gmail 19a7a691753318b1",
+      },
+    ],
+    [
+      "sherwin_daily_email|9925-4|2025-11-19",
+      {
+        proposalId: "2230810",
+        note:
+          "Gmail 19a6efc671beaaf9 specifies SW6408 Wheat Grass for Elizabeth McCrea's hall and entrance at 201 Cairnsmore Circle; this invoice uses PO ELIZABETH and contains Wheat Grass, while proposal 2230810 covers the home's walls and proposal 2230796 covers only ensuite walls",
+      },
+    ],
+    [
+      "sherwin_daily_email|0753-8|2026-02-04",
+      {
+        proposalId: "2376166",
+        note:
+          "Gmail 19bbe9cea6453918 confirms Sonya Lee accepted DripJobs proposal 2376166 on 2026-01-14; this invoice uses PO SONIA LEE and contains primer tinted OC-65 Chantilly Lace, while Gmail 19e97e9c87dd472e confirms Chantilly Lace was used on Sonya's job",
+      },
+    ],
+    [
+      "sherwin_daily_email|4000-0|2026-03-24",
+      {
+        proposalId: "2496838",
+        note:
+          "Gmail 19c8a58b905fd576 confirms Paul Harrison accepted DripJobs proposal 2496838 at 576 Chardonnay Dr; this invoice uses PO HARRISON and was purchased on 2026-03-24, the verified first scheduled job day for proposal 2496838",
+      },
+    ],
+    [
+      "sherwin_daily_email|6912-2|2026-04-15",
+      {
+        proposalId: "2481008",
+        note:
+          "Gmail 19d065f4d273ee3b confirms Yacoub Abdulla accepted DripJobs proposal 2481008, scheduled for 2026-04-13 through 2026-04-16; Gmail 19d311738e8a1ec5 specifies SW7102 White Flour, which appears on this PO YACOUB ABDULLAH invoice during that job window",
+      },
+    ],
+    [
+      "sherwin_daily_email|7046-8|2026-04-20",
+      {
+        proposalId: "2481008",
+        note:
+          "Gmail 19d311738e8a1ec5 is the colour consultation for Yacoub Abdulla and specifies SW7102 White Flour; this follow-up invoice uses PO YACOUB ABDULLAH, contains White Flour, and follows the verified 2026-04-13 through 2026-04-16 DripJobs schedule for proposal 2481008",
+      },
+    ],
+    [
+      "sherwin_daily_email|7103-7|2026-04-22",
+      {
+        proposalId: "2481008",
+        note:
+          "This follow-up paint invoice uses the distinctive PO YACOUB ABDULHA immediately after the verified DripJobs proposal 2481008 job schedule; Gmail 19d311738e8a1ec5 provides the Yacoub Abdulla colour consultation and Gmail 19dd6b1ae555798e confirms the related Polaris labour invoice",
+      },
+    ],
+    [
+      "sherwin_daily_email|0434-2|2026-04-25",
+      {
+        proposalId: "2492310",
+        note:
+          "This Sherwin invoice uses PO JUSTIN and was received by REZA immediately before Justin Wagar accepted change order 95515 in Gmail 19dd401d212969c4 and the related Polaris labour invoice arrived in Gmail 19dd6ae4c885409e; the other Justin candidate was completed in January",
+      },
+    ],
+    [
+      "gmail_preston_material_receipt|OR019245|2026-06-01",
+      {
+        proposalId: "2726856",
+        note:
+          "Gmail 19dbf99c1a08cdd5 explicitly changes Christian Boulet's DripJobs proposal 2726856 to Benjamin Moore Regal paint; this Preston receipt uses PO BOULET and contains Regal Ulti-Matte for the same upcoming project",
+      },
+    ],
+    [
+      "gmail_preston_material_receipt|OR019342|2026-06-04",
+      {
+        proposalId: "2726856",
+        note:
+          "Gmail 19dbf99c1a08cdd5 explicitly changes Christian Boulet's DripJobs proposal 2726856 to Benjamin Moore Regal paint; this Preston receipt uses the misspelled PO GOULET and contains four Regal products for that same project",
+      },
+    ],
   ]);
   const auditedProject = auditedInvoiceProjects.get(
     `${invoice.source_system}|${invoice.invoice_number}|${invoice.invoice_date}`,
@@ -338,6 +459,7 @@ function matchInvoice(invoice, jobs, projectIdByProposal, projectsById) {
       job: auditedJob,
       projectId: projectIdByProposal.get(auditedJob.proposal_uuid),
       method: "manual",
+      confidence: 1,
       base: 100,
       temporal,
       score: 100 + temporal,
@@ -598,7 +720,7 @@ for (const invoice of invoices) {
     source: match.source ?? null,
     source_payload: match.sourcePayload ?? null,
     matching_note: match.matchingNote ?? null,
-    confidence: Math.min(1, match.score / 127),
+    confidence: match.confidence ?? Math.min(1, match.score / 127),
     lines: invoiceLines,
   });
 }
