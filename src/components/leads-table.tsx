@@ -42,6 +42,17 @@ function projectHref(lead: MarketingLead, projectIndex: number): string {
     : `/projects/${encodeURIComponent(project.projectId)}`;
 }
 
+function linkMethodLabel(method: MarketingLead["companyCamMatchMethod"]): string {
+  if (method === "proposal_number") return "Proposal ID";
+  if (method === "companycam_relation_id") return "DripJobs relation";
+  if (method === "dripjobs_contact_uuid") return "DripJobs contact ID";
+  if (method === "manual") return "Manually confirmed";
+  if (method === "email_and_phone") return "Email + phone";
+  if (method === "email") return "Email";
+  if (method === "phone") return "Phone";
+  return "Saved evidence";
+}
+
 function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
   if (filter === "unlinked") return lead.companyCamProjects.length === 0;
@@ -301,6 +312,9 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                             </Link>
                             <div className="mt-0.5 max-w-48 truncate text-xs text-[var(--color-muted)]" title={firstProject.name}>
                               {firstProject.name}
+                            </div>
+                            <div className="mt-1 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
+                              Saved · {linkMethodLabel(firstProject.linkMethod)}
                             </div>
                             {lead.companyCamProjects.length > 1 ? (
                               <div className="mt-1 text-xs text-[var(--color-muted)]">+{lead.companyCamProjects.length - 1} more linked</div>

@@ -100,6 +100,15 @@ export type Project = {
   companycam_updated_at: string | null;
 };
 
+export type MarketingLeadProjectLinkMethod =
+  | "proposal_number"
+  | "companycam_relation_id"
+  | "dripjobs_contact_uuid"
+  | "email_and_phone"
+  | "email"
+  | "phone"
+  | "manual";
+
 export type MarketingLeadProject = {
   projectId: string;
   name: string;
@@ -107,6 +116,9 @@ export type MarketingLeadProject = {
   isLead: boolean;
   isArchived: boolean;
   estimateUpdatedAt: string | null;
+  relationshipType: "originated" | "related";
+  linkMethod: MarketingLeadProjectLinkMethod;
+  linkConfidence: number;
 };
 
 export type MarketingLead = {
@@ -139,12 +151,7 @@ export type MarketingLead = {
   isExterior: boolean;
   isCabinets: boolean;
   sourceRowNumber: number;
-  companyCamMatchMethod:
-    | "contact_id"
-    | "email_and_phone"
-    | "email"
-    | "phone"
-    | null;
+  companyCamMatchMethod: MarketingLeadProjectLinkMethod | null;
   companyCamProjects: MarketingLeadProject[];
 };
 

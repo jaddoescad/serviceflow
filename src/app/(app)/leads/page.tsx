@@ -22,13 +22,13 @@ export default async function LeadsPage() {
     <>
       <PageHeader
         title="Leads & Estimates"
-        subtitle="All Leads is the canonical CRM source; CompanyCam links are supporting project evidence"
+        subtitle="All Leads is the canonical CRM source; project relationships are saved with auditable evidence"
       />
       <StatGrid columns={4} className="mb-4 rounded-[var(--radius)] border border-[var(--color-border)]">
         <Stat label="2026 leads" value={leads2026.length.toLocaleString("en-CA")} hint={`${leads.length.toLocaleString("en-CA")} all time`} />
         <Stat label="Meta leads" value={meta2026.toLocaleString("en-CA")} hint={`${((meta2026 / Math.max(leads2026.length, 1)) * 100).toFixed(1)}% of 2026 leads`} />
         <Stat label="Contactable" value={contactable2026.toLocaleString("en-CA")} hint="Has an email or phone" />
-        <Stat label="CompanyCam linked" value={linked2026.toLocaleString("en-CA")} hint="Reliable ID, email, or phone match" />
+        <Stat label="CompanyCam linked" value={linked2026.toLocaleString("en-CA")} hint="Persisted exact identifier relationships" />
       </StatGrid>
       <LeadsTable leads={leads} />
     </>

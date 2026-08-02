@@ -207,23 +207,17 @@ type LeadProjectRow = {
   state: string | null;
   postal_code: string | null;
   formatted_address: string | null;
-  companycam_created_at: string | null;
-  last_synced_at: string | null;
   is_lead: boolean;
   is_archived: boolean;
-  raw: Record<string, unknown> | null;
 };
 
-function companyCamIso(value: unknown): string | null {
-  if (value == null || value === "") return null;
-
-  const numeric = Number(value);
-  const date = Number.isFinite(numeric)
-    ? new Date(numeric < 1_000_000_000_000 ? numeric * 1000 : numeric)
-    : new Date(String(value));
-
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
+type MarketingLeadProjectLinkRow = {
+  lead_deal_id: string;
+  companycam_project_id: string;
+  relationship_type: MarketingLeadProject["relationshipType"];
+  match_method: MarketingLeadProject["linkMethod"];
+  confidence: number;
+};
 
 function leadAddress(project: LeadProjectRow): string | null {
   const parts = [
@@ -236,46 +230,6 @@ function leadAddress(project: LeadProjectRow): string | null {
 
   if (parts.length === 0) return null;
   return project.formatted_address?.trim() || parts.join(", ");
-}
-
-function record(value: unknown): Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function normalizedEmail(value: unknown): string | null {
-  const normalized = String(value ?? "").trim().toLocaleLowerCase("en-CA");
-  return normalized || null;
-}
-
-function normalizedPhone(value: unknown): string | null {
-  const normalized = String(value ?? "").replace(/\D/g, "");
-  if (!normalized) return null;
-  return normalized.length === 11 && normalized.startsWith("1")
-    ? normalized.slice(1)
-    : normalized;
-}
-
-function addProjectIndex(
-  index: Map<string, LeadProjectRow[]>,
-  key: string | null,
-  project: LeadProjectRow,
-) {
-  if (!key) return;
-  const matches = index.get(key) ?? [];
-  if (!matches.some((candidate) => candidate.companycam_id === project.companycam_id)) {
-    matches.push(project);
-    index.set(key, matches);
-  }
-}
-
-function intersectProjects(
-  left: LeadProjectRow[],
-  right: LeadProjectRow[],
-): LeadProjectRow[] {
-  const rightIds = new Set(right.map((project) => project.companycam_id));
-  return left.filter((project) => rightIds.has(project.companycam_id));
 }
 
 async function fetchAllMarketingLeadRows(
@@ -301,26 +255,37 @@ async function fetchAllMarketingLeadRows(
 
 export async function getMarketingLeads(): Promise<MarketingLead[]> {
   const supabase = await createClient();
-  const [marketingRows, projectsResult, calculatorsResult] = await Promise.all([
-    fetchAllMarketingLeadRows(supabase),
-    supabase
-      .from("companycam_projects")
-      .select(
-        "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,companycam_created_at,last_synced_at,is_lead,is_archived,raw",
-      )
-      .eq("is_deleted", false)
-      .limit(1000),
-    supabase
-      .from("project_calculators")
-      .select("companycam_project_id,updated_at")
-      .limit(5000),
-  ]);
+  const [marketingRows, projectsResult, calculatorsResult, linksResult] =
+    await Promise.all([
+      fetchAllMarketingLeadRows(supabase),
+      supabase
+        .from("companycam_projects")
+        .select(
+          "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,is_lead,is_archived",
+        )
+        .eq("is_deleted", false)
+        .limit(1000),
+      supabase
+        .from("project_calculators")
+        .select("companycam_project_id,updated_at")
+        .limit(5000),
+      supabase
+        .from("marketing_lead_project_links")
+        .select(
+          "lead_deal_id,companycam_project_id,relationship_type,match_method,confidence",
+        )
+        .eq("link_status", "confirmed")
+        .limit(5000),
+    ]);
 
   if (projectsResult.error) {
     throw new Error(`CompanyCam lead links: ${projectsResult.error.message}`);
   }
   if (calculatorsResult.error) {
     throw new Error(`lead calculators: ${calculatorsResult.error.message}`);
+  }
+  if (linksResult.error) {
+    throw new Error(`saved lead project links: ${linksResult.error.message}`);
   }
 
   const estimateUpdatedByProject = new Map<string, string>(
@@ -331,68 +296,36 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
   );
 
   const projects = (projectsResult.data ?? []) as LeadProjectRow[];
-  const byContactId = new Map<string, LeadProjectRow[]>();
-  const byEmail = new Map<string, LeadProjectRow[]>();
-  const byPhone = new Map<string, LeadProjectRow[]>();
-  for (const project of projects) {
-    const raw = project.raw ?? {};
-    const dripJobs = record(raw.dripjobs);
-    const primaryContact = record(raw.primary_contact);
-    for (const contactId of [dripJobs.contact_uuid, primaryContact.id]) {
-      addProjectIndex(byContactId, String(contactId ?? "").trim() || null, project);
-    }
-    for (const email of [
-      dripJobs.customer_email,
-      dripJobs.email,
-      primaryContact.email,
-    ]) {
-      addProjectIndex(byEmail, normalizedEmail(email), project);
-    }
-    for (const phone of [
-      dripJobs.customer_phone,
-      primaryContact.phone_number,
-    ]) {
-      addProjectIndex(byPhone, normalizedPhone(phone), project);
-    }
+  const projectsById = new Map(
+    projects.map((project) => [project.companycam_id, project]),
+  );
+  const linksByLead = new Map<string, MarketingLeadProjectLinkRow[]>();
+  for (const link of (linksResult.data ?? []) as MarketingLeadProjectLinkRow[]) {
+    const leadLinks = linksByLead.get(link.lead_deal_id) ?? [];
+    leadLinks.push(link);
+    linksByLead.set(link.lead_deal_id, leadLinks);
   }
 
   return marketingRows.map((lead) => {
-    let matches = byContactId.get(lead.deal_id) ?? [];
-    let matchMethod: MarketingLead["companyCamMatchMethod"] = matches.length
-      ? "contact_id"
-      : null;
-    if (!matches.length) {
-      const emailMatches = lead.email
-        ? byEmail.get(normalizedEmail(lead.email) ?? "") ?? []
-        : [];
-      const phoneMatches = lead.phone
-        ? byPhone.get(normalizedPhone(lead.phone) ?? "") ?? []
-        : [];
-      if (emailMatches.length && phoneMatches.length) {
-        const intersection = intersectProjects(emailMatches, phoneMatches);
-        if (intersection.length) {
-          matches = intersection;
-          matchMethod = "email_and_phone";
-        }
-      } else if (emailMatches.length) {
-        matches = emailMatches;
-        matchMethod = "email";
-      } else if (phoneMatches.length) {
-        matches = phoneMatches;
-        matchMethod = "phone";
-      }
-    }
-
-    const companyCamProjects: MarketingLeadProject[] = matches
-      .map((project) => ({
-        projectId: project.companycam_id,
-        name: project.name,
-        address: leadAddress(project),
-        isLead: project.is_lead,
-        isArchived: project.is_archived,
-        estimateUpdatedAt:
-          estimateUpdatedByProject.get(project.companycam_id) ?? null,
-      }))
+    const companyCamProjects: MarketingLeadProject[] = (
+      linksByLead.get(lead.deal_id) ?? []
+    )
+      .flatMap((link) => {
+        const project = projectsById.get(link.companycam_project_id);
+        if (!project) return [];
+        return [{
+          projectId: project.companycam_id,
+          name: project.name,
+          address: leadAddress(project),
+          isLead: project.is_lead,
+          isArchived: project.is_archived,
+          estimateUpdatedAt:
+            estimateUpdatedByProject.get(project.companycam_id) ?? null,
+          relationshipType: link.relationship_type,
+          linkMethod: link.match_method,
+          linkConfidence: link.confidence,
+        }];
+      })
       .sort(
         (left, right) =>
           Number(left.isArchived) - Number(right.isArchived) ||
@@ -421,7 +354,7 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
       isExterior: lead.is_exterior,
       isCabinets: lead.is_cabinets,
       sourceRowNumber: lead.source_row_number,
-      companyCamMatchMethod: matchMethod,
+      companyCamMatchMethod: companyCamProjects[0]?.linkMethod ?? null,
       companyCamProjects,
     };
   });
