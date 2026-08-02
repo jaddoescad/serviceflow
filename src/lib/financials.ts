@@ -62,6 +62,15 @@ export type FinancialSourceDetails = {
   document_exception_detail: string | null;
   customer_revenue_exception_kind: string | null;
   customer_revenue_exception_needs_review: boolean;
+  tax_evidence_status: "documented" | "estimated" | null;
+};
+
+export type CashRevenueAllocationSummary = {
+  bank_cash: number;
+  gross_revenue: number;
+  before_hst: number;
+  hst: number;
+  processing_fees: number;
 };
 
 export type PaymentVerificationSummary = {
@@ -112,6 +121,7 @@ export type FinancialTransaction = {
   payment_verification: PaymentVerificationSummary | null;
   customer_revenue_verification: CustomerRevenueVerificationSummary | null;
   material_payment_verification: MaterialPaymentVerificationSummary | null;
+  cash_revenue: CashRevenueAllocationSummary;
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -137,6 +147,7 @@ type FinancialSourceData = {
   expense_evidence?: unknown;
   document_exception?: unknown;
   customer_revenue_exception?: unknown;
+  tax_evidence?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
@@ -146,6 +157,7 @@ type StoredFinancialTransaction = Omit<
   | "payment_verification"
   | "customer_revenue_verification"
   | "material_payment_verification"
+  | "cash_revenue"
 > & {
   source_data: FinancialSourceData | null;
 };
@@ -241,6 +253,14 @@ function normalizeSourceDetails(
     customerRevenueException && "status" in customerRevenueException
       ? customerRevenueException.status
       : null;
+  const taxEvidence =
+    sourceData?.tax_evidence &&
+    typeof sourceData.tax_evidence === "object" &&
+    !Array.isArray(sourceData.tax_evidence)
+      ? sourceData.tax_evidence
+      : null;
+  const taxEvidenceStatus =
+    taxEvidence && "status" in taxEvidence ? taxEvidence.status : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
@@ -297,6 +317,10 @@ function normalizeSourceDetails(
       customerRevenueException != null &&
       "review" in customerRevenueException &&
       customerRevenueException.review === true,
+    tax_evidence_status:
+      taxEvidenceStatus === "documented" || taxEvidenceStatus === "estimated"
+        ? taxEvidenceStatus
+        : null,
   };
 }
 
@@ -487,25 +511,65 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     customerRevenueResult,
     materialVerificationResult,
     materialAllocationResult,
-  ] =
-    await Promise.all([
+    customerAllocationResult,
+  ] = await Promise.all([
     supabase.from("labour_payment_verification").select("*"),
     supabase
       .from("labour_payment_allocations")
       .select("financial_transaction_id,invoice_id,allocated_amount")
       .is("reversed_at", null),
-      supabase.from("customer_revenue_verification").select("*"),
-      supabase.from("material_payment_verification").select("*"),
-      supabase
-        .from("material_payment_allocations")
-        .select("financial_transaction_id,material_invoice_id,allocated_amount")
-        .is("reversed_at", null),
-    ]);
+    supabase.from("customer_revenue_verification").select("*"),
+    supabase.from("material_payment_verification").select("*"),
+    supabase
+      .from("material_payment_allocations")
+      .select("financial_transaction_id,material_invoice_id,allocated_amount")
+      .is("reversed_at", null),
+    supabase
+      .from("customer_invoice_bank_allocations")
+      .select(
+        "financial_transaction_id,allocated_amount,invoice_applied_amount,customer_invoices(subtotal,tax_amount,total_amount)",
+      )
+      .is("reversed_at", null),
+  ]);
   if (verificationResult.error) throw verificationResult.error;
   if (allocationResult.error) throw allocationResult.error;
   if (customerRevenueResult.error) throw customerRevenueResult.error;
   if (materialVerificationResult.error) throw materialVerificationResult.error;
   if (materialAllocationResult.error) throw materialAllocationResult.error;
+  if (customerAllocationResult.error) throw customerAllocationResult.error;
+
+  const cashRevenueByTransaction = new Map<
+    string,
+    CashRevenueAllocationSummary
+  >();
+  for (const allocation of customerAllocationResult.data ?? []) {
+    const invoice = Array.isArray(allocation.customer_invoices)
+      ? allocation.customer_invoices[0]
+      : allocation.customer_invoices;
+    if (!invoice) continue;
+    const invoiceTotal = Number(invoice.total_amount ?? 0);
+    if (invoiceTotal <= 0) continue;
+    const applied = Number(allocation.invoice_applied_amount ?? 0);
+    const current = cashRevenueByTransaction.get(
+      allocation.financial_transaction_id,
+    ) ?? {
+      bank_cash: 0,
+      gross_revenue: 0,
+      before_hst: 0,
+      hst: 0,
+      processing_fees: 0,
+    };
+    current.bank_cash += Number(allocation.allocated_amount ?? 0);
+    current.gross_revenue += applied;
+    current.before_hst +=
+      applied * (Number(invoice.subtotal ?? 0) / invoiceTotal);
+    current.hst += applied * (Number(invoice.tax_amount ?? 0) / invoiceTotal);
+    current.processing_fees = Math.max(
+      0,
+      current.gross_revenue - current.bank_cash,
+    );
+    cashRevenueByTransaction.set(allocation.financial_transaction_id, current);
+  }
 
   const allocations = (allocationResult.data ?? []) as Array<{
     financial_transaction_id: string;
@@ -650,7 +714,9 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     const invoice = materialInvoiceById.get(allocation.material_invoice_id);
     if (!invoice) continue;
     const values =
-      materialAllocationsByTransaction.get(allocation.financial_transaction_id) ?? [];
+      materialAllocationsByTransaction.get(
+        allocation.financial_transaction_id,
+      ) ?? [];
     values.push({ invoice, amount: Number(allocation.allocated_amount) });
     materialAllocationsByTransaction.set(
       allocation.financial_transaction_id,
@@ -676,6 +742,13 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
           customerRevenueByTransaction.get(transaction.id) ?? null,
         material_payment_verification:
           materialVerificationByTransaction.get(transaction.id) ?? null,
+        cash_revenue: cashRevenueByTransaction.get(transaction.id) ?? {
+          bank_cash: 0,
+          gross_revenue: 0,
+          before_hst: 0,
+          hst: 0,
+          processing_fees: 0,
+        },
       }),
     ),
   };

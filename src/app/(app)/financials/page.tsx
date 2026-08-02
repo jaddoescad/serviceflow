@@ -16,7 +16,6 @@ import {
   type FinancialTransaction,
 } from "@/lib/financials";
 import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
-import { getCustomerInvoiceReconciliation } from "@/lib/job-accounting";
 
 export const dynamic = "force-dynamic";
 
@@ -106,11 +105,9 @@ function buildMonthlyData(
       (transaction) =>
         transaction.posted_on.startsWith(monthKey) && !transaction.is_transfer,
     );
-    const revenue = sum(
-      current.filter(
-        (transaction) => transaction.transaction_type === "income",
-      ),
-      "net_amount",
+    const verifiedRevenue = current.reduce(
+      (total, transaction) => total + transaction.cash_revenue.before_hst,
+      0,
     );
     const expenses = -sum(
       current.filter(
@@ -120,9 +117,9 @@ function buildMonthlyData(
     );
     return {
       month,
-      revenue: roundMoney(revenue),
+      revenue: roundMoney(verifiedRevenue),
       expenses: roundMoney(expenses),
-      net: roundMoney(revenue - expenses),
+      net: roundMoney(verifiedRevenue - expenses),
     };
   });
 }
@@ -152,10 +149,9 @@ export default async function FinancialsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const [, ledger, customerInvoiceRows, params] = await Promise.all([
+  const [, ledger, params] = await Promise.all([
     requireStaff(),
     getFinancialLedger(),
-    getCustomerInvoiceReconciliation(),
     searchParams,
   ]);
 
@@ -250,19 +246,17 @@ export default async function FinancialsPage({
   const displayedTransactions = periodTransactions.filter((transaction) => {
     const settlement = getTransactionSettlementStatus(transaction);
     const hasMatchedEvidence =
-      Number(transaction.payment_verification?.total_allocated_amount ?? 0) > 0 ||
+      Number(transaction.payment_verification?.total_allocated_amount ?? 0) >
+        0 ||
       transaction.evidence.some(
         (item) =>
-          item.status === "confirmed" &&
-          item.kind !== "no_document_required",
+          item.status === "confirmed" && item.kind !== "no_document_required",
       );
     const hasNoDocumentRequired = transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     );
     const isMissingEvidence = !hasMatchedEvidence && !hasNoDocumentRequired;
-    const matchesStatus =
-      status === "all" ||
-      settlement.bucket === status;
+    const matchesStatus = status === "all" || settlement.bucket === status;
     const matchesEvidence =
       evidence === "all" ||
       (evidence === "matched" && hasMatchedEvidence) ||
@@ -293,15 +287,44 @@ export default async function FinancialsPage({
   const operatingTransactions = periodTransactions.filter(
     (transaction) => !transaction.is_transfer,
   );
-  const revenueTransactions = operatingTransactions.filter(
+  const bankIncomeTransactions = operatingTransactions.filter(
     (transaction) => transaction.transaction_type === "income",
   );
   const expenseTransactions = operatingTransactions.filter(
     (transaction) => transaction.transaction_type !== "income",
   );
-  const netRevenue = roundMoney(sum(revenueTransactions, "net_amount"));
+  const revenueBeforeHst = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.before_hst,
+      0,
+    ),
+  );
+  const customerHstCollected = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.hst,
+      0,
+    ),
+  );
+  const customerRevenueGross = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.gross_revenue,
+      0,
+    ),
+  );
+  const customerBankCash = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.bank_cash,
+      0,
+    ),
+  );
+  const customerProcessingFees = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.processing_fees,
+      0,
+    ),
+  );
   const netExpenses = roundMoney(-sum(expenseTransactions, "net_amount"));
-  const netIncome = roundMoney(sum(operatingTransactions, "net_amount"));
+  const netIncome = roundMoney(revenueBeforeHst - netExpenses);
   const labourCost = roundMoney(
     -sum(
       expenseTransactions.filter((transaction) =>
@@ -329,50 +352,41 @@ export default async function FinancialsPage({
   const overheadCost = roundMoney(
     netExpenses - labourCost - materialCost - advertisingCost,
   );
-  const inputTaxCredits = roundMoney(-sum(expenseTransactions, "tax_amount"));
-  const yearInvoiceRows = customerInvoiceRows.filter(
-    (invoice) => invoice.invoice_date?.startsWith(String(year)),
-  );
-  const customerInvoiceBeforeHst = roundMoney(
-    yearInvoiceRows.reduce(
-      (total, invoice) => total + invoice.billed_before_hst,
-      0,
+  const documentedInputHst = roundMoney(
+    -sum(
+      expenseTransactions.filter(
+        (transaction) =>
+          transaction.source_details.tax_evidence_status === "documented",
+      ),
+      "tax_amount",
     ),
   );
-  const customerInvoiceHst = roundMoney(
-    yearInvoiceRows.reduce((total, invoice) => total + invoice.billed_hst, 0),
-  );
-  const customerInvoiceTotal = roundMoney(
-    yearInvoiceRows.reduce(
-      (total, invoice) => total + invoice.billed_after_hst,
-      0,
+  const estimatedInputHst = roundMoney(
+    -sum(
+      expenseTransactions.filter(
+        (transaction) =>
+          transaction.source_details.tax_evidence_status === "estimated",
+      ),
+      "tax_amount",
     ),
   );
-  const customerInvoiceBankCash = roundMoney(
-    yearInvoiceRows.reduce(
-      (total, invoice) => total + invoice.bank_cash_received,
-      0,
-    ),
-  );
-  const customerInvoiceReceivable = roundMoney(
-    yearInvoiceRows.reduce(
-      (total, invoice) => total + invoice.amount_receivable,
-      0,
-    ),
-  );
-  const customerProcessingFees = roundMoney(
-    yearInvoiceRows.reduce(
-      (total, invoice) => total + invoice.processing_fee_amount,
-      0,
+  const spendWithNoHstDeducted = roundMoney(
+    -sum(
+      expenseTransactions.filter(
+        (transaction) => Number(transaction.tax_amount) === 0,
+      ),
+      "amount",
     ),
   );
   const unallocatedCustomerIncome = roundMoney(
-    revenueTransactions
+    bankIncomeTransactions
       .filter((transaction) => transaction.category === "Painting revenue")
       .reduce(
         (total, transaction) =>
           total +
-          Number(transaction.customer_revenue_verification?.unallocated_amount ?? 0),
+          Number(
+            transaction.customer_revenue_verification?.unallocated_amount ?? 0,
+          ),
         0,
       ),
   );
@@ -401,9 +415,9 @@ export default async function FinancialsPage({
     },
     { fully_matched: 0, needs_review: 0, custom: 0 },
   );
-  const fullyMatched = settlementCounts.fully_matched;
   const needsReview = settlementCounts.needs_review;
   const customResolved = settlementCounts.custom;
+  const latestPostedOn = periodTransactions[0]?.posted_on ?? null;
 
   return (
     <>
@@ -418,9 +432,7 @@ export default async function FinancialsPage({
               <Badge tone="good">No unresolved reviews</Badge>
             )}
             {customResolved ? (
-              <Badge tone="neutral">
-                {customResolved} custom resolved
-              </Badge>
+              <Badge tone="neutral">{customResolved} custom resolved</Badge>
             ) : null}
           </div>
         }
@@ -429,7 +441,8 @@ export default async function FinancialsPage({
       {needsReview ? (
         <Card className="mb-4 border-[var(--color-warn)] p-4">
           <div className="text-sm font-medium text-[var(--color-heading)]">
-            Live bank activity through July 24, 2026
+            Live bank activity
+            {latestPostedOn ? ` through ${formatAsOf(latestPostedOn)}` : ""}
           </div>
           <div className="mt-1 text-sm text-[var(--color-muted)]">
             Balances and posted amounts are current. New categories and HST are
@@ -441,62 +454,62 @@ export default async function FinancialsPage({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
-          label="Bank income received"
-          value={money.format(netRevenue)}
-          hint="posted cash and credits · HST is not inferred"
+          label="Revenue received before HST"
+          value={money.format(revenueBeforeHst)}
+          hint="customer invoices verified to bank payments"
           tone="good"
         />
         <Kpi
-          label="Bank expenses paid"
+          label="Customer HST collected"
+          value={money.format(customerHstCollected)}
+          hint={`${money.format(customerRevenueGross)} invoice value received`}
+          tone="neutral"
+        />
+        <Kpi
+          label="Customer cash received"
+          value={money.format(customerBankCash)}
+          hint={`${money.format(customerProcessingFees)} processor fees separated`}
+          tone="good"
+        />
+        <Kpi
+          label="Operating costs before HST"
           value={money.format(netExpenses)}
-          hint={`${money.format(inputTaxCredits)} tax explicitly coded on bank rows`}
+          hint="full cost used wherever HST is not evidenced"
           tone="warn"
         />
         <Kpi
-          label="Net bank movement"
+          label="Profit before HST"
           value={money.format(netIncome)}
-          hint="operating cash basis · transfers excluded"
+          hint="verified revenue less operating costs"
           tone={netIncome >= 0 ? "good" : "bad"}
-        />
-        <Kpi
-          label="Unallocated customer income"
-          value={money.format(unallocatedCustomerIncome)}
-          hint="bank cash still needing an invoice link"
-          tone={unallocatedCustomerIncome > 0 ? "warn" : "good"}
-        />
-        <Kpi
-          label="Ledger coverage"
-          value={periodTransactions.length}
-          hint={`${fullyMatched} fully matched · ${needsReview} to review · ${customResolved} custom`}
-          tone={needsReview === 0 ? "good" : "warn"}
         />
       </div>
 
       <Card className="mt-4 overflow-hidden">
         <CardHeader
-          title={`${year} customer invoice reconciliation`}
-          subtitle="Invoice amounts use invoice date; bank income above uses bank posting date, so timing differences remain visible"
+          title="HST evidence on costs"
+          subtitle="Documented tax comes from supplier invoices; estimates stay visibly separate and are not presented as receipt-backed ITCs"
         />
         <StatGrid columns={4}>
           <Stat
-            label="Invoices before HST"
-            value={money.format(customerInvoiceBeforeHst)}
-            hint={`${yearInvoiceRows.length} customer invoices`}
+            label="Documented input HST"
+            value={money.format(documentedInputHst)}
+            hint="linked supplier invoices"
           />
           <Stat
-            label="HST billed"
-            value={money.format(customerInvoiceHst)}
-            hint="from archived customer invoices"
+            label="Estimated input HST"
+            value={money.format(estimatedInputHst)}
+            hint="confirmed 13% material purchases awaiting receipts"
           />
           <Stat
-            label="Invoice total"
-            value={money.format(customerInvoiceTotal)}
-            hint="before HST + HST"
+            label="Spend with no HST deducted"
+            value={money.format(spendWithNoHstDeducted)}
+            hint="includes non-taxable and still-unsupported costs"
           />
           <Stat
-            label="Bank cash linked"
-            value={money.format(customerInvoiceBankCash)}
-            hint={`${money.format(customerProcessingFees)} processing fees · ${money.format(customerInvoiceReceivable)} open`}
+            label="Unallocated customer cash"
+            value={money.format(unallocatedCustomerIncome)}
+            hint="bank income still missing a customer invoice link"
           />
         </StatGrid>
       </Card>
@@ -507,34 +520,34 @@ export default async function FinancialsPage({
             Cost & profit percentages
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Share of bank income received · cash basis · overhead excludes
-            labour, materials, and advertising
+            Share of verified revenue before HST · overhead excludes labour,
+            materials, and advertising
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <Kpi
             label="Labour %"
-            value={formatCostRatio(labourCost, netRevenue)}
+            value={formatCostRatio(labourCost, revenueBeforeHst)}
             hint={`${money.format(labourCost)} labour`}
           />
           <Kpi
             label="Materials %"
-            value={formatCostRatio(materialCost, netRevenue)}
+            value={formatCostRatio(materialCost, revenueBeforeHst)}
             hint={`${money.format(materialCost)} materials`}
           />
           <Kpi
             label="Advertising & marketing %"
-            value={formatCostRatio(advertisingCost, netRevenue)}
+            value={formatCostRatio(advertisingCost, revenueBeforeHst)}
             hint={`${money.format(advertisingCost)} advertising & marketing`}
           />
           <Kpi
             label="Overhead %"
-            value={formatCostRatio(overheadCost, netRevenue)}
+            value={formatCostRatio(overheadCost, revenueBeforeHst)}
             hint={`${money.format(overheadCost)} other operating costs`}
           />
           <Kpi
             label="Profit %"
-            value={formatCostRatio(netIncome, netRevenue)}
+            value={formatCostRatio(netIncome, revenueBeforeHst)}
             hint={`${money.format(netIncome)} net income`}
           />
         </div>
@@ -544,7 +557,7 @@ export default async function FinancialsPage({
         <Card>
           <CardHeader
             title={`${year} monthly performance`}
-            subtitle="Before HST · transfers excluded"
+            subtitle="Verified revenue and costs before HST · transfers excluded"
           />
           <div className="p-4">
             <FinancialMonthlyChart data={monthlyData} />
@@ -554,7 +567,7 @@ export default async function FinancialsPage({
         <Card>
           <CardHeader
             title="Expense categories"
-            subtitle={`${shortMoney.format(netExpenses)} before HST`}
+            subtitle={`${shortMoney.format(netExpenses)} before HST where evidenced; full cost otherwise`}
           />
           <div className="space-y-4 p-5">
             {categoryTotals.map((item) => (
