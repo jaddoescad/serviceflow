@@ -100,13 +100,52 @@ export type Project = {
   companycam_updated_at: string | null;
 };
 
-export type LeadEstimate = {
+export type MarketingLeadProject = {
   projectId: string;
   name: string;
   address: string | null;
-  hasStreetAddress: boolean;
-  createdAt: string | null;
+  isLead: boolean;
+  isArchived: boolean;
   estimateUpdatedAt: string | null;
+};
+
+export type MarketingLead = {
+  dealId: string;
+  createdOn: string;
+  createdAtLocal: string | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  rawLeadSource: string | null;
+  normalizedChannel:
+    | "paid_social"
+    | "organic_social"
+    | "website"
+    | "phone"
+    | "mail"
+    | "referral"
+    | "organic_search"
+    | "other"
+    | "unknown";
+  address: string | null;
+  postalCode: string | null;
+  estimateScheduledOn: string | null;
+  estimateAppointmentOn: string | null;
+  proposalNumber: string | null;
+  proposalAmount: number | null;
+  proposalOn: string | null;
+  jobCrew: string | null;
+  isInterior: boolean;
+  isExterior: boolean;
+  isCabinets: boolean;
+  sourceRowNumber: number;
+  companyCamMatchMethod:
+    | "contact_id"
+    | "email_and_phone"
+    | "email"
+    | "phone"
+    | null;
+  companyCamProjects: MarketingLeadProject[];
 };
 
 export type ProjectBudget = {

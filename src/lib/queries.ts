@@ -5,7 +5,8 @@ import type {
   EmployeePayRate,
   EmployeeProfile,
   EmployeeTrackingStatus,
-  LeadEstimate,
+  MarketingLead,
+  MarketingLeadProject,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
@@ -174,6 +175,29 @@ export async function getProjects(): Promise<Project[]> {
   ];
 }
 
+type MarketingLeadRow = {
+  deal_id: string;
+  created_on: string;
+  created_at_local: string | null;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  raw_lead_source: string | null;
+  normalized_channel: MarketingLead["normalizedChannel"];
+  address: string | null;
+  postal_code: string | null;
+  estimate_scheduled_on: string | null;
+  estimate_appointment_on: string | null;
+  proposal_number: string | null;
+  proposal_amount: number | null;
+  proposal_on: string | null;
+  job_crew: string | null;
+  is_interior: boolean;
+  is_exterior: boolean;
+  is_cabinets: boolean;
+  source_row_number: number;
+};
+
 type LeadProjectRow = {
   companycam_id: string;
   name: string;
@@ -185,6 +209,8 @@ type LeadProjectRow = {
   formatted_address: string | null;
   companycam_created_at: string | null;
   last_synced_at: string | null;
+  is_lead: boolean;
+  is_archived: boolean;
   raw: Record<string, unknown> | null;
 };
 
@@ -212,16 +238,76 @@ function leadAddress(project: LeadProjectRow): string | null {
   return project.formatted_address?.trim() || parts.join(", ");
 }
 
-export async function getLeadEstimates(): Promise<LeadEstimate[]> {
+function record(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function normalizedEmail(value: unknown): string | null {
+  const normalized = String(value ?? "").trim().toLocaleLowerCase("en-CA");
+  return normalized || null;
+}
+
+function normalizedPhone(value: unknown): string | null {
+  const normalized = String(value ?? "").replace(/\D/g, "");
+  if (!normalized) return null;
+  return normalized.length === 11 && normalized.startsWith("1")
+    ? normalized.slice(1)
+    : normalized;
+}
+
+function addProjectIndex(
+  index: Map<string, LeadProjectRow[]>,
+  key: string | null,
+  project: LeadProjectRow,
+) {
+  if (!key) return;
+  const matches = index.get(key) ?? [];
+  if (!matches.some((candidate) => candidate.companycam_id === project.companycam_id)) {
+    matches.push(project);
+    index.set(key, matches);
+  }
+}
+
+function intersectProjects(
+  left: LeadProjectRow[],
+  right: LeadProjectRow[],
+): LeadProjectRow[] {
+  const rightIds = new Set(right.map((project) => project.companycam_id));
+  return left.filter((project) => rightIds.has(project.companycam_id));
+}
+
+async function fetchAllMarketingLeadRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<MarketingLeadRow[]> {
+  const rows: MarketingLeadRow[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("marketing_leads")
+      .select(
+        "deal_id,created_on,created_at_local,contact_name,email,phone,raw_lead_source,normalized_channel,address,postal_code,estimate_scheduled_on,estimate_appointment_on,proposal_number,proposal_amount,proposal_on,job_crew,is_interior,is_exterior,is_cabinets,source_row_number",
+      )
+      .order("created_on", { ascending: false })
+      .order("source_row_number", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`marketing leads: ${error.message}`);
+    const page = (data ?? []) as MarketingLeadRow[];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+export async function getMarketingLeads(): Promise<MarketingLead[]> {
   const supabase = await createClient();
-  const [leadsResult, calculatorsResult] = await Promise.all([
+  const [marketingRows, projectsResult, calculatorsResult] = await Promise.all([
+    fetchAllMarketingLeadRows(supabase),
     supabase
       .from("companycam_projects")
       .select(
-        "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,companycam_created_at,last_synced_at,raw",
+        "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,companycam_created_at,last_synced_at,is_lead,is_archived,raw",
       )
-      .eq("is_lead", true)
-      .eq("is_archived", false)
       .eq("is_deleted", false)
       .limit(1000),
     supabase
@@ -230,42 +316,115 @@ export async function getLeadEstimates(): Promise<LeadEstimate[]> {
       .limit(5000),
   ]);
 
-  if (leadsResult.error) {
-    throw new Error(`leads: ${leadsResult.error.message}`);
+  if (projectsResult.error) {
+    throw new Error(`CompanyCam lead links: ${projectsResult.error.message}`);
   }
   if (calculatorsResult.error) {
     throw new Error(`lead calculators: ${calculatorsResult.error.message}`);
   }
 
-  const estimateUpdatedByProject = new Map(
+  const estimateUpdatedByProject = new Map<string, string>(
     (calculatorsResult.data ?? []).map((calculator) => [
       calculator.companycam_project_id,
       calculator.updated_at,
     ]),
   );
 
-  return ((leadsResult.data ?? []) as LeadProjectRow[])
-    .map((project) => {
-      const raw = project.raw ?? {};
-      return {
+  const projects = (projectsResult.data ?? []) as LeadProjectRow[];
+  const byContactId = new Map<string, LeadProjectRow[]>();
+  const byEmail = new Map<string, LeadProjectRow[]>();
+  const byPhone = new Map<string, LeadProjectRow[]>();
+  for (const project of projects) {
+    const raw = project.raw ?? {};
+    const dripJobs = record(raw.dripjobs);
+    const primaryContact = record(raw.primary_contact);
+    for (const contactId of [dripJobs.contact_uuid, primaryContact.id]) {
+      addProjectIndex(byContactId, String(contactId ?? "").trim() || null, project);
+    }
+    for (const email of [
+      dripJobs.customer_email,
+      dripJobs.email,
+      primaryContact.email,
+    ]) {
+      addProjectIndex(byEmail, normalizedEmail(email), project);
+    }
+    for (const phone of [
+      dripJobs.customer_phone,
+      primaryContact.phone_number,
+    ]) {
+      addProjectIndex(byPhone, normalizedPhone(phone), project);
+    }
+  }
+
+  return marketingRows.map((lead) => {
+    let matches = byContactId.get(lead.deal_id) ?? [];
+    let matchMethod: MarketingLead["companyCamMatchMethod"] = matches.length
+      ? "contact_id"
+      : null;
+    if (!matches.length) {
+      const emailMatches = lead.email
+        ? byEmail.get(normalizedEmail(lead.email) ?? "") ?? []
+        : [];
+      const phoneMatches = lead.phone
+        ? byPhone.get(normalizedPhone(lead.phone) ?? "") ?? []
+        : [];
+      if (emailMatches.length && phoneMatches.length) {
+        const intersection = intersectProjects(emailMatches, phoneMatches);
+        if (intersection.length) {
+          matches = intersection;
+          matchMethod = "email_and_phone";
+        }
+      } else if (emailMatches.length) {
+        matches = emailMatches;
+        matchMethod = "email";
+      } else if (phoneMatches.length) {
+        matches = phoneMatches;
+        matchMethod = "phone";
+      }
+    }
+
+    const companyCamProjects: MarketingLeadProject[] = matches
+      .map((project) => ({
         projectId: project.companycam_id,
         name: project.name,
         address: leadAddress(project),
-        hasStreetAddress: Boolean(project.street_address_1?.trim()),
-        createdAt:
-          project.companycam_created_at ??
-          companyCamIso(raw.created_at ?? raw.inserted_at) ??
-          project.last_synced_at,
+        isLead: project.is_lead,
+        isArchived: project.is_archived,
         estimateUpdatedAt:
           estimateUpdatedByProject.get(project.companycam_id) ?? null,
-      };
-    })
-    .sort(
-      (left, right) =>
-        (right.createdAt ? Date.parse(right.createdAt) : 0) -
-          (left.createdAt ? Date.parse(left.createdAt) : 0) ||
-        left.name.localeCompare(right.name, "en-CA"),
-    );
+      }))
+      .sort(
+        (left, right) =>
+          Number(left.isArchived) - Number(right.isArchived) ||
+          Number(left.isLead) - Number(right.isLead) ||
+          left.name.localeCompare(right.name, "en-CA"),
+      );
+
+    return {
+      dealId: lead.deal_id,
+      createdOn: lead.created_on,
+      createdAtLocal: lead.created_at_local,
+      name: lead.contact_name?.trim() || "Unnamed lead",
+      email: lead.email,
+      phone: lead.phone,
+      rawLeadSource: lead.raw_lead_source,
+      normalizedChannel: lead.normalized_channel,
+      address: lead.address,
+      postalCode: lead.postal_code,
+      estimateScheduledOn: lead.estimate_scheduled_on,
+      estimateAppointmentOn: lead.estimate_appointment_on,
+      proposalNumber: lead.proposal_number,
+      proposalAmount: lead.proposal_amount,
+      proposalOn: lead.proposal_on,
+      jobCrew: lead.job_crew,
+      isInterior: lead.is_interior,
+      isExterior: lead.is_exterior,
+      isCabinets: lead.is_cabinets,
+      sourceRowNumber: lead.source_row_number,
+      companyCamMatchMethod: matchMethod,
+      companyCamProjects,
+    };
+  });
 }
 
 export async function getBudgets(): Promise<ProjectBudget[]> {

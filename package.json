@@ -30,6 +30,7 @@
     "import:meta-api": "node scripts/import-meta-api-snapshots.mjs",
     "import:meta-monthly": "node scripts/import-meta-monthly-snapshots.mjs",
     "import:dripjobs-marketing": "node scripts/import-dripjobs-marketing-exports.mjs",
+    "import:marketing-leads": "node scripts/import-marketing-leads-sheet.mjs",
     "meta": "node scripts/meta-marketing-cli.mjs",
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
