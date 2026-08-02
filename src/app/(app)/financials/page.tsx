@@ -16,6 +16,7 @@ import {
   type FinancialTransaction,
 } from "@/lib/financials";
 import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
+import { getMarketingMetrics } from "@/lib/marketing";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,17 @@ function formatCostRatio(amount: number, revenue: number) {
   return revenue > 0 ? percent.format(amount / revenue) : "—";
 }
 
+function formatRatio(value: number | null) {
+  return value == null ? "—" : `${value.toFixed(2)}×`;
+}
+
+function roasTone(value: number | null): "neutral" | "good" | "warn" | "bad" {
+  if (value == null) return "neutral";
+  if (value >= 3) return "good";
+  if (value >= 1) return "warn";
+  return "bad";
+}
+
 function buildMonthlyData(
   transactions: FinancialTransaction[],
   year: number,
@@ -167,6 +179,7 @@ export default async function FinancialsPage({
   const requestedYear = Number(firstParam(params.year));
   const defaultYear = years[0] ?? new Date().getFullYear();
   const year = years.includes(requestedYear) ? requestedYear : defaultYear;
+  const marketing = await getMarketingMetrics(year);
   const requestedAccount = firstParam(params.account) || "all";
   const account =
     requestedAccount === "all" ||
@@ -463,6 +476,110 @@ export default async function FinancialsPage({
             hint={`${money.format(netIncome)} net income`}
           />
         </div>
+      </div>
+
+      <div className="my-4">
+        <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-sm font-semibold text-[var(--color-heading)]">
+              Meta customer acquisition
+            </h2>
+            <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+              Lead-cohort revenue before HST · recruiting campaign excluded
+              from customer ROAS
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {marketing.currentCampaign.startsOn &&
+            marketing.currentCampaign.endsOn ? (
+              <Badge tone="brand">
+                {formatAsOf(marketing.currentCampaign.startsOn)}–
+                {formatAsOf(marketing.currentCampaign.endsOn)}
+              </Badge>
+            ) : null}
+            <Badge tone="neutral">DripJobs → invoice → bank</Badge>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <Kpi
+            label="Customer ad spend"
+            value={money.format(marketing.currentCampaign.spend)}
+            hint={`${money.format(marketing.currentCampaign.recruitingSpend)} recruiting excluded`}
+          />
+          <Kpi
+            label="Leads / CPL"
+            value={marketing.currentCampaign.leads ?? "—"}
+            hint={
+              marketing.currentCampaign.costPerLead != null
+                ? `${money.format(marketing.currentCampaign.costPerLead)} per lead`
+                : "No platform lead total"
+            }
+          />
+          <Kpi
+            label="Won jobs / CAC"
+            value={marketing.currentCampaign.jobs}
+            hint={
+              marketing.currentCampaign.customerAcquisitionCost != null
+                ? `${money.format(marketing.currentCampaign.customerAcquisitionCost)} CAC · ${percent.format(marketing.currentCampaign.closeRate ?? 0)} close`
+                : "No won jobs in this cohort"
+            }
+          />
+          <Kpi
+            label="Booked ROAS"
+            value={formatRatio(marketing.currentCampaign.bookedRoas)}
+            hint={`${money.format(marketing.currentCampaign.bookedRevenueBeforeHst)} invoiced before HST`}
+            tone={roasTone(marketing.currentCampaign.bookedRoas)}
+          />
+          <Kpi
+            label="Cash ROAS"
+            value={formatRatio(marketing.currentCampaign.cashRoas)}
+            hint={`${money.format(marketing.currentCampaign.bankBackedRevenueBeforeHst)} bank-backed before HST`}
+            tone={roasTone(marketing.currentCampaign.cashRoas)}
+          />
+        </div>
+
+        <Card className="mt-4 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium text-[var(--color-heading)]">
+                {year} blended Meta evidence
+              </div>
+              <div className="mt-1 text-xs text-[var(--color-muted)]">
+                {money.format(marketing.yearToDate.bankMetaSpend)} posted by the
+                bank · {money.format(marketing.yearToDate.knownRecruitingSpend)}{" "}
+                known recruiting spend removed · {marketing.yearToDate.jobs}{" "}
+                paid-social jobs
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
+              <div>
+                <div className="text-xs text-[var(--color-muted)]">Estimated customer spend</div>
+                <div className="mt-0.5 font-semibold tabular-nums text-[var(--color-heading)]">
+                  {money.format(marketing.yearToDate.spend)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--color-muted)]">Estimated CAC</div>
+                <div className="mt-0.5 font-semibold tabular-nums text-[var(--color-heading)]">
+                  {marketing.yearToDate.customerAcquisitionCost != null
+                    ? money.format(marketing.yearToDate.customerAcquisitionCost)
+                    : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--color-muted)]">Booked / cash ROAS</div>
+                <div className="mt-0.5 font-semibold tabular-nums text-[var(--color-heading)]">
+                  {formatRatio(marketing.yearToDate.bookedRoas)} / {formatRatio(marketing.yearToDate.cashRoas)}
+                </div>
+              </div>
+            </div>
+          </div>
+          {marketing.currentCampaign.bankPlatformDifference !== 0 ? (
+            <div className="mt-3 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted)]">
+              Bank charges during the report period are {money.format(marketing.currentCampaign.bankSpendDuringCampaign)} versus {money.format(marketing.currentCampaign.totalPlatformSpend)} delivered by Meta, a {money.format(Math.abs(marketing.currentCampaign.bankPlatformDifference))} billing/cutoff difference. Platform delivery drives campaign ROAS; bank charges drive the accounting ledger.
+            </div>
+          ) : null}
+        </Card>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(360px,1fr)]">

@@ -1,0 +1,5 @@
+"Reporting starts","Reporting ends","Campaign name","Campaign delivery",Results,"Result indicator","Cost per results","Ad set budget","Ad set budget type","Amount spent (CAD)",Impressions,Reach,Frequency,"CPM (cost per 1,000 impressions) (CAD)","Link clicks",Ends,"Attribution setting","Results (initial)","Results (initial) indicator"
+2026-05-15,2026-08-01,,0,,,,0,0,9183.87,557111,194475,2.864692,16.484812,,,"Multiple attribution settings",,
+2026-05-15,2026-08-01,"Ottawa Painters | Leads | CAD",active,103,actions:offsite_conversion.fb_pixel_lead,80.34631068,"Using ad set budget",0,8275.67,424161,155869,2.721266,19.510681,2893,Ongoing,"Multiple attribution settings",,
+2026-05-15,2026-08-01,"Hiring - Painters | Ottawa | API",archived,,,,"Using ad set budget",0,0,0,0,0,0,,2026-06-16,-,,
+2026-05-15,2026-08-01,"Hiring - Painters | Ottawa | API",active,519,actions:leadgen.other,1.74990366,"Using ad set budget",0,908.2,132950,37110,3.582592,6.83114,1591,Ongoing,"7-day click or 1-day view",,
