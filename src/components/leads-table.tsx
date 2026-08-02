@@ -177,9 +177,10 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
             <option value="all">All months</option>
             {Array.from({ length: 12 }, (_, index) => {
               const value = String(index + 1).padStart(2, "0");
-              const label = new Intl.DateTimeFormat("en-CA", { month: "short" }).format(
-                new Date(Date.UTC(2026, index, 1)),
-              );
+              const label = new Intl.DateTimeFormat("en-CA", {
+                month: "short",
+                timeZone: "UTC",
+              }).format(new Date(Date.UTC(2026, index, 1)));
               return <option key={value} value={value}>{label}</option>;
             })}
           </Select>
