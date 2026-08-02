@@ -93,7 +93,7 @@ const db = createClient(supabaseUrl, serviceRoleKey, {
 const start = `${YEAR}-01-01`;
 const end = `${YEAR}-12-31`;
 
-const [transactions, invoices, allocations] = await Promise.all([
+const [transactions, invoices, allocations, attributions, platformRows] = await Promise.all([
   fetchAll(() =>
     db
       .from("financial_transactions")
@@ -119,6 +119,25 @@ const [transactions, invoices, allocations] = await Promise.all([
         "financial_transaction_id,customer_invoice_id,allocated_amount,invoice_applied_amount,reversed_at",
       )
       .is("reversed_at", null),
+  ),
+  fetchAll(() =>
+    db
+      .from("customer_invoice_marketing_attribution")
+      .select(
+        "customer_invoice_id,invoice_date,normalized_channel,lead_created_at,booked_revenue_before_hst,bank_backed_revenue_before_hst",
+      )
+      .gte("invoice_date", start)
+      .lte("invoice_date", end),
+  ),
+  fetchAll(() =>
+    db
+      .from("marketing_platform_performance")
+      .select(
+        "account_id,entity_level,entity_name,purpose,reporting_start,reporting_end,currency,results,amount_spent,source_filename,source_payload,captured_at",
+      )
+      .eq("platform", "meta")
+      .gte("reporting_end", start)
+      .lte("reporting_start", end),
   ),
 ]);
 
@@ -153,6 +172,53 @@ const monthlyMeta = Object.entries(
   .map(([month, rows]) => ({ month, ...summarizeExpenses(rows) }))
   .sort((left, right) => left.month.localeCompare(right.month));
 
+const paidSocialAttributions = attributions.filter(
+  (row) => row.normalized_channel === "paid_social",
+);
+const apiPlatformRows = platformRows.filter((row) =>
+  row.source_filename.startsWith("insights-"),
+);
+const latestCaptureByAccount = new Map();
+for (const row of apiPlatformRows) {
+  const latest = latestCaptureByAccount.get(row.account_id);
+  if (!latest || row.captured_at > latest) {
+    latestCaptureByAccount.set(row.account_id, row.captured_at);
+  }
+}
+const latestCampaignRows = apiPlatformRows.filter(
+  (row) =>
+    row.entity_level === "campaign" &&
+    row.captured_at === latestCaptureByAccount.get(row.account_id),
+);
+const platformAccounts = Object.entries(
+  Object.groupBy(latestCampaignRows, (row) => row.account_id),
+).map(([accountId, rows]) => ({
+  account_id: accountId,
+  account_name: rows[0].source_payload?.account_name ?? accountId,
+  currency: rows[0].currency,
+  captured_at: rows[0].captured_at,
+  customer_acquisition: {
+    spend: sum(
+      rows.filter((row) => row.purpose === "customer_acquisition"),
+      "amount_spent",
+    ),
+    results: sum(
+      rows.filter((row) => row.purpose === "customer_acquisition"),
+      "results",
+    ),
+  },
+  recruiting: {
+    spend: sum(
+      rows.filter((row) => row.purpose === "recruiting"),
+      "amount_spent",
+    ),
+    results: sum(
+      rows.filter((row) => row.purpose === "recruiting"),
+      "results",
+    ),
+  },
+}));
+
 const allocationByInvoice = new Map();
 for (const allocation of allocations) {
   allocationByInvoice.set(
@@ -175,6 +241,21 @@ console.log(
       meta_during_current_campaign: summarizeExpenses(metaDuringCurrentCampaign),
       advertising_vendors: vendorGroups,
       monthly_meta_bank_spend: monthlyMeta,
+      paid_social_customer_invoices: {
+        count: paidSocialAttributions.length,
+        booked_revenue_before_hst: sum(
+          paidSocialAttributions,
+          "booked_revenue_before_hst",
+        ),
+        bank_backed_revenue_before_hst: sum(
+          paidSocialAttributions,
+          "bank_backed_revenue_before_hst",
+        ),
+      },
+      latest_meta_platform_report: {
+        rows: latestCampaignRows.length,
+        accounts: platformAccounts,
+      },
       classified_advertising_but_not_meta: classifiedNonMeta.map((row) => ({
         id: row.id,
         posted_on: row.posted_on,
