@@ -205,9 +205,24 @@ const interacExceptions = {
     review: true,
   },
   pNg: {
-    kind: "invoice_missing",
-    resolution: "No customer invoice source found.",
-    review: true,
+    kind: "legacy_invoice_not_imported",
+    resolution:
+      "Ottawa Painters confirmed the $881.60 Joseph A. Veryard transfer belongs to Jobber quote #947 for 160 Tartan Drive. The archived quote totals $1,101.75 and states a $220.40 deposit, leaving an $881.35 quoted balance; the payment is $0.25 higher. No final invoice is archived, so this remains an explicit invoice-missing exception rather than a fabricated invoice match.",
+    review: false,
+    quote_number: "947",
+    quote_customer: "Joe Veryard",
+    quote_address: "160 Tartan Drive, Nepean, Ottawa, Ontario K2J 3X2",
+    quote_total: 1101.75,
+    required_deposit: 220.4,
+    quoted_balance: 881.35,
+    bank_payment: 881.6,
+    variance: 0.25,
+    storage_bucket: "customer-invoices",
+    storage_path:
+      "customer-revenue-evidence/jobber/2025/quote-947-joseph-veryard.pdf",
+    content_sha256:
+      "cb5f5b04731f13c40679c087275b43d1021b3ab2a5d1db1989f032dedf679c01",
+    owner_confirmed_on: "2026-08-02",
   },
   TGQ: {
     kind: "legacy_invoice_not_imported",
