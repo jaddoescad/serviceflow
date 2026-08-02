@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalculatorRates,
+  COMPANY_DEFAULTS_VERSION,
   DEFAULT_RATES,
   ProjectCalculator,
   Quote,
   computeTotals,
   emptyProjectCalculator,
   makeQuote,
-  mergeRates,
+  mergeCompanyRates,
   reviveProjectCalculator,
 } from "@/lib/calculator/engine";
 import { QuoteOp, applyOp } from "@/lib/calculator/operations";
@@ -33,7 +34,7 @@ function readLocalDefaults(): CalculatorRates {
   try {
     const raw = window.localStorage.getItem(DEFAULTS_KEY);
     if (!raw) return structuredClone(DEFAULT_RATES);
-    return mergeRates(JSON.parse(raw));
+    return mergeCompanyRates(JSON.parse(raw));
   } catch {
     return structuredClone(DEFAULT_RATES);
   }
@@ -266,10 +267,14 @@ export function useCalculator(
   }, [dispatch]);
 
   const saveAsCompanyDefaults = useCallback(() => {
-    companyRates.current = structuredClone(quote.rates);
-    writeLocal(DEFAULTS_KEY, quote.rates);
+    // An explicit save means "use these visible rates"; stamp the current
+    // version so the one-time future-job reduction is not applied again.
+    const defaults = structuredClone(quote.rates);
+    defaults.companyDefaultsVersion = COMPANY_DEFAULTS_VERSION;
+    companyRates.current = structuredClone(defaults);
+    writeLocal(DEFAULTS_KEY, defaults);
     if (serverAvailable.current) {
-      saveCompanyRates(quote.rates).catch(() => {});
+      saveCompanyRates(defaults).catch(() => {});
     }
   }, [quote.rates]);
 

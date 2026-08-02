@@ -4,12 +4,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  COMPANY_DEFAULTS_VERSION,
   DEFAULT_RATES,
+  INTERIOR_FUTURE_JOB_MULTIPLIER,
   baseRoomName,
   computeTotals,
   makeExteriorLine,
   makeQuote,
   makeRoom,
+  mergeCompanyRates,
+  mergeRates,
   priceExteriorLine,
   priceRoom,
   priceWashing,
@@ -19,7 +23,16 @@ import {
 import { applyOp, bumpRates, parseRoomsText } from "../.test-dist/operations.js";
 import { buildLabourBudgetDraft } from "../.test-dist/labour-budget.js";
 
-const IR = DEFAULT_RATES.interior;
+const IR = {
+  ...DEFAULT_RATES.interior,
+  paintTiers: { hp: 1.15, superPaint: 1.265, duration: 1.38 },
+  ceiling: 1.38,
+  door: 103.5,
+  trimPerCoat: 2.3,
+  crown: 1.265,
+  popcorn: 8.625,
+  closet: 212.75,
+};
 const ER = DEFAULT_RATES.exterior;
 const room = (patch) => ({ id: "r", ...makeRoom("test"), ...patch });
 const line = (itemId, patch) => ({ id: "l", ...makeExteriorLine(itemId), ...patch });
@@ -79,6 +92,60 @@ test("interior: paint tiers and flat closets", () => {
   close(hp.parts.walls, 320 * 1.15, 1e-9);
   const closets = priceRoom(room({ length: 0, width: 0, height: 0, closets: 2, walls: false, ceiling: false }), "duration", IR);
   close(closets.total, 425.5, 1e-9);
+});
+
+test("future-job defaults reduce every interior client price by exactly 7%", () => {
+  const legacyCompanyRates = {
+    ...structuredClone(DEFAULT_RATES),
+    companyDefaultsVersion: undefined,
+    interior: structuredClone(IR),
+  };
+  const upgraded = mergeCompanyRates(legacyCompanyRates);
+  const scope = room({
+    length: 12,
+    width: 14,
+    height: 8,
+    doors: 2,
+    closets: 1,
+    walls: true,
+    ceiling: true,
+    popcorn: true,
+    crown: true,
+    trim: true,
+    trimCoats: 2,
+    thirdCoat: true,
+  });
+  const before = priceRoom(scope, "duration", legacyCompanyRates.interior);
+  const after = priceRoom(scope, "duration", upgraded.interior);
+
+  close(after.total, before.total * INTERIOR_FUTURE_JOB_MULTIPLIER, 1e-9);
+  close(after.hours, before.hours * INTERIOR_FUTURE_JOB_MULTIPLIER, 1e-9);
+  assert.deepEqual(upgraded.exterior, legacyCompanyRates.exterior);
+  assert.equal(upgraded.companyDefaultsVersion, COMPANY_DEFAULTS_VERSION);
+  assert.deepEqual(mergeCompanyRates(upgraded), upgraded);
+});
+
+test("existing quote snapshots retain their original interior rates", () => {
+  const legacyQuoteRates = {
+    ...structuredClone(DEFAULT_RATES),
+    companyDefaultsVersion: undefined,
+    interior: structuredClone(IR),
+  };
+  const revived = mergeRates(legacyQuoteRates);
+  close(revived.interior.paintTiers.duration, 1.38, 1e-9);
+  close(revived.interior.door, 103.5, 1e-9);
+
+  const partialLegacySnapshot = mergeRates({
+    interior: { paintTiers: { duration: 1.5 } },
+  });
+  close(partialLegacySnapshot.interior.paintTiers.duration, 1.5, 1e-9);
+  close(partialLegacySnapshot.interior.ceiling, 1.38, 1e-9);
+
+  const upgradedPartialDefaults = mergeCompanyRates({
+    interior: { paintTiers: { duration: 1.5 } },
+  });
+  close(upgradedPartialDefaults.interior.paintTiers.duration, 1.5 * 0.93, 1e-9);
+  close(upgradedPartialDefaults.interior.ceiling, 1.38 * 0.93, 1e-9);
 });
 
 // ---------------------------------------------------------------------------
@@ -195,8 +262,8 @@ test("ops: addRoom numbers repeats through the single mutation path", () => {
 
 test("ops: bumpRates scales interior prices and exterior client price exactly", () => {
   const bumped = bumpRates(DEFAULT_RATES, 5);
-  close(bumped.interior.paintTiers.duration, 1.38 * 1.05, 1e-9);
-  close(bumped.interior.door, 103.5 * 1.05, 1e-9);
+  close(bumped.interior.paintTiers.duration, DEFAULT_RATES.interior.paintTiers.duration * 1.05, 1e-9);
+  close(bumped.interior.door, DEFAULT_RATES.interior.door * 1.05, 1e-9);
   // hours follow price for interior, like the sheet
   const before = priceRoom(room({ length: 10, width: 10, height: 8 }), "duration", DEFAULT_RATES.interior);
   const after = priceRoom(room({ length: 10, width: 10, height: 8 }), "duration", bumped.interior);
@@ -216,7 +283,7 @@ test("ops: clear empties contents but keeps rates, name and status", () => {
   assert.equal(quote.rooms.length, 0);
   assert.equal(quote.name, "Option A");
   assert.equal(quote.status, "sent");
-  close(quote.rates.interior.ceiling, 1.38, 1e-9);
+  close(quote.rates.interior.ceiling, DEFAULT_RATES.interior.ceiling, 1e-9);
 });
 
 // ---------------------------------------------------------------------------
@@ -278,7 +345,12 @@ test("parser feeds addRoomsFromText through ops", () => {
     quote.rooms.map((r) => r.name),
     ["bedroom 1", "bedroom 2"],
   );
-  close(computeTotals(quote).interior.total, priceRoom(quote.rooms[0], "duration", IR).total + priceRoom(quote.rooms[1], "duration", IR).total, 1e-9);
+  close(
+    computeTotals(quote).interior.total,
+    priceRoom(quote.rooms[0], "duration", DEFAULT_RATES.interior).total +
+      priceRoom(quote.rooms[1], "duration", DEFAULT_RATES.interior).total,
+    1e-9,
+  );
 });
 
 // ---------------------------------------------------------------------------
