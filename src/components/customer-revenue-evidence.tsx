@@ -354,12 +354,8 @@ export function JobAccountingChain({
             <Stat
               label="Subcontractor HST"
               value={money(accounting.supplier_hst_documented)}
-              hint={
-                accounting.supplier_tax_review_count > 0
-                  ? `${accounting.supplier_tax_review_count} registration record${accounting.supplier_tax_review_count === 1 ? "" : "s"} need evidence`
-                  : "registration evidence verified or no HST charged"
-              }
-              tone={accounting.supplier_tax_review_count > 0 ? "warn" : "neutral"}
+              hint="Documented on subcontractor invoices"
+              tone="neutral"
             />
             <Stat
               label="Material HST"

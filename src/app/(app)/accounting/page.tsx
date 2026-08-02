@@ -45,10 +45,6 @@ function reasonLabel(value: string) {
     .replace("missing_customer_invoice", "Missing customer invoice")
     .replace("ambiguous_project_identity", "Ambiguous job identity")
     .replace("customer_invoice_needs_review", "Customer invoice review")
-    .replace(
-      "supplier_hst_registration_unverified",
-      "Subcontractor HST registration",
-    )
     .replace("supplier_cost_needs_review", "Subcontractor cost review")
     .replace("material_cost_needs_review", "Material cost review")
     .replace("customer_payment_open", "Customer payment open")
