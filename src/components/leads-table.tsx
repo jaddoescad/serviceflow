@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   Badge,
@@ -13,7 +12,7 @@ import {
   Select,
   StatusText,
 } from "@/components/ui";
-import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { fmtDate, fmtMoney } from "@/lib/format";
 import type { MarketingLead } from "@/lib/types";
 
 type ProgressFilter = "all" | "unlinked" | "lead" | "estimate" | "job" | "proposal";
@@ -34,17 +33,10 @@ function sourceTone(
   return "neutral";
 }
 
-function projectHref(lead: MarketingLead, projectIndex: number): string {
-  const project = lead.companyCamProjects[projectIndex];
-  if (!project) return "#";
-  return project.isLead
-    ? `/projects/${encodeURIComponent(project.projectId)}/calculator?name=${encodeURIComponent(lead.name)}`
-    : `/projects/${encodeURIComponent(project.projectId)}`;
-}
-
-function linkMethodLabel(method: MarketingLead["companyCamMatchMethod"]): string {
+function linkMethodLabel(
+  method: MarketingLead["dripJobs"][number]["linkMethod"],
+): string {
   if (method === "proposal_number") return "Proposal ID";
-  if (method === "companycam_relation_id") return "DripJobs relation";
   if (method === "dripjobs_contact_uuid") return "DripJobs contact ID";
   if (method === "manual") return "Manually confirmed";
   if (method === "email_and_phone") return "Email + phone";
@@ -55,17 +47,20 @@ function linkMethodLabel(method: MarketingLead["companyCamMatchMethod"]): string
 
 function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
-  if (filter === "unlinked") return lead.companyCamProjects.length === 0;
+  if (filter === "unlinked") return lead.dripJobs.length === 0;
   if (filter === "lead") {
-    return lead.companyCamProjects.some(
-      (project) => project.isLead && !project.isArchived,
+    return (
+      lead.dripJobs.length === 0 &&
+      !lead.proposalNumber &&
+      lead.proposalAmount == null &&
+      !lead.proposalOn
     );
   }
   if (filter === "estimate") {
-    return lead.companyCamProjects.some((project) => project.estimateUpdatedAt);
+    return Boolean(lead.estimateScheduledOn || lead.estimateAppointmentOn);
   }
   if (filter === "job") {
-    return lead.companyCamProjects.some((project) => !project.isLead);
+    return lead.dripJobs.length > 0;
   }
   return Boolean(lead.proposalNumber || lead.proposalAmount || lead.proposalOn);
 }
@@ -116,10 +111,10 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         lead.dealId,
         lead.rawLeadSource,
         lead.proposalNumber,
-        ...lead.companyCamProjects.flatMap((project) => [
-          project.name,
-          project.address,
-          project.projectId,
+        ...lead.dripJobs.flatMap((job) => [
+          job.jobName,
+          job.proposalId,
+          job.status,
         ]),
       ].some((value) => value?.toLocaleLowerCase("en-CA").includes(needle));
     });
@@ -217,9 +212,9 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
             className="w-48"
           >
             <option value="all">All records</option>
-            <option value="unlinked">Not linked to CompanyCam</option>
-            <option value="lead">Active CompanyCam lead</option>
-            <option value="estimate">Estimate started</option>
+            <option value="unlinked">No DripJobs job</option>
+            <option value="lead">Lead only</option>
+            <option value="estimate">Estimate booked</option>
             <option value="proposal">Proposal recorded</option>
             <option value="job">Converted to job</option>
           </Select>
@@ -245,18 +240,15 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                   <th className="px-4 py-2.5 font-medium">Contact</th>
                   <th className="px-4 py-2.5 font-medium">Location</th>
                   <th className="px-4 py-2.5 font-medium">Progress</th>
-                  <th className="px-4 py-2.5 font-medium">CompanyCam</th>
+                  <th className="px-4 py-2.5 font-medium">DripJobs job</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((lead) => {
-                  const firstProject = lead.companyCamProjects[0];
-                  const estimate = lead.companyCamProjects.find(
-                    (project) => project.estimateUpdatedAt,
-                  );
-                  const jobCount = lead.companyCamProjects.filter(
-                    (project) => !project.isLead,
-                  ).length;
+                  const firstJob = lead.dripJobs[0];
+                  const estimateOn =
+                    lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
+                  const jobCount = lead.dripJobs.length;
                   return (
                     <tr
                       key={lead.dealId}
@@ -289,35 +281,36 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                       </td>
                       <td className="px-4 py-2.5">
                         {jobCount > 0 ? <StatusText tone="good">{jobCount === 1 ? "Job" : `${jobCount} jobs`}</StatusText> : null}
-                        {estimate ? (
+                        {estimateOn ? (
                           <div className={jobCount ? "mt-1" : undefined}>
-                            <StatusText tone="brand">Estimate saved {fmtDateTime(estimate.estimateUpdatedAt)}</StatusText>
+                            <StatusText tone="brand">Estimate {fmtDate(estimateOn)}</StatusText>
                           </div>
                         ) : null}
                         {lead.proposalAmount != null || lead.proposalNumber ? (
-                          <div className={jobCount || estimate ? "mt-1 text-xs text-[var(--color-muted)]" : "text-xs text-[var(--color-muted)]"}>
+                          <div className={jobCount || estimateOn ? "mt-1 text-xs text-[var(--color-muted)]" : "text-xs text-[var(--color-muted)]"}>
                             Proposal {lead.proposalNumber ? `#${lead.proposalNumber}` : ""}
                             {lead.proposalAmount != null ? ` · ${fmtMoney(lead.proposalAmount)}` : ""}
                           </div>
                         ) : null}
-                        {!jobCount && !estimate && lead.proposalAmount == null && !lead.proposalNumber ? (
+                        {!jobCount && !estimateOn && lead.proposalAmount == null && !lead.proposalNumber ? (
                           <StatusText tone="neutral">Lead only</StatusText>
                         ) : null}
                       </td>
                       <td className="px-4 py-2.5">
-                        {firstProject ? (
+                        {firstJob ? (
                           <div>
-                            <Link className="font-medium text-[var(--color-brand-strong)] hover:underline" href={projectHref(lead, 0)}>
-                              {firstProject.isLead ? "Open estimate" : "Open job"}
-                            </Link>
-                            <div className="mt-0.5 max-w-48 truncate text-xs text-[var(--color-muted)]" title={firstProject.name}>
-                              {firstProject.name}
+                            <div className="font-medium text-[var(--color-heading)]">
+                              {firstJob.jobName}
+                            </div>
+                            <div className="mt-0.5 max-w-56 truncate text-xs text-[var(--color-muted)]">
+                              Proposal #{firstJob.proposalId} · {firstJob.status}
+                              {firstJob.amount > 0 ? ` · ${fmtMoney(firstJob.amount)}` : ""}
                             </div>
                             <div className="mt-1 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
-                              Saved · {linkMethodLabel(firstProject.linkMethod)}
+                              Saved relationship · {linkMethodLabel(firstJob.linkMethod)}
                             </div>
-                            {lead.companyCamProjects.length > 1 ? (
-                              <div className="mt-1 text-xs text-[var(--color-muted)]">+{lead.companyCamProjects.length - 1} more linked</div>
+                            {lead.dripJobs.length > 1 ? (
+                              <div className="mt-1 text-xs text-[var(--color-muted)]">+{lead.dripJobs.length - 1} more linked jobs</div>
                             ) : null}
                           </div>
                         ) : (

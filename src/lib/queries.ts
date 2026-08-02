@@ -6,7 +6,7 @@ import type {
   EmployeeProfile,
   EmployeeTrackingStatus,
   MarketingLead,
-  MarketingLeadProject,
+  MarketingLeadJob,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
@@ -198,39 +198,22 @@ type MarketingLeadRow = {
   source_row_number: number;
 };
 
-type LeadProjectRow = {
-  companycam_id: string;
-  name: string;
-  street_address_1: string | null;
-  street_address_2: string | null;
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  formatted_address: string | null;
-  is_lead: boolean;
-  is_archived: boolean;
+type DripJobsJobRow = {
+  proposal_id: string;
+  job_name: string;
+  status: string;
+  amount: number;
+  proposal_signed_on: string | null;
+  job_start_on: string | null;
+  job_completion_on: string | null;
 };
 
-type MarketingLeadProjectLinkRow = {
+type MarketingLeadJobLinkRow = {
   lead_deal_id: string;
-  companycam_project_id: string;
-  relationship_type: MarketingLeadProject["relationshipType"];
-  match_method: MarketingLeadProject["linkMethod"];
+  job_proposal_id: string;
+  match_method: MarketingLeadJob["linkMethod"];
   confidence: number;
 };
-
-function leadAddress(project: LeadProjectRow): string | null {
-  const parts = [
-    project.street_address_1,
-    project.street_address_2,
-    project.city,
-    project.state,
-    project.postal_code,
-  ].filter((part): part is string => Boolean(part?.trim()));
-
-  if (parts.length === 0) return null;
-  return project.formatted_address?.trim() || parts.join(", ");
-}
 
 async function fetchAllMarketingLeadRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -255,82 +238,69 @@ async function fetchAllMarketingLeadRows(
 
 export async function getMarketingLeads(): Promise<MarketingLead[]> {
   const supabase = await createClient();
-  const [marketingRows, projectsResult, calculatorsResult, linksResult] =
+  const [marketingRows, jobsResult, linksResult] =
     await Promise.all([
       fetchAllMarketingLeadRows(supabase),
       supabase
-        .from("companycam_projects")
+        .from("dripjobs_jobs")
         .select(
-          "companycam_id,name,street_address_1,street_address_2,city,state,postal_code,formatted_address,is_lead,is_archived",
+          "proposal_id,job_name,status,amount,proposal_signed_on,job_start_on,job_completion_on",
         )
-        .eq("is_deleted", false)
-        .limit(1000),
-      supabase
-        .from("project_calculators")
-        .select("companycam_project_id,updated_at")
         .limit(5000),
       supabase
-        .from("marketing_lead_project_links")
+        .from("marketing_lead_job_links")
         .select(
-          "lead_deal_id,companycam_project_id,relationship_type,match_method,confidence",
+          "lead_deal_id,job_proposal_id,match_method,confidence",
         )
         .eq("link_status", "confirmed")
+        .eq("relationship_type", "originated")
         .limit(5000),
     ]);
 
-  if (projectsResult.error) {
-    throw new Error(`CompanyCam lead links: ${projectsResult.error.message}`);
-  }
-  if (calculatorsResult.error) {
-    throw new Error(`lead calculators: ${calculatorsResult.error.message}`);
+  if (jobsResult.error) {
+    throw new Error(`DripJobs jobs: ${jobsResult.error.message}`);
   }
   if (linksResult.error) {
-    throw new Error(`saved lead project links: ${linksResult.error.message}`);
+    throw new Error(`saved lead job links: ${linksResult.error.message}`);
   }
 
-  const estimateUpdatedByProject = new Map<string, string>(
-    (calculatorsResult.data ?? []).map((calculator) => [
-      calculator.companycam_project_id,
-      calculator.updated_at,
+  const jobsByProposal = new Map(
+    ((jobsResult.data ?? []) as DripJobsJobRow[]).map((job) => [
+      job.proposal_id,
+      job,
     ]),
   );
-
-  const projects = (projectsResult.data ?? []) as LeadProjectRow[];
-  const projectsById = new Map(
-    projects.map((project) => [project.companycam_id, project]),
-  );
-  const linksByLead = new Map<string, MarketingLeadProjectLinkRow[]>();
-  for (const link of (linksResult.data ?? []) as MarketingLeadProjectLinkRow[]) {
+  const linksByLead = new Map<string, MarketingLeadJobLinkRow[]>();
+  for (const link of (linksResult.data ?? []) as MarketingLeadJobLinkRow[]) {
     const leadLinks = linksByLead.get(link.lead_deal_id) ?? [];
     leadLinks.push(link);
     linksByLead.set(link.lead_deal_id, leadLinks);
   }
 
   return marketingRows.map((lead) => {
-    const companyCamProjects: MarketingLeadProject[] = (
+    const dripJobs: MarketingLeadJob[] = (
       linksByLead.get(lead.deal_id) ?? []
     )
       .flatMap((link) => {
-        const project = projectsById.get(link.companycam_project_id);
-        if (!project) return [];
+        const job = jobsByProposal.get(link.job_proposal_id);
+        if (!job) return [];
         return [{
-          projectId: project.companycam_id,
-          name: project.name,
-          address: leadAddress(project),
-          isLead: project.is_lead,
-          isArchived: project.is_archived,
-          estimateUpdatedAt:
-            estimateUpdatedByProject.get(project.companycam_id) ?? null,
-          relationshipType: link.relationship_type,
+          proposalId: job.proposal_id,
+          jobName: job.job_name,
+          status: job.status,
+          amount: job.amount,
+          proposalSignedOn: job.proposal_signed_on,
+          jobStartOn: job.job_start_on,
+          jobCompletionOn: job.job_completion_on,
           linkMethod: link.match_method,
           linkConfidence: link.confidence,
         }];
       })
       .sort(
         (left, right) =>
-          Number(left.isArchived) - Number(right.isArchived) ||
-          Number(left.isLead) - Number(right.isLead) ||
-          left.name.localeCompare(right.name, "en-CA"),
+          (right.proposalSignedOn ?? "").localeCompare(
+            left.proposalSignedOn ?? "",
+          ) || left.jobName.localeCompare(right.jobName, "en-CA"),
       );
 
     return {
@@ -354,10 +324,38 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
       isExterior: lead.is_exterior,
       isCabinets: lead.is_cabinets,
       sourceRowNumber: lead.source_row_number,
-      companyCamMatchMethod: companyCamProjects[0]?.linkMethod ?? null,
-      companyCamProjects,
+      dripJobs,
     };
   });
+}
+
+export type DripJobsLeadCoverage = {
+  total: number;
+  confirmed: number;
+  needsReview: number;
+  missingSource: number;
+};
+
+export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("dripjobs_jobs")
+    .select("proposal_id,lead_resolution_status")
+    .limit(5000);
+  if (error) throw new Error(`DripJobs lead coverage: ${error.message}`);
+  const rows = data ?? [];
+  return {
+    total: rows.length,
+    confirmed: rows.filter(
+      (job) => job.lead_resolution_status === "confirmed",
+    ).length,
+    needsReview: rows.filter(
+      (job) => job.lead_resolution_status === "needs_review",
+    ).length,
+    missingSource: rows.filter(
+      (job) => job.lead_resolution_status === "missing_source",
+    ).length,
+  };
 }
 
 export async function getBudgets(): Promise<ProjectBudget[]> {

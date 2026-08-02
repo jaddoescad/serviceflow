@@ -21,6 +21,7 @@
     "reconcile:customer-revenue": "node scripts/reconcile-customer-revenue.mjs",
     "reconcile:customer-revenue-evidence": "node scripts/reconcile-customer-revenue-evidence.mjs",
     "reconcile:dripjobs-jobs": "node scripts/reconcile-dripjobs-job-source.mjs",
+    "reconcile:lead-job-links": "node scripts/backfill-marketing-lead-job-links.mjs",
     "reconcile:lead-project-links": "node scripts/backfill-marketing-lead-project-links.mjs",
     "reconcile:software-subscriptions": "node scripts/reconcile-software-subscriptions.mjs",
     "reconcile:recurring-overhead": "node scripts/reconcile-recurring-overhead.mjs",
