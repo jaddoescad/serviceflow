@@ -412,7 +412,8 @@ export async function getProjectCustomerRevenue(
   const result = await supabase
     .from("customer_invoices")
     .select("id")
-    .eq("companycam_project_id", projectId);
+    .eq("companycam_project_id", projectId)
+    .eq("accounting_status", "active");
   if (result.error) throw result.error;
 
   const invoices = await loadInvoiceEvidence(

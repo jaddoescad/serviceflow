@@ -119,6 +119,7 @@ export async function getProjects(): Promise<Project[]> {
       supabase
         .from("customer_invoices")
         .select("companycam_project_id")
+        .eq("accounting_status", "active")
         .eq("is_archived_job", false)
         .not("companycam_project_id", "is", null),
     ]);
