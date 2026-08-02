@@ -87,7 +87,11 @@ export type MarketingSalesSnapshot = {
   customers: number;
   jobs: number;
   bookedRevenueBeforeHst: number;
+  bookedHst: number;
+  bookedRevenueAfterHst: number;
   cashRevenueBeforeHst: number;
+  bankCashReceived: number;
+  amountReceivable: number;
   averageJobSize: number | null;
   selectedSpendCad: number | null;
   selectedCpl: number | null;
@@ -324,6 +328,21 @@ export function buildMarketingSalesSnapshot(
       0,
     ),
   );
+  const bookedHst = round(
+    selectedJobs.reduce((total, job) => total + job.bookedHst, 0),
+  );
+  const bookedRevenueAfterHst = round(
+    selectedJobs.reduce(
+      (total, job) => total + job.bookedRevenueAfterHst,
+      0,
+    ),
+  );
+  const bankCashReceived = round(
+    selectedJobs.reduce((total, job) => total + job.bankCashReceived, 0),
+  );
+  const amountReceivable = round(
+    selectedJobs.reduce((total, job) => total + job.amountReceivable, 0),
+  );
 
   const metaLeads = dateLeads.filter((lead) => lead.channel === "paid_social");
   const metaLeadIds = new Set(metaLeads.map((lead) => lead.dealId));
@@ -436,7 +455,11 @@ export function buildMarketingSalesSnapshot(
     customers: selectedCustomerIds.size,
     jobs: selectedJobs.length,
     bookedRevenueBeforeHst,
+    bookedHst,
+    bookedRevenueAfterHst,
     cashRevenueBeforeHst,
+    bankCashReceived,
+    amountReceivable,
     averageJobSize: ratio(bookedRevenueBeforeHst, selectedJobs.length),
     selectedSpendCad,
     selectedCpl:

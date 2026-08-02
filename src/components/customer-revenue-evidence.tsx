@@ -15,6 +15,7 @@ import type {
 import { fmtDate } from "@/lib/format";
 import type { InvoiceEntryRecord } from "@/lib/invoice-entry-queries";
 import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
+import type { JobAccountingRecord } from "@/lib/job-accounting";
 
 const currency = new Intl.NumberFormat("en-CA", {
   style: "currency",
@@ -248,10 +249,12 @@ export function JobAccountingChain({
   revenue,
   labourEntries,
   labourSummary,
+  accounting,
 }: {
   revenue: ProjectCustomerRevenue;
   labourEntries: InvoiceEntryRecord[];
   labourSummary: ProjectLabourInvoiceSummary;
+  accounting: JobAccountingRecord | null;
 }) {
   const labourInvoices = [
     ...new Map(
@@ -282,15 +285,18 @@ export function JobAccountingChain({
         right={
           <Badge
             tone={
-              revenue.invoices.length > 0 &&
-              revenuePaid &&
-              labourInvoices.length > 0 &&
-              labourPaid
-                ? "good"
-                : "warn"
+              accounting
+                ? accounting.review_reasons.length === 0
+                  ? "good"
+                  : "warn"
+                : revenue.invoices.length > 0
+                  ? "good"
+                  : "warn"
             }
           >
-            Evidence linked by job
+            {accounting?.review_reasons.length
+              ? "Connections need review"
+              : "Evidence linked by job"}
           </Badge>
         }
       />
@@ -332,6 +338,47 @@ export function JobAccountingChain({
           }
         />
       </div>
+
+      {accounting ? (
+        <>
+          <CardHeader
+            title="Job tax and margin bridge"
+            subtitle="Invoice tax is preserved separately from before-HST revenue and direct cost"
+          />
+          <StatGrid columns={4}>
+            <Stat
+              label="Customer HST billed"
+              value={money(accounting.customer_hst_billed)}
+              hint={`${money(accounting.booked_revenue_before_hst)} revenue before HST`}
+            />
+            <Stat
+              label="Subcontractor HST"
+              value={money(accounting.supplier_hst_documented)}
+              hint={
+                accounting.supplier_tax_review_count > 0
+                  ? `${accounting.supplier_tax_review_count} registration record${accounting.supplier_tax_review_count === 1 ? "" : "s"} need evidence`
+                  : "registration evidence verified or no HST charged"
+              }
+              tone={accounting.supplier_tax_review_count > 0 ? "warn" : "neutral"}
+            />
+            <Stat
+              label="Material HST"
+              value={money(accounting.material_hst_documented)}
+              hint={`${money(accounting.material_cost_before_hst)} materials before HST`}
+            />
+            <Stat
+              label="Invoice-backed gross profit"
+              value={money(accounting.gross_profit_before_hst)}
+              hint={
+                accounting.gross_margin == null
+                  ? "No customer invoice"
+                  : `${(accounting.gross_margin * 100).toFixed(1)}% before HST`
+              }
+              tone={accounting.gross_profit_before_hst >= 0 ? "good" : "bad"}
+            />
+          </StatGrid>
+        </>
+      ) : null}
 
       {revenue.invoices.length > 0 ? (
         <div className="border-t border-[var(--color-border)]">

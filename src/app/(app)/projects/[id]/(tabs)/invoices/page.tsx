@@ -15,6 +15,7 @@ import {
 } from "@/lib/invoice-queries";
 import { fmtCurrencyTotals } from "@/lib/format";
 import { getProjectMaterialInvoices } from "@/lib/materials";
+import { getProjectJobAccounting } from "@/lib/job-accounting";
 
 export const dynamic = "force-dynamic";
 
@@ -35,12 +36,20 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
-  const [shell, entries, summary, customerRevenue, materialInvoices] = await Promise.all([
+  const [
+    shell,
+    entries,
+    summary,
+    customerRevenue,
+    materialInvoices,
+    jobAccounting,
+  ] = await Promise.all([
     getProjectShell(projectId),
     getInvoiceEntriesForProject(projectId),
     getProjectLabourInvoiceSummary(projectId),
     getProjectCustomerRevenue(projectId),
     getProjectMaterialInvoices(projectId),
+    getProjectJobAccounting(projectId),
   ]);
 
   if (!shell) notFound();
@@ -83,6 +92,7 @@ export default async function ProjectInvoicesPage({
         revenue={customerRevenue}
         labourEntries={currentEntries}
         labourSummary={summary}
+        accounting={jobAccounting}
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -532,6 +532,33 @@ export function MarketingSalesDashboard({ dataset }: { dataset: MarketingSalesDa
         </StatGrid>
 
         <CardHeader
+          title="Invoice-to-cash bridge"
+          subtitle="The same connected job invoices, with tax and bank settlement kept separate"
+        />
+        <StatGrid columns={4}>
+          <MetricCell
+            label="Booked before HST"
+            value={money(snapshot.bookedRevenueBeforeHst)}
+            hint="customer invoice subtotal"
+          />
+          <MetricCell
+            label="HST billed"
+            value={money(snapshot.bookedHst)}
+            hint="customer invoice tax"
+          />
+          <MetricCell
+            label="Invoice total"
+            value={money(snapshot.bookedRevenueAfterHst)}
+            hint="before HST + HST"
+          />
+          <MetricCell
+            label="Bank cash received"
+            value={money(snapshot.bankCashReceived)}
+            hint={`${money(snapshot.amountReceivable)} remains on invoices`}
+          />
+        </StatGrid>
+
+        <CardHeader
           title="Acquisition efficiency"
           subtitle="Ad spend uses bank posting date, scoped to Meta regardless of the channel filter"
         />

@@ -30,7 +30,11 @@ export type MarketingJobFact = {
   invoiceIds: string[];
   cashAllocationCount: number;
   bookedRevenueBeforeHst: number;
+  bookedHst: number;
+  bookedRevenueAfterHst: number;
   cashRevenueBeforeHst: number;
+  bankCashReceived: number;
+  amountReceivable: number;
 };
 
 export type MarketingSpendFact = {
@@ -86,35 +90,32 @@ type LeadRow = {
   captured_at: string;
 };
 
-type JobRow = {
-  proposal_id: string;
+type AccountingJobRow = {
+  job_proposal_id: string;
+  lead_deal_id: string | null;
   job_name: string;
-  status: string;
+  job_status: string;
   proposal_signed_on: string | null;
   job_start_on: string | null;
   job_completion_on: string | null;
-  lead_resolution_status: "confirmed" | "needs_review" | "missing_source";
+  customer_invoice_count: number;
+  booked_revenue_before_hst: number;
+  customer_hst_billed: number;
+  customer_invoice_total: number;
+  bank_backed_revenue_before_hst: number;
+  customer_bank_cash_received: number;
+  customer_amount_receivable: number;
+  customer_bank_payment_count: number;
+};
+
+type JobCaptureRow = {
+  proposal_id: string;
   captured_at: string;
 };
 
-type LinkRow = {
-  lead_deal_id: string;
-  job_proposal_id: string;
-  relationship_type: string;
-  link_status: string;
-};
-
-type CustomerInvoiceRow = {
-  id: string;
-  external_proposal_id: string | null;
-  subtotal: number;
-  total_amount: number;
-};
-
-type CustomerAllocationRow = {
+type CustomerReconciliationRow = {
   customer_invoice_id: string;
-  invoice_applied_amount: number;
-  reversed_at: string | null;
+  job_proposal_id: string | null;
 };
 
 type SpendRow = {
@@ -170,34 +171,38 @@ async function fetchAllRows<T>(
   }
 }
 
+async function fetchRpcRows<T>(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  functionName: string,
+  args?: Record<string, unknown>,
+): Promise<T[]> {
+  const { data, error } = await supabase.rpc(functionName, args);
+  if (error) throw new Error(`${functionName}: ${error.message}`);
+  return (data ?? []) as T[];
+}
+
 export async function getMarketingSalesDataset(): Promise<MarketingSalesDataset> {
   const supabase = await createClient();
-  const [leadRows, jobRows, linkRows, invoiceRows, allocationRows, spendRows, platformRows] =
+  const [leadRows, jobRows, jobCaptureRows, invoiceRows, spendRows, platformRows] =
     await Promise.all([
       fetchAllRows<LeadRow>(
         supabase,
         "marketing_leads",
         "deal_id,created_on,normalized_channel,raw_lead_source,proposal_number,proposal_amount,proposal_on,captured_at",
       ),
-      fetchAllRows<JobRow>(
+      fetchRpcRows<AccountingJobRow>(
+        supabase,
+        "read_job_accounting_reconciliation",
+        { p_companycam_project_id: null },
+      ),
+      fetchAllRows<JobCaptureRow>(
         supabase,
         "dripjobs_jobs",
-        "proposal_id,job_name,status,proposal_signed_on,job_start_on,job_completion_on,lead_resolution_status,captured_at",
+        "proposal_id,captured_at",
       ),
-      fetchAllRows<LinkRow>(
+      fetchRpcRows<CustomerReconciliationRow>(
         supabase,
-        "marketing_lead_job_links",
-        "lead_deal_id,job_proposal_id,relationship_type,link_status",
-      ),
-      fetchAllRows<CustomerInvoiceRow>(
-        supabase,
-        "customer_invoices",
-        "id,external_proposal_id,subtotal,total_amount",
-      ),
-      fetchAllRows<CustomerAllocationRow>(
-        supabase,
-        "customer_invoice_bank_allocations",
-        "customer_invoice_id,invoice_applied_amount,reversed_at",
+        "read_customer_invoice_reconciliation",
       ),
       fetchAllRows<SpendRow>(
         supabase,
@@ -221,68 +226,34 @@ export async function getMarketingSalesDataset(): Promise<MarketingSalesDataset>
     ),
   }));
   const leadsById = new Map(leads.map((lead) => [lead.dealId, lead]));
-  const jobsByProposal = new Map(
-    jobRows.map((job) => [job.proposal_id, job]),
-  );
-  const invoicesByProposal = new Map<string, CustomerInvoiceRow[]>();
+  const invoicesByProposal = new Map<string, string[]>();
   for (const invoice of invoiceRows) {
-    const proposalId = String(invoice.external_proposal_id ?? "").trim();
+    const proposalId = String(invoice.job_proposal_id ?? "").trim();
     if (!proposalId) continue;
     const rows = invoicesByProposal.get(proposalId) ?? [];
-    rows.push(invoice);
+    rows.push(invoice.customer_invoice_id);
     invoicesByProposal.set(proposalId, rows);
   }
-  const appliedByInvoice = new Map<string, number>();
-  const allocationCountByInvoice = new Map<string, number>();
-  for (const allocation of allocationRows) {
-    if (allocation.reversed_at) continue;
-    appliedByInvoice.set(
-      allocation.customer_invoice_id,
-      (appliedByInvoice.get(allocation.customer_invoice_id) ?? 0) +
-        Number(allocation.invoice_applied_amount ?? 0),
-    );
-    allocationCountByInvoice.set(
-      allocation.customer_invoice_id,
-      (allocationCountByInvoice.get(allocation.customer_invoice_id) ?? 0) + 1,
-    );
-  }
-
-  const confirmedLinks = linkRows.filter(
-    (link) =>
-      link.relationship_type === "originated" && link.link_status === "confirmed",
-  );
-  const jobs: MarketingJobFact[] = confirmedLinks.flatMap((link) => {
-    const lead = leadsById.get(link.lead_deal_id);
-    const job = jobsByProposal.get(link.job_proposal_id);
+  const jobs: MarketingJobFact[] = jobRows.flatMap((job) => {
+    const lead = job.lead_deal_id ? leadsById.get(job.lead_deal_id) : null;
     if (!lead || !job) return [];
-    const invoices = invoicesByProposal.get(job.proposal_id) ?? [];
-    const bookedRevenueBeforeHst = invoices.reduce(
-      (total, invoice) => total + Number(invoice.subtotal ?? 0),
-      0,
-    );
-    const cashRevenueBeforeHst = invoices.reduce((total, invoice) => {
-      const invoiceApplied = appliedByInvoice.get(invoice.id) ?? 0;
-      const totalAmount = Number(invoice.total_amount ?? 0);
-      return total +
-        (totalAmount > 0
-          ? (invoiceApplied * Number(invoice.subtotal ?? 0)) / totalAmount
-          : 0);
-    }, 0);
+    const invoices = invoicesByProposal.get(job.job_proposal_id) ?? [];
     return [{
-      proposalId: job.proposal_id,
+      proposalId: job.job_proposal_id,
       leadDealId: lead.dealId,
       jobName: job.job_name,
-      status: job.status,
+      status: job.job_status,
       proposalSignedOn: job.proposal_signed_on,
       jobStartOn: job.job_start_on,
       jobCompletionOn: job.job_completion_on,
-      invoiceIds: invoices.map((invoice) => invoice.id),
-      cashAllocationCount: invoices.reduce(
-        (total, invoice) => total + (allocationCountByInvoice.get(invoice.id) ?? 0),
-        0,
-      ),
-      bookedRevenueBeforeHst: roundMoney(bookedRevenueBeforeHst),
-      cashRevenueBeforeHst: roundMoney(cashRevenueBeforeHst),
+      invoiceIds: invoices,
+      cashAllocationCount: Number(job.customer_bank_payment_count ?? 0),
+      bookedRevenueBeforeHst: Number(job.booked_revenue_before_hst ?? 0),
+      bookedHst: Number(job.customer_hst_billed ?? 0),
+      bookedRevenueAfterHst: Number(job.customer_invoice_total ?? 0),
+      cashRevenueBeforeHst: Number(job.bank_backed_revenue_before_hst ?? 0),
+      bankCashReceived: Number(job.customer_bank_cash_received ?? 0),
+      amountReceivable: Number(job.customer_amount_receivable ?? 0),
     }];
   });
 
@@ -322,20 +293,19 @@ export async function getMarketingSalesDataset(): Promise<MarketingSalesDataset>
       totalLeads: leads.length,
       totalJobs: jobRows.length,
       confirmedJobLinks: jobs.length,
-      missingLeadSourceJobs: jobRows.filter(
-        (job) => job.lead_resolution_status === "missing_source",
-      ).length,
+      missingLeadSourceJobs: jobRows.filter((job) => !job.lead_deal_id).length,
       linkedJobsWithInvoice: jobs.filter((job) => job.invoiceIds.length > 0).length,
       linkedJobsWithoutInvoice: jobs.filter((job) => job.invoiceIds.length === 0).length,
       linkedJobsWithoutCashEvidence: jobs.filter(
         (job) => job.cashAllocationCount === 0,
       ).length,
-      activeCustomerInvoiceAllocations: allocationRows.filter(
-        (allocation) => !allocation.reversed_at,
-      ).length,
+      activeCustomerInvoiceAllocations: jobRows.reduce(
+        (total, job) => total + Number(job.customer_bank_payment_count ?? 0),
+        0,
+      ),
       proposalsRecorded: leads.filter((lead) => lead.proposalRecorded).length,
       leadCapturedAt: latest(leadRows.map((lead) => lead.captured_at)),
-      jobCapturedAt: latest(jobRows.map((job) => job.captured_at)),
+      jobCapturedAt: latest(jobCaptureRows.map((job) => job.captured_at)),
       platformCapturedAt: latest(platformRows.map((row) => row.captured_at)),
       spendLastPostedOn: latest(spend.map((row) => row.postedOn)),
     },

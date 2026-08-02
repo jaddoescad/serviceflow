@@ -14,6 +14,7 @@
     "tasks": "node scripts/project-task-cli.mjs",
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
     "audit:invoice-job-links": "node scripts/audit-invoice-entry-job-links.mjs",
+    "audit:job-accounting": "node scripts/audit-job-accounting-reconciliation.mjs",
     "audit:customer-revenue": "node scripts/audit-customer-revenue-evidence.mjs",
     "audit:marketing": "node scripts/audit-marketing-attribution.mjs",
     "audit:unmatched-material-evidence": "node scripts/audit-unmatched-material-evidence.mjs",

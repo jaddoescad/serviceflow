@@ -8,7 +8,7 @@ import {
   type FinancialMonthPoint,
 } from "@/components/financial-charts";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { Badge, Card, CardHeader } from "@/components/ui";
+import { Badge, Card, CardHeader, Stat, StatGrid } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import {
   getFinancialLedger,
@@ -16,6 +16,7 @@ import {
   type FinancialTransaction,
 } from "@/lib/financials";
 import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
+import { getCustomerInvoiceReconciliation } from "@/lib/job-accounting";
 
 export const dynamic = "force-dynamic";
 
@@ -151,9 +152,10 @@ export default async function FinancialsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const [, ledger, params] = await Promise.all([
+  const [, ledger, customerInvoiceRows, params] = await Promise.all([
     requireStaff(),
     getFinancialLedger(),
+    getCustomerInvoiceReconciliation(),
     searchParams,
   ]);
 
@@ -327,9 +329,53 @@ export default async function FinancialsPage({
   const overheadCost = roundMoney(
     netExpenses - labourCost - materialCost - advertisingCost,
   );
-  const hstCollected = roundMoney(sum(revenueTransactions, "tax_amount"));
   const inputTaxCredits = roundMoney(-sum(expenseTransactions, "tax_amount"));
-  const hstPayable = roundMoney(sum(operatingTransactions, "tax_amount"));
+  const yearInvoiceRows = customerInvoiceRows.filter(
+    (invoice) => invoice.invoice_date?.startsWith(String(year)),
+  );
+  const customerInvoiceBeforeHst = roundMoney(
+    yearInvoiceRows.reduce(
+      (total, invoice) => total + invoice.billed_before_hst,
+      0,
+    ),
+  );
+  const customerInvoiceHst = roundMoney(
+    yearInvoiceRows.reduce((total, invoice) => total + invoice.billed_hst, 0),
+  );
+  const customerInvoiceTotal = roundMoney(
+    yearInvoiceRows.reduce(
+      (total, invoice) => total + invoice.billed_after_hst,
+      0,
+    ),
+  );
+  const customerInvoiceBankCash = roundMoney(
+    yearInvoiceRows.reduce(
+      (total, invoice) => total + invoice.bank_cash_received,
+      0,
+    ),
+  );
+  const customerInvoiceReceivable = roundMoney(
+    yearInvoiceRows.reduce(
+      (total, invoice) => total + invoice.amount_receivable,
+      0,
+    ),
+  );
+  const customerProcessingFees = roundMoney(
+    yearInvoiceRows.reduce(
+      (total, invoice) => total + invoice.processing_fee_amount,
+      0,
+    ),
+  );
+  const unallocatedCustomerIncome = roundMoney(
+    revenueTransactions
+      .filter((transaction) => transaction.category === "Painting revenue")
+      .reduce(
+        (total, transaction) =>
+          total +
+          Number(transaction.customer_revenue_verification?.unallocated_amount ?? 0),
+        0,
+      ),
+  );
   const monthlyData = buildMonthlyData(periodTransactions, year);
 
   const categoryTotals = [
@@ -395,28 +441,28 @@ export default async function FinancialsPage({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
-          label="Revenue before HST"
+          label="Bank income received"
           value={money.format(netRevenue)}
-          hint={`${money.format(hstCollected)} HST collected`}
+          hint="posted cash and credits · HST is not inferred"
           tone="good"
         />
         <Kpi
-          label="Expenses before HST"
+          label="Bank expenses paid"
           value={money.format(netExpenses)}
-          hint={`${money.format(inputTaxCredits)} input tax credits`}
+          hint={`${money.format(inputTaxCredits)} tax explicitly coded on bank rows`}
           tone="warn"
         />
         <Kpi
-          label="Net income"
+          label="Net bank movement"
           value={money.format(netIncome)}
-          hint="cash-basis · before income tax"
+          hint="operating cash basis · transfers excluded"
           tone={netIncome >= 0 ? "good" : "bad"}
         />
         <Kpi
-          label="HST payable"
-          value={money.format(hstPayable)}
-          hint="collected less input tax credits"
-          tone={hstPayable > 0 ? "warn" : "good"}
+          label="Unallocated customer income"
+          value={money.format(unallocatedCustomerIncome)}
+          hint="bank cash still needing an invoice link"
+          tone={unallocatedCustomerIncome > 0 ? "warn" : "good"}
         />
         <Kpi
           label="Ledger coverage"
@@ -426,14 +472,43 @@ export default async function FinancialsPage({
         />
       </div>
 
+      <Card className="mt-4 overflow-hidden">
+        <CardHeader
+          title={`${year} customer invoice reconciliation`}
+          subtitle="Invoice amounts use invoice date; bank income above uses bank posting date, so timing differences remain visible"
+        />
+        <StatGrid columns={4}>
+          <Stat
+            label="Invoices before HST"
+            value={money.format(customerInvoiceBeforeHst)}
+            hint={`${yearInvoiceRows.length} customer invoices`}
+          />
+          <Stat
+            label="HST billed"
+            value={money.format(customerInvoiceHst)}
+            hint="from archived customer invoices"
+          />
+          <Stat
+            label="Invoice total"
+            value={money.format(customerInvoiceTotal)}
+            hint="before HST + HST"
+          />
+          <Stat
+            label="Bank cash linked"
+            value={money.format(customerInvoiceBankCash)}
+            hint={`${money.format(customerProcessingFees)} processing fees · ${money.format(customerInvoiceReceivable)} open`}
+          />
+        </StatGrid>
+      </Card>
+
       <div className="my-4">
         <div className="mb-2">
           <h2 className="font-display text-sm font-semibold text-[var(--color-heading)]">
             Cost & profit percentages
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Share of before-HST revenue · overhead excludes labour, materials,
-            and advertising
+            Share of bank income received · cash basis · overhead excludes
+            labour, materials, and advertising
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
