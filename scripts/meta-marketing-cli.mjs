@@ -218,9 +218,14 @@ async function pull() {
   const now = new Date();
   const since = dateOnly(option("since", `${now.getUTCFullYear()}-01-01`), "since");
   const until = dateOnly(option("until", now.toISOString().slice(0, 10)), "until");
+  const timeIncrement = option("time-increment", null);
+  if (timeIncrement && timeIncrement !== "monthly" && timeIncrement !== "1") {
+    throw new Error("--time-increment must be `monthly` or `1`.");
+  }
   if (since > until) throw new Error("--since must be on or before --until.");
   const common = {
     time_range: JSON.stringify({ since, until }),
+    ...(timeIncrement ? { time_increment: timeIncrement } : {}),
     limit: 500,
   };
   const fields = {
@@ -249,6 +254,7 @@ async function pull() {
     currency: account.currency,
     since,
     until,
+    time_increment: timeIncrement ?? "all_days",
     captured_at: capturedAt,
     summary: summarizeCampaigns(campaigns),
     rows: { campaigns, ad_sets: adSets, ads },
@@ -258,7 +264,7 @@ async function pull() {
   mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(
     outputDir,
-    `insights-${accountId.replace(/^act_/, "")}-${since}-${until}.json`,
+    `insights-${accountId.replace(/^act_/, "")}-${since}-${until}${timeIncrement ? `-${timeIncrement}` : ""}.json`,
   );
   writeFileSync(outputPath, `${JSON.stringify(output, null, 2)}\n`, "utf8");
   console.log(
@@ -270,6 +276,7 @@ async function pull() {
         currency: account.currency,
         since,
         until,
+        time_increment: timeIncrement ?? "all_days",
         campaign_rows: campaigns.length,
         ad_set_rows: adSets.length,
         ad_rows: ads.length,
@@ -289,6 +296,7 @@ Commands:
   npm run meta -- status
   npm run meta -- accounts
   npm run meta -- pull --account act_762696206838329 --since 2026-01-01 --until 2026-08-01
+  npm run meta -- pull --account act_762696206838329 --since 2025-01-01 --until 2026-08-01 --time-increment monthly
 
 The access token is stored only in ignored .env.local. Pulls are read-only.`);
 }
