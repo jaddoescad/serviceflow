@@ -4,6 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { buildDripJobsProjectIdentity } from "./lib/dripjobs-job-identity.mjs";
+import {
+  EXCLUDED_TEST_INVOICE_IDS,
+  EXCLUDED_TEST_JOBS,
+  EXCLUDED_TEST_PROPOSAL_IDS,
+} from "./lib/dripjobs-job-reconciliation.mjs";
 
 const APPLY = process.argv.includes("--apply");
 const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
@@ -118,19 +123,27 @@ function appendEvidenceNote(existing, note) {
 const jobsArchive = JSON.parse(
   readFileSync(path.resolve(exportRoot, "jobs.normalized.json"), "utf8"),
 );
-const jobs = jobsArchive.jobs ?? [];
-const invoices = JSON.parse(
+const archivedJobs = jobsArchive.jobs ?? [];
+const archivedInvoices = JSON.parse(
   readFileSync(
     path.resolve(exportRoot, "customer-invoices/invoices.normalized.json"),
     "utf8",
   ),
 );
 
-if (jobs.length !== 186 || invoices.length !== 184) {
+if (archivedJobs.length !== 186 || archivedInvoices.length !== 184) {
   throw new Error(
-    `Expected the verified export of 186 jobs and 184 invoices; found ${jobs.length} and ${invoices.length}.`,
+    `Expected the verified export of 186 jobs and 184 invoices; found ${archivedJobs.length} and ${archivedInvoices.length}.`,
   );
 }
+const jobs = archivedJobs.filter(
+  (job) => !EXCLUDED_TEST_PROPOSAL_IDS.has(String(job.proposal_id)),
+);
+const invoices = archivedInvoices.filter(
+  (invoice) =>
+    !EXCLUDED_TEST_PROPOSAL_IDS.has(String(invoice.proposal_id)) &&
+    !EXCLUDED_TEST_INVOICE_IDS.has(String(invoice.invoice_uuid)),
+);
 
 const env = {
   ...parseEnvFile(path.resolve(repoRoot, "../Ottawa Painters App/.env.local")),
@@ -154,7 +167,7 @@ const db = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const [projects, storedInvoices, budgets] = await Promise.all([
+const [projects, storedInvoicesAll, budgets] = await Promise.all([
   fetchAll(() => db.from("companycam_projects").select("*")),
   fetchAll(() =>
     db
@@ -172,6 +185,11 @@ const [projects, storedInvoices, budgets] = await Promise.all([
       ),
   ),
 ]);
+const storedInvoices = storedInvoicesAll.filter(
+  (invoice) =>
+    !EXCLUDED_TEST_PROPOSAL_IDS.has(String(invoice.external_proposal_id)) &&
+    !EXCLUDED_TEST_INVOICE_IDS.has(String(invoice.external_invoice_id)),
+);
 
 const projectsById = new Map(
   projects.map((project) => [String(project.companycam_id), project]),
@@ -310,6 +328,9 @@ const plan = {
   project_ref: projectRef,
   mode: APPLY ? "apply" : "dry-run",
   source: {
+    archived_jobs: archivedJobs.length,
+    archived_physical_customer_invoices: archivedInvoices.length,
+    excluded_owner_confirmed_tests: EXCLUDED_TEST_JOBS.length,
     jobs: jobs.length,
     physical_customer_invoices: invoices.length,
     stored_customer_invoices: storedInvoices.length,
@@ -384,7 +405,7 @@ for (const batch of chunks(
   );
 }
 
-const [verifiedInvoices, verifiedBudgets, verifiedProjects] = await Promise.all([
+const [verifiedInvoicesAll, verifiedBudgets, verifiedProjects] = await Promise.all([
   fetchAll(() =>
     db
       .from("customer_invoices")
@@ -400,6 +421,10 @@ const [verifiedInvoices, verifiedBudgets, verifiedProjects] = await Promise.all(
   ),
   fetchAll(() => db.from("companycam_projects").select("companycam_id")),
 ]);
+const verifiedInvoices = verifiedInvoicesAll.filter(
+  (invoice) =>
+    !EXCLUDED_TEST_INVOICE_IDS.has(String(invoice.external_invoice_id)),
+);
 const verifiedBudgetByProject = new Map(
   verifiedBudgets.map((budget) => [budget.companycam_project_id, budget]),
 );

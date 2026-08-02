@@ -10,6 +10,11 @@ import {
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { buildDripJobsProjectIdentity } from "./lib/dripjobs-job-identity.mjs";
+import {
+  EXCLUDED_TEST_INVOICE_IDS,
+  EXCLUDED_TEST_JOBS,
+  EXCLUDED_TEST_PROPOSAL_IDS,
+} from "./lib/dripjobs-job-reconciliation.mjs";
 
 const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
 const SOURCE_SYSTEM = "dripjobs";
@@ -172,7 +177,7 @@ const db = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const invoices = JSON.parse(
+const archivedInvoices = JSON.parse(
   readFileSync(path.resolve(archiveRoot, "invoices.normalized.json"), "utf8"),
 );
 const archivedItemRows = JSON.parse(
@@ -183,36 +188,63 @@ const archivedItemRows = JSON.parse(
 );
 // DripJobs places payment-history rows in the same HTML table. They are not
 // printed invoice items and are imported separately as payment events.
-const invoiceItems = archivedItemRows.filter((item) => item.item_uuid);
-const paymentEvents = JSON.parse(
+const archivedInvoiceItems = archivedItemRows.filter((item) => item.item_uuid);
+const archivedPaymentEvents = JSON.parse(
   readFileSync(
     path.resolve(archiveRoot, "invoice-payments.normalized.json"),
     "utf8",
   ),
 );
 const jobsArchive = JSON.parse(readFileSync(jobsArchivePath, "utf8"));
-const jobs = jobsArchive.jobs ?? [];
+const archivedJobs = jobsArchive.jobs ?? [];
 const detailDirectory = path.resolve(archiveRoot, "details");
-const details = readdirSync(detailDirectory)
+const archivedDetails = readdirSync(detailDirectory)
   .filter((filename) => filename.endsWith(".json"))
   .map((filename) =>
     JSON.parse(readFileSync(path.resolve(detailDirectory, filename), "utf8")),
   );
 
-if (invoices.length !== 184) {
-  throw new Error(`Expected 184 archived invoices; found ${invoices.length}.`);
+if (archivedInvoices.length !== 184) {
+  throw new Error(
+    `Expected 184 archived invoices; found ${archivedInvoices.length}.`,
+  );
 }
-if (invoiceItems.length !== 936) {
-  throw new Error(`Expected 936 physical invoice items; found ${invoiceItems.length}.`);
+if (archivedInvoiceItems.length !== 936) {
+  throw new Error(
+    `Expected 936 physical invoice items; found ${archivedInvoiceItems.length}.`,
+  );
 }
-if (paymentEvents.length !== 304) {
-  throw new Error(`Expected 304 payment events; found ${paymentEvents.length}.`);
+if (archivedPaymentEvents.length !== 304) {
+  throw new Error(
+    `Expected 304 payment events; found ${archivedPaymentEvents.length}.`,
+  );
 }
-if (details.length !== invoices.length) {
+if (archivedDetails.length !== archivedInvoices.length) {
   throw new Error("Invoice detail archive is incomplete.");
 }
+if (archivedJobs.length !== 186) {
+  throw new Error(`Expected 186 archived jobs; found ${archivedJobs.length}.`);
+}
 
+const invoices = archivedInvoices.filter(
+  (invoice) =>
+    !EXCLUDED_TEST_PROPOSAL_IDS.has(String(invoice.proposal_id)) &&
+    !EXCLUDED_TEST_INVOICE_IDS.has(String(invoice.invoice_uuid)),
+);
 const invoiceIds = new Set(invoices.map((invoice) => invoice.invoice_uuid));
+const invoiceItems = archivedInvoiceItems.filter((item) =>
+  invoiceIds.has(item.invoice_uuid),
+);
+const paymentEvents = archivedPaymentEvents.filter((event) =>
+  invoiceIds.has(event.invoice_uuid),
+);
+const details = archivedDetails.filter((detail) =>
+  invoiceIds.has(detail.invoice?.invoice_uuid),
+);
+const jobs = archivedJobs.filter(
+  (job) => !EXCLUDED_TEST_PROPOSAL_IDS.has(String(job.proposal_id)),
+);
+
 if (invoiceIds.size !== invoices.length) {
   throw new Error("Duplicate archived invoice UUIDs detected.");
 }
@@ -352,6 +384,9 @@ const plan = {
   mode: APPLY ? "apply" : "dry-run",
   target_project_ref: projectRef,
   archive: {
+    archived_invoices: archivedInvoices.length,
+    archived_jobs: archivedJobs.length,
+    excluded_owner_confirmed_tests: EXCLUDED_TEST_JOBS.length,
     invoices: invoices.length,
     physical_invoice_items: invoiceItems.length,
     source_payment_events: paymentEvents.length,

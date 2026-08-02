@@ -1,7 +1,7 @@
 {
-  "captured_at": "2026-08-02T02:14:09.063Z",
+  "captured_at": "2026-08-02T14:50:33.000Z",
   "source_system": "dripjobs",
-  "scope": "signed jobs with proposals created in 2026",
+  "scope": "signed jobs with proposals created in 2026 plus owner-identified missing lead/job relationships verified directly in authenticated DripJobs",
   "records": [
     {
       "proposal_uuid": "01181610626c255402aa16448795c4",
@@ -712,6 +712,36 @@
       "lead_source": "Phone Call",
       "lead_created_at": null,
       "evidence_source": "dripjobs_contact_page"
+    },
+    {
+      "proposal_uuid": "2030711326cae48ddf77dd471a8050",
+      "proposal_id": "2196763",
+      "invoice_uuid": "3342345675d474c14362bd4dd28be8",
+      "contact_uuid": "2682644825b226198f7d454f5d83bf",
+      "status": "COMPLETED",
+      "lead_source": "Google",
+      "lead_created_at": "2025-10-27T21:11:08.000Z",
+      "evidence_source": "dripjobs_authenticated_contact_proposal_and_deal_pages"
+    },
+    {
+      "proposal_uuid": "323329473284ba172f35e14204b5da",
+      "proposal_id": "2374940",
+      "invoice_uuid": "65009122995c7a520513cf4956ab45",
+      "contact_uuid": "00127865306cba3bb20c6248059465",
+      "status": "COMPLETED",
+      "lead_source": "Google",
+      "lead_created_at": "2026-01-05T19:03:21.000Z",
+      "evidence_source": "dripjobs_authenticated_contact_proposal_and_deal_pages"
+    },
+    {
+      "proposal_uuid": "6087174974ff020b3238ad411bb2b1",
+      "proposal_id": "2687681",
+      "invoice_uuid": "1675263440c702ea44c193413bbf44",
+      "contact_uuid": "0759577236a52e07e840254a2bb4be",
+      "status": "COMPLETED",
+      "lead_source": "Phone Call",
+      "lead_created_at": "2026-04-07T20:11:15.000Z",
+      "evidence_source": "dripjobs_authenticated_contact_proposal_and_deal_pages"
     }
   ]
 }

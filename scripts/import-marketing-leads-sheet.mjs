@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { CONFIRMED_LEAD_BY_ID } from "./lib/dripjobs-job-reconciliation.mjs";
 
 const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
 const SPREADSHEET_ID = "1D5r_1r5Ldd_v5BbOcOUzM8XHF2z0kRGytcYxRsss54E";
@@ -188,24 +189,31 @@ const preparedRows = parsed.map(({ row, sourceRowNumber }) => {
   if (!dealId) throw new Error(`Missing Deal ID on source row ${sourceRowNumber}.`);
   if (seenDealIds.has(dealId)) throw new Error(`Duplicate Deal ID ${dealId}.`);
   seenDealIds.add(dealId);
-  const created = parseCreated(row["Date Created"]);
+  const correction = CONFIRMED_LEAD_BY_ID.get(dealId);
+  const created = parseCreated(
+    correction?.contact_created_at_local ?? row["Date Created"],
+  );
   return {
     deal_id: dealId,
     created_on: created.createdOn,
     created_at_local: created.createdAtLocal,
     created_at_precision: created.precision,
-    contact_name: nullable(row.Name),
-    email: nullable(row.Email),
-    phone: nullable(row.Phone),
-    raw_lead_source: nullable(row["Lead Source"]),
-    normalized_channel: normalizeChannel(row["Lead Source"]),
-    address: nullable(row.Address),
-    postal_code: nullable(row["Postal Code"]),
+    contact_name: nullable(correction?.contact_name ?? row.Name),
+    email: nullable(correction?.email ?? row.Email),
+    phone: nullable(correction?.phone ?? row.Phone),
+    raw_lead_source: nullable(correction?.lead_source ?? row["Lead Source"]),
+    normalized_channel: normalizeChannel(
+      correction?.lead_source ?? row["Lead Source"],
+    ),
+    address: nullable(correction?.address ?? row.Address),
+    postal_code: nullable(correction?.postal_code ?? row["Postal Code"]),
     estimate_scheduled_on: parseDate(row["Estimate Scheduled Date"]),
     estimate_appointment_on: parseDate(row["Estimate Appointment Date"]),
-    proposal_number: nullable(row["Proposal Number"]),
-    proposal_amount: money(row["Proposal price"]),
-    proposal_on: parseDate(row["Proposal Date"]),
+    proposal_number: nullable(correction?.proposal_id ?? row["Proposal Number"]),
+    proposal_amount: correction?.invoice_total ?? money(row["Proposal price"]),
+    proposal_on: parseDate(
+      correction?.proposal_created_on ?? row["Proposal Date"],
+    ),
     job_crew: nullable(row["Job Crew"]),
     is_interior: boolean(row.Interior),
     is_exterior: boolean(row.Exterior),
@@ -216,7 +224,21 @@ const preparedRows = parsed.map(({ row, sourceRowNumber }) => {
     source_sheet_name: SHEET_NAME,
     source_row_number: sourceRowNumber,
     source_sha256: sourceSha256,
-    source_payload: row,
+    source_payload: correction
+      ? {
+          ...row,
+          dripjobs_reconciliation: {
+            status: "confirmed",
+            evidence_source:
+              "data/dripjobs-job-reconciliation-2026-08-02.json",
+            contact_uuid: correction.contact_uuid,
+            dripjobs_deal_uuid: correction.dripjobs_deal_uuid,
+            proposal_uuid: correction.proposal_uuid,
+            invoice_uuid: correction.invoice_uuid,
+            identity_correction: correction.identity_correction ?? null,
+          },
+        }
+      : row,
     captured_at: capturedAt,
   };
 });
@@ -238,6 +260,7 @@ const preview = {
   unique_deal_ids: seenDealIds.size,
   leads_2026: year2026,
   meta_leads_2026: meta2026,
+  directly_verified_lead_corrections: [...CONFIRMED_LEAD_BY_ID.keys()].length,
   date_range: {
     first: createdDates[0] ?? null,
     last: createdDates.at(-1) ?? null,

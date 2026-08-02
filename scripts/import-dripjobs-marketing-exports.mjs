@@ -6,6 +6,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import {
+  EXCLUDED_TEST_JOBS,
+  EXCLUDED_TEST_PROPOSAL_IDS,
+} from "./lib/dripjobs-job-reconciliation.mjs";
 
 const TARGET_PROJECT_REF = "bwbckdkouqghdadpkjvn";
 const APPLY = process.argv.includes("--apply");
@@ -244,7 +248,10 @@ for (const file of parsedFiles) {
   for (let index = 0; index < file.rows.length; index += 1) {
     const row = file.rows[index];
     const fingerprint = sha256(JSON.stringify(row));
-    const canonical = !seenFingerprints.has(fingerprint);
+    const proposalId = String(row["Proposal ID"] ?? "").trim();
+    const excludedTestJob =
+      recordType === "job" && EXCLUDED_TEST_PROPOSAL_IDS.has(proposalId);
+    const canonical = !seenFingerprints.has(fingerprint) && !excludedTestJob;
     seenFingerprints.add(fingerprint);
     const attribution =
       recordType === "job"
@@ -322,6 +329,17 @@ for (const file of parsedFiles) {
                 proposal_uuid: attribution.proposal_uuid,
               },
         modeled_sales_cycle_days: modeledSalesCycleDays,
+        accounting_exclusion: excludedTestJob
+          ? {
+              status: "confirmed_test_record",
+              proposal_id: proposalId,
+              reason: EXCLUDED_TEST_JOBS.find(
+                (job) => String(job.proposal_id) === proposalId,
+              )?.reason,
+              evidence_source:
+                "data/dripjobs-job-reconciliation-2026-08-02.json",
+            }
+          : null,
       },
       captured_at: sourceCapturedAt(file.filename),
     });
@@ -366,7 +384,12 @@ const preview = {
   })),
   raw_rows: preparedRows.length,
   canonical_records: canonicalRows.length,
-  duplicate_source_rows: preparedRows.length - canonicalRows.length,
+  duplicate_source_rows: preparedRows.filter(
+    (row) =>
+      !row.canonical_in_snapshot && row.source_payload.accounting_exclusion == null,
+  ).length,
+  noncanonical_source_rows: preparedRows.length - canonicalRows.length,
+  excluded_test_jobs: EXCLUDED_TEST_JOBS.length,
   sales_deals: salesRows.length,
   jobs: jobRows.length,
   active_pipeline: salesRows.filter((row) => activeSalesStatuses.has(row.status)).length,
