@@ -14,6 +14,7 @@ import {
   emptyProjectLabourInvoiceSummary,
   getProjectLabourInvoiceSummaries,
 } from "@/lib/invoice-queries";
+import { getProjectMaterialSummaries } from "@/lib/materials";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function ProjectsPage() {
     assignments,
     labourExpenses,
     invoiceSummaries,
+    materialSummaries,
   ] = await Promise.all([
     requireStaff(),
     getTimeEntries(new Date(now - 180 * DAY).toISOString()),
@@ -39,6 +41,7 @@ export default async function ProjectsPage() {
     getAssignments(),
     getProjectLabourExpenses(),
     getProjectLabourInvoiceSummaries(),
+    getProjectMaterialSummaries(),
   ]);
 
   const rows = rollupProjects(
@@ -55,13 +58,17 @@ export default async function ProjectsPage() {
     labourInvoices:
       invoiceSummaries.get(row.projectId) ??
       emptyProjectLabourInvoiceSummary(),
+    materials: materialSummaries.get(row.projectId) ?? {
+      amountBeforeTax: 0,
+      lineCount: 0,
+    },
   }));
 
   return (
     <>
       <PageHeader
-        title="Jobs & Labour"
-        subtitle="See how the painter budget compares with the 35–37% labour allowance"
+        title="Jobs & Costs"
+        subtitle="Compare labour and allocated material costs with each job's before-HST value"
       />
       <ProjectsTable
         rows={rows}

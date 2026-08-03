@@ -192,6 +192,11 @@ export type ProjectMaterialInvoice = {
   lineCount: number;
 };
 
+export type ProjectMaterialSummary = {
+  amountBeforeTax: number;
+  lineCount: number;
+};
+
 async function fetchAll<T>(
   queryFactory: () => {
     range: (from: number, to: number) => PromiseLike<{
@@ -863,4 +868,35 @@ export async function getProjectMaterialInvoices(
         numeric: true,
       }),
   );
+}
+
+export async function getProjectMaterialSummaries(): Promise<
+  Map<string, ProjectMaterialSummary>
+> {
+  const supabase = await createClient();
+  const allocations = await fetchAll<{
+    companycam_project_id: string | null;
+    allocated_before_tax: number;
+  }>(() =>
+    supabase
+      .from("material_invoice_line_allocations")
+      .select("companycam_project_id,allocated_before_tax")
+      .eq("allocation_scope", "job")
+      .not("companycam_project_id", "is", null)
+      .is("reversed_at", null),
+  );
+
+  const summaries = new Map<string, ProjectMaterialSummary>();
+  for (const allocation of allocations) {
+    const projectId = allocation.companycam_project_id;
+    if (!projectId) continue;
+    const current = summaries.get(projectId) ?? {
+      amountBeforeTax: 0,
+      lineCount: 0,
+    };
+    current.amountBeforeTax += Number(allocation.allocated_before_tax);
+    current.lineCount += 1;
+    summaries.set(projectId, current);
+  }
+  return summaries;
 }
