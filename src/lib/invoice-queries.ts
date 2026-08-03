@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   getInvoiceEntries,
+  getInvoiceEntriesForProject,
   type InvoiceEntryRecord,
 } from "@/lib/invoice-entry-queries";
 
@@ -328,7 +329,7 @@ export async function getProjectLabourInvoiceSummary(
   projectId: string,
 ): Promise<ProjectLabourInvoiceSummary> {
   const [entries, jobStarts] = await Promise.all([
-    getInvoiceEntries(),
+    getInvoiceEntriesForProject(projectId),
     queryLabourInvoiceJobStarts(),
   ]);
   return summarizeProjectInvoiceEntries(

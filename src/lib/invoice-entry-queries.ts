@@ -375,7 +375,56 @@ export async function getInvoiceEntries(): Promise<InvoiceEntryRecord[]> {
 export async function getInvoiceEntriesForProject(
   projectId: string,
 ): Promise<InvoiceEntryRecord[]> {
-  return (await getInvoiceEntries()).filter((entry) =>
-    entry.jobs.some((job) => job.companycam_project_id === projectId),
+  const supabase = await createClient();
+  const { data: projectLinks, error: projectLinkError } = await supabase
+    .from("job_project_links")
+    .select("job_proposal_id,link_role")
+    .eq("companycam_project_id", projectId)
+    .eq("link_status", "confirmed");
+  if (projectLinkError) throw projectLinkError;
+  const canonical = (projectLinks ?? []).find(
+    (link) => link.link_role === "canonical",
   );
+  const proposalId =
+    canonical?.job_proposal_id ??
+    ((projectLinks ?? []).length === 1
+      ? projectLinks?.[0]?.job_proposal_id
+      : null);
+  const entries = await getInvoiceEntries();
+  if (!proposalId) {
+    return entries.filter((entry) =>
+      entry.jobs.some((job) => job.companycam_project_id === projectId),
+    );
+  }
+
+  const { data: costLinks, error: costLinkError } = await supabase
+    .from("job_cost_allocation_links")
+    .select("labour_invoice_line_id,companycam_project_id")
+    .eq("job_proposal_id", proposalId)
+    .eq("cost_type", "labour")
+    .not("labour_invoice_line_id", "is", null);
+  if (costLinkError) throw costLinkError;
+  const allocationKeys = new Set(
+    (costLinks ?? []).flatMap((link) =>
+      link.labour_invoice_line_id
+        ? [`${link.labour_invoice_line_id}:${link.companycam_project_id}`]
+        : [],
+    ),
+  );
+
+  return entries.flatMap((entry) => {
+    const matchingJobs = entry.jobs.filter((job) =>
+      allocationKeys.has(`${entry.id}:${job.companycam_project_id}`),
+    );
+    if (matchingJobs.length === 0) return [];
+    return [
+      {
+        ...entry,
+        jobs: matchingJobs.map((job) => ({
+          ...job,
+          companycam_project_id: projectId,
+        })),
+      },
+    ];
+  });
 }

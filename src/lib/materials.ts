@@ -828,13 +828,46 @@ export async function getProjectMaterialInvoices(
   projectId: string,
 ): Promise<ProjectMaterialInvoice[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data: jobLinks, error: jobLinkError } = await supabase
+    .from("job_project_links")
+    .select("job_proposal_id,link_role")
+    .eq("companycam_project_id", projectId)
+    .eq("link_status", "confirmed");
+  if (jobLinkError) throw jobLinkError;
+  const canonicalJob = (jobLinks ?? []).find(
+    (link) => link.link_role === "canonical",
+  );
+  const jobProposalId =
+    canonicalJob?.job_proposal_id ??
+    ((jobLinks ?? []).length === 1 ? jobLinks?.[0]?.job_proposal_id : null);
+  let allocationIds: string[] | null = null;
+  if (jobProposalId) {
+    const { data: costLinks, error: costLinkError } = await supabase
+      .from("job_cost_allocation_links")
+      .select("material_line_allocation_id")
+      .eq("job_proposal_id", jobProposalId)
+      .eq("cost_type", "material")
+      .not("material_line_allocation_id", "is", null);
+    if (costLinkError) throw costLinkError;
+    allocationIds = (costLinks ?? []).flatMap((link) =>
+      link.material_line_allocation_id
+        ? [link.material_line_allocation_id]
+        : [],
+    );
+  }
+
+  let query = supabase
     .from("material_invoice_line_allocations")
     .select(
       "allocated_before_tax,allocated_tax,allocated_total,material_invoice_lines!inner(id,material_invoices!inner(id,invoice_number,invoice_date,supplier_name,po_number,material_invoice_documents(original_filename)))",
     )
-    .eq("companycam_project_id", projectId)
     .is("reversed_at", null);
+  query = allocationIds
+    ? allocationIds.length > 0
+      ? query.in("id", allocationIds)
+      : query.in("id", ["00000000-0000-0000-0000-000000000000"])
+    : query.eq("companycam_project_id", projectId);
+  const { data, error } = await query;
   if (error) throw error;
 
   const grouped = new Map<string, ProjectMaterialInvoice>();
