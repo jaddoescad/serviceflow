@@ -8,7 +8,7 @@ import {
   type FinancialMonthPoint,
 } from "@/components/financial-charts";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { Badge, Card, CardHeader, Stat, StatGrid } from "@/components/ui";
+import { Badge, Card, CardHeader } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import {
   getFinancialLedger,
@@ -50,6 +50,7 @@ const labourCategories = new Set([
 ]);
 const materialCategories = new Set(["Materials", "Paint & materials"]);
 const advertisingCategories = new Set(["Advertising & marketing"]);
+const nonOperatingCategories = new Set(["HST remittance"]);
 
 const monthNames = [
   "Jan",
@@ -95,6 +96,13 @@ function formatCostRatio(amount: number, revenue: number) {
   return revenue > 0 ? percent.format(amount / revenue) : "—";
 }
 
+function isOperatingTransaction(transaction: FinancialTransaction) {
+  return (
+    !transaction.is_transfer &&
+    !nonOperatingCategories.has(transaction.category)
+  );
+}
+
 function buildMonthlyData(
   transactions: FinancialTransaction[],
   year: number,
@@ -103,7 +111,8 @@ function buildMonthlyData(
     const monthKey = `${year}-${String(index + 1).padStart(2, "0")}`;
     const current = transactions.filter(
       (transaction) =>
-        transaction.posted_on.startsWith(monthKey) && !transaction.is_transfer,
+        transaction.posted_on.startsWith(monthKey) &&
+        isOperatingTransaction(transaction),
     );
     const verifiedRevenue = current.reduce(
       (total, transaction) => total + transaction.cash_revenue.before_hst,
@@ -285,10 +294,7 @@ export default async function FinancialsPage({
   });
 
   const operatingTransactions = periodTransactions.filter(
-    (transaction) => !transaction.is_transfer,
-  );
-  const bankIncomeTransactions = operatingTransactions.filter(
-    (transaction) => transaction.transaction_type === "income",
+    isOperatingTransaction,
   );
   const expenseTransactions = operatingTransactions.filter(
     (transaction) => transaction.transaction_type !== "income",
@@ -351,44 +357,6 @@ export default async function FinancialsPage({
   );
   const overheadCost = roundMoney(
     netExpenses - labourCost - materialCost - advertisingCost,
-  );
-  const documentedInputHst = roundMoney(
-    -sum(
-      expenseTransactions.filter(
-        (transaction) =>
-          transaction.source_details.tax_evidence_status === "documented",
-      ),
-      "tax_amount",
-    ),
-  );
-  const estimatedInputHst = roundMoney(
-    -sum(
-      expenseTransactions.filter(
-        (transaction) =>
-          transaction.source_details.tax_evidence_status === "estimated",
-      ),
-      "tax_amount",
-    ),
-  );
-  const spendWithNoHstDeducted = roundMoney(
-    -sum(
-      expenseTransactions.filter(
-        (transaction) => Number(transaction.tax_amount) === 0,
-      ),
-      "amount",
-    ),
-  );
-  const unallocatedCustomerIncome = roundMoney(
-    bankIncomeTransactions
-      .filter((transaction) => transaction.category === "Painting revenue")
-      .reduce(
-        (total, transaction) =>
-          total +
-          Number(
-            transaction.customer_revenue_verification?.unallocated_amount ?? 0,
-          ),
-        0,
-      ),
   );
   const monthlyData = buildMonthlyData(periodTransactions, year);
 
@@ -484,35 +452,6 @@ export default async function FinancialsPage({
           tone={netIncome >= 0 ? "good" : "bad"}
         />
       </div>
-
-      <Card className="mt-4 overflow-hidden">
-        <CardHeader
-          title="HST evidence on costs"
-          subtitle="Documented tax comes from supplier invoices; estimates stay visibly separate and are not presented as receipt-backed ITCs"
-        />
-        <StatGrid columns={4}>
-          <Stat
-            label="Documented input HST"
-            value={money.format(documentedInputHst)}
-            hint="linked supplier invoices"
-          />
-          <Stat
-            label="Estimated input HST"
-            value={money.format(estimatedInputHst)}
-            hint="confirmed 13% material purchases awaiting receipts"
-          />
-          <Stat
-            label="Spend with no HST deducted"
-            value={money.format(spendWithNoHstDeducted)}
-            hint="includes non-taxable and still-unsupported costs"
-          />
-          <Stat
-            label="Unallocated customer cash"
-            value={money.format(unallocatedCustomerIncome)}
-            hint="bank income still missing a customer invoice link"
-          />
-        </StatGrid>
-      </Card>
 
       <div className="my-4">
         <div className="mb-2">
