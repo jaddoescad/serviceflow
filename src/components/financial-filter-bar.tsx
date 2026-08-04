@@ -4,18 +4,19 @@ import { Button, Card, Field, Input, Select } from "@/components/ui";
 import type { FinancialAccount } from "@/lib/financials";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  useTransition,
-  type ChangeEvent,
-  type FormEvent,
-} from "react";
+import { useTransition, type ChangeEvent, type FormEvent } from "react";
 
 export type FinancialFilters = {
   year: number;
   account: string;
   category: string;
+  counterparty: string;
   query: string;
-  status: "all" | "needs_review" | "reconciled" | "paid";
+  status:
+    | "all"
+    | "needs_review"
+    | "fully_matched"
+    | "custom";
   transactionType: "all" | "income" | "expense" | "transfer" | "credit";
   evidence: "all" | "matched" | "no_document" | "missing";
 };
@@ -25,17 +26,20 @@ export function FinancialFilterBar({
   years,
   accounts,
   categories,
+  subcontractors,
 }: {
   filters: FinancialFilters;
   years: number[];
   accounts: FinancialAccount[];
   categories: string[];
+  subcontractors: string[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const activeFilterCount = [
     filters.account !== "all",
     filters.category !== "all",
+    filters.counterparty !== "all",
     filters.status !== "all",
     filters.transactionType !== "all",
     filters.evidence !== "all",
@@ -45,6 +49,7 @@ export function FinancialFilterBar({
     filters.year,
     filters.account,
     filters.category,
+    filters.counterparty,
     filters.query,
     filters.status,
     filters.transactionType,
@@ -113,7 +118,7 @@ export function FinancialFilterBar({
             </Select>
           </Field>
         </div>
-        <div className="w-[145px]">
+        <div className="w-[170px]">
           <Field label="Payment / review">
             <Select
               name="status"
@@ -122,9 +127,9 @@ export function FinancialFilterBar({
               onChange={applySelectFilter}
             >
               <option value="all">All statuses</option>
+              <option value="fully_matched">Fully matched</option>
               <option value="needs_review">Needs review</option>
-              <option value="paid">Paid invoice</option>
-              <option value="reconciled">Reconciled</option>
+              <option value="custom">Custom resolved</option>
             </Select>
           </Field>
         </div>
@@ -193,22 +198,34 @@ export function FinancialFilterBar({
             </Select>
           </Field>
         </div>
+        <div className="w-[210px]">
+          <Field label="Subcontractor">
+            <Select
+              name="counterparty"
+              defaultValue={filters.counterparty}
+              className="w-full"
+              onChange={applySelectFilter}
+            >
+              <option value="all">All subcontractors</option>
+              {subcontractors.map((subcontractor) => (
+                <option key={subcontractor} value={subcontractor}>
+                  {subcontractor}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
         <div className="w-full sm:w-[220px]">
           <Field label="Search">
             <Input
               name="q"
               defaultValue={filters.query}
-              placeholder="Counterparty or description"
+              placeholder="Description or category"
             />
           </Field>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            type="submit"
-            variant="subtle"
-            size="sm"
-            disabled={isPending}
-          >
+          <Button type="submit" variant="subtle" size="sm" disabled={isPending}>
             {isPending ? "Filtering…" : "Apply filters"}
           </Button>
           <Link

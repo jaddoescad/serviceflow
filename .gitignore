@@ -3,6 +3,8 @@
 /out
 /build
 /.test-dist
+/tmp/
+/supabase/.temp/
 .env
 .env.local
 .env*.local

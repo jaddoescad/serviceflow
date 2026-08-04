@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { MaterialPaymentVerificationSummary } from "@/lib/materials";
 
 export type FinancialAccount = {
   id: string;
@@ -26,7 +27,12 @@ export type FinancialImport = {
 };
 
 export type FinancialEvidence = {
-  kind: "bank_record" | "no_document_required" | "labour_invoice";
+  kind:
+    | "bank_record"
+    | "business_expense"
+    | "no_document_required"
+    | "labour_invoice"
+    | "material_invoice";
   label: string;
   detail: string;
   status: "confirmed" | "source";
@@ -41,6 +47,30 @@ export type FinancialSourceDetails = {
   authorized_on: string | null;
   pending: boolean;
   reference: string | null;
+  transfer_status: "cancelled" | null;
+  overpayment_status: "confirmed" | null;
+  invoice_evidence_status:
+    | "no_invoice_provided"
+    | "invoice_not_found"
+    | "partial_no_invoice_residual"
+    | null;
+  expense_evidence_status: "bank_supported_no_itc" | null;
+  expense_evidence_vendor: string | null;
+  expense_evidence_label: string | null;
+  expense_evidence_detail: string | null;
+  document_exception_label: string | null;
+  document_exception_detail: string | null;
+  customer_revenue_exception_kind: string | null;
+  customer_revenue_exception_needs_review: boolean;
+  tax_evidence_status: "documented" | "estimated" | null;
+};
+
+export type CashRevenueAllocationSummary = {
+  bank_cash: number;
+  gross_revenue: number;
+  before_hst: number;
+  hst: number;
+  processing_fees: number;
 };
 
 export type PaymentVerificationSummary = {
@@ -63,6 +93,13 @@ export type PaymentVerificationSummary = {
     | "needs_review";
 };
 
+export type CustomerRevenueVerificationSummary = {
+  invoice_count: number;
+  allocated_amount: number;
+  unallocated_amount: number;
+  payment_status: "unmatched" | "partially_allocated" | "fully_allocated";
+};
+
 export type FinancialTransaction = {
   id: string;
   posted_on: string;
@@ -82,6 +119,9 @@ export type FinancialTransaction = {
   source_details: FinancialSourceDetails;
   evidence: FinancialEvidence[];
   payment_verification: PaymentVerificationSummary | null;
+  customer_revenue_verification: CustomerRevenueVerificationSummary | null;
+  material_payment_verification: MaterialPaymentVerificationSummary | null;
+  cash_revenue: CashRevenueAllocationSummary;
   financial_accounts: Pick<
     FinancialAccount,
     "id" | "slug" | "name" | "account_type" | "last_four"
@@ -101,11 +141,23 @@ type FinancialSourceData = {
   bank_category?: unknown;
   authorized_date?: unknown;
   bank_sync_transaction_id?: unknown;
+  cancelled_e_transfer?: unknown;
+  confirmed_overpayment?: unknown;
+  reconciliation_research?: unknown;
+  expense_evidence?: unknown;
+  document_exception?: unknown;
+  customer_revenue_exception?: unknown;
+  tax_evidence?: unknown;
 };
 
 type StoredFinancialTransaction = Omit<
   FinancialTransaction,
-  "source_details" | "evidence" | "payment_verification"
+  | "source_details"
+  | "evidence"
+  | "payment_verification"
+  | "customer_revenue_verification"
+  | "material_payment_verification"
+  | "cash_revenue"
 > & {
   source_data: FinancialSourceData | null;
 };
@@ -120,6 +172,15 @@ type EvidenceLabourInvoice = {
   storage_path: string;
 };
 
+type EvidenceMaterialInvoice = {
+  id: string;
+  supplier_name: string;
+  invoice_number: string;
+  invoice_date: string;
+  po_number: string | null;
+  original_filename: string;
+};
+
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
@@ -128,12 +189,138 @@ function normalizeSourceDetails(
   sourceData: FinancialSourceData | null,
 ): FinancialSourceDetails {
   const reference = stringValue(sourceData?.bank_sync_transaction_id);
+  const cancellation =
+    sourceData?.cancelled_e_transfer &&
+    typeof sourceData.cancelled_e_transfer === "object" &&
+    !Array.isArray(sourceData.cancelled_e_transfer)
+      ? sourceData.cancelled_e_transfer
+      : null;
+  const overpayment =
+    sourceData?.confirmed_overpayment &&
+    typeof sourceData.confirmed_overpayment === "object" &&
+    !Array.isArray(sourceData.confirmed_overpayment)
+      ? sourceData.confirmed_overpayment
+      : null;
+  const reconciliationResearch =
+    sourceData?.reconciliation_research &&
+    typeof sourceData.reconciliation_research === "object" &&
+    !Array.isArray(sourceData.reconciliation_research)
+      ? sourceData.reconciliation_research
+      : null;
+  const reconciliationStatus =
+    reconciliationResearch && "status" in reconciliationResearch
+      ? reconciliationResearch.status
+      : null;
+  const expenseEvidence =
+    sourceData?.expense_evidence &&
+    typeof sourceData.expense_evidence === "object" &&
+    !Array.isArray(sourceData.expense_evidence)
+      ? sourceData.expense_evidence
+      : null;
+  const expenseEvidenceStatus =
+    expenseEvidence && "status" in expenseEvidence
+      ? expenseEvidence.status
+      : null;
+  const expenseEvidenceVendor =
+    expenseEvidence && "vendor" in expenseEvidence
+      ? expenseEvidence.vendor
+      : null;
+  const expenseEvidenceLabel =
+    expenseEvidence && "label" in expenseEvidence
+      ? expenseEvidence.label
+      : null;
+  const expenseEvidenceDetail =
+    expenseEvidence && "detail" in expenseEvidence
+      ? expenseEvidence.detail
+      : null;
+  const documentException =
+    sourceData?.document_exception &&
+    typeof sourceData.document_exception === "object" &&
+    !Array.isArray(sourceData.document_exception)
+      ? sourceData.document_exception
+      : null;
+  const documentExceptionStatus =
+    documentException && "status" in documentException
+      ? documentException.status
+      : null;
+  const customerRevenueException =
+    sourceData?.customer_revenue_exception &&
+    typeof sourceData.customer_revenue_exception === "object" &&
+    !Array.isArray(sourceData.customer_revenue_exception)
+      ? sourceData.customer_revenue_exception
+      : null;
+  const customerRevenueExceptionStatus =
+    customerRevenueException && "status" in customerRevenueException
+      ? customerRevenueException.status
+      : null;
+  const taxEvidence =
+    sourceData?.tax_evidence &&
+    typeof sourceData.tax_evidence === "object" &&
+    !Array.isArray(sourceData.tax_evidence)
+      ? sourceData.tax_evidence
+      : null;
+  const taxEvidenceStatus =
+    taxEvidence && "status" in taxEvidence ? taxEvidence.status : null;
   return {
     provider: stringValue(sourceData?.source) ?? "Imported financial source",
     bank_category: stringValue(sourceData?.bank_category),
     authorized_on: stringValue(sourceData?.authorized_date),
     pending: sourceData?.pending === true,
     reference: reference ? reference.slice(-12) : null,
+    transfer_status:
+      cancellation &&
+      "status" in cancellation &&
+      cancellation.status === "cancelled"
+        ? "cancelled"
+        : null,
+    overpayment_status:
+      overpayment &&
+      "status" in overpayment &&
+      overpayment.status === "confirmed"
+        ? "confirmed"
+        : null,
+    invoice_evidence_status:
+      reconciliationStatus === "no_invoice_provided" ||
+      reconciliationStatus === "invoice_not_found"
+        ? reconciliationStatus
+        : reconciliationStatus ===
+            "partial_invoice_allocation_with_no_invoice_residual"
+          ? "partial_no_invoice_residual"
+          : null,
+    expense_evidence_status:
+      expenseEvidenceStatus === "bank_supported_no_itc"
+        ? "bank_supported_no_itc"
+        : null,
+    expense_evidence_vendor: stringValue(expenseEvidenceVendor),
+    expense_evidence_label: stringValue(expenseEvidenceLabel),
+    expense_evidence_detail: stringValue(expenseEvidenceDetail),
+    document_exception_label:
+      documentExceptionStatus === "confirmed" &&
+      documentException != null &&
+      "label" in documentException
+        ? stringValue(documentException.label)
+        : null,
+    document_exception_detail:
+      documentExceptionStatus === "confirmed" &&
+      documentException != null &&
+      "detail" in documentException
+        ? stringValue(documentException.detail)
+        : null,
+    customer_revenue_exception_kind:
+      customerRevenueExceptionStatus === "confirmed" &&
+      customerRevenueException != null &&
+      "kind" in customerRevenueException
+        ? stringValue(customerRevenueException.kind)
+        : null,
+    customer_revenue_exception_needs_review:
+      customerRevenueExceptionStatus === "confirmed" &&
+      customerRevenueException != null &&
+      "review" in customerRevenueException &&
+      customerRevenueException.review === true,
+    tax_evidence_status:
+      taxEvidenceStatus === "documented" || taxEvidenceStatus === "estimated"
+        ? taxEvidenceStatus
+        : null,
   };
 }
 
@@ -141,6 +328,10 @@ function buildEvidence(
   transaction: StoredFinancialTransaction,
   invoiceAllocations: Array<{
     invoice: EvidenceLabourInvoice & { signed_url: string | null };
+    amount: number;
+  }>,
+  materialAllocations: Array<{
+    invoice: EvidenceMaterialInvoice;
     amount: number;
   }>,
 ): FinancialEvidence[] {
@@ -160,6 +351,18 @@ function buildEvidence(
     });
   }
 
+  for (const { invoice, amount } of materialAllocations) {
+    evidence.push({
+      kind: "material_invoice",
+      label: `${invoice.supplier_name} · Invoice #${invoice.invoice_number}`,
+      detail: `${invoice.invoice_date}${invoice.po_number ? ` · PO ${invoice.po_number}` : ""}`,
+      status: "confirmed",
+      amount,
+      href: `/material-invoices/${encodeURIComponent(invoice.id)}`,
+      filename: invoice.original_filename,
+    });
+  }
+
   if (transaction.category === "Bank fees") {
     evidence.push({
       kind: "no_document_required",
@@ -170,6 +373,45 @@ function buildEvidence(
       amount: Math.abs(Number(transaction.amount)),
       href: null,
       filename: null,
+    });
+  }
+
+  const sourceDetails = normalizeSourceDetails(transaction.source_data);
+  if (sourceDetails.expense_evidence_status === "bank_supported_no_itc") {
+    const vendor =
+      sourceDetails.expense_evidence_vendor ??
+      transaction.counterparty ??
+      "Software vendor";
+    evidence.push({
+      kind: "business_expense",
+      label:
+        sourceDetails.expense_evidence_label ??
+        (transaction.transaction_type === "credit"
+          ? `${vendor} subscription credit`
+          : `${vendor} software subscription`),
+      detail:
+        sourceDetails.expense_evidence_detail ??
+        (transaction.transaction_type === "credit"
+          ? "The posted business credit-card record confirms this vendor credit. It offsets software overhead; no HST adjustment is claimed without a supplier credit note."
+          : "The posted business credit-card record confirms the vendor and amount. It is software overhead; no HST input tax credit is claimed without a supplier receipt."),
+      status: "confirmed",
+      amount: Math.abs(Number(transaction.amount)),
+      href: null,
+      filename: transaction.financial_imports.original_filename,
+    });
+  }
+
+  if (sourceDetails.document_exception_label) {
+    evidence.push({
+      kind: "no_document_required",
+      label: sourceDetails.document_exception_label,
+      detail:
+        sourceDetails.document_exception_detail ??
+        "The posted bank record is the supporting evidence; no separate supplier document is required.",
+      status: "confirmed",
+      amount: Math.abs(Number(transaction.amount)),
+      href: null,
+      filename: transaction.financial_imports.original_filename,
     });
   }
 
@@ -263,15 +505,71 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
 
   const storedTransactions =
     transactions as unknown as StoredFinancialTransaction[];
-  const [verificationResult, allocationResult] = await Promise.all([
+  const [
+    verificationResult,
+    allocationResult,
+    customerRevenueResult,
+    materialVerificationResult,
+    materialAllocationResult,
+    customerAllocationResult,
+  ] = await Promise.all([
     supabase.from("labour_payment_verification").select("*"),
     supabase
       .from("labour_payment_allocations")
       .select("financial_transaction_id,invoice_id,allocated_amount")
       .is("reversed_at", null),
+    supabase.from("customer_revenue_verification").select("*"),
+    supabase.from("material_payment_verification").select("*"),
+    supabase
+      .from("material_payment_allocations")
+      .select("financial_transaction_id,material_invoice_id,allocated_amount")
+      .is("reversed_at", null),
+    supabase
+      .from("customer_invoice_bank_allocations")
+      .select(
+        "financial_transaction_id,allocated_amount,invoice_applied_amount,customer_invoices(subtotal,tax_amount,total_amount)",
+      )
+      .is("reversed_at", null),
   ]);
   if (verificationResult.error) throw verificationResult.error;
   if (allocationResult.error) throw allocationResult.error;
+  if (customerRevenueResult.error) throw customerRevenueResult.error;
+  if (materialVerificationResult.error) throw materialVerificationResult.error;
+  if (materialAllocationResult.error) throw materialAllocationResult.error;
+  if (customerAllocationResult.error) throw customerAllocationResult.error;
+
+  const cashRevenueByTransaction = new Map<
+    string,
+    CashRevenueAllocationSummary
+  >();
+  for (const allocation of customerAllocationResult.data ?? []) {
+    const invoice = Array.isArray(allocation.customer_invoices)
+      ? allocation.customer_invoices[0]
+      : allocation.customer_invoices;
+    if (!invoice) continue;
+    const invoiceTotal = Number(invoice.total_amount ?? 0);
+    if (invoiceTotal <= 0) continue;
+    const applied = Number(allocation.invoice_applied_amount ?? 0);
+    const current = cashRevenueByTransaction.get(
+      allocation.financial_transaction_id,
+    ) ?? {
+      bank_cash: 0,
+      gross_revenue: 0,
+      before_hst: 0,
+      hst: 0,
+      processing_fees: 0,
+    };
+    current.bank_cash += Number(allocation.allocated_amount ?? 0);
+    current.gross_revenue += applied;
+    current.before_hst +=
+      applied * (Number(invoice.subtotal ?? 0) / invoiceTotal);
+    current.hst += applied * (Number(invoice.tax_amount ?? 0) / invoiceTotal);
+    current.processing_fees = Math.max(
+      0,
+      current.gross_revenue - current.bank_cash,
+    );
+    cashRevenueByTransaction.set(allocation.financial_transaction_id, current);
+  }
 
   const allocations = (allocationResult.data ?? []) as Array<{
     financial_transaction_id: string;
@@ -285,6 +583,17 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     string,
     EvidenceLabourInvoice & { signed_url: string | null }
   >();
+  const materialAllocations = (materialAllocationResult.data ?? []) as Array<{
+    financial_transaction_id: string;
+    material_invoice_id: string;
+    allocated_amount: number;
+  }>;
+  const materialInvoiceIds = [
+    ...new Set(
+      materialAllocations.map((allocation) => allocation.material_invoice_id),
+    ),
+  ];
+  const materialInvoiceById = new Map<string, EvidenceMaterialInvoice>();
 
   if (labourInvoiceIds.length) {
     const invoiceResult = await supabase
@@ -313,6 +622,30 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     }
   }
 
+  if (materialInvoiceIds.length) {
+    const materialInvoiceResult = await supabase
+      .from("material_invoices")
+      .select(
+        "id,supplier_name,invoice_number,invoice_date,po_number,material_invoice_documents(original_filename)",
+      )
+      .in("id", materialInvoiceIds);
+    if (materialInvoiceResult.error) throw materialInvoiceResult.error;
+    for (const invoice of materialInvoiceResult.data ?? []) {
+      const document = Array.isArray(invoice.material_invoice_documents)
+        ? invoice.material_invoice_documents[0]
+        : invoice.material_invoice_documents;
+      materialInvoiceById.set(invoice.id, {
+        id: invoice.id,
+        supplier_name: invoice.supplier_name,
+        invoice_number: invoice.invoice_number,
+        invoice_date: invoice.invoice_date,
+        po_number: invoice.po_number,
+        original_filename:
+          document?.original_filename ?? "Archived material invoice",
+      });
+    }
+  }
+
   const verificationByTransaction = new Map(
     (verificationResult.data ?? []).map((row) => [
       row.financial_transaction_id,
@@ -330,6 +663,29 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
         other_count: Number(row.other_count),
         payment_status: row.payment_status,
       } as PaymentVerificationSummary,
+    ]),
+  );
+  const customerRevenueByTransaction = new Map(
+    (customerRevenueResult.data ?? []).map((row) => [
+      row.financial_transaction_id,
+      {
+        invoice_count: Number(row.invoice_count),
+        allocated_amount: Number(row.allocated_amount),
+        unallocated_amount: Number(row.unallocated_amount),
+        payment_status: row.payment_status,
+      } as CustomerRevenueVerificationSummary,
+    ]),
+  );
+  const materialVerificationByTransaction = new Map(
+    (materialVerificationResult.data ?? []).map((row) => [
+      row.financial_transaction_id,
+      {
+        invoice_count: Number(row.invoice_count),
+        payment_amount: Number(row.payment_amount),
+        allocated_amount: Number(row.allocated_amount),
+        unallocated_amount: Number(row.unallocated_amount),
+        payment_status: row.payment_status,
+      } as MaterialPaymentVerificationSummary,
     ]),
   );
   const allocationsByTransaction = new Map<
@@ -350,6 +706,23 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
     });
     allocationsByTransaction.set(allocation.financial_transaction_id, values);
   }
+  const materialAllocationsByTransaction = new Map<
+    string,
+    Array<{ invoice: EvidenceMaterialInvoice; amount: number }>
+  >();
+  for (const allocation of materialAllocations) {
+    const invoice = materialInvoiceById.get(allocation.material_invoice_id);
+    if (!invoice) continue;
+    const values =
+      materialAllocationsByTransaction.get(
+        allocation.financial_transaction_id,
+      ) ?? [];
+    values.push({ invoice, amount: Number(allocation.allocated_amount) });
+    materialAllocationsByTransaction.set(
+      allocation.financial_transaction_id,
+      values,
+    );
+  }
 
   return {
     accounts: (accountsResult.data ?? []) as FinancialAccount[],
@@ -361,9 +734,21 @@ export async function getFinancialLedger(): Promise<FinancialLedger> {
         evidence: buildEvidence(
           { ...transaction, source_data: sourceData },
           allocationsByTransaction.get(transaction.id) ?? [],
+          materialAllocationsByTransaction.get(transaction.id) ?? [],
         ),
         payment_verification:
           verificationByTransaction.get(transaction.id) ?? null,
+        customer_revenue_verification:
+          customerRevenueByTransaction.get(transaction.id) ?? null,
+        material_payment_verification:
+          materialVerificationByTransaction.get(transaction.id) ?? null,
+        cash_revenue: cashRevenueByTransaction.get(transaction.id) ?? {
+          bank_cash: 0,
+          gross_revenue: 0,
+          before_hst: 0,
+          hst: 0,
+          processing_fees: 0,
+        },
       }),
     ),
   };

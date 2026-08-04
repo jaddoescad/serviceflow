@@ -75,5 +75,9 @@ export const getProjectData = cache(async (projectId: string) => {
 export const getProjectShell = cache(async (projectId: string) => {
   const [, project] = await Promise.all([requireStaff(), getProjectById(projectId)]);
   if (!project) return null;
-  return { name: project.name, address: project.formatted_address ?? null };
+  return {
+    name: project.name,
+    address: project.formatted_address ?? null,
+    isLead: project.is_lead,
+  };
 });

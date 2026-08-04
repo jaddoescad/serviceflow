@@ -1,6 +1,6 @@
 import { CalculatorPage } from "@/components/calculator/calculator";
-import { getProjectById } from "@/lib/queries";
-import { notFound } from "next/navigation";
+import { getProjectById, resolveProjectId } from "@/lib/queries";
+import { notFound, redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,13 @@ export default async function ProjectCalculatorPage({
   const { id } = await params;
   const { name } = await searchParams;
   const projectId = decodeURIComponent(id);
+  const canonicalProjectId = await resolveProjectId(projectId);
+  if (canonicalProjectId !== projectId) {
+    const query = name ? `?name=${encodeURIComponent(name)}` : "";
+    redirect(
+      `/projects/${encodeURIComponent(canonicalProjectId)}/calculator${query}`,
+    );
+  }
   const project = await getProjectById(projectId);
 
   if (!project) notFound();

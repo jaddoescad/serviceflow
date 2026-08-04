@@ -13,6 +13,10 @@ alter table public.labour_payment_allocations
   drop constraint if exists
     labour_payment_allocations_financial_transaction_id_invoice_id_key;
 
+alter table public.labour_payment_allocations
+  drop constraint if exists
+    labour_payment_allocations_financial_transaction_id_invoice_key;
+
 create unique index if not exists labour_payment_allocations_active_key
   on public.labour_payment_allocations(financial_transaction_id, invoice_id)
   where reversed_at is null;

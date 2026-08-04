@@ -86,17 +86,8 @@ function cardCategory(transaction) {
     .join(" ")
     .toLocaleLowerCase("en-CA");
 
-  if (text.includes("facebk") || text.includes("facebook")) {
-    return "Advertising & marketing";
-  }
-  if (
-    text.includes("linkedin") ||
-    text.includes("indeed") ||
-    text.includes("upwork") ||
-    text.includes("onlinejobs")
-  ) {
-    return "Advertising & marketing";
-  }
+  const recurringOverhead = recurringOverheadRule(transaction);
+  if (recurringOverhead) return recurringOverhead.category;
   if (
     text.includes("sherwin") ||
     text.includes("paint") ||
@@ -160,6 +151,47 @@ function cardCategory(transaction) {
   return "Uncategorized";
 }
 
+function recurringOverheadRule(transaction) {
+  const text = [
+    transaction.description,
+    transaction.originalDescription,
+    transaction.merchantName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("en-CA");
+  const rules = [
+    ["Meta Ads", ["facebk", "facebook", "meta ads"], "Advertising & marketing", "Meta advertising", "meta_advertising"],
+    ["LinkedIn", ["linkedin"], "Professional subscriptions", "Professional subscription", "professional_subscription"],
+    ["Indeed", ["indeed"], "Recruiting & hiring", "Recruiting expense", "recruiting"],
+    ["OnlineJobs.ph", ["onlinejobs"], "Recruiting & hiring", "Recruiting expense", "recruiting"],
+    ["Upwork", ["upwork"], "Freelance services", "Freelance services", "freelance_services"],
+    ["Quo", ["openphone", "quo.com", "quo ("], "Phone & communication", "Phone subscription", "phone_subscription"],
+    ["One Touch Print", ["one touch print", "onetouch print"], "Printing & signage", "Printing and signage", "printing_and_signage"],
+    ["DripJobs CRM", ["dripjobs"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["CompanyCam", ["companycam"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["QuickBooks Online", ["qbooks", "quickbooks", "intuit"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Perspective Software", ["perspective software"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Google Workspace", ["google*workspace", "workspace_pain", "google workspace"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Zapier", ["zapier"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Connecteam", ["connecteam"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["OpenAI", ["openai", "chatgpt"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["Slack", ["slack"], "Software & subscriptions", "Software subscription", "software_subscription"],
+    ["CapCut", ["capcut"], "Software & subscriptions", "Software subscription", "software_subscription"],
+  ];
+  const match = rules.find(([, terms]) =>
+    terms.some((term) => text.includes(term)),
+  );
+  return match
+    ? {
+        vendor: match[0],
+        category: match[2],
+        label: match[3],
+        classification: match[4],
+      }
+    : null;
+}
+
 function classifyTransaction(transaction, accountType) {
   const description = transaction.description.toLocaleUpperCase("en-CA");
 
@@ -172,11 +204,14 @@ function classifyTransaction(transaction, accountType) {
         review_status: "reconciled",
       };
     }
+    const category = cardCategory(transaction);
     return {
       transaction_type: transaction.amount > 0 ? "credit" : "expense",
-      category: cardCategory(transaction),
+      category,
       is_transfer: false,
-      review_status: "needs_review",
+      review_status: recurringOverheadRule(transaction)
+        ? "reconciled"
+        : "needs_review",
     };
   }
 
@@ -407,22 +442,30 @@ for (const transactionSet of snapshot.transactionSets) {
       transaction,
       definition.account_type,
     );
+    const recurringOverhead = recurringOverheadRule(transaction);
+    const isOverheadCredit = transaction.amount > 0;
+    const recurringOverheadNote = recurringOverhead
+      ? isOverheadCredit
+        ? `${recurringOverhead.vendor} credit verified from the posted business credit-card record. It offsets ${recurringOverhead.category.toLocaleLowerCase("en-CA")} overhead; no HST adjustment is claimed without a supplier credit note.`
+        : `${recurringOverhead.vendor} recurring business charge verified from the posted business credit-card record. Recorded as ${recurringOverhead.category.toLocaleLowerCase("en-CA")} overhead; no separate receipt is required and no HST input tax credit is claimed.`
+      : null;
     transactionCandidates.push({
       account_id: resolvedAccountId,
       source_key: sourceKey(transaction.id),
       posted_on: dateOnly(transaction.date),
       transaction_on: dateOnly(transaction.authorizedDate ?? transaction.date),
       description: transaction.description,
-      counterparty: transaction.merchantName,
+      counterparty: recurringOverhead?.vendor ?? transaction.merchantName,
       amount: transaction.amount,
       tax_amount: 0,
       currency: transaction.currency,
       ...classification,
       running_balance: null,
       notes:
-        classification.review_status === "needs_review"
+        recurringOverheadNote ??
+        (classification.review_status === "needs_review"
           ? "Live bank feed; category and HST require review."
-          : "Live bank feed; deterministic bank transfer or fee.",
+          : "Live bank feed; deterministic bank transfer or fee."),
       source_data: {
         source: "banksync_plaid",
         bank_sync_transaction_id: transaction.id,
@@ -433,6 +476,48 @@ for (const transactionSet of snapshot.transactionSets) {
         bank_category: transaction.category,
         bank_type: transaction.type,
         pending: transaction.pending,
+        ...(recurringOverhead
+          ? {
+              expense_evidence: {
+                status: "bank_supported_no_itc",
+                classification: isOverheadCredit
+                  ? `${recurringOverhead.classification}_credit`
+                  : recurringOverhead.classification,
+                vendor: recurringOverhead.vendor,
+                label: isOverheadCredit
+                  ? `${recurringOverhead.label} credit`
+                  : recurringOverhead.label,
+                detail: isOverheadCredit
+                  ? `The posted business credit-card record confirms this ${recurringOverhead.vendor} credit. It offsets ${recurringOverhead.category.toLocaleLowerCase("en-CA")} overhead; no HST adjustment is claimed without a supplier credit note.`
+                  : `The posted business credit-card record confirms this recurring ${recurringOverhead.vendor} charge. No separate receipt is required, and no HST input tax credit is claimed.`,
+                category: recurringOverhead.category,
+                evidence: "posted_business_credit_card_record",
+                tax_treatment: "no_itc_claimed",
+                supplier_document_status: "not_required",
+                source: "deterministic recognized vendor rule",
+                confirmed_on: dateOnly(snapshot.fetchedAt),
+                reason:
+                  "Recognized recurring overhead vendor on the posted business credit-card feed; HST remains zero until supported by a supplier tax document.",
+              },
+            }
+          : {}),
+        ...(classification.category === "Credit card payment"
+          ? {
+              document_exception: {
+                status: "confirmed",
+                kind: "credit_card_payment",
+                label: "Credit card payment",
+                detail:
+                  "This is a transfer between Ottawa Painters bank and credit-card accounts, not a business expense. The posted bank records are the supporting evidence.",
+                evidence: "posted_bank_records",
+                supplier_document_status: "not_required",
+                source: "deterministic credit-card payment rule",
+                confirmed_on: dateOnly(snapshot.fetchedAt),
+                reason:
+                  "PAYMENT - THANK YOU and TFR-TO C/C are paired credit-card payment descriptions; no receipt or invoice is required.",
+              },
+            }
+          : {}),
       },
     });
   }

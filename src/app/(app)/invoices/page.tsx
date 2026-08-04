@@ -1,58 +1,56 @@
 import { requireStaff } from "@/lib/auth";
-import { getLabourInvoices } from "@/lib/invoice-queries";
+import { getInvoiceEntries } from "@/lib/invoice-entry-queries";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { LabourInvoicesTable } from "@/components/labour-invoices-table";
+import { InvoiceDocumentsTable } from "@/components/invoice-documents-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function LabourInvoicesPage() {
-  const [, invoices] = await Promise.all([requireStaff(), getLabourInvoices()]);
-  const matched = invoices.filter((invoice) =>
-    ["matched", "matched_multiple"].includes(invoice.match_status),
+export default async function InvoicesPage() {
+  const [, entries] = await Promise.all([requireStaff(), getInvoiceEntries()]);
+  const sourceInvoices = new Set(entries.map((entry) => entry.invoice_id)).size;
+  const linkedEntries = entries.filter((entry) => entry.jobs.length > 0).length;
+  const overheadEntries = entries.filter(
+    (entry) =>
+      entry.jobs.length === 0 &&
+      entry.invoice.match_status === "overhead_unmatched",
   ).length;
-  const unmatched = invoices.filter(
-    (invoice) => invoice.match_status === "unmatched",
-  ).length;
-  const duplicateGroups = new Set(
-    invoices
-      .map((invoice) => invoice.duplicate_group_id)
-      .filter((group): group is string => Boolean(group)),
-  ).size;
-  const amountsCaptured = invoices.filter(
-    (invoice) => invoice.amount_paid != null,
+  const needsJobReview = entries.filter(
+    (entry) =>
+      entry.jobs.length === 0 &&
+      entry.invoice.match_status !== "overhead_unmatched",
   ).length;
 
   return (
     <>
       <PageHeader
-        title="Labour Invoices"
-        subtitle="Private invoice archive with the amount paid and linked CompanyCam jobs"
+        title="Labour invoices"
+        subtitle="Browse complete invoices and expand any row to inspect its individual items"
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
-          label="Archived files"
-          value={invoices.length}
-          hint={`${matched} matched to at least one job`}
+          label="Invoices"
+          value={sourceInvoices}
+          hint={`${entries.length} individual items`}
         />
         <Kpi
-          label="Unmatched"
-          value={unmatched}
-          hint="Needs a reliable job reference"
-          tone={unmatched ? "warn" : "good"}
+          label="Job-linked items"
+          value={linkedEntries}
+          hint={`of ${entries.length} invoice items`}
+          tone={linkedEntries ? "good" : "neutral"}
         />
         <Kpi
-          label="Duplicate groups"
-          value={duplicateGroups}
-          hint="Includes revisions and payment copies"
-          tone={duplicateGroups ? "warn" : "good"}
+          label="Overhead / no job"
+          value={overheadEntries}
+          hint="explicitly classified outside job cost"
         />
         <Kpi
-          label="Amounts captured"
-          value={amountsCaptured}
-          hint="Per-file totals; duplicate versions are not summed"
+          label="Needs job link"
+          value={needsJobReview}
+          hint="not counted in any job yet"
+          tone={needsJobReview ? "warn" : "good"}
         />
       </div>
-      <LabourInvoicesTable invoices={invoices} />
+      <InvoiceDocumentsTable entries={entries} />
     </>
   );
 }

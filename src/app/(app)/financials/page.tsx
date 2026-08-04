@@ -15,6 +15,7 @@ import {
   type FinancialAccount,
   type FinancialTransaction,
 } from "@/lib/financials";
+import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
 
 export const dynamic = "force-dynamic";
 
@@ -40,13 +41,16 @@ const percent = new Intl.NumberFormat("en-CA", {
 });
 
 const labourCategories = new Set([
+  "Colour consultation",
   "Labour",
   "Payroll",
+  "Pressure washing",
   "Subcontractors",
   "Wages & salaries",
 ]);
 const materialCategories = new Set(["Materials", "Paint & materials"]);
 const advertisingCategories = new Set(["Advertising & marketing"]);
+const nonOperatingCategories = new Set(["HST remittance"]);
 
 const monthNames = [
   "Jan",
@@ -64,7 +68,7 @@ const monthNames = [
 ];
 
 function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
 
 function isOneOf<const T extends readonly string[]>(
@@ -92,6 +96,13 @@ function formatCostRatio(amount: number, revenue: number) {
   return revenue > 0 ? percent.format(amount / revenue) : "—";
 }
 
+function isOperatingTransaction(transaction: FinancialTransaction) {
+  return (
+    !transaction.is_transfer &&
+    !nonOperatingCategories.has(transaction.category)
+  );
+}
+
 function buildMonthlyData(
   transactions: FinancialTransaction[],
   year: number,
@@ -100,21 +111,24 @@ function buildMonthlyData(
     const monthKey = `${year}-${String(index + 1).padStart(2, "0")}`;
     const current = transactions.filter(
       (transaction) =>
-        transaction.posted_on.startsWith(monthKey) && !transaction.is_transfer,
+        transaction.posted_on.startsWith(monthKey) &&
+        isOperatingTransaction(transaction),
     );
-    const revenue = sum(
-      current.filter((transaction) => transaction.transaction_type === "income"),
-      "net_amount",
+    const verifiedRevenue = current.reduce(
+      (total, transaction) => total + transaction.cash_revenue.before_hst,
+      0,
     );
     const expenses = -sum(
-      current.filter((transaction) => transaction.transaction_type !== "income"),
+      current.filter(
+        (transaction) => transaction.transaction_type !== "income",
+      ),
       "net_amount",
     );
     return {
       month,
-      revenue: roundMoney(revenue),
+      revenue: roundMoney(verifiedRevenue),
       expenses: roundMoney(expenses),
-      net: roundMoney(revenue - expenses),
+      net: roundMoney(verifiedRevenue - expenses),
     };
   });
 }
@@ -152,7 +166,9 @@ export default async function FinancialsPage({
 
   const years = [
     ...new Set(
-      ledger.transactions.map((transaction) => Number(transaction.posted_on.slice(0, 4))),
+      ledger.transactions.map((transaction) =>
+        Number(transaction.posted_on.slice(0, 4)),
+      ),
     ),
   ].sort((left, right) => right - left);
   const requestedYear = Number(firstParam(params.year));
@@ -168,10 +184,35 @@ export default async function FinancialsPage({
     ...new Set(ledger.transactions.map((transaction) => transaction.category)),
   ].sort((left, right) => left.localeCompare(right, "en-CA"));
   const requestedCategory = firstParam(params.category) || "all";
-  const category = categories.includes(requestedCategory) ? requestedCategory : "all";
+  const category = categories.includes(requestedCategory)
+    ? requestedCategory
+    : "all";
+  const subcontractors = [
+    ...new Set(
+      ledger.transactions
+        .filter(
+          (transaction) =>
+            transaction.category === "Subcontractors" &&
+            transaction.payment_verification?.recipient_status === "confirmed",
+        )
+        .map((transaction) => transaction.counterparty?.trim())
+        .filter((subcontractor): subcontractor is string =>
+          Boolean(subcontractor),
+        ),
+    ),
+  ].sort((left, right) => left.localeCompare(right, "en-CA"));
+  const requestedCounterparty = firstParam(params.counterparty) || "all";
+  const counterparty = subcontractors.includes(requestedCounterparty)
+    ? requestedCounterparty
+    : "all";
   const query = firstParam(params.q).trim().slice(0, 120);
   const requestedStatus = firstParam(params.status) || "all";
-  const statusOptions = ["all", "needs_review", "reconciled", "paid"] as const;
+  const statusOptions = [
+    "all",
+    "needs_review",
+    "fully_matched",
+    "custom",
+  ] as const;
   const status = isOneOf(requestedStatus, statusOptions)
     ? requestedStatus
     : "all";
@@ -198,6 +239,7 @@ export default async function FinancialsPage({
     year,
     account,
     category,
+    counterparty,
     query,
     status,
     transactionType,
@@ -211,26 +253,19 @@ export default async function FinancialsPage({
   );
   const normalizedQuery = query.toLocaleLowerCase("en-CA");
   const displayedTransactions = periodTransactions.filter((transaction) => {
-    const hasPaidInvoice =
-      Number(transaction.payment_verification?.invoice_allocated_amount ?? 0) >
-      0;
+    const settlement = getTransactionSettlementStatus(transaction);
     const hasMatchedEvidence =
       Number(transaction.payment_verification?.total_allocated_amount ?? 0) >
-      0;
+        0 ||
+      transaction.evidence.some(
+        (item) =>
+          item.status === "confirmed" && item.kind !== "no_document_required",
+      );
     const hasNoDocumentRequired = transaction.evidence.some(
       (item) => item.kind === "no_document_required",
     );
     const isMissingEvidence = !hasMatchedEvidence && !hasNoDocumentRequired;
-    const matchesStatus =
-      status === "all" ||
-      (status === "paid" && hasPaidInvoice) ||
-      (status === "reconciled" &&
-        transaction.review_status === "reconciled") ||
-      (status === "needs_review" &&
-        (transaction.review_status !== "reconciled" ||
-          (transaction.payment_verification != null &&
-            transaction.payment_verification.payment_status !==
-              "fully_allocated")));
+    const matchesStatus = status === "all" || settlement.bucket === status;
     const matchesEvidence =
       evidence === "all" ||
       (evidence === "matched" && hasMatchedEvidence) ||
@@ -239,6 +274,7 @@ export default async function FinancialsPage({
 
     return (
       (category === "all" || transaction.category === category) &&
+      (counterparty === "all" || transaction.counterparty === counterparty) &&
       (transactionType === "all" ||
         transaction.transaction_type === transactionType) &&
       matchesStatus &&
@@ -258,17 +294,43 @@ export default async function FinancialsPage({
   });
 
   const operatingTransactions = periodTransactions.filter(
-    (transaction) => !transaction.is_transfer,
-  );
-  const revenueTransactions = operatingTransactions.filter(
-    (transaction) => transaction.transaction_type === "income",
+    isOperatingTransaction,
   );
   const expenseTransactions = operatingTransactions.filter(
     (transaction) => transaction.transaction_type !== "income",
   );
-  const netRevenue = roundMoney(sum(revenueTransactions, "net_amount"));
+  const revenueBeforeHst = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.before_hst,
+      0,
+    ),
+  );
+  const customerHstCollected = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.hst,
+      0,
+    ),
+  );
+  const customerRevenueGross = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.gross_revenue,
+      0,
+    ),
+  );
+  const customerBankCash = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.bank_cash,
+      0,
+    ),
+  );
+  const customerProcessingFees = roundMoney(
+    periodTransactions.reduce(
+      (total, transaction) => total + transaction.cash_revenue.processing_fees,
+      0,
+    ),
+  );
   const netExpenses = roundMoney(-sum(expenseTransactions, "net_amount"));
-  const netIncome = roundMoney(sum(operatingTransactions, "net_amount"));
+  const netIncome = roundMoney(revenueBeforeHst - netExpenses);
   const labourCost = roundMoney(
     -sum(
       expenseTransactions.filter((transaction) =>
@@ -296,12 +358,11 @@ export default async function FinancialsPage({
   const overheadCost = roundMoney(
     netExpenses - labourCost - materialCost - advertisingCost,
   );
-  const hstCollected = roundMoney(sum(revenueTransactions, "tax_amount"));
-  const inputTaxCredits = roundMoney(-sum(expenseTransactions, "tax_amount"));
-  const hstPayable = roundMoney(sum(operatingTransactions, "tax_amount"));
   const monthlyData = buildMonthlyData(periodTransactions, year);
 
-  const categoryTotals = [...new Set(expenseTransactions.map((item) => item.category))]
+  const categoryTotals = [
+    ...new Set(expenseTransactions.map((item) => item.category)),
+  ]
     .map((name) => {
       const rows = expenseTransactions.filter((item) => item.category === name);
       return {
@@ -311,13 +372,20 @@ export default async function FinancialsPage({
       };
     })
     .sort((left, right) => right.amount - left.amount);
-  const largestExpense = Math.max(0, ...categoryTotals.map((item) => item.amount));
-  const reconciled = periodTransactions.filter(
-    (transaction) => transaction.review_status === "reconciled",
-  ).length;
-  const needsReview = periodTransactions.filter(
-    (transaction) => transaction.review_status !== "reconciled",
-  ).length;
+  const largestExpense = Math.max(
+    0,
+    ...categoryTotals.map((item) => item.amount),
+  );
+  const settlementCounts = periodTransactions.reduce(
+    (counts, transaction) => {
+      counts[getTransactionSettlementStatus(transaction).bucket] += 1;
+      return counts;
+    },
+    { fully_matched: 0, needs_review: 0, custom: 0 },
+  );
+  const needsReview = settlementCounts.needs_review;
+  const customResolved = settlementCounts.custom;
+  const latestPostedOn = periodTransactions[0]?.posted_on ?? null;
 
   return (
     <>
@@ -325,18 +393,24 @@ export default async function FinancialsPage({
         title="Financials"
         subtitle="Consolidated chequing, e-transfer, TD Visa, and live bank-feed activity"
         actions={
-          needsReview ? (
-            <Badge tone="warn">Live feed · {needsReview} to review</Badge>
-          ) : (
-            <Badge tone="good">Accountant reconciled</Badge>
-          )
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {needsReview ? (
+              <Badge tone="warn">Live feed · {needsReview} to review</Badge>
+            ) : (
+              <Badge tone="good">No unresolved reviews</Badge>
+            )}
+            {customResolved ? (
+              <Badge tone="neutral">{customResolved} custom resolved</Badge>
+            ) : null}
+          </div>
         }
       />
 
       {needsReview ? (
         <Card className="mb-4 border-[var(--color-warn)] p-4">
           <div className="text-sm font-medium text-[var(--color-heading)]">
-            Live bank activity through July 24, 2026
+            Live bank activity
+            {latestPostedOn ? ` through ${formatAsOf(latestPostedOn)}` : ""}
           </div>
           <div className="mt-1 text-sm text-[var(--color-muted)]">
             Balances and posted amounts are current. New categories and HST are
@@ -348,34 +422,34 @@ export default async function FinancialsPage({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
-          label="Revenue before HST"
-          value={money.format(netRevenue)}
-          hint={`${money.format(hstCollected)} HST collected`}
+          label="Revenue received before HST"
+          value={money.format(revenueBeforeHst)}
+          hint="customer invoices verified to bank payments"
           tone="good"
         />
         <Kpi
-          label="Expenses before HST"
+          label="Customer HST collected"
+          value={money.format(customerHstCollected)}
+          hint={`${money.format(customerRevenueGross)} invoice value received`}
+          tone="neutral"
+        />
+        <Kpi
+          label="Customer cash received"
+          value={money.format(customerBankCash)}
+          hint={`${money.format(customerProcessingFees)} processor fees separated`}
+          tone="good"
+        />
+        <Kpi
+          label="Operating costs before HST"
           value={money.format(netExpenses)}
-          hint={`${money.format(inputTaxCredits)} input tax credits`}
+          hint="full cost used wherever HST is not evidenced"
           tone="warn"
         />
         <Kpi
-          label="Net income"
+          label="Profit before HST"
           value={money.format(netIncome)}
-          hint="cash-basis · before income tax"
+          hint="verified revenue less operating costs"
           tone={netIncome >= 0 ? "good" : "bad"}
-        />
-        <Kpi
-          label="HST payable"
-          value={money.format(hstPayable)}
-          hint="collected less input tax credits"
-          tone={hstPayable > 0 ? "warn" : "good"}
-        />
-        <Kpi
-          label="Ledger coverage"
-          value={periodTransactions.length}
-          hint={`${reconciled} reconciled · ${needsReview} to review`}
-          tone={reconciled === periodTransactions.length ? "good" : "warn"}
         />
       </div>
 
@@ -385,34 +459,34 @@ export default async function FinancialsPage({
             Cost & profit percentages
           </h2>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Share of before-HST revenue · overhead excludes labour, materials,
-            and advertising
+            Share of verified revenue before HST · overhead excludes labour,
+            materials, and advertising
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <Kpi
             label="Labour %"
-            value={formatCostRatio(labourCost, netRevenue)}
+            value={formatCostRatio(labourCost, revenueBeforeHst)}
             hint={`${money.format(labourCost)} labour`}
           />
           <Kpi
             label="Materials %"
-            value={formatCostRatio(materialCost, netRevenue)}
+            value={formatCostRatio(materialCost, revenueBeforeHst)}
             hint={`${money.format(materialCost)} materials`}
           />
           <Kpi
             label="Advertising & marketing %"
-            value={formatCostRatio(advertisingCost, netRevenue)}
+            value={formatCostRatio(advertisingCost, revenueBeforeHst)}
             hint={`${money.format(advertisingCost)} advertising & marketing`}
           />
           <Kpi
             label="Overhead %"
-            value={formatCostRatio(overheadCost, netRevenue)}
+            value={formatCostRatio(overheadCost, revenueBeforeHst)}
             hint={`${money.format(overheadCost)} other operating costs`}
           />
           <Kpi
             label="Profit %"
-            value={formatCostRatio(netIncome, netRevenue)}
+            value={formatCostRatio(netIncome, revenueBeforeHst)}
             hint={`${money.format(netIncome)} net income`}
           />
         </div>
@@ -422,7 +496,7 @@ export default async function FinancialsPage({
         <Card>
           <CardHeader
             title={`${year} monthly performance`}
-            subtitle="Before HST · transfers excluded"
+            subtitle="Verified revenue and costs before HST · transfers excluded"
           />
           <div className="p-4">
             <FinancialMonthlyChart data={monthlyData} />
@@ -432,7 +506,7 @@ export default async function FinancialsPage({
         <Card>
           <CardHeader
             title="Expense categories"
-            subtitle={`${shortMoney.format(netExpenses)} before HST`}
+            subtitle={`${shortMoney.format(netExpenses)} before HST where evidenced; full cost otherwise`}
           />
           <div className="space-y-4 p-5">
             {categoryTotals.map((item) => (
@@ -528,6 +602,7 @@ export default async function FinancialsPage({
         years={years}
         accounts={ledger.accounts}
         categories={categories}
+        subcontractors={subcontractors}
       />
 
       <FinancialTransactionsTable

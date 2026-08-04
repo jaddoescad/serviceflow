@@ -1,18 +1,31 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
-import { LabourInvoicesTable } from "@/components/labour-invoices-table";
+import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
+import { ProjectMaterialInvoices } from "@/components/project-material-invoices";
 import { Badge } from "@/components/ui";
 import { getProjectShell } from "@/lib/project-data";
+import { getInvoiceEntriesForProject } from "@/lib/invoice-entry-queries";
 import {
-  getLabourInvoicesForProject,
   getProjectLabourInvoiceSummary,
   isInvoiceInCurrentJob,
 } from "@/lib/invoice-queries";
 import { fmtCurrencyTotals } from "@/lib/format";
+import { getProjectMaterialInvoices } from "@/lib/materials";
+import { resolveProjectId } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
+
+function addCurrencyTotals(
+  left: Record<"CAD" | "USD", number>,
+  right: Record<"CAD" | "USD", number>,
+) {
+  return {
+    CAD: left.CAD + right.CAD,
+    USD: left.USD + right.USD,
+  };
+}
 
 export default async function ProjectInvoicesPage({
   params,
@@ -21,27 +34,41 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
-  const [shell, invoices, summary] = await Promise.all([
+  const canonicalProjectId = await resolveProjectId(projectId);
+  if (canonicalProjectId !== projectId) {
+    redirect(`/projects/${encodeURIComponent(canonicalProjectId)}/invoices`);
+  }
+  const [shell, entries, summary, materialInvoices] = await Promise.all([
     getProjectShell(projectId),
-    getLabourInvoicesForProject(projectId),
+    getInvoiceEntriesForProject(projectId),
     getProjectLabourInvoiceSummary(projectId),
+    getProjectMaterialInvoices(projectId),
   ]);
 
   if (!shell) notFound();
 
-  const currentInvoices = invoices.filter((invoice) =>
-    isInvoiceInCurrentJob(invoice, summary.jobStartedOn),
+  const currentEntries = entries.filter((entry) =>
+    isInvoiceInCurrentJob(entry.invoice, summary.jobStartedOn),
   );
-  const historicalInvoices = invoices.filter(
-    (invoice) =>
-      !isInvoiceInCurrentJob(invoice, summary.jobStartedOn),
+  const historicalEntries = entries.filter(
+    (entry) => !isInvoiceInCurrentJob(entry.invoice, summary.jobStartedOn),
+  );
+  const notFullySettledTotals = addCurrencyTotals(
+    summary.confirmedUnpaidTotals,
+    summary.partialSettlementTotals,
+  );
+  const partialSettlementAmount = fmtCurrencyTotals(
+    summary.partialSettlementTotals,
   );
 
   return (
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href="/projects" className="hover:text-[var(--color-text)]">
-          Jobs &amp; Budgets
+        <Link
+          href={shell.isLead ? "/leads" : "/projects"}
+          className="hover:text-[var(--color-text)]"
+        >
+          {shell.isLead ? "Leads & Estimates" : "Jobs & Budgets"}
         </Link>
         <span className="mx-1.5">/</span>
         <Link
@@ -57,64 +84,71 @@ export default async function ProjectInvoicesPage({
       <PageHeader title={shell.name} subtitle={shell.address ?? undefined} />
       <ProjectTabs projectId={projectId} projectName={shell.name} />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
-          label="Labour invoices"
-          value={
-            summary.hasUnallocatedSharedInvoices &&
-            summary.totals.CAD === 0 &&
-            summary.totals.USD === 0
-              ? "Needs allocation"
-              : fmtCurrencyTotals(summary.totals)
-          }
-          hint="pre-tax amount"
-          tone={summary.hasUnallocatedSharedInvoices ? "warn" : "neutral"}
+          label="Invoiced job cost"
+          value={fmtCurrencyTotals(summary.totals)}
+          hint="all allocated entries · before HST"
         />
         <Kpi
-          label="Invoices"
-          value={summary.invoiceCount}
-          hint="latest version counted"
+          label="Confirmed paid"
+          value={fmtCurrencyTotals(summary.confirmedPaidTotals)}
+          hint="entries on fully paid invoices"
+          tone="good"
         />
         <Kpi
-          label="Linked files"
-          value={summary.linkedFileCount}
+          label="Not fully settled"
+          value={fmtCurrencyTotals(notFullySettledTotals)}
           hint={
-            summary.historicalLinkedFileCount > 0
-              ? `${summary.historicalLinkedFileCount} previous-job files excluded`
-              : summary.hasDuplicateVersions
-              ? "includes duplicate/revised files"
-              : "source invoice files"
+            summary.partialSettlementTotals.CAD !== 0 ||
+            summary.partialSettlementTotals.USD !== 0
+              ? `${partialSettlementAmount} is on partially paid invoices`
+              : "entries on unpaid invoices"
           }
+          tone={
+            notFullySettledTotals.CAD !== 0 ||
+            notFullySettledTotals.USD !== 0
+              ? "warn"
+              : "neutral"
+          }
+        />
+        <Kpi
+          label="Evidence chain"
+          value={`${summary.invoiceCount} ${
+            summary.invoiceCount === 1 ? "invoice" : "invoices"
+          }`}
+          hint={`${summary.entryCount} entries · ${summary.paymentEvidenceCount} bank payments`}
         />
       </div>
 
-      {summary.hasUnallocatedSharedInvoices || summary.needsReview ? (
+      {summary.needsReview ? (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-warn-soft)] px-4 py-3 text-sm text-[var(--color-warn)]">
           <Badge tone="warn">Review</Badge>
-          {summary.hasUnallocatedSharedInvoices
-            ? `${summary.unallocatedSharedInvoiceCount} shared ${
-                summary.unallocatedSharedInvoiceCount === 1
-                  ? "invoice is"
-                  : "invoices are"
-              } excluded from the total until the pre-tax amount is allocated to this job.`
-            : "At least one invoice-to-job association is marked for review."}
+          At least one invoice entry, job allocation, or invoice settlement
+          needs review.
         </div>
       ) : null}
 
-      <LabourInvoicesTable
-        invoices={currentInvoices}
-        title="Current job labour invoices"
-        subtitle="These files feed the current job total; revised versions are counted once"
-        showAssociatedJobs={false}
+      <InvoiceEntriesTable
+        entries={currentEntries}
+        initialType="all"
+        title="Current job invoice entries"
+        subtitle="The job cost comes from these entry allocations; payment and bank evidence stays attached to the parent invoice"
+        showJobs={false}
+        projectId={projectId}
       />
 
-      {historicalInvoices.length > 0 ? (
+      <ProjectMaterialInvoices invoices={materialInvoices} />
+
+      {historicalEntries.length > 0 ? (
         <div className="mt-6">
-          <LabourInvoicesTable
-            invoices={historicalInvoices}
-            title="Previous job invoice files"
+          <InvoiceEntriesTable
+            entries={historicalEntries}
+            initialType="all"
+            title="Previous job invoice entries"
             subtitle="Linked to the same customer project, but excluded from the current job budget and labour totals"
-            showAssociatedJobs={false}
+            showJobs={false}
+            projectId={projectId}
           />
         </div>
       ) : null}

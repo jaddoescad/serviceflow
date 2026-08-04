@@ -9,6 +9,7 @@ import {
   CardHeader,
   Field,
   Input,
+  StatusText,
 } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
 import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
@@ -91,23 +92,23 @@ export function ProjectOverviewPanel({
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {labourClosed ? (
-            <Badge tone="good">Labour completed {fmtDate(project.labourClosedAt)}</Badge>
+            <StatusText tone="good">Labour completed {fmtDate(project.labourClosedAt)}</StatusText>
           ) : canCompleteLabour ? (
-            <Badge tone="neutral">Labour not completed</Badge>
+            <StatusText tone="neutral">Labour not completed</StatusText>
           ) : null}
-          {activeEntryCount > 0 ? <Badge tone="good">{activeEntryCount} on clock</Badge> : null}
-          {project.invoicedHours > project.clockedHours ? <Badge tone="neutral">invoice hours</Badge> : null}
+          {activeEntryCount > 0 ? <StatusText tone="good">{activeEntryCount} on clock</StatusText> : null}
+          {project.invoicedHours > project.clockedHours ? <StatusText tone="neutral">invoice hours</StatusText> : null}
           {project.expenseCount > 0 ? (
-            <Badge tone="neutral">
+            <StatusText tone="neutral">
               {project.expenseCount} fixed {project.expenseCount === 1 ? "invoice" : "invoices"}
-            </Badge>
+            </StatusText>
           ) : null}
-          <Badge tone={statusTone[project.status]}>
+          <StatusText tone={statusTone[project.status]}>
             {project.wageSharePercent == null ? "no amount" : `${project.wageSharePercent.toFixed(1)}% of job`}
-          </Badge>
-          {project.unpricedHours > 0 ? <Badge tone="warn">{fmtHours(project.unpricedHours)} unpriced</Badge> : null}
+          </StatusText>
+          {project.unpricedHours > 0 ? <StatusText tone="warn">{fmtHours(project.unpricedHours)} unpriced</StatusText> : null}
         </div>
         {canManage ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -142,8 +143,16 @@ export function ProjectOverviewPanel({
         </div>
       ) : null}
 
-      <div className="mb-2 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi label="Job value" value={fmtMoney(project.amountBeforeTax)} hint="before HST" />
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Kpi
+          label="Job value"
+          value={fmtMoney(project.amountBeforeTax)}
+          hint={
+            project.amountBeforeTax != null
+              ? "before HST · manual amount, no tax added or removed"
+              : "before HST"
+          }
+        />
         <Kpi
           label="Labour allowance"
           value={
@@ -169,13 +178,6 @@ export function ProjectOverviewPanel({
           hint="of the job amount"
         />
       </div>
-      {project.amountBeforeTax != null ? (
-        <p className="mb-6 text-[11px] text-[var(--color-muted)]">
-          Manual job amount before HST. No tax is added or removed.
-        </p>
-      ) : (
-        <div className="mb-6" />
-      )}
 
       <PainterBonus
         project={project}
@@ -262,7 +264,12 @@ export function ProjectOverviewPanel({
                           <span>Invoice #{expense.invoiceNumber}</span>
                           <span>·</span>
                           <span>{fmtDate(`${expense.invoiceDate}T12:00:00`)}</span>
-                          {expense.taxAmount === 0 ? <Badge tone="neutral">No HST</Badge> : null}
+                          {expense.taxAmount === 0 ? (
+                            <>
+                              <span>·</span>
+                              <span>No HST</span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -288,9 +295,9 @@ export function ProjectOverviewPanel({
           ) : (
             <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm">
+                <table className="w-full min-w-[720px] text-[13px]">
                   <thead>
-                    <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)] text-left text-[11px] uppercase tracking-wide text-[var(--color-muted)]">
+                    <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
                       <th className="px-3 py-2 font-medium">Painter</th>
                       <th className="px-3 py-2 font-medium">Date</th>
                       <th className="px-3 py-2 font-medium">Time</th>
@@ -322,15 +329,19 @@ export function ProjectOverviewPanel({
                           {entry.hourlyRate != null ? `${fmtMoney(entry.hourlyRate)}/h` : "—"}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium tabular-nums">
-                          {entry.wageCost != null ? fmtMoney(entry.wageCost) : <Badge tone="warn">unpriced</Badge>}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          {entry.status === "active" ? (
-                            <Badge tone="good">on clock</Badge>
-                          ) : entry.approved ? (
-                            <Badge tone="good">approved</Badge>
+                          {entry.wageCost != null ? (
+                            fmtMoney(entry.wageCost)
                           ) : (
-                            <Badge tone="warn">pending</Badge>
+                            <span className="text-xs font-medium text-[var(--color-warn)]">unpriced</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          {entry.status === "active" ? (
+                            <StatusText tone="good">on clock</StatusText>
+                          ) : entry.approved ? (
+                            <StatusText tone="good">approved</StatusText>
+                          ) : (
+                            <StatusText tone="warn">pending</StatusText>
                           )}
                         </td>
                       </tr>
@@ -444,9 +455,9 @@ function PainterBonus({
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full min-w-[560px] text-[13px]">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-bg)] text-left text-[11px] uppercase tracking-wide text-[var(--color-muted)]">
+                  <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
                     <th className="px-5 py-2.5 font-medium">Painter</th>
                     <th className="px-5 py-2.5 text-right font-medium">
                       Hours
@@ -484,7 +495,7 @@ function PainterBonus({
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t border-[var(--color-border)] bg-[var(--color-bg)] font-medium">
+                  <tr className="border-t border-[var(--color-border)] font-medium">
                     <td className="px-5 py-3">Total</td>
                     <td className="px-5 py-3 text-right tabular-nums">
                       {fmtHours(totalHours)}

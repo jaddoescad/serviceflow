@@ -193,7 +193,7 @@ export function SummaryRail({
               Lead estimate
             </div>
             <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-muted)]">
-              Painter task transfer unlocks automatically when this lead becomes a job in CompanyCam.
+              Painter task transfer unlocks automatically when this lead&apos;s DripJobs proposal is accepted.
             </p>
           </div>
         ) : !transferredIsCurrent ? (

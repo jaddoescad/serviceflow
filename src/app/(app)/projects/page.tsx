@@ -14,6 +14,11 @@ import {
   emptyProjectLabourInvoiceSummary,
   getProjectLabourInvoiceSummaries,
 } from "@/lib/invoice-queries";
+import { getProjectMaterialSummaries } from "@/lib/materials";
+import {
+  getJobCostingIdentity,
+  mergeProjectRowsByJobIdentity,
+} from "@/lib/job-costing";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +26,9 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export default async function ProjectsPage() {
   const now = Date.now();
+  const profile = await requireStaff();
+  const canManage = ["admin", "manager"].includes(profile.role);
   const [
-    profile,
     entries,
     payRates,
     projects,
@@ -30,8 +36,9 @@ export default async function ProjectsPage() {
     assignments,
     labourExpenses,
     invoiceSummaries,
+    materialSummaries,
+    jobCostingIdentity,
   ] = await Promise.all([
-    requireStaff(),
     getTimeEntries(new Date(now - 180 * DAY).toISOString()),
     getEmployeePayRates(),
     getProjects(),
@@ -39,9 +46,11 @@ export default async function ProjectsPage() {
     getAssignments(),
     getProjectLabourExpenses(),
     getProjectLabourInvoiceSummaries(),
+    getProjectMaterialSummaries(),
+    getJobCostingIdentity(canManage),
   ]);
 
-  const rows = rollupProjects(
+  const legacyRows = rollupProjects(
     entries,
     projects,
     budgets,
@@ -55,18 +64,23 @@ export default async function ProjectsPage() {
     labourInvoices:
       invoiceSummaries.get(row.projectId) ??
       emptyProjectLabourInvoiceSummary(),
+    materials: materialSummaries.get(row.projectId) ?? {
+      amountBeforeTax: 0,
+      lineCount: 0,
+    },
   }));
+  const rows = mergeProjectRowsByJobIdentity(legacyRows, jobCostingIdentity);
 
   return (
     <>
       <PageHeader
-        title="Jobs & Labour"
-        subtitle="See how the painter budget compares with the 35–37% labour allowance"
+        title="Jobs & Costs"
+        subtitle="Compare labour and allocated material costs with each job's before-HST value"
       />
       <ProjectsTable
         rows={rows}
         now={now}
-        canManage={["admin", "manager"].includes(profile.role)}
+        canManage={canManage}
       />
     </>
   );

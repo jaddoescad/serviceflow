@@ -100,13 +100,59 @@ export type Project = {
   companycam_updated_at: string | null;
 };
 
-export type LeadEstimate = {
-  projectId: string;
+export type MarketingLeadJobLinkMethod =
+  | "proposal_number"
+  | "dripjobs_deal_id"
+  | "dripjobs_contact_uuid"
+  | "email_and_phone"
+  | "email"
+  | "phone"
+  | "manual";
+
+export type MarketingLeadJob = {
+  proposalId: string;
+  jobName: string;
+  status: string;
+  amount: number;
+  proposalSignedOn: string | null;
+  jobStartOn: string | null;
+  jobCompletionOn: string | null;
+  linkMethod: MarketingLeadJobLinkMethod;
+  linkConfidence: number;
+};
+
+export type MarketingLead = {
+  dealId: string;
+  operationalProjectId: string;
+  createdOn: string;
+  createdAtLocal: string | null;
   name: string;
+  email: string | null;
+  phone: string | null;
+  rawLeadSource: string | null;
+  normalizedChannel:
+    | "paid_social"
+    | "organic_social"
+    | "website"
+    | "phone"
+    | "mail"
+    | "referral"
+    | "organic_search"
+    | "other"
+    | "unknown";
   address: string | null;
-  hasStreetAddress: boolean;
-  createdAt: string | null;
-  estimateUpdatedAt: string | null;
+  postalCode: string | null;
+  estimateScheduledOn: string | null;
+  estimateAppointmentOn: string | null;
+  proposalNumber: string | null;
+  proposalAmount: number | null;
+  proposalOn: string | null;
+  jobCrew: string | null;
+  isInterior: boolean;
+  isExterior: boolean;
+  isCabinets: boolean;
+  sourceRowNumber: number | null;
+  dripJobs: MarketingLeadJob[];
 };
 
 export type ProjectBudget = {

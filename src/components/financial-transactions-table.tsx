@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 import { Badge, Card, CardHeader } from "@/components/ui";
+import { getTransactionSettlementStatus } from "@/lib/financial-settlement-status";
 import type { FinancialTransaction } from "@/lib/financials";
 
 const money = new Intl.NumberFormat("en-CA", {
@@ -31,6 +32,9 @@ function formatDate(value: string) {
 function transactionTone(
   transaction: FinancialTransaction,
 ): "neutral" | "good" | "warn" | "brand" {
+  if (transaction.source_details.transfer_status === "cancelled") {
+    return "neutral";
+  }
   if (transaction.is_transfer) return "neutral";
   if (transaction.transaction_type === "income") return "good";
   if (transaction.transaction_type === "credit") return "brand";
@@ -38,6 +42,9 @@ function transactionTone(
 }
 
 function transactionLabel(transaction: FinancialTransaction) {
+  if (transaction.source_details.transfer_status === "cancelled") {
+    return "Cancelled";
+  }
   if (transaction.is_transfer) return "Transfer";
   if (transaction.transaction_type === "income") return "Income";
   if (transaction.transaction_type === "credit") return "Credit";
@@ -45,25 +52,13 @@ function transactionLabel(transaction: FinancialTransaction) {
 }
 
 function reviewLabel(transaction: FinancialTransaction) {
-  const status = transaction.payment_verification?.payment_status;
-  if (status === "fully_allocated") return "Fully matched";
-  if (status === "partially_allocated") return "Partially matched";
-  if (status === "unidentified") return "Recipient not verified";
-  if (status === "unmatched") return "Payment unmatched";
-  if (status === "needs_review") return "Allocation error";
-  if (transaction.review_status === "reconciled") return "Reconciled";
-  return "Needs review";
+  return getTransactionSettlementStatus(transaction).label;
 }
 
 function reviewTone(
   transaction: FinancialTransaction,
 ): "good" | "warn" | "bad" | "neutral" {
-  const status = transaction.payment_verification?.payment_status;
-  if (status === "fully_allocated") return "good";
-  if (status === "needs_review") return "bad";
-  if (status) return "warn";
-  if (transaction.review_status === "reconciled") return "good";
-  return transaction.review_status === "needs_review" ? "warn" : "neutral";
+  return getTransactionSettlementStatus(transaction).tone;
 }
 
 export function FinancialTransactionsTable({
@@ -76,7 +71,9 @@ export function FinancialTransactionsTable({
   const router = useRouter();
 
   function openTransaction(transaction: FinancialTransaction) {
-    router.push(`/financials/transactions/${encodeURIComponent(transaction.id)}`);
+    router.push(
+      `/financials/transactions/${encodeURIComponent(transaction.id)}`,
+    );
   }
 
   function openFromKeyboard(
@@ -109,7 +106,9 @@ export function FinancialTransactionsTable({
             <tr>
               <th className="px-4 py-3 font-medium">Date</th>
               <th className="px-4 py-3 font-medium">Account</th>
-              <th className="px-4 py-3 font-medium">Counterparty / description</th>
+              <th className="px-4 py-3 font-medium">
+                Counterparty / description
+              </th>
               <th className="px-4 py-3 font-medium">Category</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 text-right font-medium">Before HST</th>

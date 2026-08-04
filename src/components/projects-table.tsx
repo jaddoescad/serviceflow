@@ -15,10 +15,12 @@ import {
 } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
+import type { ProjectMaterialSummary } from "@/lib/materials";
 import { AmountDialog } from "@/components/project-detail";
 
 type ProjectTableRow = ProjectRollup & {
   labourInvoices: ProjectLabourInvoiceSummary;
+  materials: ProjectMaterialSummary;
 };
 
 function painterBudget(row: ProjectTableRow): number | null {
@@ -114,6 +116,45 @@ function UsageBar({
       </div>
       <div className="mt-0.5 whitespace-nowrap text-[10px] text-[var(--color-muted)]">
         {sourceLabel} · {fmtMoney(amount)} chosen
+      </div>
+    </div>
+  );
+}
+
+function MaterialShareBar({
+  amountBeforeTax,
+  materialCost,
+  lineCount,
+}: {
+  amountBeforeTax: number | null;
+  materialCost: number;
+  lineCount: number;
+}) {
+  const percent =
+    amountBeforeTax && amountBeforeTax > 0 && materialCost > 0
+      ? (materialCost / amountBeforeTax) * 100
+      : null;
+  if (percent == null) {
+    return <span className="text-xs text-[var(--color-muted)]">—</span>;
+  }
+
+  return (
+    <div
+      title={`${fmtMoney(materialCost)} allocated materials ÷ ${fmtMoney(amountBeforeTax)} job amount before HST`}
+    >
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--color-surface-2)] xl:w-20">
+          <div
+            className="h-full rounded-full bg-[var(--color-brand)]"
+            style={{ width: `${Math.min(100, percent)}%` }}
+          />
+        </div>
+        <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">
+          {percent.toFixed(1)}%
+        </span>
+      </div>
+      <div className="mt-0.5 whitespace-nowrap text-[10px] text-[var(--color-muted)]">
+        {lineCount} allocated {lineCount === 1 ? "line" : "lines"}
       </div>
     </div>
   );
@@ -257,8 +298,8 @@ export function ProjectsTable({
 
       <Card>
         <CardHeader
-          title="Jobs & labour"
-          subtitle="35%, 37%, and 40% labour allowances against clocked wages and allocated pre-tax invoices"
+          title="Jobs & costs"
+          subtitle="Labour uses clocked wages or allocated invoices; materials use allocated supplier-invoice lines before HST"
           right={
             <div className="flex flex-wrap gap-2">
               {totals.readyToCloseCount ? (
@@ -297,18 +338,20 @@ export function ProjectsTable({
           <EmptyState>No jobs match.</EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] table-fixed text-[13px]">
+            <table className="w-full min-w-[1280px] table-fixed text-[13px]">
               <colgroup>
-                <col className="w-[18%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
-                <col className="w-[9%]" />
-                <col className="w-[10%]" />
+                <col className="w-[14%]" />
                 <col className="w-[8%]" />
-                <col className="w-[11%]" />
                 <col className="w-[8%]" />
-                <col className="w-[11%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
                 <col className="w-[7%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+                <col className="w-[9%]" />
+                <col className="w-[7%]" />
+                <col className="w-[7%]" />
+                <col className="w-[6%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -326,6 +369,10 @@ export function ProjectsTable({
                   </th>
                   <th className="px-2.5 py-2.5 font-medium">Invoices</th>
                   <th className="px-2.5 py-2.5 font-medium">Used by painters</th>
+                  <th className="px-2.5 py-2.5 text-right font-medium">
+                    Materials (pre-tax)
+                  </th>
+                  <th className="px-2.5 py-2.5 font-medium">Material share</th>
                   <th className="px-2.5 py-2.5 font-medium">Recent activity ↓</th>
                   <th
                     className="px-2.5 py-2.5 text-right font-medium"
@@ -396,28 +443,12 @@ export function ProjectsTable({
                     </td>
                     <td
                       className="whitespace-nowrap px-2.5 py-2.5 text-right font-medium tabular-nums"
-                      title={
-                        r.labourInvoices.hasUnallocatedSharedInvoices
-                          ? "Shared invoices are excluded until their pre-tax amount is allocated to this job."
-                          : "Pre-tax amount from the latest linked invoice versions."
-                      }
+                      title="Pre-tax job cost from current invoice-entry allocations."
                     >
-                      {r.labourInvoices.hasUnallocatedSharedInvoices &&
-                      r.labourInvoices.totals.CAD === 0 &&
-                      r.labourInvoices.totals.USD === 0 ? (
-                        <span className="text-[var(--color-warn)]">
-                          Needs allocation
-                        </span>
-                      ) : (
-                        fmtCurrencyTotals(r.labourInvoices.totals)
-                      )}
-                      {r.labourInvoices.hasUnallocatedSharedInvoices ? (
+                      {fmtCurrencyTotals(r.labourInvoices.totals)}
+                      {r.labourInvoices.needsReview ? (
                         <div className="text-[10px] font-normal text-[var(--color-warn)]">
-                          {r.labourInvoices.unallocatedSharedInvoiceCount} shared{" "}
-                          {r.labourInvoices.unallocatedSharedInvoiceCount === 1
-                            ? "invoice"
-                            : "invoices"}{" "}
-                          excluded
+                          Entry or settlement needs review
                         </div>
                       ) : null}
                     </td>
@@ -453,6 +484,21 @@ export function ProjectsTable({
                         status={r.status}
                         source={r.labourCostSource}
                         amount={r.wageCost}
+                      />
+                    </td>
+                    <td
+                      className="whitespace-nowrap px-2.5 py-2.5 text-right font-medium tabular-nums"
+                      title="Material invoice lines allocated to this job before HST"
+                    >
+                      {r.materials.amountBeforeTax > 0
+                        ? fmtMoney(r.materials.amountBeforeTax)
+                        : "—"}
+                    </td>
+                    <td className="px-2.5 py-2.5">
+                      <MaterialShareBar
+                        amountBeforeTax={r.amountBeforeTax}
+                        materialCost={r.materials.amountBeforeTax}
+                        lineCount={r.materials.lineCount}
                       />
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2.5 text-[var(--color-muted)]">

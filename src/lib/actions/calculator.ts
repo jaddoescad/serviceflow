@@ -218,10 +218,10 @@ async function operationalProjectError(
     .maybeSingle();
 
   if (error) return error.message;
-  if (!data) return "The CompanyCam job was not found.";
-  if (data.is_deleted) return "Deleted CompanyCam jobs cannot publish painter tasks.";
+  if (!data) return "The operational job was not found.";
+  if (data.is_deleted) return "Deleted operational jobs cannot publish painter tasks.";
   if (data.is_lead) {
-    return "Convert this lead to a job in CompanyCam before transferring painter tasks.";
+    return "Approve this lead in DripJobs before transferring painter tasks.";
   }
   return null;
 }

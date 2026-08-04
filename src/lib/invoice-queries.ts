@@ -1,4 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  getInvoiceEntries,
+  getInvoiceEntriesForProject,
+  type InvoiceEntryRecord,
+} from "@/lib/invoice-entry-queries";
 
 export type LabourInvoiceProjectLink = {
   companycam_project_id: string;
@@ -44,9 +49,14 @@ type StoredLabourInvoiceRecord = Omit<
 
 export type ProjectLabourInvoiceSummary = {
   invoiceCount: number;
+  entryCount: number;
   linkedFileCount: number;
   historicalLinkedFileCount: number;
   totals: Record<"CAD" | "USD", number>;
+  confirmedPaidTotals: Record<"CAD" | "USD", number>;
+  confirmedUnpaidTotals: Record<"CAD" | "USD", number>;
+  partialSettlementTotals: Record<"CAD" | "USD", number>;
+  paymentEvidenceCount: number;
   /** First invoice date included in the current job cycle, when configured. */
   jobStartedOn: string | null;
   /** Latest date printed on a selected invoice, not its email/source date. */
@@ -198,111 +208,116 @@ export async function getLabourInvoicesForProject(
   return addSignedUrls(invoices);
 }
 
-function compareInvoiceVersions(
-  left: StoredLabourInvoiceRecord,
-  right: StoredLabourInvoiceRecord,
-): number {
-  const leftDate = left.source_date ?? left.invoice_date ?? "";
-  const rightDate = right.source_date ?? right.invoice_date ?? "";
-  return (
-    leftDate.localeCompare(rightDate) ||
-    Number(left.amount_before_tax ?? 0) - Number(right.amount_before_tax ?? 0) ||
-    left.original_filename.localeCompare(right.original_filename, "en-CA")
-  );
-}
-
-export function summarizeProjectLabourInvoices(
-  invoices: Array<StoredLabourInvoiceRecord | LabourInvoiceRecord>,
+export function summarizeProjectInvoiceEntries(
+  entries: InvoiceEntryRecord[],
   projectId: string,
   jobStartedOn: string | null = null,
 ): ProjectLabourInvoiceSummary {
-  const allLinkedInvoices = invoices
-    .filter(
-      (invoice) =>
-        invoice.document_type === "invoice" &&
-        invoice.amount_before_tax != null &&
-        invoice.labour_invoice_projects.some(
-          (link) => link.companycam_project_id === projectId,
-        ),
-    )
-    .map((invoice) => ({
-      invoice,
-      projectLink: invoice.labour_invoice_projects.find(
-        (link) => link.companycam_project_id === projectId,
-      )!,
-    }));
-  const linkedInvoices = allLinkedInvoices.filter(({ invoice }) =>
-    isInvoiceInCurrentJob(invoice, jobStartedOn),
+  const allLinkedEntries = entries.filter((entry) =>
+    entry.jobs.some((job) => job.companycam_project_id === projectId),
   );
-
-  const versionGroups = new Map<string, typeof linkedInvoices>();
-  for (const linkedInvoice of linkedInvoices) {
-    const key =
-      linkedInvoice.invoice.duplicate_group_id ?? linkedInvoice.invoice.id;
-    const group = versionGroups.get(key) ?? [];
-    group.push(linkedInvoice);
-    versionGroups.set(key, group);
-  }
-
-  const selected = [...versionGroups.values()].map((group) =>
-    [...group].sort((left, right) =>
-      compareInvoiceVersions(left.invoice, right.invoice),
-    ).at(-1)!,
+  const linkedEntries = allLinkedEntries.filter((entry) =>
+    isInvoiceInCurrentJob(entry.invoice, jobStartedOn),
   );
-
   const totals = emptyTotals();
-  let unallocatedSharedInvoiceCount = 0;
-  for (const { invoice, projectLink } of selected) {
-    const isShared = invoice.labour_invoice_projects.length > 1;
-    if (isShared && projectLink.allocated_amount == null) {
-      unallocatedSharedInvoiceCount += 1;
-      continue;
-    }
-    totals[invoice.currency] += Number(
-      projectLink.allocated_amount ?? invoice.amount_before_tax ?? 0,
+  const confirmedPaidTotals = emptyTotals();
+  const confirmedUnpaidTotals = emptyTotals();
+  const partialSettlementTotals = emptyTotals();
+  const paymentIds = new Set<string>();
+
+  for (const entry of linkedEntries) {
+    const projectAllocation = entry.jobs.find(
+      (job) => job.companycam_project_id === projectId,
     );
+    if (!projectAllocation) continue;
+
+    const amount = Number(projectAllocation.allocated_amount);
+    const currency = entry.invoice.currency;
+    totals[currency] += amount;
+    if (
+      entry.invoice.payment_status === "paid" ||
+      entry.invoice.payment_status === "overpaid"
+    ) {
+      confirmedPaidTotals[currency] += amount;
+    } else if (entry.invoice.payment_status === "unpaid") {
+      confirmedUnpaidTotals[currency] += amount;
+    } else {
+      partialSettlementTotals[currency] += amount;
+    }
+    for (const payment of entry.invoice.payments) {
+      paymentIds.add(payment.financial_transaction_id);
+    }
   }
+
+  const currentInvoiceIds = new Set(
+    linkedEntries.map((entry) => entry.invoice_id),
+  );
+  const currentInvoices = new Map(
+    linkedEntries.map((entry) => [entry.invoice_id, entry.invoice]),
+  );
+  const historicalInvoiceIds = new Set(
+    allLinkedEntries
+      .filter((entry) => !isInvoiceInCurrentJob(entry.invoice, jobStartedOn))
+      .map((entry) => entry.invoice_id),
+  );
 
   return {
-    invoiceCount: selected.length,
-    linkedFileCount: linkedInvoices.length,
-    historicalLinkedFileCount:
-      allLinkedInvoices.length - linkedInvoices.length,
+    invoiceCount: currentInvoiceIds.size,
+    entryCount: linkedEntries.length,
+    linkedFileCount: [...currentInvoices.values()].reduce(
+      (total, invoice) =>
+        total + Math.max(1, Number(invoice.duplicate_group_size)),
+      0,
+    ),
+    historicalLinkedFileCount: historicalInvoiceIds.size,
     totals,
+    confirmedPaidTotals,
+    confirmedUnpaidTotals,
+    partialSettlementTotals,
+    paymentEvidenceCount: paymentIds.size,
     jobStartedOn,
     latestInvoiceDate:
-      selected
-        .map(({ invoice }) => invoice.invoice_date)
+      linkedEntries
+        .map((entry) => entry.invoice.invoice_date)
         .filter((date): date is string => Boolean(date))
         .sort()
         .at(-1) ?? null,
-    hasDuplicateVersions: linkedInvoices.length > selected.length,
-    hasUnallocatedSharedInvoices: unallocatedSharedInvoiceCount > 0,
-    unallocatedSharedInvoiceCount,
-    needsReview: selected.some(({ projectLink }) => projectLink.needs_review),
+    hasDuplicateVersions: linkedEntries.some(
+      (entry) => entry.invoice.duplicate_group_size > 1,
+    ),
+    hasUnallocatedSharedInvoices: false,
+    unallocatedSharedInvoiceCount: 0,
+    needsReview: linkedEntries.some((entry) => {
+      const projectAllocation = entry.jobs.find(
+        (job) => job.companycam_project_id === projectId,
+      );
+      return (
+        entry.needs_review ||
+        projectAllocation?.needs_review ||
+        entry.invoice.verification_status !== "verified"
+      );
+    }),
   };
 }
 
 export async function getProjectLabourInvoiceSummaries(): Promise<
   Map<string, ProjectLabourInvoiceSummary>
 > {
-  const [invoices, jobStarts] = await Promise.all([
-    queryLabourInvoices(),
+  const [entries, jobStarts] = await Promise.all([
+    getInvoiceEntries(),
     queryLabourInvoiceJobStarts(),
   ]);
   const projectIds = new Set(
-    invoices.flatMap((invoice) =>
-      invoice.labour_invoice_projects.map(
-        (link) => link.companycam_project_id,
-      ),
+    entries.flatMap((entry) =>
+      entry.jobs.map((job) => job.companycam_project_id),
     ),
   );
 
   return new Map(
     [...projectIds].map((projectId) => [
       projectId,
-      summarizeProjectLabourInvoices(
-        invoices,
+      summarizeProjectInvoiceEntries(
+        entries,
         projectId,
         jobStarts.get(projectId) ?? null,
       ),
@@ -313,12 +328,12 @@ export async function getProjectLabourInvoiceSummaries(): Promise<
 export async function getProjectLabourInvoiceSummary(
   projectId: string,
 ): Promise<ProjectLabourInvoiceSummary> {
-  const [invoices, jobStarts] = await Promise.all([
-    queryLabourInvoices(),
+  const [entries, jobStarts] = await Promise.all([
+    getInvoiceEntriesForProject(projectId),
     queryLabourInvoiceJobStarts(),
   ]);
-  return summarizeProjectLabourInvoices(
-    invoices,
+  return summarizeProjectInvoiceEntries(
+    entries,
     projectId,
     jobStarts.get(projectId) ?? null,
   );
@@ -336,9 +351,14 @@ export function isInvoiceInCurrentJob(
 export function emptyProjectLabourInvoiceSummary(): ProjectLabourInvoiceSummary {
   return {
     invoiceCount: 0,
+    entryCount: 0,
     linkedFileCount: 0,
     historicalLinkedFileCount: 0,
     totals: emptyTotals(),
+    confirmedPaidTotals: emptyTotals(),
+    confirmedUnpaidTotals: emptyTotals(),
+    partialSettlementTotals: emptyTotals(),
+    paymentEvidenceCount: 0,
     jobStartedOn: null,
     latestInvoiceDate: null,
     hasDuplicateVersions: false,

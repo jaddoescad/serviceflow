@@ -33,12 +33,27 @@ export type InvoiceVerification = {
 export type InvoiceLineEvidence = {
   id: string;
   line_number: number;
+  entry_type:
+    | "labour"
+    | "material"
+    | "bonus"
+    | "commission"
+    | "expense"
+    | "other"
+    | "unclassified";
   description: string;
   service_started_on: string | null;
   service_ended_on: string | null;
+  quantity: number | null;
+  unit: string | null;
+  unit_price: number | null;
   quantity_hours: number | null;
   hourly_rate: number | null;
   amount_before_tax: number;
+  tax_amount: number;
+  source_kind:
+    "extracted" | "manual" | "legacy_project_link" | "legacy_invoice_total";
+  source_reference: string | null;
   source_text: string | null;
   needs_review: boolean;
   jobs: Array<{
@@ -116,11 +131,29 @@ export type LabourPaymentEvidence = {
     description: string;
     counterparty: string | null;
     amount: number;
+    tax_amount: number;
+    net_amount: number;
     currency: string;
+    transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
+    is_transfer: boolean;
     review_status: string;
     running_balance: number | null;
     notes: string | null;
+    is_overpayment: boolean;
+    transfer_cancelled: boolean;
+    has_no_invoice: boolean;
+    invoice_not_found: boolean;
+    partial_no_invoice_residual: boolean;
+    expense_evidence_status: "bank_supported_no_itc" | null;
+    expense_evidence_vendor: string | null;
+    expense_evidence_label: string | null;
+    expense_evidence_detail: string | null;
+    document_exception_label: string | null;
+    document_exception_detail: string | null;
+    customer_revenue_exception_kind: string | null;
+    customer_revenue_exception_detail: string | null;
+    customer_revenue_exception_needs_review: boolean;
     account_name: string;
     account_last_four: string | null;
     source_filename: string;
@@ -205,7 +238,7 @@ async function getInvoiceEvidenceWithClient(
       supabase
         .from("labour_invoice_lines")
         .select(
-          "id,line_number,description,service_started_on,service_ended_on,quantity_hours,hourly_rate,amount_before_tax,source_text,needs_review",
+          "id,line_number,entry_type,description,service_started_on,service_ended_on,quantity,unit,unit_price,quantity_hours,hourly_rate,amount_before_tax,tax_amount,source_kind,source_reference,source_text,needs_review",
         )
         .eq("invoice_id", invoiceId)
         .order("line_number", { ascending: true }),
@@ -401,11 +434,13 @@ async function getInvoiceEvidenceWithClient(
     signedUrl: signedResult.data?.signedUrl ?? null,
     lines: storedLines.map((line) => ({
       ...line,
+      quantity: line.quantity == null ? null : Number(line.quantity),
+      unit_price: line.unit_price == null ? null : Number(line.unit_price),
       quantity_hours:
         line.quantity_hours == null ? null : Number(line.quantity_hours),
-      hourly_rate:
-        line.hourly_rate == null ? null : Number(line.hourly_rate),
+      hourly_rate: line.hourly_rate == null ? null : Number(line.hourly_rate),
       amount_before_tax: Number(line.amount_before_tax),
+      tax_amount: Number(line.tax_amount),
       jobs: jobsByLine.get(line.id) ?? [],
       timeEntries: timesByLine.get(line.id) ?? [],
     })),
@@ -418,6 +453,27 @@ export async function getLabourInvoiceEvidence(
 ): Promise<LabourInvoiceEvidence | null> {
   const supabase = await createClient();
   return getInvoiceEvidenceWithClient(supabase, invoiceId);
+}
+
+export async function getInvoiceEntryEvidence(entryId: string): Promise<{
+  entry: InvoiceLineEvidence;
+  invoice: LabourInvoiceEvidence;
+} | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("labour_invoice_lines")
+    .select("invoice_id")
+    .eq("id", entryId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const invoice = await getInvoiceEvidenceWithClient(supabase, data.invoice_id);
+  if (!invoice) return null;
+
+  const entry = invoice.lines.find((line) => line.id === entryId);
+  return entry ? { entry, invoice } : null;
 }
 
 export async function getLabourPaymentEvidence(
@@ -442,11 +498,16 @@ export async function getLabourPaymentEvidence(
           description,
           counterparty,
           amount,
+          tax_amount,
+          net_amount,
           currency,
+          transaction_type,
           category,
+          is_transfer,
           review_status,
           running_balance,
           notes,
+          source_data,
           financial_accounts (
             name,
             last_four
@@ -557,11 +618,43 @@ export async function getLabourPaymentEvidence(
     description: string;
     counterparty: string | null;
     amount: number;
+    tax_amount: number;
+    net_amount: number;
     currency: string;
+    transaction_type: "income" | "expense" | "transfer" | "credit";
     category: string;
+    is_transfer: boolean;
     review_status: string;
     running_balance: number | null;
     notes: string | null;
+    source_data: {
+      confirmed_overpayment?: {
+        status?: string;
+      };
+      cancelled_e_transfer?: {
+        status?: string;
+      };
+      reconciliation_research?: {
+        status?: string;
+      };
+      expense_evidence?: {
+        status?: string;
+        vendor?: string;
+        label?: string;
+        detail?: string;
+      };
+      document_exception?: {
+        status?: string;
+        label?: string;
+        detail?: string;
+      };
+      customer_revenue_exception?: {
+        status?: string;
+        kind?: string;
+        resolution?: string;
+        review?: boolean;
+      };
+    } | null;
     financial_accounts: { name: string; last_four: string | null } | null;
     financial_imports: {
       original_filename: string;
@@ -590,14 +683,76 @@ export async function getLabourPaymentEvidence(
       description: transaction.description,
       counterparty: transaction.counterparty,
       amount: Number(transaction.amount),
+      tax_amount: Number(transaction.tax_amount),
+      net_amount: Number(transaction.net_amount),
       currency: transaction.currency,
+      transaction_type: transaction.transaction_type,
       category: transaction.category,
+      is_transfer: transaction.is_transfer,
       review_status: transaction.review_status,
       running_balance:
         transaction.running_balance == null
           ? null
           : Number(transaction.running_balance),
       notes: transaction.notes,
+      is_overpayment:
+        transaction.source_data?.confirmed_overpayment?.status === "confirmed",
+      transfer_cancelled:
+        transaction.source_data?.cancelled_e_transfer?.status === "cancelled",
+      has_no_invoice:
+        transaction.source_data?.reconciliation_research?.status ===
+        "no_invoice_provided",
+      invoice_not_found:
+        transaction.source_data?.reconciliation_research?.status ===
+        "invoice_not_found",
+      partial_no_invoice_residual:
+        transaction.source_data?.reconciliation_research?.status ===
+        "partial_invoice_allocation_with_no_invoice_residual",
+      expense_evidence_status:
+        transaction.source_data?.expense_evidence?.status ===
+        "bank_supported_no_itc"
+          ? "bank_supported_no_itc"
+          : null,
+      expense_evidence_vendor:
+        typeof transaction.source_data?.expense_evidence?.vendor === "string"
+          ? transaction.source_data.expense_evidence.vendor
+          : null,
+      expense_evidence_label:
+        typeof transaction.source_data?.expense_evidence?.label === "string"
+          ? transaction.source_data.expense_evidence.label
+          : null,
+      expense_evidence_detail:
+        typeof transaction.source_data?.expense_evidence?.detail === "string"
+          ? transaction.source_data.expense_evidence.detail
+          : null,
+      document_exception_label:
+        transaction.source_data?.document_exception?.status === "confirmed" &&
+        typeof transaction.source_data.document_exception.label === "string"
+          ? transaction.source_data.document_exception.label
+          : null,
+      document_exception_detail:
+        transaction.source_data?.document_exception?.status === "confirmed" &&
+        typeof transaction.source_data.document_exception.detail === "string"
+          ? transaction.source_data.document_exception.detail
+          : null,
+      customer_revenue_exception_kind:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        typeof transaction.source_data.customer_revenue_exception.kind ===
+          "string"
+          ? transaction.source_data.customer_revenue_exception.kind
+          : null,
+      customer_revenue_exception_detail:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        typeof transaction.source_data.customer_revenue_exception.resolution ===
+          "string"
+          ? transaction.source_data.customer_revenue_exception.resolution
+          : null,
+      customer_revenue_exception_needs_review:
+        transaction.source_data?.customer_revenue_exception?.status ===
+          "confirmed" &&
+        transaction.source_data.customer_revenue_exception.review === true,
       account_name: transaction.financial_accounts?.name ?? "Bank account",
       account_last_four: transaction.financial_accounts?.last_four ?? null,
       source_filename:
@@ -645,8 +800,7 @@ export async function getLabourPaymentEvidence(
           "Unknown project",
         formula_version: row.labour_bonus_payables?.formula_version ?? "—",
         approved_at: row.labour_bonus_payables?.approved_at ?? "",
-        calculation_note:
-          row.labour_bonus_payables?.calculation_note ?? null,
+        calculation_note: row.labour_bonus_payables?.calculation_note ?? null,
       };
     }),
     otherAllocations: (otherAllocationsResult.data ?? []).map((value) => {
