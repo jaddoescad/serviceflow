@@ -282,7 +282,7 @@ export function useCalculator(
     if (!allowTaskTransfer) {
       const result = {
         ok: false as const,
-        error: "Convert this lead to a job in CompanyCam before transferring painter tasks.",
+        error: "Approve this lead in DripJobs before transferring painter tasks.",
       };
       setDefaultCalculatorError(result.error);
       return result;
@@ -314,7 +314,7 @@ export function useCalculator(
       if (!allowTaskTransfer) {
         const result = {
           ok: false as const,
-          error: "Convert this lead to a job in CompanyCam before changing painter task budgets.",
+          error: "Approve this lead in DripJobs before changing painter task budgets.",
         };
         setTaskBudgetError(result.error);
         return result;

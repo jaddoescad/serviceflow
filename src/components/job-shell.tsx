@@ -15,6 +15,7 @@ export function JobShell({
   projectId,
   name,
   address,
+  isLead,
   initialTab,
   overview,
   tasks,
@@ -22,6 +23,7 @@ export function JobShell({
   projectId: string;
   name: string;
   address: string | null;
+  isLead: boolean;
   initialTab: LocalTabKey;
   overview: React.ReactNode;
   tasks: React.ReactNode;
@@ -46,8 +48,8 @@ export function JobShell({
   return (
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href="/projects" className="hover:text-[var(--color-text)]">
-          Jobs &amp; Budgets
+        <Link href={isLead ? "/leads" : "/projects"} className="hover:text-[var(--color-text)]">
+          {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
         </Link>
         <span className="mx-1.5">/</span>
         <span>{name}</span>
@@ -55,7 +57,12 @@ export function JobShell({
 
       <PageHeader title={name} subtitle={address ?? undefined} />
 
-      <ProjectTabs projectId={projectId} projectName={name} activeOverride={tab} onLocalSwitch={switchTab} />
+      <ProjectTabs
+        projectId={projectId}
+        projectName={name}
+        activeOverride={tab}
+        onLocalSwitch={switchTab}
+      />
 
       <div className={tab === "tasks" ? "hidden" : undefined}>{overview}</div>
       <div className={tab === "tasks" ? undefined : "hidden"}>{tasks}</div>

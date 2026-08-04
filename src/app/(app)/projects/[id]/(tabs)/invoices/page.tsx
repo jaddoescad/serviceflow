@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
 import { InvoiceEntriesTable } from "@/components/invoice-entries-table";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/invoice-queries";
 import { fmtCurrencyTotals } from "@/lib/format";
 import { getProjectMaterialInvoices } from "@/lib/materials";
+import { resolveProjectId } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,10 @@ export default async function ProjectInvoicesPage({
 }) {
   const { id } = await params;
   const projectId = decodeURIComponent(id);
+  const canonicalProjectId = await resolveProjectId(projectId);
+  if (canonicalProjectId !== projectId) {
+    redirect(`/projects/${encodeURIComponent(canonicalProjectId)}/invoices`);
+  }
   const [shell, entries, summary, materialInvoices] = await Promise.all([
     getProjectShell(projectId),
     getInvoiceEntriesForProject(projectId),
@@ -59,8 +64,11 @@ export default async function ProjectInvoicesPage({
   return (
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href="/projects" className="hover:text-[var(--color-text)]">
-          Jobs &amp; Budgets
+        <Link
+          href={shell.isLead ? "/leads" : "/projects"}
+          className="hover:text-[var(--color-text)]"
+        >
+          {shell.isLead ? "Leads & Estimates" : "Jobs & Budgets"}
         </Link>
         <span className="mx-1.5">/</span>
         <Link

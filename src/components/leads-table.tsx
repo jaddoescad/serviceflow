@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Badge,
   Button,
@@ -37,6 +38,7 @@ function linkMethodLabel(
   method: MarketingLead["dripJobs"][number]["linkMethod"],
 ): string {
   if (method === "proposal_number") return "Proposal ID";
+  if (method === "dripjobs_deal_id") return "DripJobs Deal ID";
   if (method === "dripjobs_contact_uuid") return "DripJobs contact ID";
   if (method === "manual") return "Manually confirmed";
   if (method === "email_and_phone") return "Email + phone";
@@ -68,6 +70,7 @@ function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
 const DEFAULT_YEAR = "2026";
 
 export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [month, setMonth] = useState("all");
@@ -246,13 +249,28 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
               <tbody>
                 {visible.map((lead) => {
                   const firstJob = lead.dripJobs[0];
+                  const projectHref = `/projects/${encodeURIComponent(lead.operationalProjectId)}`;
                   const estimateOn =
                     lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
                   const jobCount = lead.dripJobs.length;
                   return (
                     <tr
                       key={lead.dealId}
-                      className="border-b border-[var(--color-border)] align-top last:border-0 hover:bg-[var(--color-surface-2)]"
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`Open ${lead.name}`}
+                      onClick={(event) => {
+                        if ((event.target as HTMLElement).closest("a,button,input,select")) return;
+                        router.push(projectHref);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        router.push(projectHref);
+                      }}
+                      onMouseEnter={() => router.prefetch(projectHref)}
+                      onFocus={() => router.prefetch(projectHref)}
+                      className="cursor-pointer border-b border-[var(--color-border)] align-top outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)]"
                     >
                       <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-muted)]">
                         {fmtDate(lead.createdOn)}

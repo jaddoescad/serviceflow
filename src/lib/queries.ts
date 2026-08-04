@@ -105,6 +105,7 @@ export async function getProjects(): Promise<Project[]> {
       supabase
         .from("companycam_projects")
         .select(projectColumns)
+        .eq("is_job_feed_visible", true)
         .eq("is_archived", false)
         .eq("is_lead", false)
         .order("companycam_updated_at", {
@@ -178,6 +179,7 @@ export async function getProjects(): Promise<Project[]> {
 
 type MarketingLeadRow = {
   deal_id: string;
+  operational_project_id: string;
   created_on: string;
   created_at_local: string | null;
   contact_name: string | null;
@@ -196,7 +198,7 @@ type MarketingLeadRow = {
   is_interior: boolean;
   is_exterior: boolean;
   is_cabinets: boolean;
-  source_row_number: number;
+  source_row_number: number | null;
 };
 
 type DripJobsJobRow = {
@@ -225,10 +227,11 @@ async function fetchAllMarketingLeadRows(
     const { data, error } = await supabase
       .from("marketing_leads")
       .select(
-        "deal_id,created_on,created_at_local,contact_name,email,phone,raw_lead_source,normalized_channel,address,postal_code,estimate_scheduled_on,estimate_appointment_on,proposal_number,proposal_amount,proposal_on,job_crew,is_interior,is_exterior,is_cabinets,source_row_number",
+        "deal_id,operational_project_id,created_on,created_at_local,contact_name,email,phone,raw_lead_source,normalized_channel,address,postal_code,estimate_scheduled_on,estimate_appointment_on,proposal_number,proposal_amount,proposal_on,job_crew,is_interior,is_exterior,is_cabinets,source_row_number",
       )
       .order("created_on", { ascending: false })
-      .order("source_row_number", { ascending: false })
+      .order("created_at_local", { ascending: false, nullsFirst: false })
+      .order("source_row_number", { ascending: false, nullsFirst: false })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`marketing leads: ${error.message}`);
     const page = (data ?? []) as MarketingLeadRow[];
@@ -306,6 +309,7 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
 
     return {
       dealId: lead.deal_id,
+      operationalProjectId: lead.operational_project_id,
       createdOn: lead.created_on,
       createdAtLocal: lead.created_at_local,
       name: lead.contact_name?.trim() || "Unnamed lead",
@@ -336,6 +340,48 @@ export type DripJobsLeadCoverage = {
   needsReview: number;
   missingSource: number;
 };
+
+export type DripJobsSyncHealth = {
+  totalEvents: number;
+  processedEvents: number;
+  failedEvents: number;
+  ignoredTestEvents: number;
+  duplicateDeliveries: number;
+  liveLeadEvents: number;
+  acceptedProposalEvents: number;
+  lastReceivedAt: string | null;
+  lastProcessedAt: string | null;
+};
+
+type DripJobsSyncHealthRow = {
+  total_events: number;
+  processed_events: number;
+  failed_events: number;
+  ignored_test_events: number;
+  duplicate_deliveries: number;
+  live_lead_events: number;
+  accepted_proposal_events: number;
+  last_received_at: string | null;
+  last_processed_at: string | null;
+};
+
+export async function getDripJobsSyncHealth(): Promise<DripJobsSyncHealth> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("read_dripjobs_sync_health");
+  if (error) throw new Error(`DripJobs sync health: ${error.message}`);
+  const row = ((data ?? [])[0] ?? {}) as Partial<DripJobsSyncHealthRow>;
+  return {
+    totalEvents: Number(row.total_events ?? 0),
+    processedEvents: Number(row.processed_events ?? 0),
+    failedEvents: Number(row.failed_events ?? 0),
+    ignoredTestEvents: Number(row.ignored_test_events ?? 0),
+    duplicateDeliveries: Number(row.duplicate_deliveries ?? 0),
+    liveLeadEvents: Number(row.live_lead_events ?? 0),
+    acceptedProposalEvents: Number(row.accepted_proposal_events ?? 0),
+    lastReceivedAt: row.last_received_at ?? null,
+    lastProcessedAt: row.last_processed_at ?? null,
+  };
+}
 
 export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
   const supabase = await createClient();
@@ -430,6 +476,16 @@ export async function getProjectById(projectId: string): Promise<Project | null>
     .maybeSingle();
   if (error) throw new Error(`project: ${error.message}`);
   return (data as Project | null) ?? null;
+}
+
+/** Resolve a superseded lead/projection URL to its canonical operational job. */
+export async function resolveProjectId(projectId: string): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("resolve_operational_project_id", {
+    requested_project_id: projectId,
+  });
+  if (error) throw new Error(`project identity: ${error.message}`);
+  return typeof data === "string" && data.length > 0 ? data : projectId;
 }
 
 export async function getProjectTimeEntries(projectId: string, sinceIso?: string): Promise<TimeEntry[]> {

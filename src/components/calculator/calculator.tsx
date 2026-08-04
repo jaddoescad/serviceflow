@@ -87,7 +87,10 @@ export function CalculatorPage({
   }, [calc.defaultCalculator, quote.id, quote.updatedAt]);
 
   return (
-    <div data-app-content="full-bleed" className="flex h-screen min-h-0 flex-col xl:flex-row">
+    <div
+      data-app-content="full-bleed"
+      className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col md:h-screen xl:flex-row"
+    >
       <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
@@ -102,18 +105,18 @@ export function CalculatorPage({
             subtitle="Prices and the labour budget update as you type"
           />
 
+          <ProjectTabs projectId={projectId} projectName={displayName || ""} />
+
           {isLead ? (
             <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-4 py-3">
               <div className="text-sm font-medium text-[var(--color-brand-strong)]">
-                CompanyCam lead estimate
+                Lead estimate
               </div>
               <p className="mt-0.5 text-xs leading-5 text-[var(--color-muted)]">
-                An address is optional. This estimate autosaves to the lead and will remain attached when it becomes a job.
+                This estimate autosaves to the lead and stays attached to the same record when the proposal is approved.
               </p>
             </div>
-          ) : (
-            <ProjectTabs projectId={projectId} projectName={displayName || ""} />
-          )}
+          ) : null}
 
           <QuoteBar
             doc={doc}

@@ -1,5 +1,5 @@
 import { requireStaff } from "@/lib/auth";
-import { Nav } from "@/components/nav";
+import { MobileNav, Nav } from "@/components/nav";
 import { SignOutButton } from "@/components/sign-out";
 import { Avatar, Badge } from "@/components/ui";
 import { initials } from "@/lib/format";
@@ -36,8 +36,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 bg-[var(--color-bg)]">
-        <div className="app-content mx-auto w-full max-w-[1800px] px-4 py-5 lg:px-6 lg:py-6">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--color-bg)]">
+        <MobileNav />
+        <div className="app-content mx-auto w-full max-w-[1800px] flex-1 px-4 py-5 lg:px-6 lg:py-6">
           {children}
         </div>
       </main>

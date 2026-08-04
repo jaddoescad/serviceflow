@@ -102,6 +102,7 @@ export type Project = {
 
 export type MarketingLeadJobLinkMethod =
   | "proposal_number"
+  | "dripjobs_deal_id"
   | "dripjobs_contact_uuid"
   | "email_and_phone"
   | "email"
@@ -122,6 +123,7 @@ export type MarketingLeadJob = {
 
 export type MarketingLead = {
   dealId: string;
+  operationalProjectId: string;
   createdOn: string;
   createdAtLocal: string | null;
   name: string;
@@ -149,7 +151,7 @@ export type MarketingLead = {
   isInterior: boolean;
   isExterior: boolean;
   isCabinets: boolean;
-  sourceRowNumber: number;
+  sourceRowNumber: number | null;
   dripJobs: MarketingLeadJob[];
 };
 
