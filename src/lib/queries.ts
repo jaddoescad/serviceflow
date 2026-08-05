@@ -11,7 +11,6 @@ import type {
   ProjectBudget,
   ProjectLabourExpense,
   ProjectLabourTask,
-  ProjectLabourTaskTimeEntry,
   TimeEntry,
 } from "@/lib/types";
 
@@ -312,13 +311,6 @@ export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   }));
 }
 
-export async function getProjectLabourTaskEntries(): Promise<ProjectLabourTaskTimeEntry[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("job_task_time_entries").select("*");
-  if (error) throw new Error(`task time: ${error.message}`);
-  return (data ?? []).map((row: any) => ({ ...row, user_id: row.employee_id }));
-}
-
 export async function getAssignments(): Promise<Assignment[]> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("job_assignments").select("*").eq("status", "active");
@@ -460,12 +452,4 @@ export async function getLabourTasksForProject(projectId: string): Promise<Proje
     completed_at: row.completed_at,
     completed_by: row.completed_by,
   }));
-}
-
-export async function getTaskEntriesForTasks(taskIds: string[]): Promise<ProjectLabourTaskTimeEntry[]> {
-  if (!taskIds.length) return [];
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("job_task_time_entries").select("*").in("task_id", taskIds);
-  if (error) throw new Error(`task time: ${error.message}`);
-  return (data ?? []).map((row: any) => ({ ...row, user_id: row.employee_id }));
 }

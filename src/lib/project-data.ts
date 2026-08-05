@@ -8,7 +8,6 @@ import {
   getProjectBudgetRows,
   getProjectById,
   getProjectTimeEntries,
-  getTaskEntriesForTasks,
 } from "@/lib/queries";
 import { requireStaff } from "@/lib/auth";
 import { projectDetails, projectTaskProgress, rollupProjects } from "@/lib/metrics";
@@ -48,8 +47,6 @@ export const getProjectData = cache(async (projectId: string) => {
 
   if (!project) return null;
 
-  const taskEntries = await getTaskEntriesForTasks(labourTasks.map((task) => task.id));
-
   const rows = rollupProjects(
     entries,
     [project],
@@ -67,7 +64,7 @@ export const getProjectData = cache(async (projectId: string) => {
     canManage: ["admin", "manager"].includes(profile.role),
     project: rollup,
     detail: projectDetails(entries, payRates, labourExpenses, now)[projectId],
-    taskProgress: projectTaskProgress(labourTasks, taskEntries, employees, now)[projectId] ?? [],
+    taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
   };
 });
 

@@ -214,11 +214,3 @@ export type ProjectLabourTask = {
   completed_at: string | null;
   completed_by: string | null;
 };
-
-export type ProjectLabourTaskTimeEntry = {
-  task_id: string;
-  user_id: string;
-  started_at: string;
-  ended_at: string | null;
-  status: string;
-};

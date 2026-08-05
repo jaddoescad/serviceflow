@@ -28,7 +28,6 @@ export function ProjectTasksPanel({
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const totalBudgeted = taskProgress.reduce((sum, task) => sum + task.budgetedHours, 0);
-  const totalSpent = taskProgress.reduce((sum, task) => sum + task.spentHours, 0);
   const calculatorHref = `/jobs/${encodeURIComponent(projectId)}/calculator?name=${encodeURIComponent(projectName)}`;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
@@ -44,7 +43,7 @@ export function ProjectTasksPanel({
   }
 
   function handleRemove(task: ProjectTaskProgress) {
-    if (!window.confirm(`Remove “${task.title}”? Time already tracked on it is kept in history.`)) return;
+    if (!window.confirm(`Remove “${task.title}”?`)) return;
     setRemovingId(task.id);
     run(
       () => removeProjectTask({ projectId, taskId: task.id }),
@@ -101,12 +100,6 @@ export function ProjectTasksPanel({
         ) : (
           <div>
             {taskProgress.map((task, index) => {
-              const over = task.budgetedHours > 0 && task.spentHours > task.budgetedHours;
-              const percent = task.budgetedHours > 0 ? Math.min(100, (task.spentHours / task.budgetedHours) * 100) : 0;
-              const contributors = task.contributors.filter(
-                (contributor) => contributor.active || contributor.hours >= 1 / 60,
-              );
-              const onTaskNow = task.contributors.some((contributor) => contributor.active);
               const removing = removingId === task.id && pending;
               const completed = task.status === "completed";
               return (
@@ -135,14 +128,11 @@ export function ProjectTasksPanel({
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-xs tabular-nums">
-                        <span className={`font-semibold ${over ? "text-[var(--color-bad)]" : "text-[var(--color-heading)]"}`}>
-                          {fmtHours(task.spentHours)}
+                      {task.budgetedHours > 0 ? (
+                        <span className="text-xs font-semibold tabular-nums text-[var(--color-heading)]">
+                          {fmtHours(task.budgetedHours)} budgeted
                         </span>
-                        {task.budgetedHours > 0 ? (
-                          <span className="text-[var(--color-muted)]"> / {fmtHours(task.budgetedHours)}</span>
-                        ) : null}
-                      </span>
+                      ) : null}
                       {canManage ? (
                         <div className="flex items-center">
                           <button
@@ -198,26 +188,6 @@ export function ProjectTasksPanel({
                   {task.notes ? (
                     <div className="mt-0.5 truncate pl-[30px] text-[11px] text-[var(--color-muted)]" title={task.notes}>
                       {task.notes}
-                    </div>
-                  ) : null}
-                  {task.budgetedHours > 0 ? (
-                    <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${percent}%`, background: over ? "var(--color-bad)" : "var(--color-brand)" }}
-                      />
-                    </div>
-                  ) : null}
-                  {contributors.length > 0 || onTaskNow ? (
-                    <div className="mt-1.5 flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
-                      <span className="truncate">
-                        {contributors
-                          .map((contributor) => `${contributor.name} ${fmtHours(contributor.hours)}`)
-                          .join(" · ")}
-                      </span>
-                      {onTaskNow ? (
-                        <span className="shrink-0 font-medium text-[var(--color-good)]">● on task now</span>
-                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -279,7 +249,7 @@ function TaskDialog({
         <div onClick={(e) => e.stopPropagation()}>
           <h3 className="text-sm font-semibold">{initial ? "Edit task" : "Add task"}</h3>
           <p className="mb-4 text-xs text-[var(--color-muted)]">
-            Painters see the title and notes in their task list. Budgeted hours set the bar they track against.
+            Painters see the title and notes in their task list. Budgeted hours are planning guidance.
           </p>
           <div className="space-y-3">
             <Field label="Title">
