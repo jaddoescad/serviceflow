@@ -239,7 +239,7 @@ export default function ProjectsScreen({
             ref={searchInputRef}
             value={searchText}
             onChangeText={setSearchText}
-            placeholder="Search projects"
+            placeholder="Search jobs and leads"
             placeholderTextColor={COLORS.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -279,7 +279,7 @@ export default function ProjectsScreen({
               />
             ) : null}
 
-            <View style={styles.filterRow}>
+            {!isSearching ? <View style={styles.filterRow}>
               <Pressable
                 onPress={() => setFilter("active")}
                 style={[styles.filterChip, filter === "active" && styles.filterChipActive]}
@@ -296,7 +296,7 @@ export default function ProjectsScreen({
                   Assigned
                 </Text>
               </Pressable>
-            </View>
+            </View> : null}
 
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>
@@ -322,7 +322,7 @@ export default function ProjectsScreen({
                 </Text>
                 <Text style={styles.emptyText}>
                   {searchQuery
-                    ? "Try another name, address, city, or postal code."
+                    ? "Try another name, email, phone, address, city, or postal code."
                     : filter === "assigned"
                       ? "Assignments can be created from the office/backend."
                       : canManageProjects
@@ -412,7 +412,15 @@ function ProjectCard({ project, onPress, budgetProgress, myHoursLabel }) {
         <Text style={styles.cardAddress} numberOfLines={1}>
           {address || "No address on file"}
         </Text>
-        <BudgetProgressBadge progress={budgetProgress} />
+        {project.is_lead ? (
+          <View style={styles.leadBadge}>
+            <Text style={styles.leadBadgeText}>
+              Lead · {formatLeadStatus(project.lead_stage)}
+            </Text>
+          </View>
+        ) : (
+          <BudgetProgressBadge progress={budgetProgress} />
+        )}
       </View>
       {myHoursLabel ? (
         <View style={styles.hoursBlock}>
@@ -422,6 +430,12 @@ function ProjectCard({ project, onPress, budgetProgress, myHoursLabel }) {
       ) : null}
     </Pressable>
   );
+}
+
+function formatLeadStatus(value) {
+  return String(value || "new")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function compareProjectActivity(left, right, projectLatestActivity) {
@@ -715,6 +729,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 3,
     fontWeight: "500",
+  },
+  leadBadge: {
+    alignSelf: "flex-start",
+    marginTop: 7,
+    borderRadius: 999,
+    backgroundColor: "#e6f4f7",
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  leadBadgeText: {
+    color: COLORS.teal,
+    fontSize: 10.5,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   hoursBlock: {
     alignItems: "flex-end",

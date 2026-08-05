@@ -926,6 +926,7 @@ export default function ProjectDetailScreen({
   onUpdateTimeEntry,
 }) {
   const insets = useSafeAreaInsets();
+  const isLead = project?.is_lead === true;
   const [activeTab, setActiveTab] = useState('clock');
   const [selectedPainterId, setSelectedPainterId] = useState(null);
   const [selectedTimeEntry, setSelectedTimeEntry] = useState(null);
@@ -963,7 +964,7 @@ export default function ProjectDetailScreen({
   const title = getProjectTitle(project);
   const companyCamProjectId = getCompanyCamProjectId(project);
   const labourTasks = useProjectLabourTasks(companyCamProjectId, {
-    enabled: Boolean(companyCamProjectId),
+    enabled: Boolean(companyCamProjectId) && !isLead,
     userId: user?.id,
   });
   const budgetProjects = useMemo(() => (project ? [project] : []), [project]);
@@ -971,7 +972,7 @@ export default function ProjectDetailScreen({
     progressByProjectId,
     error: budgetProgressError,
     refresh: refreshBudgetProgress,
-  } = useProjectBudgetProgress(budgetProjects);
+  } = useProjectBudgetProgress(budgetProjects, { enabled: !isLead });
   const budgetProgress =
     progressByProjectId[String(companyCamProjectId || '')] ||
     (budgetProgressError ? { status: 'unavailable' } : null);
@@ -1056,7 +1057,7 @@ export default function ProjectDetailScreen({
   };
 
   useEffect(() => {
-    if (activeTab !== 'photos' || photosLoaded) return;
+    if (isLead || activeTab !== 'photos' || photosLoaded) return;
 
     let cancelled = false;
 
@@ -1095,7 +1096,20 @@ export default function ProjectDetailScreen({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, companyCamProjectId, photosLoaded]);
+  }, [activeTab, companyCamProjectId, isLead, photosLoaded]);
+
+  if (isLead) {
+    return (
+      <LeadDetailScreen
+        project={project}
+        title={title}
+        address={address}
+        addedDate={addedDate}
+        insets={insets}
+        onBack={onBack}
+      />
+    );
+  }
 
   if (selectedTimeEntry) {
     return (
@@ -1351,6 +1365,85 @@ export default function ProjectDetailScreen({
       ) : null}
     </SafeAreaView>
   );
+}
+
+function LeadDetailScreen({ project, title, address, addedDate, insets, onBack }) {
+  const details = [
+    ['Status', formatLeadValue(project?.lead_stage || project?.status)],
+    ['Source', formatLeadValue(project?.source)],
+    ['Email', project?.contact_email || 'Not provided'],
+    ['Phone', project?.contact_phone || 'Not provided'],
+  ];
+
+  return (
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={34} color={INK} />
+        </TouchableOpacity>
+        <View style={styles.headerText}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          <Text style={styles.subtitle} numberOfLines={1}>{addedDate}</Text>
+        </View>
+      </View>
+
+      <View style={styles.tabs}>
+        <View style={[styles.tab, styles.activeTab]}>
+          <Ionicons name="person-outline" size={16} color="#fff" />
+          <Text style={[styles.tabText, styles.activeTabText]}>Overview</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentInner, { paddingBottom: insets.bottom + 36 }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.infoCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{getInitials(title)}</Text>
+          </View>
+          <View style={styles.infoTextWrap}>
+            <Text style={styles.infoLabel}>LEAD</Text>
+            <Text style={styles.infoTitle} numberOfLines={1}>{title}</Text>
+            <View style={styles.addressRow}>
+              <PinGlyph />
+              <Text style={styles.addressText} numberOfLines={2}>{address}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.leadOverviewCard}>
+          {details.map(([label, value], index) => (
+            <View key={label} style={[styles.leadOverviewRow, index > 0 && styles.leadOverviewRowBorder]}>
+              <Text style={styles.leadOverviewLabel}>{label}</Text>
+              <Text style={styles.leadOverviewValue} numberOfLines={2}>{value}</Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.leadReadOnlyNotice}>
+          <Ionicons name="information-circle-outline" size={19} color={BRAND} />
+          <Text style={styles.leadReadOnlyText}>
+            This lead becomes operational after an accepted quote creates a job.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function formatLeadValue(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'Not provided';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function PhotosPanel({ photos, loading, error, onRetry }) {
@@ -1744,6 +1837,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
+  },
+  leadOverviewCard: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  leadOverviewRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  leadOverviewRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  leadOverviewLabel: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  leadOverviewValue: {
+    flex: 1,
+    color: INK,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  leadReadOnlyNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 12,
+    borderRadius: 12,
+    backgroundColor: '#eaf4f6',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  leadReadOnlyText: {
+    flex: 1,
+    color: NAVY,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
   },
 
   pinGlyph: {

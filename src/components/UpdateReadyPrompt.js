@@ -55,6 +55,12 @@ export default function UpdateReadyPrompt() {
       }
     });
 
+    // Run an explicit check on every production launch. The native startup
+    // check remains the first line of defence; this guarantees the in-app
+    // prompt does not depend on a background/foreground transition or the
+    // 15-minute interval before fetching a newly published OTA.
+    checkForUpdate();
+
     const interval = setInterval(() => {
       if (AppState.currentState === "active") {
         checkForUpdate();

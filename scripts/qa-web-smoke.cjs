@@ -12,6 +12,7 @@ const APP_URL = process.env.QA_WEB_URL || "http://localhost:19006";
 const QA_EMAIL = process.env.QA_EMAIL || "";
 const QA_PASSWORD = process.env.QA_PASSWORD || "";
 const QA_PROJECT_SEARCH = process.env.QA_PROJECT_SEARCH || "";
+const QA_JOBS_SEARCH = process.env.QA_JOBS_SEARCH || "";
 const QA_DESTRUCTIVE_PROJECT_SEARCH =
   process.env.QA_DESTRUCTIVE_PROJECT_SEARCH || QA_PROJECT_SEARCH;
 const QA_DESTRUCTIVE_PROJECT_NAME =
@@ -130,8 +131,9 @@ async function runAuthenticatedChecks(page) {
 
   await screenshot(page, "clock-tab");
   await optionalProjectSearch(page);
-  await clickTab(page, "Projects");
-  await expectVisible(page, "Projects", "projects screen");
+  await clickTab(page, "Jobs");
+  await expectVisible(page, "Jobs", "jobs screen");
+  await optionalJobsSearch(page);
   await screenshot(page, "projects-tab");
 
   await clickTab(page, "Timesheet");
@@ -179,6 +181,30 @@ async function optionalProjectSearch(page) {
   await page.waitForTimeout(900);
   await screenshot(page, "clock-project-search");
   addResult("project search", "passed", `Searched for "${QA_PROJECT_SEARCH}".`);
+}
+
+async function optionalJobsSearch(page) {
+  if (!QA_JOBS_SEARCH) {
+    addResult("jobs and leads search", "skipped", "Set QA_JOBS_SEARCH to exercise full-history search.");
+    return;
+  }
+
+  const search = page.getByPlaceholder("Search jobs and leads").first();
+  if (!(await search.isVisible().catch(() => false))) {
+    addResult("jobs and leads search", "failed", "Jobs search input was not visible.");
+    return;
+  }
+
+  await search.fill(QA_JOBS_SEARCH);
+  const found = await waitForText(page, new RegExp(escapeRegExp(QA_JOBS_SEARCH), "i"), 15_000);
+  addResult(
+    "jobs and leads search",
+    found ? "passed" : "failed",
+    found
+      ? `Found a result for "${QA_JOBS_SEARCH}".`
+      : `No result appeared for "${QA_JOBS_SEARCH}".`,
+  );
+  await screenshot(page, "jobs-and-leads-search");
 }
 
 async function runDestructiveClockInCheck(page) {
