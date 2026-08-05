@@ -23,7 +23,7 @@ import {
   markJobOverBudgetReasonAnswered,
   submitJobOverBudgetReason,
 } from "../lib/jobOverBudget";
-import { getLatestActiveCompanyCamProject, getProjectId, searchActiveCompanyCamProjects } from "../lib/projectRepository";
+import { getLatestActiveCompanyCamProject, getProjectId, searchJobsForClockIn } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
 import { useProjectLabourTasks } from "../lib/useProjectLabourTasks";
@@ -200,7 +200,7 @@ export default function ClockInScreen({
         seen.add(projectId);
         return true;
       })
-      .slice(0, searchQuery.trim() ? 12 : 40);
+      .slice(0, searchQuery.trim() ? 50 : 40);
   }, [activeShift?.project, projects, searchQuery, searchResults]);
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export default function ClockInScreen({
       setSearching(true);
       setSearchError("");
 
-      const { projects: matches, error: queryError } = await searchActiveCompanyCamProjects(query, { limit: 6 });
+      const { projects: matches, error: queryError } = await searchJobsForClockIn(query);
 
       if (cancelled) return;
 
@@ -460,11 +460,11 @@ export default function ClockInScreen({
             onChangeText={(text) => {
               setSearchQuery(text);
               // Flip to the pending/searching state synchronously so the
-              // "No matching projects found." empty state doesn't flash during
+              // "No matching jobs found." empty state doesn't flash during
               // the 250ms debounce before the query has actually run.
               if (text.trim()) setSearching(true);
             }}
-            placeholder="Search projects"
+            placeholder="Search all jobs"
             placeholderTextColor={COLORS.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -504,7 +504,7 @@ export default function ClockInScreen({
             ))}
             {!searching && !searchResults.length ? (
               <Text style={styles.searchEmpty}>
-                {searchError || "No matching projects found."}
+                {searchError || "No matching jobs found."}
               </Text>
             ) : null}
           </View>
@@ -670,7 +670,7 @@ function ProjectSwitcherModal({
               value={query}
               editable={!switching}
               onChangeText={onChangeQuery}
-              placeholder="Search active projects"
+              placeholder="Search all jobs"
               placeholderTextColor={COLORS.muted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -727,7 +727,7 @@ function ProjectSwitcherModal({
             ))}
             {!searching && !projects.length ? (
               <Text style={styles.switcherEmpty}>
-                {searchError || (hasQuery ? "No matching active projects found." : "No other active projects are available.")}
+                {searchError || (hasQuery ? "No matching jobs found." : "No other active projects are available.")}
               </Text>
             ) : null}
           </ScrollView>

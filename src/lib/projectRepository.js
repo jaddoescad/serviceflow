@@ -208,10 +208,10 @@ export async function getLatestActiveCompanyCamProject() {
   return { project: normalizeJob((data || [])[0]), error };
 }
 
-export async function searchActiveCompanyCamProjects(query, { limit = 6 } = {}) {
+export async function searchJobsForClockIn(query, { limit = 50 } = {}) {
   const match = getSearchMatch(query);
   if (!match) return { projects: [], error: null };
-  const { data, error } = await activeJobQuery()
+  const { data, error } = await visibleJobSearchQuery()
     .or(`name.ilike.${match},formatted_address.ilike.${match},city.ilike.${match},province.ilike.${match},postal_code.ilike.${match}`)
     .order("updated_at", { ascending: false })
     .limit(limit);

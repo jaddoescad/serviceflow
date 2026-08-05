@@ -171,16 +171,22 @@ async function optionalProjectSearch(page) {
   }
 
   await clickTab(page, "Clock In");
-  const search = page.getByPlaceholder("Search projects").first();
+  const search = page.getByPlaceholder("Search all jobs").first();
   if (!(await search.isVisible().catch(() => false))) {
     addResult("project search", "skipped", "Clock-in project search input was not visible.");
     return;
   }
 
   await search.fill(QA_PROJECT_SEARCH);
-  await page.waitForTimeout(900);
+  const found = await waitForText(page, new RegExp(escapeRegExp(QA_PROJECT_SEARCH), "i"), 15_000);
+  addResult(
+    "project search",
+    found ? "passed" : "failed",
+    found
+      ? `Found a clock-in job for "${QA_PROJECT_SEARCH}".`
+      : `No clock-in job appeared for "${QA_PROJECT_SEARCH}".`,
+  );
   await screenshot(page, "clock-project-search");
-  addResult("project search", "passed", `Searched for "${QA_PROJECT_SEARCH}".`);
 }
 
 async function optionalJobsSearch(page) {
@@ -260,7 +266,7 @@ async function runDestructiveClockInCheck(page) {
 }
 
 async function selectDestructiveProject(page) {
-  const search = page.getByPlaceholder("Search projects").first();
+  const search = page.getByPlaceholder("Search all jobs").first();
   if (!(await search.isVisible().catch(() => false))) return false;
 
   await search.fill(QA_DESTRUCTIVE_PROJECT_SEARCH);
