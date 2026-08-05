@@ -72,13 +72,12 @@ export function BudgetMeter({ progress, dark = false, style }) {
   );
 }
 
-// Colors shift as the budget burns so pressure builds before the job
-// actually goes over.
-function getBurnZone(percentUsed) {
-  if (!Number.isFinite(percentUsed)) return { color: "#2f8d7f", warning: false };
-  if (percentUsed > 100) return { color: "#c0432b", warning: true };
-  if (percentUsed >= 90) return { color: "#c05a21", warning: true };
-  if (percentUsed >= 70) return { color: "#b0821d", warning: false };
+// Match the strip to the actual budget status. An under-budget job remains
+// green all the way to its limit instead of turning orange prematurely.
+function getBurnZone(progress) {
+  const status = getBudgetProgressPresentation(progress).status;
+  if (status === "over") return { color: "#c0432b", warning: true };
+  if (status === "at") return { color: "#9a611f", warning: true };
   return { color: "#2f8d7f", warning: false };
 }
 
@@ -123,7 +122,7 @@ export function BudgetHoursPanel({
   style,
 }) {
   const breakdown = getBudgetHoursBreakdown(progress);
-  const zone = getBurnZone(Number(progress?.percentUsed));
+  const zone = getBurnZone(progress);
   const over = breakdown.over;
 
   return (
@@ -202,7 +201,7 @@ export function BudgetHoursPanel({
 // used vs left, the segmented burn tank, and the percent footnote.
 export function BudgetBurnMeter({ progress, style }) {
   const breakdown = getBudgetHoursBreakdown(progress);
-  const zone = getBurnZone(Number(progress?.percentUsed));
+  const zone = getBurnZone(progress);
 
   // While the budget is loading, hold the meter's full space with an empty
   // tank so the checklist below never jumps when the numbers arrive.
