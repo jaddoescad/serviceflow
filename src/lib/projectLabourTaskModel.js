@@ -5,20 +5,6 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function hoursAtDisplayPrecision(value) {
-  const hours = Math.max(0, finiteNumber(value));
-  if (hours < 1) return Math.round(hours * 60) / 60;
-  return Number(hours.toFixed(1));
-}
-
-export function isLabourTaskVisiblyOverBudget(spentHours, budgetedHours) {
-  const budgeted = Math.max(0, finiteNumber(budgetedHours));
-  return (
-    budgeted > 0 &&
-    hoursAtDisplayPrecision(spentHours) > hoursAtDisplayPrecision(budgeted)
-  );
-}
-
 export function normalizeProjectLabourBudget(row) {
   if (!row) return null;
   const id = row.labour_budget_id || row.id || null;
@@ -43,19 +29,6 @@ export function normalizeProjectLabourBudget(row) {
 export function normalizeProjectLabourTask(row) {
   if (!row?.task_id) return null;
   const status = String(row.status || "pending");
-  const activePainters = Array.isArray(row.active_painters)
-    ? row.active_painters
-        .map((painter) => {
-          const userId = painter?.user_id ? String(painter.user_id) : null;
-          if (!userId) return null;
-          return {
-            userId,
-            displayName: String(painter.display_name || "Painter"),
-            startedAt: painter.started_at || null,
-          };
-        })
-        .filter(Boolean)
-    : [];
 
   return {
     id: String(row.task_id),
@@ -67,7 +40,6 @@ export function normalizeProjectLabourTask(row) {
     title: String(row.title || "Task"),
     notes: row.notes ? String(row.notes) : null,
     budgetedHours: Math.max(0, finiteNumber(row.task_budgeted_hours ?? row.budgeted_hours)),
-    hoursSpent: Math.max(0, finiteNumber(row.hours_spent)),
     status: status === "cancelled" ? "skipped" : TASK_STATUSES.has(status) ? status : "pending",
     completedAt: row.completed_at || null,
     sortOrder: Math.round(finiteNumber(row.sort_order)),
@@ -75,8 +47,6 @@ export function normalizeProjectLabourTask(row) {
       row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
         ? row.metadata
         : {},
-    myActiveStartedAt: row.my_active_started_at || null,
-    activePainters,
   };
 }
 
@@ -91,19 +61,8 @@ export function normalizeProjectLabourTaskRows(rows, fallbackBudget = null) {
   return { budget, tasks };
 }
 
-export function projectLabourTaskSummary(plan, now = Date.now()) {
+export function projectLabourTaskSummary(plan) {
   const tasks = plan?.tasks || [];
-  const fetchedAt = Number(plan?.fetchedAt) || now;
-  let spentHours = 0;
-
-  for (const task of tasks) {
-    const activeTimerCount = task.activePainters?.length || (task.myActiveStartedAt ? 1 : 0);
-    const liveHours = activeTimerCount > 0
-      ? (Math.max(0, now - fetchedAt) / 3_600_000) * activeTimerCount
-      : 0;
-    spentHours += Math.max(0, finiteNumber(task.hoursSpent)) + liveHours;
-  }
-
   const budgetedHours = Math.max(
     0,
     finiteNumber(
@@ -116,10 +75,8 @@ export function projectLabourTaskSummary(plan, now = Date.now()) {
   return {
     taskCount: tasks.length,
     completedCount,
-    spentHours,
     budgetedHours,
     completionPercent: tasks.length ? (completedCount / tasks.length) * 100 : 0,
-    hoursPercent: budgetedHours > 0 ? (spentHours / budgetedHours) * 100 : 0,
   };
 }
 

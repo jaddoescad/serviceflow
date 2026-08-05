@@ -26,10 +26,7 @@ import {
   watchActiveLocation,
 } from "./timeTrackingRuntime";
 import { syncPendingLocationData } from "./locationTrackingRepository";
-import {
-  flushPendingProjectLabourTaskWrites,
-  stopActiveProjectLabourTaskTimer,
-} from "./projectLabourTasks";
+import { flushPendingProjectLabourTaskWrites } from "./projectLabourTasks";
 import {
   completeEntry,
   deleteServerEntry,
@@ -364,9 +361,6 @@ export function useTimeTracking(projects = [], user) {
         }
       }
 
-      if (!activeRow && !activeRef.current) {
-        await stopActiveProjectLabourTaskTimer({ userId: user.id });
-      }
     } catch (_error) {
       // Local clocking still works if time_entries is unavailable.
     }
@@ -690,7 +684,6 @@ export function useTimeTracking(projects = [], user) {
       setLocationStatus(null);
       setTrackingNotice(null);
       setSuggestedProject(null);
-      await stopActiveProjectLabourTaskTimer({ userId: shift.userId, endedAt });
       const savedRow = await completeEntry(entry);
       if (savedRow?.status === "complete" && savedRow.ended_at) {
         // A concurrent/earlier completion wins. Reflect its canonical end time
@@ -752,11 +745,6 @@ export function useTimeTracking(projects = [], user) {
       setActiveShift(next);
       setTrackingNotice(null);
       setSuggestedProject(null);
-
-      await stopActiveProjectLabourTaskTimer({
-        userId: current.userId,
-        endedAt: switchedAt,
-      });
 
       const serverSwitch = await switchEntry(completed, next);
       if (serverSwitch?.completedRow?.status === "complete" && serverSwitch.completedRow.ended_at) {
@@ -823,9 +811,6 @@ export function useTimeTracking(projects = [], user) {
       setTrackingNotice(null);
       setSuggestedProject(null);
       await stopBackgroundTracking();
-      await stopActiveProjectLabourTaskTimer({
-        userId: entry.userId || user?.id,
-      });
     }
 
     setEntries((current) =>

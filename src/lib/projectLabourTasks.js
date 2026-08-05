@@ -4,9 +4,7 @@ import { supabase } from "./supabase";
 
 const CACHE_PREFIX = "ottawaPainters.projectLabourTasks.v1";
 const WRITE_QUEUE_KEY = "ottawaPainters.projectLabourTaskWrites.v1";
-const TIMER_TABLE = "job_task_time_entries";
 const LIVE_STATE_TABLE = "job_tasks";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OVER_BUDGET_REASON_KEYS = new Set([
   "budget_unrealistic",
   "extra_prep",
@@ -16,7 +14,6 @@ const OVER_BUDGET_REASON_KEYS = new Set([
 ]);
 let queueMutation = Promise.resolve();
 let flushMutation = null;
-let timerMutation = Promise.resolve();
 
 function cacheKey(projectId, userId) {
   return `${CACHE_PREFIX}:${String(userId || "")}:${String(projectId || "")}`;
@@ -30,11 +27,11 @@ function parseJson(value, fallback) {
   }
 }
 
-function withoutRealtimePresence(plan) {
+function withoutTaskTimerState(plan) {
   if (!plan || !Array.isArray(plan.tasks)) return plan;
   return {
     ...plan,
-    tasks: plan.tasks.map((task) => ({ ...task, activePainters: [] })),
+    tasks: plan.tasks.map(({ hoursSpent, myActiveStartedAt, activePainters, ...task }) => task),
   };
 }
 
@@ -43,7 +40,7 @@ export async function readCachedProjectLabourTasks(projectId, userId) {
   try {
     const cached = parseJson(await AsyncStorage.getItem(cacheKey(projectId, userId)), null);
     if (!cached || !Array.isArray(cached.tasks)) return null;
-    return withoutRealtimePresence(cached);
+    return withoutTaskTimerState(cached);
   } catch (_error) {
     return null;
   }
@@ -54,7 +51,7 @@ export async function writeCachedProjectLabourTasks(projectId, userId, plan) {
   try {
     await AsyncStorage.setItem(
       cacheKey(projectId, userId),
-      JSON.stringify(withoutRealtimePresence(plan)),
+      JSON.stringify(withoutTaskTimerState(plan)),
     );
   } catch (_error) {
     // Caching is best effort; the live task list remains authoritative.
@@ -66,40 +63,19 @@ export async function listProjectLabourTasks(projectId) {
   await flushPendingProjectLabourTaskWrites();
 
   try {
-    const [{ data: tasks, error }, { data: budget, error: budgetError }, { data: sessions, error: sessionsError }, { data: authData }] = await Promise.all([
+    const [{ data: tasks, error }, { data: budget, error: budgetError }] = await Promise.all([
       supabase.from("job_tasks").select("*").eq("job_id", String(projectId)).order("sort_order"),
       supabase.from("job_budgets").select("*").eq("job_id", String(projectId)).in("status", ["active", "closed"]).order("version", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from(TIMER_TABLE).select("id,client_entry_id,task_id,employee_id,time_entry_id,started_at,ended_at,status,employees(full_name)").neq("status", "deleted"),
-      supabase.auth.getUser(),
     ]);
-    if (error || budgetError || sessionsError) return { plan: null, error: error || budgetError || sessionsError };
+    if (error || budgetError) return { plan: null, error: error || budgetError };
 
-    const userId = authData?.user?.id || null;
-    const taskIds = new Set((tasks || []).map((task) => String(task.id)));
-    const taskSessions = (sessions || []).filter((session) => taskIds.has(String(session.task_id)));
-    const now = Date.now();
-    const data = (tasks || []).map((task) => {
-      const matching = taskSessions.filter((session) => String(session.task_id) === String(task.id));
-      const hoursSpent = matching.reduce((sum, session) => {
-        const end = session.ended_at ? new Date(session.ended_at).getTime() : now;
-        return sum + Math.max(0, end - new Date(session.started_at).getTime()) / 3_600_000;
-      }, 0);
-      const active = matching.filter((session) => session.status === "active" && !session.ended_at);
-      return {
-        ...task,
-        task_id: task.id,
-        labour_budget_id: task.budget_id,
-        companycam_project_id: task.job_id,
-        task_budgeted_hours: task.budget_minutes == null ? 0 : Number(task.budget_minutes) / 60,
-        hours_spent: hoursSpent,
-        my_active_started_at: active.find((session) => session.employee_id === userId)?.started_at || null,
-        active_painters: active.map((session) => ({
-          user_id: session.employee_id,
-          display_name: session.employees?.full_name || "Painter",
-          started_at: session.started_at,
-        })),
-      };
-    });
+    const data = (tasks || []).map((task) => ({
+      ...task,
+      task_id: task.id,
+      labour_budget_id: task.budget_id,
+      companycam_project_id: task.job_id,
+      task_budgeted_hours: task.budget_minutes == null ? 0 : Number(task.budget_minutes) / 60,
+    }));
     const fallbackBudget = budget ? {
       ...budget,
       companycam_project_id: budget.job_id,
@@ -162,34 +138,6 @@ export async function setProjectLabourTaskStatus(taskId, status, { userId = null
   return { ...result, queued: true };
 }
 
-export async function startProjectLabourTaskTimer({
-  taskId,
-  userId,
-  timeEntryId = null,
-  startedAt = new Date().toISOString(),
-  clientEntryId = operationId("task-timer"),
-}) {
-  const operation = {
-    id: operationId("timer-start"),
-    action: "timer_start",
-    clientEntryId,
-    taskId: String(taskId || ""),
-    userId: String(userId || ""),
-    timeEntryId: UUID_PATTERN.test(String(timeEntryId || "")) ? String(timeEntryId) : null,
-    startedAt,
-    createdAt: new Date().toISOString(),
-  };
-  return runTimerMutation(async () => {
-    const result = await executeTaskOperation(operation);
-    if (!result.error) return { ...result, queued: false, clientEntryId };
-    if (!shouldQueueTaskOperation(result.error)) {
-      return { ...result, queued: false, clientEntryId };
-    }
-    await enqueueTaskOperation(operation);
-    return { ...result, queued: true, clientEntryId };
-  });
-}
-
 export async function submitOverBudgetReason({
   taskId,
   userId,
@@ -225,72 +173,6 @@ export async function submitOverBudgetReason({
   return { ...result, queued: true, clientId: operation.clientId };
 }
 
-export async function stopActiveProjectLabourTaskTimer({
-  userId,
-  endedAt = new Date().toISOString(),
-} = {}) {
-  if (!userId) return { data: [], error: null, queued: false };
-  const operation = {
-    id: operationId("timer-stop"),
-    action: "timer_stop",
-    userId: String(userId),
-    endedAt,
-    createdAt: new Date().toISOString(),
-  };
-  return runTimerMutation(async () => {
-    const result = await executeTaskOperation(operation);
-    if (!result.error) return { ...result, queued: false };
-    if (!shouldQueueTaskOperation(result.error)) return { ...result, queued: false };
-    await enqueueTaskOperation(operation);
-    return { ...result, queued: true };
-  });
-}
-
-export async function getMyLatestTaskSession(taskId, userId) {
-  if (!taskId || !userId) return { data: null, error: null };
-  try {
-    const { data, error } = await supabase
-      .from(TIMER_TABLE)
-      .select("id,client_entry_id,task_id,started_at,ended_at,status")
-      .eq("task_id", String(taskId))
-      .eq("employee_id", String(userId))
-      .not("ended_at", "is", null)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return { data: data || null, error };
-  } catch (error) {
-    return { data: null, error };
-  }
-}
-
-export async function adjustProjectLabourTaskSession({
-  entryId,
-  userId,
-  startedAt,
-  minutes,
-}) {
-  const safeMinutes = Math.max(0, Math.round(Number(minutes) || 0));
-  const endedAt = new Date(
-    new Date(startedAt).getTime() + safeMinutes * 60_000,
-  ).toISOString();
-  const operation = {
-    id: operationId("timer-adjust"),
-    action: "timer_adjust",
-    entryId: String(entryId || ""),
-    userId: String(userId || ""),
-    endedAt,
-    createdAt: new Date().toISOString(),
-  };
-  return runTimerMutation(async () => {
-    const result = await executeTaskOperation(operation);
-    if (!result.error) return { ...result, queued: false };
-    if (!shouldQueueTaskOperation(result.error)) return { ...result, queued: false };
-    await enqueueTaskOperation(operation);
-    return { ...result, queued: true };
-  });
-}
-
 export async function flushPendingProjectLabourTaskWrites() {
   if (flushMutation) return flushMutation;
   flushMutation = performFlush().finally(() => {
@@ -302,17 +184,23 @@ export async function flushPendingProjectLabourTaskWrites() {
 async function performFlush() {
   const queue = await readQueue();
   if (!queue.length) return;
+  const obsoleteIds = new Set(
+    queue.filter((operation) => operation.action.startsWith("timer_")).map((operation) => operation.id),
+  );
+  if (obsoleteIds.size) {
+    await mutateQueue((current) => current.filter((item) => !obsoleteIds.has(item.id)));
+  }
+  const actionable = queue.filter((operation) => !obsoleteIds.has(operation.id));
+  if (!actionable.length) return;
   const { data: sessionData } = await supabase.auth.getSession();
   const currentUserId = sessionData?.session?.user?.id || null;
   if (!currentUserId) return;
 
   const completed = new Set();
-  for (const operation of queue) {
+  for (const operation of actionable) {
     if (operation.userId && operation.userId !== currentUserId) continue;
     try {
-      const result = operation.action.startsWith("timer_")
-        ? await runTimerMutation(() => executeTaskOperation(operation))
-        : await executeTaskOperation(operation);
+      const result = await executeTaskOperation(operation);
       if (!result.error || !shouldQueueTaskOperation(result.error)) {
         completed.add(operation.id);
       }
@@ -361,39 +249,6 @@ async function executeTaskOperation(operation) {
     return { data, error };
   }
 
-  if (operation.action === "timer_stop") {
-    const { data, error } = await runTaskCommand("task_stop", { ended_at: operation.endedAt });
-    return { data: data || [], error };
-  }
-
-  if (operation.action === "timer_adjust") {
-    if (!operation.entryId || !operation.userId) {
-      return { data: null, error: new Error("A session and signed-in painter are required.") };
-    }
-    // Only completed sessions can be corrected; the active timer uses Stop.
-    // started_at is server-protected, so duration edits move ended_at only.
-    const { data, error } = await runTaskCommand("task_adjust", {
-      entry_id: operation.entryId,
-      ended_at: operation.endedAt,
-    });
-    return { data, error };
-  }
-
-  if (operation.action === "timer_start") {
-    if (!operation.taskId || !operation.userId) {
-      return { data: null, error: new Error("A task and signed-in painter are required.") };
-    }
-
-    const { data, error } = await runTaskCommand("task_start", {
-      client_entry_id: operation.clientEntryId,
-      task_id: operation.taskId,
-      time_entry_id: operation.timeEntryId || null,
-      started_at: operation.startedAt,
-      source: "mobile",
-    });
-    return { data, error };
-  }
-
   return { data: null, error: new Error(`Unknown labour-task action: ${operation.action}`) };
 }
 
@@ -407,15 +262,6 @@ function runTaskCommand(action, command) {
     command,
     next_command: null,
   });
-}
-
-function runTimerMutation(work) {
-  const next = timerMutation.catch(() => {}).then(work);
-  timerMutation = next.then(
-    () => undefined,
-    () => undefined,
-  );
-  return next;
 }
 
 function shouldQueueTaskOperation(error) {
@@ -471,15 +317,6 @@ function enqueueTaskOperation(operation) {
               item.taskId === operation.taskId &&
               item.userId === operation.userId
             ),
-        ),
-        operation,
-      ];
-    }
-    if (operation.action === "timer_adjust") {
-      return [
-        ...queue.filter(
-          (item) =>
-            !(item.action === "timer_adjust" && item.entryId === operation.entryId),
         ),
         operation,
       ];
