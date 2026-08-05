@@ -1,56 +1,27 @@
-import { requireStaff } from "@/lib/auth";
-import { getInvoiceEntries } from "@/lib/invoice-entry-queries";
 import { PageHeader, Kpi } from "@/components/kpi";
-import { InvoiceDocumentsTable } from "@/components/invoice-documents-table";
+import { UnifiedInvoicesTable } from "@/components/unified-invoices";
+import { requireStaff } from "@/lib/auth";
+import { getUnifiedInvoices } from "@/lib/v2-accounting";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage() {
-  const [, entries] = await Promise.all([requireStaff(), getInvoiceEntries()]);
-  const sourceInvoices = new Set(entries.map((entry) => entry.invoice_id)).size;
-  const linkedEntries = entries.filter((entry) => entry.jobs.length > 0).length;
-  const overheadEntries = entries.filter(
-    (entry) =>
-      entry.jobs.length === 0 &&
-      entry.invoice.match_status === "overhead_unmatched",
-  ).length;
-  const needsJobReview = entries.filter(
-    (entry) =>
-      entry.jobs.length === 0 &&
-      entry.invoice.match_status !== "overhead_unmatched",
-  ).length;
-
+  await requireStaff();
+  const invoices = await getUnifiedInvoices();
+  const labour = invoices.filter((invoice) => invoice.category === "labour").length;
+  const materials = invoices.filter((invoice) => invoice.category === "material").length;
+  const customers = invoices.filter((invoice) => invoice.category === "customer").length;
+  const needsAllocation = invoices.filter((invoice) => !(invoice.allocations ?? []).length).length;
   return (
     <>
-      <PageHeader
-        title="Labour invoices"
-        subtitle="Browse complete invoices and expand any row to inspect its individual items"
-      />
+      <PageHeader title="Invoices" subtitle="Customer, labour, and material invoices in one accounting model" />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi
-          label="Invoices"
-          value={sourceInvoices}
-          hint={`${entries.length} individual items`}
-        />
-        <Kpi
-          label="Job-linked items"
-          value={linkedEntries}
-          hint={`of ${entries.length} invoice items`}
-          tone={linkedEntries ? "good" : "neutral"}
-        />
-        <Kpi
-          label="Overhead / no job"
-          value={overheadEntries}
-          hint="explicitly classified outside job cost"
-        />
-        <Kpi
-          label="Needs job link"
-          value={needsJobReview}
-          hint="not counted in any job yet"
-          tone={needsJobReview ? "warn" : "good"}
-        />
+        <Kpi label="Customer" value={customers} hint="receivable invoices" />
+        <Kpi label="Labour" value={labour} hint="payable painter invoices" />
+        <Kpi label="Material" value={materials} hint="payable supplier invoices" />
+        <Kpi label="No job allocation" value={needsAllocation} hint="includes legitimate overhead" tone={needsAllocation ? "warn" : "good"} />
       </div>
-      <InvoiceDocumentsTable entries={entries} />
+      <UnifiedInvoicesTable invoices={invoices} />
     </>
   );
 }

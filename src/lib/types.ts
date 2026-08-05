@@ -110,6 +110,7 @@ export type MarketingLeadJobLinkMethod =
   | "manual";
 
 export type MarketingLeadJob = {
+  jobId: string;
   proposalId: string;
   jobName: string;
   status: string;
@@ -122,6 +123,7 @@ export type MarketingLeadJob = {
 };
 
 export type MarketingLead = {
+  leadId: string;
   dealId: string;
   operationalProjectId: string;
   createdOn: string;

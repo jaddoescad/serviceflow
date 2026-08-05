@@ -94,7 +94,7 @@ export function CalculatorPage({
       <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
-            <Link href={isLead ? "/leads" : "/projects"} className="hover:text-[var(--color-text)]">
+            <Link href={isLead ? "/leads" : "/jobs"} className="hover:text-[var(--color-text)]">
               {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
             </Link>
             <span className="mx-1.5">/</span>
@@ -105,7 +105,11 @@ export function CalculatorPage({
             subtitle="Prices and the labour budget update as you type"
           />
 
-          <ProjectTabs projectId={projectId} projectName={displayName || ""} />
+          <ProjectTabs
+            projectId={projectId}
+            projectName={displayName || ""}
+            entityKind={isLead ? "lead" : "job"}
+          />
 
           {isLead ? (
             <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-4 py-3">
@@ -300,11 +304,11 @@ export function CalculatorPage({
               onMakeDefault={async () => {
                 const result = await calc.makeDefault();
                 if (result?.ok) {
-                  router.push(`/projects/${encodeURIComponent(projectId)}/tasks`);
+                  router.push(`/jobs/${encodeURIComponent(projectId)}/tasks`);
                 }
                 return result;
               }}
-              tasksHref={isLead ? undefined : `/projects/${encodeURIComponent(projectId)}/tasks`}
+              tasksHref={isLead ? undefined : `/jobs/${encodeURIComponent(projectId)}/tasks`}
               onEditRates={() => setRatesOpen(true)}
               onClear={() => dispatch({ type: "clear" })}
             />

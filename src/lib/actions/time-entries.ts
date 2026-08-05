@@ -8,7 +8,7 @@ export type ActionResult = { ok: boolean; error?: string };
 
 function ok(): ActionResult {
   revalidatePath("/timesheets");
-  revalidatePath("/projects");
+  revalidatePath("/jobs");
   revalidatePath("/");
   return { ok: true };
 }

@@ -19,6 +19,7 @@ export function JobShell({
   initialTab,
   overview,
   tasks,
+  entityKind,
 }: {
   projectId: string;
   name: string;
@@ -27,6 +28,7 @@ export function JobShell({
   initialTab: LocalTabKey;
   overview: React.ReactNode;
   tasks: React.ReactNode;
+  entityKind?: "job" | "lead";
 }) {
   const [tab, setTab] = useState<LocalTabKey>(initialTab);
   const pathname = usePathname();
@@ -38,7 +40,7 @@ export function JobShell({
 
   function switchTab(next: LocalTabKey) {
     setTab(next);
-    const base = `/projects/${encodeURIComponent(projectId)}`;
+    const base = `/${entityKind === "lead" ? "leads" : "jobs"}/${encodeURIComponent(projectId)}`;
     const href = next === "tasks" ? `${base}/tasks` : base;
     if (typeof window !== "undefined" && window.location.pathname !== href) {
       window.history.pushState(null, "", href);
@@ -48,7 +50,7 @@ export function JobShell({
   return (
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href={isLead ? "/leads" : "/projects"} className="hover:text-[var(--color-text)]">
+        <Link href={isLead ? "/leads" : "/jobs"} className="hover:text-[var(--color-text)]">
           {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
         </Link>
         <span className="mx-1.5">/</span>
@@ -62,6 +64,7 @@ export function JobShell({
         projectName={name}
         activeOverride={tab}
         onLocalSwitch={switchTab}
+        entityKind={entityKind ?? (isLead ? "lead" : "job")}
       />
 
       <div className={tab === "tasks" ? "hidden" : undefined}>{overview}</div>

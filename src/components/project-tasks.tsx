@@ -29,7 +29,7 @@ export function ProjectTasksPanel({
 
   const totalBudgeted = taskProgress.reduce((sum, task) => sum + task.budgetedHours, 0);
   const totalSpent = taskProgress.reduce((sum, task) => sum + task.spentHours, 0);
-  const calculatorHref = `/projects/${encodeURIComponent(projectId)}/calculator?name=${encodeURIComponent(projectName)}`;
+  const calculatorHref = `/jobs/${encodeURIComponent(projectId)}/calculator?name=${encodeURIComponent(projectName)}`;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
     setError(null);

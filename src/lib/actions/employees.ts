@@ -31,17 +31,18 @@ export async function setPayRate(input: {
   const supabase = await createClient();
   const { error } = await supabase.from("employee_pay_rates").upsert(
     {
-      user_id: input.userId,
-      hourly_rate: input.hourlyRate,
+      id: crypto.randomUUID(),
+      employee_id: input.userId,
+      hourly_rate_cents: Math.round(input.hourlyRate * 100),
       effective_from: input.effectiveFrom,
       notes: input.notes?.trim() || null,
     },
-    { onConflict: "user_id,effective_from" },
+    { onConflict: "employee_id,effective_from" },
   );
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/employees");
-  revalidatePath("/projects");
+  revalidatePath("/jobs");
   revalidatePath("/");
   return { ok: true };
 }
@@ -103,20 +104,16 @@ export async function assignProject(input: {
   projectId: string;
 }): Promise<ActionResult> {
   await requireStaff();
-  try {
-    await callEdge("project-assignments", {
-      action: "assign",
-      userId: input.userId,
-      user_id: input.userId,
-      companycam_project_id: input.projectId,
-      projectId: input.projectId,
-    });
-    revalidatePath("/projects");
-    revalidatePath("/employees");
-    return { ok: true };
-  } catch (e) {
-    return fail(e);
-  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_job_assignment", {
+    requested_job_id: input.projectId,
+    requested_employee_id: input.userId,
+    requested_active: true,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/jobs");
+  revalidatePath("/employees");
+  return { ok: true };
 }
 
 export async function removeAssignment(input: {
@@ -124,18 +121,14 @@ export async function removeAssignment(input: {
   projectId: string;
 }): Promise<ActionResult> {
   await requireStaff();
-  try {
-    await callEdge("project-assignments", {
-      action: "remove",
-      userId: input.userId,
-      user_id: input.userId,
-      companycam_project_id: input.projectId,
-      projectId: input.projectId,
-    });
-    revalidatePath("/projects");
-    revalidatePath("/employees");
-    return { ok: true };
-  } catch (e) {
-    return fail(e);
-  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_job_assignment", {
+    requested_job_id: input.projectId,
+    requested_employee_id: input.userId,
+    requested_active: false,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/jobs");
+  revalidatePath("/employees");
+  return { ok: true };
 }

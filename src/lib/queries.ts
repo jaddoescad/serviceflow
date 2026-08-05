@@ -15,322 +15,189 @@ import type {
   TimeEntry,
 } from "@/lib/types";
 
-const ENTRY_COLUMNS =
-  "id,client_entry_id,user_id,user_email,user_name,companycam_project_id,project_name,project_address,original_started_at,started_at,start_edited_at,ended_at,status,clock_in_latitude,clock_in_longitude,last_distance_meters,is_on_site,segments,adjustment_history,notes,approved_at,approved_by,inserted_at,updated_at";
+function timeEntry(row: any): TimeEntry {
+  return {
+    ...row,
+    user_id: row.employee_id,
+    user_email: row.employee_email,
+    user_name: row.employee_name,
+    companycam_project_id: row.job_id,
+    project_name: row.job_name,
+    project_address: row.job_address,
+    status: row.status === "completed" ? "complete" : row.status,
+    inserted_at: row.created_at,
+  } as TimeEntry;
+}
 
-/** Time entries started on/after `sinceIso`, plus any still-active shift. */
+function project(row: any): Project {
+  return {
+    companycam_id: row.id,
+    name: row.name,
+    formatted_address: row.formatted_address ?? row.address_line_1 ?? null,
+    city: row.city,
+    state: row.province,
+    postal_code: row.postal_code,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    is_archived: row.status === "archived",
+    is_lead: false,
+    companycam_updated_at: row.updated_at,
+  };
+}
+
 export async function getTimeEntries(sinceIso?: string): Promise<TimeEntry[]> {
   const supabase = await createClient();
-  let query = supabase
-    .from("time_entries")
-    .select(ENTRY_COLUMNS)
-    .order("started_at", { ascending: false })
-    .limit(5000);
-  if (sinceIso) {
-    query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
-  }
+  let query = supabase.from("time_entries").select("*").order("started_at", { ascending: false }).limit(5000);
+  if (sinceIso) query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
   const { data, error } = await query;
-  if (error) throw new Error(`time_entries: ${error.message}`);
-  return (data ?? []) as unknown as TimeEntry[];
+  if (error) throw new Error(`time entries: ${error.message}`);
+  return (data ?? []).map(timeEntry);
 }
 
 export async function getActiveEntries(): Promise<TimeEntry[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("time_entries")
-    .select(ENTRY_COLUMNS)
-    .eq("status", "active")
-    .order("started_at", { ascending: true });
+  const { data, error } = await supabase.from("time_entries").select("*").eq("status", "active").order("started_at");
   if (error) throw new Error(`active entries: ${error.message}`);
-  return (data ?? []) as unknown as TimeEntry[];
+  return (data ?? []).map(timeEntry);
 }
 
 export async function getEmployees(): Promise<EmployeeProfile[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("employee_profiles")
-    .select("user_id,email,full_name,role,is_active")
-    .order("full_name", { ascending: true, nullsFirst: false });
+  const { data, error } = await supabase.from("employees").select("*").order("full_name", { ascending: true, nullsFirst: false });
   if (error) throw new Error(`employees: ${error.message}`);
-  return (data ?? []) as EmployeeProfile[];
+  return (data ?? []).map((row: any) => ({ ...row, user_id: row.id }));
 }
 
 export async function getEmployeeTrackingStatuses(): Promise<EmployeeTrackingStatus[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("employee_tracking_status")
-    .select(
-      "user_id,user_email,user_name,time_entry_id,client_entry_id,companycam_project_id,project_name,project_address,latitude,longitude,accuracy_meters,last_location_at,last_sync_at,tracking_mode,task_status,metadata,updated_at",
-    )
-    .order("last_location_at", { ascending: false, nullsFirst: false });
-  if (error) throw new Error(`employee_tracking_status: ${error.message}`);
-  return (data ?? []) as unknown as EmployeeTrackingStatus[];
+  const { data, error } = await supabase.from("employee_tracking_status").select("*").order("last_location_at", { ascending: false, nullsFirst: false });
+  if (error) throw new Error(`tracking status: ${error.message}`);
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    user_id: row.employee_id,
+    user_email: row.employee_email,
+    user_name: row.employee_name,
+    companycam_project_id: row.job_id,
+    project_name: row.job_name,
+    project_address: row.job_address,
+  }));
 }
 
-export async function getEmployeeLocationPoints(
-  userIds: string[],
-  sinceIso: string,
-): Promise<EmployeeLocationPoint[]> {
-  if (userIds.length === 0) return [];
+export async function getEmployeeLocationPoints(userIds: string[], sinceIso: string): Promise<EmployeeLocationPoint[]> {
+  if (!userIds.length) return [];
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("employee_location_points")
-    .select(
-      "id,client_event_id,user_id,time_entry_id,client_entry_id,companycam_project_id,latitude,longitude,accuracy_meters,speed_mps,heading_degrees,tracking_mode,event_type,distance_from_project_meters,is_on_site,captured_at,received_at",
-    )
-    .in("user_id", [...new Set(userIds)])
+    .select("*")
+    .in("employee_id", [...new Set(userIds)])
     .gte("captured_at", sinceIso)
     .order("captured_at", { ascending: false })
     .limit(5000);
-  if (error) throw new Error(`employee_location_points: ${error.message}`);
-  return (data ?? []) as unknown as EmployeeLocationPoint[];
+  if (error) throw new Error(`location points: ${error.message}`);
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    user_id: row.employee_id,
+    companycam_project_id: row.job_id,
+    distance_from_project_meters: row.distance_from_job_meters,
+  }));
 }
 
 export async function getEmployeePayRates(): Promise<EmployeePayRate[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("employee_pay_rates")
-    .select("id,user_id,hourly_rate,effective_from,notes,inserted_at,updated_at")
-    .order("effective_from", { ascending: false });
-  if (error) throw new Error(`employee_pay_rates: ${error.message}`);
-  return (data ?? []) as EmployeePayRate[];
+  const { data, error } = await supabase.from("employee_pay_rates").select("*").order("effective_from", { ascending: false });
+  if (error) throw new Error(`pay rates: ${error.message}`);
+  return (data ?? []).map((row: any) => ({
+    ...row,
+    user_id: row.employee_id,
+    hourly_rate: Number(row.hourly_rate_cents) / 100,
+    inserted_at: row.created_at,
+  }));
 }
 
 export async function getProjects(): Promise<Project[]> {
   const supabase = await createClient();
-  const projectColumns =
-    "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,is_lead,companycam_updated_at";
-  const [activeResult, completedBudgetResult, currentDripJobsResult] =
-    await Promise.all([
-      supabase
-        .from("companycam_projects")
-        .select(projectColumns)
-        .eq("is_job_feed_visible", true)
-        .eq("is_archived", false)
-        .eq("is_lead", false)
-        .order("companycam_updated_at", {
-          ascending: false,
-          nullsFirst: false,
-        })
-        .limit(1000),
-      supabase
-        .from("project_budgets")
-        .select("companycam_project_id")
-        .not("labour_closed_at", "is", null),
-      supabase
-        .from("customer_invoices")
-        .select("companycam_project_id")
-        .eq("accounting_status", "active")
-        .eq("is_archived_job", false)
-        .not("companycam_project_id", "is", null),
-    ]);
-
-  if (activeResult.error) {
-    throw new Error(`projects: ${activeResult.error.message}`);
-  }
-  if (completedBudgetResult.error) {
-    throw new Error(
-      `completed project budgets: ${completedBudgetResult.error.message}`,
-    );
-  }
-  if (currentDripJobsResult.error) {
-    throw new Error(
-      `current DripJobs projects: ${currentDripJobsResult.error.message}`,
-    );
-  }
-
-  const activeProjects = (activeResult.data ?? []) as Project[];
-  const activeIds = new Set(
-    activeProjects.map((project) => project.companycam_id),
-  );
-  const additionalProjectIds = [
-    ...(completedBudgetResult.data ?? []).map(
-      (budget) => budget.companycam_project_id,
-    ),
-    ...(currentDripJobsResult.data ?? []).map(
-      (invoice) => invoice.companycam_project_id,
-    ),
-  ].filter((projectId): projectId is string => Boolean(projectId));
-  const archivedOrCurrentProjectIds = [
-    ...new Set(
-      additionalProjectIds.filter((projectId) => !activeIds.has(projectId)),
-    ),
-  ];
-
-  if (archivedOrCurrentProjectIds.length === 0) return activeProjects;
-
-  const { data: archivedCompletedData, error: archivedCompletedError } =
-    await supabase
-      .from("companycam_projects")
-      .select(projectColumns)
-      .in("companycam_id", archivedOrCurrentProjectIds)
-      .eq("is_lead", false)
-      .order("companycam_updated_at", { ascending: false, nullsFirst: false });
-
-  if (archivedCompletedError) {
-    throw new Error(`archived completed projects: ${archivedCompletedError.message}`);
-  }
-
-  return [
-    ...activeProjects,
-    ...((archivedCompletedData ?? []) as Project[]),
-  ];
-}
-
-type MarketingLeadRow = {
-  deal_id: string;
-  operational_project_id: string;
-  created_on: string;
-  created_at_local: string | null;
-  contact_name: string | null;
-  email: string | null;
-  phone: string | null;
-  raw_lead_source: string | null;
-  normalized_channel: MarketingLead["normalizedChannel"];
-  address: string | null;
-  postal_code: string | null;
-  estimate_scheduled_on: string | null;
-  estimate_appointment_on: string | null;
-  proposal_number: string | null;
-  proposal_amount: number | null;
-  proposal_on: string | null;
-  job_crew: string | null;
-  is_interior: boolean;
-  is_exterior: boolean;
-  is_cabinets: boolean;
-  source_row_number: number | null;
-};
-
-type DripJobsJobRow = {
-  proposal_id: string;
-  job_name: string;
-  status: string;
-  amount: number;
-  proposal_signed_on: string | null;
-  job_start_on: string | null;
-  job_completion_on: string | null;
-};
-
-type MarketingLeadJobLinkRow = {
-  lead_deal_id: string;
-  job_proposal_id: string;
-  match_method: MarketingLeadJob["linkMethod"];
-  confidence: number;
-};
-
-async function fetchAllMarketingLeadRows(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<MarketingLeadRow[]> {
-  const rows: MarketingLeadRow[] = [];
-  const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("marketing_leads")
-      .select(
-        "deal_id,operational_project_id,created_on,created_at_local,contact_name,email,phone,raw_lead_source,normalized_channel,address,postal_code,estimate_scheduled_on,estimate_appointment_on,proposal_number,proposal_amount,proposal_on,job_crew,is_interior,is_exterior,is_cabinets,source_row_number",
-      )
-      .order("created_on", { ascending: false })
-      .order("created_at_local", { ascending: false, nullsFirst: false })
-      .order("source_row_number", { ascending: false, nullsFirst: false })
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`marketing leads: ${error.message}`);
-    const page = (data ?? []) as MarketingLeadRow[];
-    rows.push(...page);
-    if (page.length < pageSize) return rows;
-  }
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .eq("is_feed_visible", true)
+    .order("updated_at", { ascending: false })
+    .limit(2000);
+  if (error) throw new Error(`jobs: ${error.message}`);
+  return (data ?? []).map(project);
 }
 
 export async function getMarketingLeads(): Promise<MarketingLead[]> {
   const supabase = await createClient();
-  const [marketingRows, jobsResult, linksResult] =
-    await Promise.all([
-      fetchAllMarketingLeadRows(supabase),
-      supabase
-        .from("dripjobs_jobs")
-        .select(
-          "proposal_id,job_name,status,amount,proposal_signed_on,job_start_on,job_completion_on",
-        )
-        .limit(5000),
-      supabase
-        .from("marketing_lead_job_links")
-        .select(
-          "lead_deal_id,job_proposal_id,match_method,confidence",
-        )
-        .eq("link_status", "confirmed")
-        .eq("relationship_type", "originated")
-        .limit(5000),
-    ]);
-
-  if (jobsResult.error) {
-    throw new Error(`DripJobs jobs: ${jobsResult.error.message}`);
-  }
-  if (linksResult.error) {
-    throw new Error(`saved lead job links: ${linksResult.error.message}`);
+  const rows: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("*,contact:contacts(id,name,email,phone)")
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+    if (error) throw new Error(`leads: ${error.message}`);
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
   }
 
-  const jobsByProposal = new Map(
-    ((jobsResult.data ?? []) as DripJobsJobRow[]).map((job) => [
-      job.proposal_id,
-      job,
-    ]),
-  );
-  const linksByLead = new Map<string, MarketingLeadJobLinkRow[]>();
-  for (const link of (linksResult.data ?? []) as MarketingLeadJobLinkRow[]) {
-    const leadLinks = linksByLead.get(link.lead_deal_id) ?? [];
-    leadLinks.push(link);
-    linksByLead.set(link.lead_deal_id, leadLinks);
+  const leadIds = rows.map((row) => row.id);
+  const quotes: any[] = [];
+  for (let index = 0; index < leadIds.length; index += 500) {
+    const { data, error } = await supabase
+      .from("quotes")
+      .select("*,job:jobs(id,name,status,started_on,completed_on)")
+      .in("lead_id", leadIds.slice(index, index + 500));
+    if (error) throw new Error(`lead quotes: ${error.message}`);
+    quotes.push(...(data ?? []));
+  }
+  const quotesByLead = new Map<string, any[]>();
+  for (const quote of quotes) {
+    const list = quotesByLead.get(quote.lead_id) ?? [];
+    list.push(quote);
+    quotesByLead.set(quote.lead_id, list);
   }
 
-  return marketingRows.map((lead) => {
-    const dripJobs: MarketingLeadJob[] = (
-      linksByLead.get(lead.deal_id) ?? []
-    )
-      .flatMap((link) => {
-        const job = jobsByProposal.get(link.job_proposal_id);
-        if (!job) return [];
-        return [{
-          proposalId: job.proposal_id,
-          jobName: job.job_name,
-          status: job.status,
-          amount: job.amount,
-          proposalSignedOn: job.proposal_signed_on,
-          jobStartOn: job.job_start_on,
-          jobCompletionOn: job.job_completion_on,
-          linkMethod: link.match_method,
-          linkConfidence: link.confidence,
-        }];
-      })
-      .sort(
-        (left, right) =>
-          (right.proposalSignedOn ?? "").localeCompare(
-            left.proposalSignedOn ?? "",
-          ) || left.jobName.localeCompare(right.jobName, "en-CA"),
-      );
-
+  return rows.map((row) => {
+    const metadata = row.metadata ?? {};
+    const dripJobs: MarketingLeadJob[] = (quotesByLead.get(row.id) ?? [])
+      .filter((quote) => quote.job)
+      .map((quote) => ({
+        jobId: quote.job.id,
+        proposalId: quote.dripjobs_proposal_id ?? quote.id,
+        jobName: quote.job.name,
+        status: quote.job.status,
+        amount: Number(quote.amount_cents ?? 0) / 100,
+        proposalSignedOn: quote.accepted_at,
+        jobStartOn: quote.job.started_on,
+        jobCompletionOn: quote.job.completed_on,
+        linkMethod: "dripjobs_deal_id",
+        linkConfidence: 1,
+      }));
     return {
-      dealId: lead.deal_id,
-      operationalProjectId: lead.operational_project_id,
-      createdOn: lead.created_on,
-      createdAtLocal: lead.created_at_local,
-      name: lead.contact_name?.trim() || "Unnamed lead",
-      email: lead.email,
-      phone: lead.phone,
-      rawLeadSource: lead.raw_lead_source,
-      normalizedChannel: lead.normalized_channel,
-      address: lead.address,
-      postalCode: lead.postal_code,
-      estimateScheduledOn: lead.estimate_scheduled_on,
-      estimateAppointmentOn: lead.estimate_appointment_on,
-      proposalNumber: lead.proposal_number,
-      proposalAmount: lead.proposal_amount,
-      proposalOn: lead.proposal_on,
-      jobCrew: lead.job_crew,
-      isInterior: lead.is_interior,
-      isExterior: lead.is_exterior,
-      isCabinets: lead.is_cabinets,
-      sourceRowNumber: lead.source_row_number,
+      leadId: row.id,
+      dealId: row.dripjobs_deal_id ?? row.id,
+      operationalProjectId: row.id,
+      createdOn: String(row.created_at).slice(0, 10),
+      createdAtLocal: row.created_at,
+      name: row.contact?.name?.trim() || "Unnamed lead",
+      email: row.contact?.email ?? null,
+      phone: row.contact?.phone ?? null,
+      rawLeadSource: row.source,
+      normalizedChannel: row.normalized_channel,
+      address: row.address,
+      postalCode: row.postal_code,
+      estimateScheduledOn: row.estimate_scheduled_on,
+      estimateAppointmentOn: row.estimate_appointment_on,
+      proposalNumber: metadata.proposal_number ?? null,
+      proposalAmount: metadata.proposal_amount ?? null,
+      proposalOn: metadata.proposal_on ?? null,
+      jobCrew: metadata.job_crew ?? null,
+      isInterior: row.is_interior,
+      isExterior: row.is_exterior,
+      isCabinets: row.is_cabinets,
+      sourceRowNumber: metadata.source_row_number ?? null,
       dripJobs,
-    };
+    } as MarketingLead;
   });
 }
 
@@ -353,23 +220,11 @@ export type DripJobsSyncHealth = {
   lastProcessedAt: string | null;
 };
 
-type DripJobsSyncHealthRow = {
-  total_events: number;
-  processed_events: number;
-  failed_events: number;
-  ignored_test_events: number;
-  duplicate_deliveries: number;
-  live_lead_events: number;
-  accepted_proposal_events: number;
-  last_received_at: string | null;
-  last_processed_at: string | null;
-};
-
 export async function getDripJobsSyncHealth(): Promise<DripJobsSyncHealth> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("read_dripjobs_sync_health");
+  const { data, error } = await supabase.rpc("get_integration_health");
   if (error) throw new Error(`DripJobs sync health: ${error.message}`);
-  const row = ((data ?? [])[0] ?? {}) as Partial<DripJobsSyncHealthRow>;
+  const row = (data ?? {}) as any;
   return {
     totalEvents: Number(row.total_events ?? 0),
     processedEvents: Number(row.processed_events ?? 0),
@@ -385,183 +240,169 @@ export async function getDripJobsSyncHealth(): Promise<DripJobsSyncHealth> {
 
 export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("dripjobs_jobs")
-    .select("proposal_id,lead_resolution_status")
-    .limit(5000);
-  if (error) throw new Error(`DripJobs lead coverage: ${error.message}`);
+  const { data, error } = await supabase.from("jobs").select("id,lead_id").eq("source", "dripjobs");
+  if (error) throw new Error(`job coverage: ${error.message}`);
   const rows = data ?? [];
-  return {
-    total: rows.length,
-    confirmed: rows.filter(
-      (job) => job.lead_resolution_status === "confirmed",
-    ).length,
-    needsReview: rows.filter(
-      (job) => job.lead_resolution_status === "needs_review",
-    ).length,
-    missingSource: rows.filter(
-      (job) => job.lead_resolution_status === "missing_source",
-    ).length,
-  };
+  const confirmed = rows.filter((row) => row.lead_id).length;
+  return { total: rows.length, confirmed, needsReview: 0, missingSource: rows.length - confirmed };
 }
 
 export async function getBudgets(): Promise<ProjectBudget[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_budgets")
-    .select(
-      "companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,labour_closed_at,labour_invoice_job_started_on,updated_at",
-    );
-  if (error) throw new Error(`budgets: ${error.message}`);
-  return (data ?? []) as ProjectBudget[];
+  const [{ data: jobs, error: jobError }, { data: budgets, error: budgetError }] = await Promise.all([
+    supabase.from("jobs").select("id,contract_amount_cents,status,completed_on,updated_at"),
+    supabase.from("job_budgets").select("*").in("status", ["active", "closed"]).order("version", { ascending: false }),
+  ]);
+  if (jobError) throw new Error(`job amounts: ${jobError.message}`);
+  if (budgetError) throw new Error(`budgets: ${budgetError.message}`);
+  const latest = new Map<string, any>();
+  for (const row of budgets ?? []) if (!latest.has(row.job_id)) latest.set(row.job_id, row);
+  return (jobs ?? []).map((job: any) => {
+    const budget = latest.get(job.id);
+    return {
+      companycam_project_id: job.id,
+      budgeted_hours: budget?.budget_minutes == null ? null : Number(budget.budget_minutes) / 60,
+      amount_including_tax: Number(job.contract_amount_cents ?? 0) > 0 ? Number(job.contract_amount_cents) / 100 : null,
+      hourly_rate: budget?.hourly_rate_cents == null ? null : Number(budget.hourly_rate_cents) / 100,
+      notes: budget?.notes ?? null,
+      labour_closed_at: budget?.closed_at ?? (job.status === "completed" ? job.updated_at : null),
+      labour_invoice_job_started_on: budget?.metadata?.labour_invoice_job_started_on ?? null,
+      updated_at: budget?.updated_at ?? job.updated_at,
+    };
+  });
 }
 
 export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("project_labour_expenses")
-    .select(
-      "id,companycam_project_id,worker_user_id,worker_name,supplier_name,invoice_number,invoice_date,amount_before_tax,tax_amount,notes,inserted_at,updated_at",
-    )
-    .order("invoice_date", { ascending: false });
-  if (error) throw new Error(`project_labour_expenses: ${error.message}`);
-  return (data ?? []) as ProjectLabourExpense[];
+    .from("invoice_job_allocations")
+    .select("id,job_id,subtotal_cents,tax_cents,created_at,updated_at,invoice:invoices(id,category,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
+    .eq("invoice.category", "labour");
+  if (error) throw new Error(`labour expenses: ${error.message}`);
+  return (data ?? []).flatMap((row: any) => row.invoice ? [{
+    id: row.id,
+    companycam_project_id: row.job_id,
+    worker_user_id: row.invoice.metadata?.worker_user_id ?? null,
+    worker_name: row.invoice.metadata?.worker_name ?? row.invoice.contact?.name ?? "Painter",
+    supplier_name: row.invoice.contact?.name ?? row.invoice.metadata?.supplier_name ?? "Labour",
+    invoice_number: row.invoice.invoice_number,
+    invoice_date: row.invoice.issued_on,
+    amount_before_tax: Number(row.subtotal_cents ?? 0) / 100,
+    tax_amount: Number(row.tax_cents ?? 0) / 100,
+    notes: row.invoice.metadata?.notes ?? null,
+    inserted_at: row.created_at,
+    updated_at: row.updated_at,
+  }] : []);
 }
 
-/** Active painter tasks published from each job's default calculator. */
 export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_tasks")
-    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order,completed_at,completed_by")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .limit(5000);
-  if (error) throw new Error(`project_labour_tasks: ${error.message}`);
-  return (data ?? []) as unknown as ProjectLabourTask[];
+  const { data, error } = await supabase.from("job_tasks").select("*").order("sort_order");
+  if (error) throw new Error(`job tasks: ${error.message}`);
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    companycam_project_id: row.job_id,
+    title: row.title,
+    notes: row.notes,
+    budgeted_hours: row.budget_minutes == null ? null : Number(row.budget_minutes) / 60,
+    status: row.status,
+    sort_order: row.sort_order,
+    completed_at: row.completed_at,
+    completed_by: row.completed_by,
+  }));
 }
 
 export async function getProjectLabourTaskEntries(): Promise<ProjectLabourTaskTimeEntry[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_task_time_entries")
-    .select("task_id,user_id,started_at,ended_at,status")
-    .order("started_at", { ascending: false })
-    .limit(10000);
-  if (error) throw new Error(`project_labour_task_time_entries: ${error.message}`);
-  return (data ?? []) as unknown as ProjectLabourTaskTimeEntry[];
+  const { data, error } = await supabase.from("job_task_time_entries").select("*");
+  if (error) throw new Error(`task time: ${error.message}`);
+  return (data ?? []).map((row: any) => ({ ...row, user_id: row.employee_id }));
 }
 
 export async function getAssignments(): Promise<Assignment[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_assignments")
-    .select("id,companycam_project_id,user_id,status")
-    .eq("status", "active");
+  const { data, error } = await supabase.from("job_assignments").select("*").eq("status", "active");
   if (error) throw new Error(`assignments: ${error.message}`);
-  return (data ?? []) as Assignment[];
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    companycam_project_id: row.job_id,
+    user_id: row.employee_id,
+    status: row.status,
+  }));
 }
 
-// ---- Single-job variants: keep the job pages fast by fetching only one
-// ---- project's rows instead of the whole company's history.
+export async function getJobMaterialSummaries(): Promise<Map<string, { amountBeforeTax: number; lineCount: number }>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("invoice_job_allocations")
+    .select("job_id,subtotal_cents,invoice_line_id,invoice:invoices(category)")
+    .eq("invoice.category", "material");
+  if (error) throw new Error(`material job costs: ${error.message}`);
+  const result = new Map<string, { amountBeforeTax: number; lineCount: number }>();
+  for (const row of data ?? []) {
+    const invoice: any = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
+    if (!invoice || invoice.category !== "material") continue;
+    const current = result.get(row.job_id) ?? { amountBeforeTax: 0, lineCount: 0 };
+    current.amountBeforeTax += Number(row.subtotal_cents ?? 0) / 100;
+    if (row.invoice_line_id) current.lineCount += 1;
+    result.set(row.job_id, current);
+  }
+  return result;
+}
 
 export async function getProjectById(projectId: string): Promise<Project | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("companycam_projects")
-    .select(
-      "companycam_id,name,formatted_address,city,state,postal_code,latitude,longitude,is_archived,is_lead,companycam_updated_at",
-    )
-    .eq("companycam_id", projectId)
-    .maybeSingle();
-  if (error) throw new Error(`project: ${error.message}`);
-  return (data as Project | null) ?? null;
+  const { data, error } = await supabase.from("jobs").select("*").eq("id", projectId).maybeSingle();
+  if (error) throw new Error(`job: ${error.message}`);
+  return data ? project(data) : null;
 }
 
-/** Resolve a superseded lead/projection URL to its canonical operational job. */
 export async function resolveProjectId(projectId: string): Promise<string> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("resolve_operational_project_id", {
-    requested_project_id: projectId,
-  });
-  if (error) throw new Error(`project identity: ${error.message}`);
-  return typeof data === "string" && data.length > 0 ? data : projectId;
+  return projectId;
 }
 
 export async function getProjectTimeEntries(projectId: string, sinceIso?: string): Promise<TimeEntry[]> {
   const supabase = await createClient();
-  let query = supabase
-    .from("time_entries")
-    .select(ENTRY_COLUMNS)
-    .eq("companycam_project_id", projectId)
-    .order("started_at", { ascending: false })
-    .limit(5000);
-  if (sinceIso) {
-    query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
-  }
+  let query = supabase.from("time_entries").select("*").eq("job_id", projectId).order("started_at", { ascending: false });
+  if (sinceIso) query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
   const { data, error } = await query;
-  if (error) throw new Error(`time_entries: ${error.message}`);
-  return (data ?? []) as unknown as TimeEntry[];
+  if (error) throw new Error(`job time: ${error.message}`);
+  return (data ?? []).map(timeEntry);
 }
 
 export async function getProjectBudgetRows(projectId: string): Promise<ProjectBudget[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_budgets")
-    .select(
-      "companycam_project_id,budgeted_hours,amount_including_tax,hourly_rate,notes,labour_closed_at,labour_invoice_job_started_on,updated_at",
-    )
-    .eq("companycam_project_id", projectId);
-  if (error) throw new Error(`budgets: ${error.message}`);
-  return (data ?? []) as ProjectBudget[];
+  return (await getBudgets()).filter((row) => row.companycam_project_id === projectId);
 }
 
 export async function getProjectAssignments(projectId: string): Promise<Assignment[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_assignments")
-    .select("id,companycam_project_id,user_id,status")
-    .eq("companycam_project_id", projectId)
-    .eq("status", "active");
-  if (error) throw new Error(`assignments: ${error.message}`);
-  return (data ?? []) as Assignment[];
+  return (await getAssignments()).filter((row) => row.companycam_project_id === projectId);
 }
 
 export async function getLabourExpensesForProject(projectId: string): Promise<ProjectLabourExpense[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_expenses")
-    .select(
-      "id,companycam_project_id,worker_user_id,worker_name,supplier_name,invoice_number,invoice_date,amount_before_tax,tax_amount,notes,inserted_at,updated_at",
-    )
-    .eq("companycam_project_id", projectId)
-    .order("invoice_date", { ascending: false });
-  if (error) throw new Error(`project_labour_expenses: ${error.message}`);
-  return (data ?? []) as ProjectLabourExpense[];
+  return (await getProjectLabourExpenses()).filter((row) => row.companycam_project_id === projectId);
 }
 
 export async function getLabourTasksForProject(projectId: string): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_tasks")
-    .select("id,companycam_project_id,title,notes,budgeted_hours,status,sort_order,completed_at,completed_by")
-    .eq("companycam_project_id", projectId)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .limit(5000);
-  if (error) throw new Error(`project_labour_tasks: ${error.message}`);
-  return (data ?? []) as unknown as ProjectLabourTask[];
+  const { data, error } = await supabase.from("job_tasks").select("*").eq("job_id", projectId).order("sort_order");
+  if (error) throw new Error(`job tasks: ${error.message}`);
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    companycam_project_id: row.job_id,
+    title: row.title,
+    notes: row.notes,
+    budgeted_hours: row.budget_minutes == null ? null : Number(row.budget_minutes) / 60,
+    status: row.status,
+    sort_order: row.sort_order,
+    completed_at: row.completed_at,
+    completed_by: row.completed_by,
+  }));
 }
 
 export async function getTaskEntriesForTasks(taskIds: string[]): Promise<ProjectLabourTaskTimeEntry[]> {
-  if (taskIds.length === 0) return [];
+  if (!taskIds.length) return [];
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("project_labour_task_time_entries")
-    .select("task_id,user_id,started_at,ended_at,status")
-    .in("task_id", taskIds)
-    .order("started_at", { ascending: false })
-    .limit(10000);
-  if (error) throw new Error(`project_labour_task_time_entries: ${error.message}`);
-  return (data ?? []) as unknown as ProjectLabourTaskTimeEntry[];
+  const { data, error } = await supabase.from("job_task_time_entries").select("*").in("task_id", taskIds);
+  if (error) throw new Error(`task time: ${error.message}`);
+  return (data ?? []).map((row: any) => ({ ...row, user_id: row.employee_id }));
 }

@@ -7,9 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult = { ok: boolean; error?: string };
 
 function revalidateTaskViews(projectId: string) {
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}`);
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}/tasks`);
-  revalidatePath("/projects");
+  revalidatePath(`/jobs/${encodeURIComponent(projectId)}`);
+  revalidatePath(`/jobs/${encodeURIComponent(projectId)}/tasks`);
+  revalidatePath("/jobs");
   revalidatePath("/");
 }
 
@@ -33,11 +33,14 @@ export async function addProjectTask(input: {
   await requireStaff();
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("add_project_labour_task", {
-    requested_project_id: input.projectId,
+  const { error } = await supabase.rpc("save_job_task", {
+    requested_job_id: input.projectId,
+    requested_task_id: null,
     requested_title: input.title.trim(),
     requested_notes: input.notes?.trim() || null,
-    requested_budgeted_hours: input.budgetedHours,
+    requested_budget_minutes:
+      input.budgetedHours == null ? null : Math.round(input.budgetedHours * 60),
+    requested_sort_order: 0,
   });
   if (error) return { ok: false, error: error.message };
 
@@ -58,12 +61,14 @@ export async function updateProjectTask(input: {
   await requireStaff();
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("update_project_labour_task", {
-    requested_project_id: input.projectId,
+  const { error } = await supabase.rpc("save_job_task", {
+    requested_job_id: input.projectId,
     requested_task_id: input.taskId,
     requested_title: input.title.trim(),
     requested_notes: input.notes?.trim() || null,
-    requested_budgeted_hours: input.budgetedHours,
+    requested_budget_minutes:
+      input.budgetedHours == null ? null : Math.round(input.budgetedHours * 60),
+    requested_sort_order: 0,
   });
   if (error) return { ok: false, error: error.message };
 
@@ -79,9 +84,9 @@ export async function removeProjectTask(input: {
   await requireStaff();
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("remove_project_labour_task", {
-    requested_project_id: input.projectId,
+  const { error } = await supabase.rpc("set_job_task_status", {
     requested_task_id: input.taskId,
+    requested_status: "cancelled",
   });
   if (error) return { ok: false, error: error.message };
 

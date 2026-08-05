@@ -314,7 +314,7 @@ export function InvoiceEvidence({
                       {line.jobs.map((job) => (
                         <div key={job.companycam_project_id}>
                           <Link
-                            href={`/projects/${encodeURIComponent(
+                            href={`/jobs/${encodeURIComponent(
                               job.companycam_project_id,
                             )}`}
                             title={job.address ?? undefined}
@@ -954,7 +954,7 @@ export function PaymentEvidence({
                   {[...jobs.entries()].map(([projectId, job]) => (
                     <Link
                       key={projectId}
-                      href={`/projects/${encodeURIComponent(projectId)}`}
+                      href={`/jobs/${encodeURIComponent(projectId)}`}
                       className="truncate text-[var(--color-brand-strong)] hover:underline"
                       title={job.name}
                     >
@@ -999,7 +999,7 @@ export function PaymentEvidence({
             bonus.formula_version
           }`}
           amount={money(bonus.allocated_amount)}
-          href={`/projects/${encodeURIComponent(bonus.project_id)}`}
+          href={`/jobs/${encodeURIComponent(bonus.project_id)}`}
         />
       ))}
       {payment.otherAllocations.map((allocation) => (
@@ -1014,7 +1014,7 @@ export function PaymentEvidence({
           amount={money(allocation.allocated_amount)}
           href={
             allocation.project_id
-              ? `/projects/${encodeURIComponent(allocation.project_id)}`
+              ? `/jobs/${encodeURIComponent(allocation.project_id)}`
               : undefined
           }
         />

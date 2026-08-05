@@ -18,7 +18,7 @@ export default async function ProjectCalculatorPage({
   if (canonicalProjectId !== projectId) {
     const query = name ? `?name=${encodeURIComponent(name)}` : "";
     redirect(
-      `/projects/${encodeURIComponent(canonicalProjectId)}/calculator${query}`,
+      `/jobs/${encodeURIComponent(canonicalProjectId)}/calculator${query}`,
     );
   }
   const project = await getProjectById(projectId);

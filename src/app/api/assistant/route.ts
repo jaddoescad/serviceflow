@@ -108,9 +108,9 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 });
   const { data: profile } = await supabase
-    .from("employee_profiles")
+    .from("employees")
     .select("role,is_active")
-    .eq("user_id", user.id)
+    .eq("id", user.id)
     .maybeSingle();
   if (!profile?.is_active || !["admin", "manager"].includes(profile.role)) {
     return NextResponse.json({ ok: false, error: "Not authorized." }, { status: 403 });

@@ -18,24 +18,20 @@ export async function setJobAmount(input: {
   ) {
     return { ok: false, error: "Enter a valid customer amount." };
   }
-  const profile = await requireStaff();
+  await requireStaff();
   const supabase = await createClient();
-
-  const { error } = await supabase.from("project_budgets").upsert(
-    {
-      companycam_project_id: input.projectId,
-      // Keep using the existing column for database compatibility. Its value
-      // is now the manually entered pre-HST amount.
-      amount_including_tax: input.amountBeforeTax,
-      notes: input.notes ?? null,
-      updated_by: profile.user_id,
-    },
-    { onConflict: "companycam_project_id" },
-  );
+  const { error } = await supabase.rpc("save_job_budget", {
+    requested_job_id: input.projectId,
+    requested_budget_minutes: null,
+    requested_hourly_rate_cents: null,
+    requested_amount_including_tax_cents:
+      input.amountBeforeTax == null ? null : Math.round(input.amountBeforeTax * 100),
+    requested_notes: input.notes ?? null,
+  });
 
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath("/projects");
+  revalidatePath("/jobs");
   revalidatePath("/");
   return { ok: true };
 }
@@ -52,23 +48,17 @@ export async function setLabourClosed(input: {
   projectId: string;
   closed: boolean;
 }): Promise<ActionResult> {
-  const profile = await requireStaff();
+  await requireStaff();
   const supabase = await createClient();
-
-  const { error } = await supabase.from("project_budgets").upsert(
-    {
-      companycam_project_id: input.projectId,
-      labour_closed_at: input.closed ? new Date().toISOString() : null,
-      labour_closed_by: input.closed ? profile.user_id : null,
-      updated_by: profile.user_id,
-    },
-    { onConflict: "companycam_project_id" },
-  );
+  const { error } = await supabase.rpc("set_job_status", {
+    requested_job_id: input.projectId,
+    requested_status: input.closed ? "completed" : "active",
+  });
 
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath("/projects");
+  revalidatePath("/jobs");
   revalidatePath("/");
-  revalidatePath(`/projects/${input.projectId}`);
+  revalidatePath(`/jobs/${input.projectId}`);
   return { ok: true };
 }

@@ -1,0 +1,70 @@
+import { createClient } from "@/lib/supabase/server";
+
+export async function getUnifiedInvoices(category?: "customer" | "labour" | "material" | "other") {
+  const supabase = await createClient();
+  let query = supabase
+    .from("invoices")
+    .select("*,contact:contacts(name),allocations:invoice_job_allocations(id,job_id,total_cents,needs_review,job:jobs(name))")
+    .order("issued_on", { ascending: false, nullsFirst: false })
+    .limit(2000);
+  if (category) query = query.eq("category", category);
+  const { data, error } = await query;
+  if (error) throw new Error(`invoices: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getUnifiedInvoice(invoiceId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("*,contact:contacts(name,email,phone),lines:invoice_lines(*),allocations:invoice_job_allocations(*,job:jobs(id,name)),payments:transaction_allocations(*,transaction:transactions(id,posted_on,description,amount_cents)),evidence:evidence_links(*,document:documents(*))")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (error) throw new Error(`invoice: ${error.message}`);
+  return data;
+}
+
+export async function getJobInvoices(jobId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("invoice_job_allocations")
+    .select("*,invoice:invoices(*,contact:contacts(name))")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`job invoices: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getLedger() {
+  const supabase = await createClient();
+  const [{ data: accounts, error: accountError }, { data: transactions, error: transactionError }] =
+    await Promise.all([
+      supabase.from("accounts").select("*").order("name"),
+      supabase.from("transactions").select("*,account:accounts(name,last_four)").order("posted_on", { ascending: false }).limit(5000),
+    ]);
+  if (accountError) throw new Error(`accounts: ${accountError.message}`);
+  if (transactionError) throw new Error(`transactions: ${transactionError.message}`);
+  return { accounts: accounts ?? [], transactions: transactions ?? [] };
+}
+
+export async function getLedgerTransaction(transactionId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*,account:accounts(*),allocations:transaction_allocations(*,invoice:invoices(id,invoice_number,category),job:jobs(id,name),contact:contacts(name))")
+    .eq("id", transactionId)
+    .maybeSingle();
+  if (error) throw new Error(`transaction: ${error.message}`);
+  return data;
+}
+
+export async function getMarketingPerformance() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("marketing_summary")
+    .select("*")
+    .order("period_start", { ascending: false })
+    .limit(2000);
+  if (error) throw new Error(`marketing: ${error.message}`);
+  return data ?? [];
+}

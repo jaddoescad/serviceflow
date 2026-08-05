@@ -3,12 +3,31 @@ import { MobileNav, Nav } from "@/components/nav";
 import { SignOutButton } from "@/components/sign-out";
 import { Avatar, Badge } from "@/components/ui";
 import { initials } from "@/lib/format";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireStaff();
   const name = profile.full_name ?? profile.email ?? "Staff";
+  const supabase = await createClient();
+  const { data: appConfig } = await supabase
+    .from("app_config")
+    .select("maintenance_mode")
+    .eq("id", "default")
+    .maybeSingle();
+
+  if (appConfig?.maintenance_mode) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-6">
+        <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-sm">
+          <div className="font-display text-2xl font-bold text-[var(--color-heading)]">Database upgrade in progress</div>
+          <p className="mt-3 text-sm text-[var(--color-muted)]">Ottawa Painters is temporarily read-only while the V2 data migration is verified. Please try again shortly.</p>
+          <div className="mt-5"><SignOutButton /></div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">

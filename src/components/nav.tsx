@@ -10,7 +10,7 @@ const LINKS = [
   { href: "/", label: "Overview", icon: "▤" },
   { href: "/timesheets", label: "Timesheets", icon: "🕑" },
   { href: "/leads", label: "Leads & Estimates", icon: "◎" },
-  { href: "/projects", label: "Jobs & Budgets", icon: "🏗" },
+  { href: "/jobs", label: "Jobs & Budgets", icon: "🏗" },
   { href: "/financials", label: "Financials", icon: "＄" },
   { href: "/marketing", label: "Marketing", icon: "↗" },
   { href: "/invoices", label: "Labour invoices", icon: "🧾" },

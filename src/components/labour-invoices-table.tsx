@@ -143,7 +143,7 @@ export function LabourInvoicesTable({
                         {invoice.labour_invoice_projects.map((link) => (
                           <div key={link.companycam_project_id}>
                             <Link
-                              href={`/projects/${encodeURIComponent(link.companycam_project_id)}`}
+                              href={`/jobs/${encodeURIComponent(link.companycam_project_id)}`}
                               className="font-medium text-[var(--color-brand-strong)] hover:underline"
                             >
                               {link.companycam_projects?.name ?? link.companycam_project_id}

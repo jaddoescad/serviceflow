@@ -2,6 +2,7 @@ import {
   getAssignments,
   getBudgets,
   getEmployeePayRates,
+  getJobMaterialSummaries,
   getProjectLabourExpenses,
   getProjects,
   getTimeEntries,
@@ -14,11 +15,6 @@ import {
   emptyProjectLabourInvoiceSummary,
   getProjectLabourInvoiceSummaries,
 } from "@/lib/invoice-queries";
-import { getProjectMaterialSummaries } from "@/lib/materials";
-import {
-  getJobCostingIdentity,
-  mergeProjectRowsByJobIdentity,
-} from "@/lib/job-costing";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +33,6 @@ export default async function ProjectsPage() {
     labourExpenses,
     invoiceSummaries,
     materialSummaries,
-    jobCostingIdentity,
   ] = await Promise.all([
     getTimeEntries(new Date(now - 180 * DAY).toISOString()),
     getEmployeePayRates(),
@@ -46,11 +41,10 @@ export default async function ProjectsPage() {
     getAssignments(),
     getProjectLabourExpenses(),
     getProjectLabourInvoiceSummaries(),
-    getProjectMaterialSummaries(),
-    getJobCostingIdentity(canManage),
+    getJobMaterialSummaries(),
   ]);
 
-  const legacyRows = rollupProjects(
+  const rows = rollupProjects(
     entries,
     projects,
     budgets,
@@ -69,7 +63,6 @@ export default async function ProjectsPage() {
       lineCount: 0,
     },
   }));
-  const rows = mergeProjectRowsByJobIdentity(legacyRows, jobCostingIdentity);
 
   return (
     <>

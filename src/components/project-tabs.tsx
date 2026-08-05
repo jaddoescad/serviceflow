@@ -11,6 +11,7 @@ export function ProjectTabs({
   projectName,
   activeOverride,
   onLocalSwitch,
+  entityKind = "job",
 }: {
   projectId: string;
   projectName: string;
@@ -18,6 +19,7 @@ export function ProjectTabs({
   activeOverride?: ProjectTabKey;
   /** When set, Overview/Tasks switch in place instead of navigating. */
   onLocalSwitch?: (tab: LocalTabKey) => void;
+  entityKind?: "job" | "lead";
 }) {
   const pathname = usePathname();
   const active: ProjectTabKey =
@@ -30,12 +32,16 @@ export function ProjectTabs({
           ? "calculator"
           : "overview");
 
-  const base = `/projects/${encodeURIComponent(projectId)}`;
+  const base = `/${entityKind === "lead" ? "leads" : "jobs"}/${encodeURIComponent(projectId)}`;
   const tabs: { key: ProjectTabKey; label: string; href: string }[] = [
     { key: "overview", label: "Overview", href: base },
-    { key: "tasks", label: "Tasks", href: `${base}/tasks` },
-    { key: "invoices", label: "Invoices", href: `${base}/invoices` },
-    { key: "calculator", label: "Calculator", href: `${base}/calculator?name=${encodeURIComponent(projectName)}` },
+    ...(entityKind === "job"
+      ? [
+          { key: "tasks" as const, label: "Tasks", href: `${base}/tasks` },
+          { key: "invoices" as const, label: "Invoices", href: `${base}/invoices` },
+        ]
+      : []),
+    { key: "calculator", label: entityKind === "lead" ? "Quote / Calculator" : "Accepted Quote / Calculator", href: `${base}/calculator?name=${encodeURIComponent(projectName)}` },
   ];
 
   return (

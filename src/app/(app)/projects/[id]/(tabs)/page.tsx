@@ -13,7 +13,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
   const projectId = decodeURIComponent(id);
   const canonicalProjectId = await resolveProjectId(projectId);
   if (canonicalProjectId !== projectId) {
-    redirect(`/projects/${encodeURIComponent(canonicalProjectId)}`);
+    redirect(`/jobs/${encodeURIComponent(canonicalProjectId)}`);
   }
   const shell = await getProjectShell(projectId);
   if (!shell) notFound();

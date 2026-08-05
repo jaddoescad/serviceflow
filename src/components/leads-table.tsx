@@ -249,7 +249,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
               <tbody>
                 {visible.map((lead) => {
                   const firstJob = lead.dripJobs[0];
-                  const projectHref = `/projects/${encodeURIComponent(lead.operationalProjectId)}`;
+                  const projectHref = `/leads/${encodeURIComponent(lead.leadId)}`;
                   const estimateOn =
                     lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
                   const jobCount = lead.dripJobs.length;

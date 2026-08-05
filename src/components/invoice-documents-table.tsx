@@ -576,7 +576,7 @@ function EntryRow({ entry }: { entry: InvoiceEntryRecord }) {
           entry.jobs.map((job) => (
             <div key={job.companycam_project_id} className="truncate">
               <Link
-                href={`/projects/${encodeURIComponent(
+                href={`/jobs/${encodeURIComponent(
                   job.companycam_project_id,
                 )}`}
                 title={job.address ?? undefined}

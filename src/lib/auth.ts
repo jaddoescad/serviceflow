@@ -16,16 +16,16 @@ export async function requireStaff(): Promise<EmployeeProfile> {
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase
-    .from("employee_profiles")
-    .select("user_id,email,full_name,role,is_active")
-    .eq("user_id", user.id)
-    .maybeSingle<EmployeeProfile>();
+    .from("employees")
+    .select("id,email,full_name,role,is_active")
+    .eq("id", user.id)
+    .maybeSingle();
 
   if (!profile || !profile.is_active || !["admin", "manager"].includes(profile.role)) {
     redirect("/not-authorized");
   }
 
-  return profile;
+  return { ...profile, user_id: profile.id } as EmployeeProfile;
 }
 
 export async function getSessionToken(): Promise<string | null> {

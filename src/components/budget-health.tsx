@@ -90,7 +90,7 @@ export function BudgetHealth({ items, summary }: { items: BudgetItem[]; summary:
           <p className="text-sm text-[var(--color-muted)]">
             Add a customer amount to a job to calculate its labour allowance automatically.
           </p>
-          <Link href="/projects"><Button size="sm">Add job amounts</Button></Link>
+          <Link href="/jobs"><Button size="sm">Add job amounts</Button></Link>
         </div>
       ) : (
         <>
@@ -208,7 +208,7 @@ export function BudgetHealth({ items, summary }: { items: BudgetItem[]; summary:
 
           {sorted.length > shown.length ? (
             <div className="border-t border-[var(--color-border)] px-5 py-3 text-center">
-              <Link href="/projects" className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline">
+              <Link href="/jobs" className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline">
                 View all {sorted.length} jobs on Jobs &amp; Labour →
               </Link>
             </div>

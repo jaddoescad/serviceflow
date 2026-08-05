@@ -331,7 +331,7 @@ export function CustomerRevenueTransactionEvidence({
                   {[...jobs.entries()].map(([projectId, name]) => (
                     <Link
                       key={projectId}
-                      href={`/projects/${encodeURIComponent(projectId)}`}
+                      href={`/jobs/${encodeURIComponent(projectId)}`}
                       className="truncate text-[var(--color-brand-strong)] hover:underline"
                       title={name}
                     >

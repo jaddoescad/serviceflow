@@ -301,7 +301,7 @@ export function InvoiceEntriesTable({
                           {entry.jobs.map((job) => (
                             <div key={job.companycam_project_id}>
                               <Link
-                                href={`/projects/${encodeURIComponent(
+                                href={`/jobs/${encodeURIComponent(
                                   job.companycam_project_id,
                                 )}`}
                                 className="font-medium text-[var(--color-brand-strong)] hover:underline"

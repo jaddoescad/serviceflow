@@ -391,7 +391,7 @@ export function ProjectsTable({
                   >
                     <td className="px-2.5 py-2.5">
                       <Link
-                        href={`/projects/${encodeURIComponent(r.projectId)}`}
+                        href={`/jobs/${encodeURIComponent(r.projectId)}`}
                         className="block w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
                         aria-label={`View details for ${r.name}`}
                       >
@@ -456,7 +456,7 @@ export function ProjectsTable({
                       {r.labourInvoices.invoiceCount > 0 ? (
                         <>
                           <Link
-                            href={`/projects/${encodeURIComponent(r.projectId)}/invoices`}
+                            href={`/jobs/${encodeURIComponent(r.projectId)}/invoices`}
                             className="font-medium text-[var(--color-brand-strong)] underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
                             aria-label={`View ${r.labourInvoices.invoiceCount} labour ${
                               r.labourInvoices.invoiceCount === 1

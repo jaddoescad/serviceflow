@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   CalculatorRates,
   ProjectCalculator,
-  Quote,
+  computeTotals,
   mergeCompanyRates,
   mergeRates,
   reviveProjectCalculator,
@@ -48,273 +48,227 @@ export type LoadCalculatorResult =
     }
   | { ok: false; error: string };
 
-type LabourBudgetRow = {
-  id?: string;
-  labour_budget_id?: string;
-  companycam_project_id: string;
-  source_quote_id: string;
-  source_quote_name: string;
-  source_quote_updated_at: string;
-  calculated_hours: number | string;
-  budgeted_hours: number | string;
-  revision: number;
-  published_at: string;
-};
-
-type LabourBudgetTaskRow = {
-  id: string;
-  source_kind: LabourBudgetTaskSelection["sourceKind"];
-  source_item_id: string;
-  title: string;
-  calculated_hours: number | string;
-  manual_budgeted_hours: number | string | null;
-  budgeted_hours: number | string;
-  sort_order: number;
-};
-
-function toLabourBudgetTaskSelection(row: LabourBudgetTaskRow): LabourBudgetTaskSelection {
-  return {
-    id: row.id,
-    sourceKind: row.source_kind,
-    sourceItemId: row.source_item_id,
-    title: row.title,
-    calculatedHours: Number(row.calculated_hours) || 0,
-    manualBudgetedHours:
-      row.manual_budgeted_hours === null ? null : Number(row.manual_budgeted_hours) || 0,
-    budgetedHours: Number(row.budgeted_hours) || 0,
-    sortOrder: Number(row.sort_order) || 0,
-  };
+async function context(supabase: Awaited<ReturnType<typeof createClient>>, entityId: string) {
+  const { data: job, error: jobError } = await supabase
+    .from("jobs")
+    .select("id,lead_id,accepted_quote_id")
+    .eq("id", entityId)
+    .maybeSingle();
+  if (jobError) throw new Error(jobError.message);
+  if (job) {
+    const quoteQuery = supabase.from("quotes").select("*");
+    const { data: quoteRows, error } = job.accepted_quote_id
+      ? await quoteQuery.eq("id", job.accepted_quote_id).limit(1)
+      : await quoteQuery.eq("lead_id", job.lead_id).order("updated_at", { ascending: false }).limit(1);
+    if (error) throw new Error(error.message);
+    return { kind: "job" as const, entityId, leadId: job.lead_id, quote: (quoteRows ?? [])[0] ?? null };
+  }
+  const { data: lead, error: leadError } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("id", entityId)
+    .maybeSingle();
+  if (leadError) throw new Error(leadError.message);
+  if (!lead) return null;
+  const { data: quotes, error } = await supabase
+    .from("quotes")
+    .select("*")
+    .eq("lead_id", entityId)
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(error.message);
+  const quote = (quotes ?? []).find((row) => row.calculator_doc) ?? (quotes ?? [])[0] ?? null;
+  return { kind: "lead" as const, entityId, leadId: entityId, quote };
 }
 
-function toDefaultCalculatorSelection(
-  row: LabourBudgetRow,
-  taskRows: LabourBudgetTaskRow[],
-): DefaultCalculatorSelection {
-  const tasks = taskRows.map(toLabourBudgetTaskSelection);
-  return {
-    id: row.id ?? row.labour_budget_id ?? "",
-    projectId: row.companycam_project_id,
-    quoteId: row.source_quote_id,
-    quoteName: row.source_quote_name,
-    sourceQuoteUpdatedAt: row.source_quote_updated_at,
-    calculatedHours: Number(row.calculated_hours) || 0,
-    budgetedHours: Number(row.budgeted_hours) || 0,
-    taskCount: tasks.length,
-    tasks,
-    revision: Number(row.revision) || 1,
-    publishedAt: row.published_at,
-  };
-}
-
-async function loadDefaultCalculatorSelection(
+async function defaultSelection(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  projectId: string,
-): Promise<{ selection: DefaultCalculatorSelection | null; error?: string }> {
-  const budgetRes = await supabase
-    .from("project_labour_budgets")
-    .select("id,companycam_project_id,source_quote_id,source_quote_name,source_quote_updated_at,calculated_hours,budgeted_hours,revision,published_at")
-    .eq("companycam_project_id", projectId)
-    .eq("is_active", true)
-    .maybeSingle<LabourBudgetRow>();
-
-  if (budgetRes.error) return { selection: null, error: budgetRes.error.message };
-  if (!budgetRes.data) return { selection: null };
-
-  const taskRes = await supabase
-    .from("project_labour_tasks")
-    .select("id,source_kind,source_item_id,title,calculated_hours,manual_budgeted_hours,budgeted_hours,sort_order")
-    .eq("labour_budget_id", budgetRes.data.id ?? budgetRes.data.labour_budget_id ?? "")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-
-  if (taskRes.error) return { selection: null, error: taskRes.error.message };
+  entityId: string,
+  quote: any,
+): Promise<DefaultCalculatorSelection | null> {
+  const { data: job } = await supabase.from("jobs").select("id").eq("id", entityId).maybeSingle();
+  if (!job) return null;
+  const [{ data: budgets, error: budgetError }, { data: tasks, error: taskError }] = await Promise.all([
+    supabase.from("job_budgets").select("*").eq("job_id", entityId).in("status", ["active", "closed"]).order("version", { ascending: false }).limit(1),
+    supabase.from("job_tasks").select("*").eq("job_id", entityId).neq("status", "cancelled").order("sort_order"),
+  ]);
+  if (budgetError) throw new Error(budgetError.message);
+  if (taskError) throw new Error(taskError.message);
+  const budget = (budgets ?? [])[0];
+  if (!budget || !quote?.calculator_doc) return null;
+  const doc = reviveProjectCalculator(quote.calculator_doc);
+  const activeQuote = doc?.quotes.find((candidate) => candidate.id === doc.activeQuoteId) ?? doc?.quotes[0];
+  const rows: LabourBudgetTaskSelection[] = (tasks ?? []).map((task: any) => ({
+    id: task.id,
+    sourceKind: task.source_kind,
+    sourceItemId: task.source_item_id,
+    title: task.title,
+    calculatedHours: Number(task.calculated_minutes ?? task.budget_minutes ?? 0) / 60,
+    manualBudgetedHours: task.budget_minutes == null ? null : Number(task.budget_minutes) / 60,
+    budgetedHours: Number(task.budget_minutes ?? task.calculated_minutes ?? 0) / 60,
+    sortOrder: Number(task.sort_order ?? 0),
+  }));
   return {
-    selection: toDefaultCalculatorSelection(
-      budgetRes.data,
-      (taskRes.data ?? []) as LabourBudgetTaskRow[],
-    ),
+    id: budget.id,
+    projectId: entityId,
+    quoteId: activeQuote?.id ?? quote.id,
+    quoteName: activeQuote?.name ?? quote.name,
+    sourceQuoteUpdatedAt: activeQuote?.updatedAt ?? quote.updated_at,
+    calculatedHours: Number(budget.calculated_minutes ?? budget.budget_minutes ?? 0) / 60,
+    budgetedHours: Number(budget.budget_minutes ?? 0) / 60,
+    taskCount: rows.length,
+    tasks: rows,
+    revision: Number(budget.version ?? 1),
+    publishedAt: budget.updated_at,
   };
 }
 
-export async function loadCalculator(projectId: string): Promise<LoadCalculatorResult> {
+export async function loadCalculator(entityId: string): Promise<LoadCalculatorResult> {
   await requireStaff();
   const supabase = await createClient();
-
-  const [calcRes, settingsRes, defaultCalculatorRes] = await Promise.all([
-    supabase
-      .from("project_calculators")
-      .select("doc")
-      .eq("companycam_project_id", projectId)
-      .maybeSingle(),
-    supabase.from("calculator_settings").select("rates").eq("id", "default").maybeSingle(),
-    loadDefaultCalculatorSelection(supabase, projectId),
-  ]);
-
-  if (calcRes.error) return { ok: false, error: calcRes.error.message };
-
-  return {
-    ok: true,
-    doc: calcRes.data ? reviveProjectCalculator(calcRes.data.doc) : null,
-    companyRates: mergeCompanyRates(
-      (settingsRes.data?.rates as Partial<CalculatorRates> | undefined) ?? undefined,
-    ),
-    defaultCalculator: defaultCalculatorRes.selection,
-    defaultCalculatorError: defaultCalculatorRes.error,
-  };
+  try {
+    const [resolved, settings] = await Promise.all([
+      context(supabase, entityId),
+      supabase.from("app_config").select("settings").eq("id", "default").maybeSingle(),
+    ]);
+    if (!resolved) return { ok: false, error: "Lead or job not found." };
+    const doc = resolved.quote?.calculator_doc
+      ? reviveProjectCalculator(resolved.quote.calculator_doc)
+      : null;
+    return {
+      ok: true,
+      doc,
+      companyRates: mergeCompanyRates(
+        (settings.data?.settings?.calculator_rates as Partial<CalculatorRates> | undefined) ?? undefined,
+      ),
+      defaultCalculator: await defaultSelection(supabase, entityId, resolved.quote),
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Calculator failed to load." };
+  }
 }
 
 export async function saveCalculator(
-  projectId: string,
+  entityId: string,
   doc: ProjectCalculator,
 ): Promise<{ ok: boolean; error?: string }> {
-  const profile = await requireStaff();
+  await requireStaff();
   const clean = reviveProjectCalculator(doc);
   if (!clean) return { ok: false, error: "Invalid calculator document." };
-
+  const quote = clean.quotes.find((candidate) => candidate.id === clean.activeQuoteId) ?? clean.quotes[0];
+  if (!quote) return { ok: false, error: "Calculator quote not found." };
   const supabase = await createClient();
-  const { error } = await supabase.from("project_calculators").upsert(
-    {
-      companycam_project_id: projectId,
-      doc: clean,
-      updated_by: profile.user_id,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "companycam_project_id" },
-  );
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const resolved = await context(supabase, entityId);
+    if (!resolved) return { ok: false, error: "Lead or job not found." };
+    const totals = computeTotals(quote);
+    const status = quote.status === "won" ? "accepted" : quote.status === "lost" ? "declined" : quote.status;
+    const { error } = await supabase.rpc("publish_quote", {
+      requested_lead_id: resolved.leadId,
+      requested_quote_id: resolved.quote?.id ?? null,
+      requested_name: quote.name,
+      requested_amount_cents: Math.round(totals.price * 100),
+      requested_calculator_doc: clean,
+      requested_status: status,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Calculator failed to save." };
+  }
 }
 
-export async function saveCompanyRates(
-  rates: CalculatorRates,
-): Promise<{ ok: boolean; error?: string }> {
-  const profile = await requireStaff();
+export async function saveCompanyRates(rates: CalculatorRates): Promise<{ ok: boolean; error?: string }> {
+  await requireStaff();
   const supabase = await createClient();
-  const { error } = await supabase.from("calculator_settings").upsert(
-    {
-      id: "default",
-      rates: mergeRates(rates),
-      updated_by: profile.user_id,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  const { error } = await supabase.rpc("save_calculator_rates", {
+    requested_rates: mergeRates(rates),
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
 
 export type MakeCalculatorDefaultResult =
   | { ok: true; defaultCalculator: DefaultCalculatorSelection }
   | { ok: false; error: string };
 
-async function operationalProjectError(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  projectId: string,
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from("companycam_projects")
-    .select("is_lead,is_deleted")
-    .eq("companycam_id", projectId)
-    .maybeSingle();
-
-  if (error) return error.message;
-  if (!data) return "The operational job was not found.";
-  if (data.is_deleted) return "Deleted operational jobs cannot publish painter tasks.";
-  if (data.is_lead) {
-    return "Approve this lead in DripJobs before transferring painter tasks.";
-  }
-  return null;
-}
-
-/**
- * Copy one quote's items into the painter task list. Additive: tasks that came
- * from the same calculator items are updated in place, new items are appended,
- * and nothing is removed — manual tasks, other tasks, painter progress, and
- * manual hour overrides are untouched. The calculator does not own the task
- * list; this is a one-way transfer.
- */
 export async function makeCalculatorDefault(
   projectId: string,
   doc: ProjectCalculator,
   quoteId: string,
 ): Promise<MakeCalculatorDefaultResult> {
   await requireStaff();
-  if (!projectId.trim()) return { ok: false, error: "A job is required." };
-
   const clean = reviveProjectCalculator(doc);
-  if (!clean) return { ok: false, error: "Invalid calculator document." };
-
-  const quote: Quote | undefined = clean.quotes.find((candidate) => candidate.id === quoteId);
-  if (!quote) return { ok: false, error: "Choose a calculator before transferring it." };
-
+  const quote = clean?.quotes.find((candidate) => candidate.id === quoteId);
+  if (!clean || !quote) return { ok: false, error: "Choose a calculator before transferring it." };
   const supabase = await createClient();
-  const projectError = await operationalProjectError(supabase, projectId);
-  if (projectError) return { ok: false, error: projectError };
-
-  const draft = buildLabourBudgetDraft(quote);
-
-  const { data, error } = await supabase.rpc("transfer_project_calculator_tasks", {
-    requested_project_id: projectId,
-    calculator_doc: clean,
-    requested_quote_id: quote.id,
-    task_payloads: draft.tasks,
-  });
-
-  if (error) return { ok: false, error: error.message };
-  const row = (Array.isArray(data) ? data[0] : data) as LabourBudgetRow | null;
-  if (!row) return { ok: false, error: "The labour budget was not returned by the database." };
-
-  const refreshed = await loadDefaultCalculatorSelection(supabase, projectId);
-  if (refreshed.error || !refreshed.selection) {
-    return { ok: false, error: refreshed.error ?? "The published labour tasks could not be loaded." };
+  const resolved = await context(supabase, projectId);
+  if (!resolved || resolved.kind !== "job") {
+    return { ok: false, error: "Accept the quote before publishing painter tasks." };
   }
-
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}`);
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}/tasks`);
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}/calculator`);
-  revalidatePath("/projects");
-  revalidatePath("/");
-  return { ok: true, defaultCalculator: refreshed.selection };
+  const draft = buildLabourBudgetDraft(quote);
+  const { data: existing, error: existingError } = await supabase
+    .from("job_tasks")
+    .select("id,source_kind,source_item_id")
+    .eq("job_id", projectId);
+  if (existingError) return { ok: false, error: existingError.message };
+  const existingBySource = new Map((existing ?? []).map((task: any) => [`${task.source_kind}:${task.source_item_id}`, task.id]));
+  for (const task of draft.tasks) {
+    const { error } = await supabase.rpc("save_job_task", {
+      requested_job_id: projectId,
+      requested_task_id: existingBySource.get(`${task.sourceKind}:${task.sourceItemId}`) ?? null,
+      requested_title: task.title,
+      requested_notes: task.notes,
+      requested_budget_minutes: Math.round(task.budgetedHours * 60),
+      requested_sort_order: task.sortOrder,
+    });
+    if (error) return { ok: false, error: error.message };
+  }
+  const { error: budgetError } = await supabase.rpc("save_job_budget", {
+    requested_job_id: projectId,
+    requested_budget_minutes: Math.round(draft.totalBudgetedHours * 60),
+    requested_hourly_rate_cents: null,
+    requested_amount_including_tax_cents: Math.round(computeTotals(quote).price * 100),
+    requested_notes: `Published from ${quote.name}`,
+  });
+  if (budgetError) return { ok: false, error: budgetError.message };
+  await saveCalculator(projectId, clean);
+  const selection = await defaultSelection(supabase, projectId, { ...resolved.quote, calculator_doc: clean });
+  if (!selection) return { ok: false, error: "Published tasks could not be reloaded." };
+  revalidatePath(`/jobs/${projectId}`);
+  revalidatePath(`/jobs/${projectId}/tasks`);
+  revalidatePath(`/jobs/${projectId}/calculator`);
+  return { ok: true, defaultCalculator: selection };
 }
 
 export type SetLabourTaskBudgetHoursResult =
   | { ok: true; defaultCalculator: DefaultCalculatorSelection }
   | { ok: false; error: string };
 
-/** Set a manager override, or pass null to restore the stored calculated hours. */
 export async function setLabourTaskBudgetHours(
   projectId: string,
   taskId: string,
   budgetedHours: number | null,
 ): Promise<SetLabourTaskBudgetHoursResult> {
   await requireStaff();
-  if (!projectId.trim() || !taskId.trim()) {
-    return { ok: false, error: "A job and painter task are required." };
-  }
   if (budgetedHours !== null && (!Number.isFinite(budgetedHours) || budgetedHours < 0)) {
     return { ok: false, error: "Task hours must be zero or greater." };
   }
-
   const supabase = await createClient();
-  const projectError = await operationalProjectError(supabase, projectId);
-  if (projectError) return { ok: false, error: projectError };
-
-  const { error } = await supabase.rpc("set_project_labour_task_budget_hours", {
-    requested_project_id: projectId,
+  const { data: task, error: taskError } = await supabase.from("job_tasks").select("*").eq("id", taskId).eq("job_id", projectId).maybeSingle();
+  if (taskError || !task) return { ok: false, error: taskError?.message ?? "Task not found." };
+  const { error } = await supabase.rpc("save_job_task", {
+    requested_job_id: projectId,
     requested_task_id: taskId,
-    requested_budgeted_hours: budgetedHours,
+    requested_title: task.title,
+    requested_notes: task.notes,
+    requested_budget_minutes: budgetedHours == null ? task.calculated_minutes : Math.round(budgetedHours * 60),
+    requested_sort_order: task.sort_order,
   });
   if (error) return { ok: false, error: error.message };
-
-  const refreshed = await loadDefaultCalculatorSelection(supabase, projectId);
-  if (refreshed.error || !refreshed.selection) {
-    return { ok: false, error: refreshed.error ?? "The updated labour budget could not be loaded." };
-  }
-
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}`);
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}/tasks`);
-  revalidatePath(`/projects/${encodeURIComponent(projectId)}/calculator`);
-  revalidatePath("/projects");
-  revalidatePath("/");
-  return { ok: true, defaultCalculator: refreshed.selection };
+  const resolved = await context(supabase, projectId);
+  const selection = await defaultSelection(supabase, projectId, resolved?.quote);
+  if (!selection) return { ok: false, error: "Updated labour budget could not be loaded." };
+  revalidatePath(`/jobs/${projectId}`);
+  revalidatePath(`/jobs/${projectId}/tasks`);
+  return { ok: true, defaultCalculator: selection };
 }
