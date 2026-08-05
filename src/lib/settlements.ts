@@ -485,7 +485,6 @@ export async function getLabourPaymentEvidence(
     verificationResult,
     recordResult,
     invoiceAllocationsResult,
-    bonusAllocationsResult,
     otherAllocationsResult,
   ] = await Promise.all([
     supabase
@@ -552,27 +551,6 @@ export async function getLabourPaymentEvidence(
       .eq("financial_transaction_id", transactionId)
       .is("reversed_at", null),
     supabase
-      .from("labour_bonus_payment_allocations")
-      .select(
-        `
-          id,
-          bonus_payable_id,
-          allocated_amount,
-          labour_bonus_payables (
-            amount,
-            companycam_project_id,
-            formula_version,
-            approved_at,
-            calculation_note,
-            companycam_projects (
-              name
-            )
-          )
-        `,
-      )
-      .eq("financial_transaction_id", transactionId)
-      .is("reversed_at", null),
-    supabase
       .from("labour_payment_other_allocations")
       .select(
         `
@@ -594,7 +572,6 @@ export async function getLabourPaymentEvidence(
   if (verificationResult.error) throw verificationResult.error;
   if (recordResult.error) throw recordResult.error;
   if (invoiceAllocationsResult.error) throw invoiceAllocationsResult.error;
-  if (bonusAllocationsResult.error) throw bonusAllocationsResult.error;
   if (otherAllocationsResult.error) throw otherAllocationsResult.error;
   if (!transactionResult.data) return null;
 
@@ -775,34 +752,7 @@ export async function getLabourPaymentEvidence(
         }
       : null,
     invoices,
-    bonuses: (bonusAllocationsResult.data ?? []).map((value) => {
-      const row = value as unknown as {
-        id: string;
-        bonus_payable_id: string;
-        allocated_amount: number;
-        labour_bonus_payables: {
-          amount: number;
-          companycam_project_id: string;
-          formula_version: string;
-          approved_at: string;
-          calculation_note: string | null;
-          companycam_projects: { name: string } | null;
-        } | null;
-      };
-      return {
-        allocation_id: row.id,
-        bonus_id: row.bonus_payable_id,
-        allocated_amount: Number(row.allocated_amount),
-        bonus_amount: Number(row.labour_bonus_payables?.amount ?? 0),
-        project_id: row.labour_bonus_payables?.companycam_project_id ?? "",
-        project_name:
-          row.labour_bonus_payables?.companycam_projects?.name ??
-          "Unknown project",
-        formula_version: row.labour_bonus_payables?.formula_version ?? "—",
-        approved_at: row.labour_bonus_payables?.approved_at ?? "",
-        calculation_note: row.labour_bonus_payables?.calculation_note ?? null,
-      };
-    }),
+    bonuses: [],
     otherAllocations: (otherAllocationsResult.data ?? []).map((value) => {
       const row = value as unknown as {
         id: string;
