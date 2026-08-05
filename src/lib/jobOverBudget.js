@@ -46,14 +46,16 @@ export async function submitJobOverBudgetReason({
     return { error: new Error("A job, signed-in painter, and reason are required.") };
   }
   const clientId = `job-obr-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const inserted = await supabase.from("project_over_budget_reasons").insert({
-    client_id: clientId,
-    companycam_project_id: String(projectId),
-    user_id: String(userId),
-    reason: String(reason),
-    note: typeof note === "string" ? note.trim().slice(0, 280) || null : null,
-    hours_over: Math.max(0, Number(hoursOver) || 0),
+  const inserted = await supabase.rpc("record_time_entry_command", {
+    action: "job_issue",
+    command: {
+      client_id: clientId,
+      job_id: String(projectId),
+      reason: String(reason),
+      note: typeof note === "string" ? note.trim().slice(0, 280) || null : null,
+      minutes_over: Math.round(Math.max(0, Number(hoursOver) || 0) * 60),
+    },
+    next_command: null,
   });
-  if (inserted.error?.code === "23505") return { error: null };
   return { error: inserted.error };
 }

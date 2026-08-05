@@ -26,9 +26,10 @@
     "qa:labour-task-reasons": "node scripts/qa-labour-task-over-budget-reasons.mjs",
     "qa:project-clock-ins": "node scripts/qa-project-clock-in-summary.mjs",
     "qa:location": "node scripts/qa-location-tracking.cjs",
+    "qa:v2-client": "node scripts/qa-v2-client.cjs",
     "qa:time-entry-backend": "node scripts/qa-time-entry-commands.mjs",
     "qa:smoke:web": "node scripts/qa-web-smoke.cjs",
-    "qa:preflight": "npm run qa:node && npm run qa:doctor && npm run qa:secrets && npm run qa:location && npm run qa:budget && npm run qa:labour-budget && npm run qa:labour-tasks-mobile && npm run qa:labour-task-reasons && npm run qa:project-clock-ins && npm run qa:time-entry-backend && npm run qa:audit"
+    "qa:preflight": "npm run qa:node && npm run qa:doctor && npm run qa:secrets && npm run qa:location && npm run qa:v2-client && npm run qa:audit"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",

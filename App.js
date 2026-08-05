@@ -32,7 +32,7 @@ import UpdateReadyPrompt from "./src/components/UpdateReadyPrompt";
 
 const BASE_TABS = [
   { key: "clock", label: "Clock In", icon: "clock" },
-  { key: "projects", label: "Projects", icon: "projects" },
+  { key: "projects", label: "Jobs", icon: "projects" },
   { key: "timesheet", label: "Timesheet", icon: "timesheet" },
 ];
 
@@ -51,6 +51,7 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -69,6 +70,19 @@ function AppRoot() {
 
     return () => authListener.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setMaintenanceMode(false);
+      return;
+    }
+    supabase
+      .from("app_config")
+      .select("maintenance_mode")
+      .eq("id", "default")
+      .maybeSingle()
+      .then(({ data }) => setMaintenanceMode(data?.maintenance_mode === true));
+  }, [session?.user?.id]);
 
   const {
     sessionUser,
@@ -115,6 +129,15 @@ function AppRoot() {
 
   if (!session) {
     return <LoginScreen />;
+  }
+
+  if (maintenanceMode) {
+    return (
+      <View style={styles.maintenanceScreen}>
+        <Text style={styles.maintenanceTitle}>Database upgrade in progress</Text>
+        <Text style={styles.maintenanceBody}>ServiceFlow is temporarily paused while your jobs and time records are verified. Please try again shortly.</Text>
+      </View>
+    );
   }
 
   return (
@@ -386,6 +409,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.white,
+  },
+  maintenanceScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    backgroundColor: COLORS.white,
+  },
+  maintenanceTitle: {
+    color: COLORS.ink,
+    fontSize: 22,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  maintenanceBody: {
+    marginTop: 12,
+    color: COLORS.muted,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
   },
   content: {
     flex: 1,

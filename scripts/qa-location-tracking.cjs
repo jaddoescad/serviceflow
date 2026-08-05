@@ -223,16 +223,11 @@ async function main() {
     /from\(["']time_entries["']\)\.(?:insert|update|upsert|delete)\(/,
     "the mobile repository must not mutate time_entries directly",
   );
-  for (const rpcName of [
-    "clock_in_time_entry",
-    "clock_out_time_entry",
-    "switch_time_entry",
-    "record_time_entry_observation",
-    "adjust_time_entry",
-    "delete_time_entry",
-  ]) {
-    assert.match(repositorySource, new RegExp(`rpc\\(["']${rpcName}["']`));
+  assert.match(repositorySource, /rpc\(["']record_time_entry_command["']/);
+  for (const action of ["clock_in", "clock_out", "switch", "observation", "adjust", "delete"]) {
+    assert.match(repositorySource, new RegExp(`["']${action}["']`));
   }
+  assert.match(repositorySource, /job_id:\s*entryProjectId/);
 
   const runtimeSource = fs.readFileSync(
     path.join(__dirname, "../src/lib/timeTrackingRuntime.js"),
@@ -334,26 +329,6 @@ async function main() {
   assert.doesNotMatch(iosInfoPlistSource, /NSLocationAlways/);
   assert.doesNotMatch(geofenceSource, /startGeofencingAsync/);
   assert.match(geofenceSource, /stopGeofencingAsync/);
-
-  const migrationSource = fs.readFileSync(
-    path.join(
-      __dirname,
-      "../supabase/migrations/20260715150000_authoritative_time_entry_commands.sql",
-    ),
-    "utf8",
-  );
-  assert.match(migrationSource, /time_entries_one_active_per_user_idx/);
-  assert.match(migrationSource, /Compatibility window:/);
-  assert.match(migrationSource, /time_entry_lifecycle_events/);
-  const observationFunction = migrationSource.slice(
-    migrationSource.indexOf("create or replace function public.record_time_entry_observation"),
-    migrationSource.indexOf("create or replace function public.adjust_time_entry"),
-  );
-  assert.doesNotMatch(
-    observationFunction,
-    /set\s+(?:started_at|ended_at|status)\s*=/i,
-    "the GPS observation RPC must not update lifecycle columns",
-  );
 
   console.log("Location tracking and shift lifecycle checks passed.");
 }

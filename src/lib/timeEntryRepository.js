@@ -16,7 +16,7 @@ function commandPayload(entry, options = {}) {
     client_entry_id: entry.localId || entry.id || entry.serverId,
     server_id: serverId,
     user_name: entry.userName,
-    companycam_project_id: entryProjectId(entry) || null,
+    job_id: entryProjectId(entry) || null,
     project_name: entry.project?.name || "Project",
     project_address: entry.project?.formatted_address || entry.project?.address || null,
     original_started_at: entry.originalStartedAt || entry.startedAt,
@@ -41,9 +41,7 @@ export async function insertActiveEntry(shift) {
     shiftToEntry(shift, new Date().toISOString(), "active"),
   );
   try {
-    const { data, error } = await supabase.rpc("clock_in_time_entry", {
-      command: payload,
-    });
+    const { data, error } = await runTimeCommand("clock_in", payload);
     if (error) {
       await enqueueWrite({ action: "clock_in", payload });
       return null;
@@ -62,9 +60,7 @@ export async function completeEntry(entry) {
     reason: entry.clockOutReason,
   });
   try {
-    const { data, error } = await supabase.rpc("clock_out_time_entry", {
-      command: payload,
-    });
+    const { data, error } = await runTimeCommand("clock_out", payload);
     if (error) {
       await enqueueWrite({ action: "clock_out", payload });
       return null;
@@ -95,7 +91,11 @@ export async function switchEntry(completedEntry, nextShift) {
   };
 
   try {
-    const { data, error } = await supabase.rpc("switch_time_entry", operation.payload);
+    const { data, error } = await runTimeCommand(
+      "switch",
+      operation.payload.clock_out_command,
+      operation.payload.clock_in_command,
+    );
     if (error) {
       await enqueueWrite(operation);
       return null;
@@ -124,9 +124,7 @@ export async function deleteServerEntry(entry) {
 
   try {
     if (!serverId && !clientEntryId) return false;
-    const { data, error } = await supabase.rpc("delete_time_entry", {
-      command: deleteOperation.payload,
-    });
+    const { data, error } = await runTimeCommand("delete", deleteOperation.payload);
     if (error) await enqueueWrite(deleteOperation);
     return !error && data === true;
   } catch (_error) {
@@ -148,9 +146,7 @@ export async function persistUpdatedEntry(entry) {
   });
 
   try {
-    const { data, error } = await supabase.rpc("adjust_time_entry", {
-      command: payload,
-    });
+    const { data, error } = await runTimeCommand("adjust", payload);
     if (error) {
       await enqueueWrite({ action: "adjust", payload });
       return null;
@@ -170,9 +166,7 @@ export async function updateActiveLocation(shift) {
     // Observation failures are intentionally not added to the lifecycle queue.
     // Raw location evidence has its own durable queue; a GPS callback must never
     // gain authority to create or reopen a time entry.
-    const { data, error } = await supabase.rpc("record_time_entry_observation", {
-      command: payload,
-    });
+    const { data, error } = await runTimeCommand("observation", payload);
     return error ? null : normalizeRpcRow(data);
   } catch (_error) {
     return null;
@@ -214,32 +208,32 @@ async function performFlush() {
 async function executeQueuedOperation(operation) {
   const payload = operation.payload || {};
   if (operation.action === "clock_in" || operation.action === "create_active") {
-    return supabase.rpc("clock_in_time_entry", { command: legacyCommand(operation) });
+    return runTimeCommand("clock_in", legacyCommand(operation));
   }
   if (operation.action === "clock_out" || operation.action === "complete") {
-    return supabase.rpc("clock_out_time_entry", { command: legacyCommand(operation) });
+    return runTimeCommand("clock_out", legacyCommand(operation));
   }
   if (operation.action === "switch") {
-    return supabase.rpc("switch_time_entry", payload);
+    return runTimeCommand("switch", payload.clock_out_command, payload.clock_in_command);
   }
   if (operation.action === "adjust" || operation.action === "replace") {
-    return supabase.rpc("adjust_time_entry", { command: legacyCommand(operation) });
+    return runTimeCommand("adjust", legacyCommand(operation));
   }
   if (operation.action === "patch_active") {
     // Old queues could replace their original create with a location patch.
     // Establish the session through the idempotent command, then submit only
     // observation fields. A completed session will be returned, never reopened.
     const command = legacyCommand(operation);
-    const clockIn = await supabase.rpc("clock_in_time_entry", { command });
+    const clockIn = await runTimeCommand("clock_in", command);
     if (clockIn.error) return clockIn;
-    return supabase.rpc("record_time_entry_observation", { command });
+    return runTimeCommand("observation", command);
   }
   if (operation.action === "upsert") {
     const command = legacyCommand(operation);
     if (payload.status === "complete" || payload.ended_at) {
-      return supabase.rpc("clock_out_time_entry", { command });
+      return runTimeCommand("clock_out", command);
     }
-    return supabase.rpc("clock_in_time_entry", { command });
+    return runTimeCommand("clock_in", command);
   }
   if (operation.action === "delete") {
     const command = {
@@ -250,7 +244,7 @@ async function executeQueuedOperation(operation) {
     if (!command.server_id && !command.client_entry_id) {
       return { error: null, ignored: true };
     }
-    return supabase.rpc("delete_time_entry", { command });
+    return runTimeCommand("delete", command);
   }
   return { error: new Error(`Unknown queued time-entry action: ${operation.action}`) };
 }
@@ -259,8 +253,17 @@ function legacyCommand(operation) {
   const payload = operation.payload || {};
   return {
     ...payload,
+    job_id: payload.job_id || payload.companycam_project_id || null,
     server_id: payload.server_id || operation.id || null,
   };
+}
+
+function runTimeCommand(action, command, nextCommand = null) {
+  return supabase.rpc("record_time_entry_command", {
+    action,
+    command,
+    next_command: nextCommand,
+  });
 }
 
 function normalizeRpcRow(data) {
@@ -298,15 +301,16 @@ export function entryFromSupabase(row) {
     id: row.id,
     localId: row.client_entry_id || row.id,
     serverId: row.id,
-    userId: row.user_id,
-    userEmail: row.user_email,
-    userName: row.user_name || "Painter",
+    userId: row.employee_id,
+    userEmail: row.employee_email,
+    userName: row.employee_name || "Painter",
     project: {
-      companycam_id: row.companycam_project_id,
-      id: row.companycam_project_id,
-      name: row.project_name || "Project",
-      address: row.project_address,
-      formatted_address: row.project_address,
+      companycam_id: row.job_id,
+      job_id: row.job_id,
+      id: row.job_id,
+      name: row.job_name || "Job",
+      address: row.job_address,
+      formatted_address: row.job_address,
     },
     originalStartedAt: row.original_started_at || row.started_at,
     startedAt: row.started_at,

@@ -13,28 +13,21 @@ export function getEmployeeDisplayName(profile, user) {
 export async function upsertEmployeeProfileForUser(user) {
   if (!user) return { profile: null, error: null };
 
-  const columns = "user_id,email,full_name,role,is_active";
+  const columns = "id,email,full_name,role,is_active";
 
   // Return the existing profile untouched so a name the user set is never
   // overwritten by the email-prefix fallback on subsequent app loads.
   const { data: existing, error: fetchError } = await supabase
-    .from("employee_profiles")
+    .from("employees")
     .select(columns)
-    .eq("user_id", user.id)
+    .eq("id", user.id)
     .maybeSingle();
 
   if (fetchError) return { profile: null, error: fetchError };
-  if (existing) return { profile: existing, error: null };
+  if (existing) return { profile: { ...existing, user_id: existing.id }, error: null };
 
-  const { data, error } = await supabase
-    .from("employee_profiles")
-    .insert({
-      user_id: user.id,
-      email: user.email,
-      full_name: getEmployeeDisplayName(null, user),
-    })
-    .select(columns)
-    .single();
-
-  return { profile: data || null, error };
+  return {
+    profile: null,
+    error: new Error("Your employee profile has not been activated. Ask an administrator for access."),
+  };
 }

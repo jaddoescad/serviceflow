@@ -15,7 +15,6 @@ import { BudgetProgressBadge } from "../components/BudgetProgress";
 import {
   getProjectId,
   listActiveCompanyCamProjectPage,
-  syncCompanyCamProjects,
 } from "../lib/projectRepository";
 import { palette as COLORS } from "../theme";
 
@@ -34,13 +33,10 @@ export default function ProjectsScreen({
   projectLatestActivity = EMPTY_PROJECT_TOTALS,
   assignedProjectIds = EMPTY_PROJECT_IDS,
   canManageProjects = false,
-  onProjectsChanged,
 }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -149,40 +145,6 @@ export default function ProjectsScreen({
     setRefreshing(false);
   }, [loadProjects]);
 
-  const syncProjects = useCallback(async () => {
-    if (!canManageProjects) {
-      setError("Only managers can sync CompanyCam projects.");
-      return;
-    }
-
-    setSyncing(true);
-    setError("");
-    setMessage("");
-
-    const {
-      synced,
-      geocoded,
-      error: syncError,
-      geocodeError,
-    } = await syncCompanyCamProjects({ geocodeLimit: 12 });
-
-    if (syncError) {
-      setError(syncError.message || "CompanyCam sync failed.");
-      setSyncing(false);
-      return;
-    }
-
-    if (geocodeError) {
-      setMessage(`Synced ${synced} CompanyCam projects. Coordinate backfill could not run.`);
-    } else {
-      setMessage(`Synced ${synced} CompanyCam projects. Geocoded ${geocoded}.`);
-    }
-
-    await loadProjects({ quiet: true, pageToLoad: 0 });
-    await onProjectsChanged?.();
-    setSyncing(false);
-  }, [canManageProjects, loadProjects, onProjectsChanged]);
-
   const loadMoreProjects = useCallback(async () => {
     // isFetchingRef is synchronous, so overlapping scroll events in one frame
     // can't each start a page fetch (state updates lag a frame behind).
@@ -267,26 +229,8 @@ export default function ProjectsScreen({
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.kicker}>ServiceFlow</Text>
-            <Text style={styles.headline}>Projects</Text>
+            <Text style={styles.headline}>Jobs</Text>
           </View>
-          {canManageProjects ? (
-            <Pressable
-              onPress={syncProjects}
-              disabled={syncing}
-              style={({ pressed }) => [
-                styles.headerSyncButton,
-                pressed && styles.headerSyncPressed,
-                syncing && styles.headerSyncDisabled,
-              ]}
-            >
-              {syncing ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Ionicons name="sync" size={18} color={COLORS.white} />
-              )}
-              <Text style={styles.headerSyncText}>{syncing ? "Syncing" : "Sync"}</Text>
-            </Pressable>
-          ) : null}
         </View>
 
         <Pressable style={styles.searchBar} onPress={() => searchInputRef.current?.focus()}>
@@ -316,7 +260,6 @@ export default function ProjectsScreen({
           ) : null}
         </Pressable>
 
-        {!!message && <Text style={styles.messageText}>{message}</Text>}
         {!!error && <Text style={styles.errorText}>{error}</Text>}
 
         {loading ? (
@@ -360,8 +303,8 @@ export default function ProjectsScreen({
                 {isSearching
                   ? "Search Results"
                   : filter === "assigned"
-                    ? "Assigned Projects"
-                    : "Active Projects"}
+                    ? "Assigned Jobs"
+                    : "Active Jobs"}
               </Text>
               <Text style={styles.sectionCount}>
                 ({filter === "assigned" || isSearching ? filtered.length : (totalProjects ?? visibleProjects.length)})
@@ -372,10 +315,10 @@ export default function ProjectsScreen({
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>
                   {searchQuery
-                    ? "No matching projects"
+                    ? "No matching jobs"
                     : filter === "assigned"
-                      ? "No assigned projects"
-                      : "No synced projects yet"}
+                      ? "No assigned jobs"
+                      : "No active jobs yet"}
                 </Text>
                 <Text style={styles.emptyText}>
                   {searchQuery
@@ -383,8 +326,8 @@ export default function ProjectsScreen({
                     : filter === "assigned"
                       ? "Assignments can be created from the office/backend."
                       : canManageProjects
-                        ? "Tap the sync button to pull projects from CompanyCam."
-                        : "Ask a manager to sync projects from CompanyCam."}
+                        ? "Accepted DripJobs proposals will appear here automatically."
+                        : "Ask a manager to assign you to an active job."}
                 </Text>
               </View>
             ) : (

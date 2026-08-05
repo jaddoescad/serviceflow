@@ -50,20 +50,14 @@ export async function registerPushToken(user) {
       devicePushToken = null;
     }
 
-    const { error } = await supabase
-      .from("employee_push_tokens")
-      .upsert(
-        {
-          user_id: user.id,
-          expo_push_token: expoPushToken,
-          platform: Platform.OS,
-          device_push_token: devicePushToken,
-          app_version: Constants.expoConfig?.version || null,
-          is_active: true,
-          last_registered_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,expo_push_token" },
-      );
+    const { error } = await supabase.rpc("register_push_token", {
+      payload: {
+        expo_push_token: expoPushToken,
+        platform: Platform.OS,
+        device_push_token: devicePushToken,
+        app_version: Constants.expoConfig?.version || null,
+      },
+    });
 
     return { token: expoPushToken, error };
   } catch (error) {

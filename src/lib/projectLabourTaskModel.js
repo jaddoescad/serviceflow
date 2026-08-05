@@ -1,4 +1,4 @@
-const TASK_STATUSES = new Set(["pending", "in_progress", "completed", "skipped"]);
+const TASK_STATUSES = new Set(["pending", "in_progress", "completed", "skipped", "cancelled"]);
 
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
@@ -68,7 +68,7 @@ export function normalizeProjectLabourTask(row) {
     notes: row.notes ? String(row.notes) : null,
     budgetedHours: Math.max(0, finiteNumber(row.task_budgeted_hours ?? row.budgeted_hours)),
     hoursSpent: Math.max(0, finiteNumber(row.hours_spent)),
-    status: TASK_STATUSES.has(status) ? status : "pending",
+    status: status === "cancelled" ? "skipped" : TASK_STATUSES.has(status) ? status : "pending",
     completedAt: row.completed_at || null,
     sortOrder: Math.round(finiteNumber(row.sort_order)),
     metadata:

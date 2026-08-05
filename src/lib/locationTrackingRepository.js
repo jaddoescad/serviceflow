@@ -36,10 +36,9 @@ export function buildLocationRow(shift, point, options = {}) {
   const eventType = options.eventType || "location";
   return {
     client_event_id: trackingEventId(shift, point, eventType),
-    user_id: shift.userId,
     time_entry_id: uuidOrNull(shift.serverId),
     client_entry_id: shift.localId,
-    companycam_project_id: shift.project?.companycam_id || null,
+    job_id: shift.project?.id || shift.project?.job_id || shift.project?.companycam_id || null,
     latitude,
     longitude,
     accuracy_meters: numericOrNull(pointValue(point, "accuracy", "accuracy_meters")),
@@ -48,7 +47,7 @@ export function buildLocationRow(shift, point, options = {}) {
     is_mocked: typeof point.mocked === "boolean" ? point.mocked : null,
     tracking_mode: normalizeLocationMode(options.mode),
     event_type: eventType,
-    distance_from_project_meters: integerOrNull(options.status?.activeDistance),
+    distance_from_job_meters: integerOrNull(options.status?.activeDistance),
     is_on_site: typeof options.status?.onSite === "boolean" ? options.status.onSite : null,
     captured_at: point.capturedAt || point.captured_at || new Date().toISOString(),
   };
@@ -86,14 +85,9 @@ export async function queueTrackingStatus(shift, options = {}) {
     permissionFields.permission_background = options.permissions.background;
   }
   const status = {
-    user_id: shift.userId,
-    user_email: shift.userEmail || null,
-    user_name: shift.userName || "Painter",
     time_entry_id: uuidOrNull(shift.serverId),
     client_entry_id: shift.localId || null,
-    companycam_project_id: shift.project?.companycam_id || null,
-    project_name: shift.project?.name || null,
-    project_address: shift.project?.formatted_address || shift.project?.address || null,
+    job_id: shift.project?.id || shift.project?.job_id || shift.project?.companycam_id || null,
     latitude: numericOrNull(point?.latitude),
     longitude: numericOrNull(point?.longitude),
     accuracy_meters: numericOrNull(pointValue(point, "accuracy", "accuracy_meters")),
@@ -135,43 +129,49 @@ async function performSync() {
   let syncedPointCount = 0;
   let statusSynced = false;
 
-  if (points.length) {
+  const pendingPoints = [...points];
+  if (!pendingPoints.length && status && Number.isFinite(Number(status.latitude)) && Number.isFinite(Number(status.longitude))) {
+    pendingPoints.push({
+      client_event_id: `tracking-status-${status.client_entry_id || "none"}-${status.last_location_at || status.last_sync_at}`,
+      time_entry_id: status.time_entry_id,
+      client_entry_id: status.client_entry_id || "tracking-status",
+      job_id: status.job_id,
+      latitude: Number(status.latitude),
+      longitude: Number(status.longitude),
+      accuracy_meters: status.accuracy_meters,
+      tracking_mode: status.tracking_mode,
+      event_type: "tracking_status",
+      captured_at: status.last_location_at || new Date().toISOString(),
+    });
+  }
+
+  for (let index = 0; index < pendingPoints.length; index += 1) {
+    const point = pendingPoints[index];
+    const includeStatus = status && index === pendingPoints.length - 1;
     try {
-      const { error } = await supabase
-        .from("employee_location_points")
-        .upsert(points, {
-          onConflict: "user_id,client_event_id",
-          ignoreDuplicates: true,
-        });
-      if (!error) {
-        await removeLocationPoints(points.map((point) => point.client_event_id));
-        syncedPointCount = points.length;
+      const { error } = await supabase.rpc("record_location_update", {
+        point,
+        tracking: includeStatus ? status : null,
+      });
+      if (error) continue;
+      if (points.some((queued) => queued.client_event_id === point.client_event_id)) {
+        await removeLocationPoints([point.client_event_id]);
+        syncedPointCount += 1;
       }
+      if (includeStatus) statusSynced = true;
     } catch (_error) {
-      // Offline or schema not deployed yet. The queue remains intact.
+      // Offline; durable points and the latest status stay queued.
     }
   }
 
-  if (status) {
-    try {
-      const nextStatus = { ...status, last_sync_at: new Date().toISOString() };
-      const { error } = await supabase
-        .from("employee_tracking_status")
-        .upsert(nextStatus, { onConflict: "user_id" });
-      if (!error) {
-        statusSynced = true;
-        await writePendingTrackingStatus(null, { expectedStatus: status });
-        await mergeTrackingRuntimeState({
-          lastSyncAt: nextStatus.last_sync_at,
-          lastErrorCode: null,
-        }, {
-          expectedActiveShift:
-            status.tracking_mode === TRACKING_MODE.CLOCKED_OUT ? null : status,
-        });
-      }
-    } catch (_error) {
-      // Keep the latest status for the next retry.
-    }
+  if (statusSynced && status) {
+    await writePendingTrackingStatus(null, { expectedStatus: status });
+    await mergeTrackingRuntimeState({
+      lastSyncAt: new Date().toISOString(),
+      lastErrorCode: null,
+    }, {
+      expectedActiveShift: status.tracking_mode === TRACKING_MODE.CLOCKED_OUT ? null : status,
+    });
   }
 
   return { syncedPointCount, statusSynced };
@@ -182,7 +182,7 @@ export async function fetchTeamTrackingStatuses() {
     .from("employee_tracking_status")
     .select("*")
     .order("last_location_at", { ascending: false, nullsFirst: false });
-  return { statuses: error ? [] : data || [], error };
+  return { statuses: error ? [] : (data || []).map(normalizeTrackingStatus), error };
 }
 
 export async function fetchEmployeeLocationRoute(userId, startedAt, endedAt) {
@@ -190,13 +190,34 @@ export async function fetchEmployeeLocationRoute(userId, startedAt, endedAt) {
   let query = supabase
     .from("employee_location_points")
     .select("*")
-    .eq("user_id", userId)
+    .eq("employee_id", userId)
     .order("captured_at", { ascending: true })
     .limit(2000);
   if (startedAt) query = query.gte("captured_at", startedAt);
   if (endedAt) query = query.lt("captured_at", endedAt);
   const { data, error } = await query;
-  return { points: error ? [] : data || [], error };
+  return { points: error ? [] : (data || []).map(normalizeLocationPoint), error };
+}
+
+function normalizeTrackingStatus(row) {
+  return {
+    ...row,
+    user_id: row.employee_id,
+    user_email: row.employee_email,
+    user_name: row.employee_name,
+    companycam_project_id: row.job_id,
+    project_name: row.job_name,
+    project_address: row.job_address,
+  };
+}
+
+function normalizeLocationPoint(row) {
+  return {
+    ...row,
+    user_id: row.employee_id,
+    companycam_project_id: row.job_id,
+    distance_from_project_meters: row.distance_from_job_meters,
+  };
 }
 
 function normalizeLocationMode(mode) {

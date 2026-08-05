@@ -4,10 +4,8 @@ import { supabase } from "./supabase";
 
 const CACHE_PREFIX = "ottawaPainters.projectLabourTasks.v1";
 const WRITE_QUEUE_KEY = "ottawaPainters.projectLabourTaskWrites.v1";
-const TIMER_TABLE = "project_labour_task_time_entries";
-const REASON_TABLE = "project_labour_task_over_budget_reasons";
-const LIVE_STATE_TABLE = "project_labour_task_live_state";
-const LIVE_TASKS_RPC = "list_project_labour_tasks_live";
+const TIMER_TABLE = "job_task_time_entries";
+const LIVE_STATE_TABLE = "job_tasks";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OVER_BUDGET_REASON_KEYS = new Set([
   "budget_unrealistic",
@@ -68,29 +66,49 @@ export async function listProjectLabourTasks(projectId) {
   await flushPendingProjectLabourTaskWrites();
 
   try {
-    let result = await supabase.rpc(LIVE_TASKS_RPC, {
-      requested_project_id: String(projectId),
-    });
-    if (isMissingLiveTasksFunction(result.error)) {
-      result = await supabase.rpc("list_project_labour_tasks", {
-        requested_project_id: String(projectId),
-      });
-    }
-    const { data, error } = result;
-    if (error) return { plan: null, error };
+    const [{ data: tasks, error }, { data: budget, error: budgetError }, { data: sessions, error: sessionsError }, { data: authData }] = await Promise.all([
+      supabase.from("job_tasks").select("*").eq("job_id", String(projectId)).order("sort_order"),
+      supabase.from("job_budgets").select("*").eq("job_id", String(projectId)).in("status", ["active", "closed"]).order("version", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from(TIMER_TABLE).select("id,client_entry_id,task_id,employee_id,time_entry_id,started_at,ended_at,status,employees(full_name)").neq("status", "deleted"),
+      supabase.auth.getUser(),
+    ]);
+    if (error || budgetError || sessionsError) return { plan: null, error: error || budgetError || sessionsError };
 
-    let fallbackBudget = null;
-    if (!(data || []).length) {
-      const budgetResult = await supabase
-        .from("project_labour_budgets")
-        .select(
-          "id,companycam_project_id,source_quote_id,source_quote_name,instructions,budgeted_hours,revision,published_at",
-        )
-        .eq("companycam_project_id", String(projectId))
-        .eq("is_active", true)
-        .maybeSingle();
-      if (!budgetResult.error) fallbackBudget = budgetResult.data;
-    }
+    const userId = authData?.user?.id || null;
+    const taskIds = new Set((tasks || []).map((task) => String(task.id)));
+    const taskSessions = (sessions || []).filter((session) => taskIds.has(String(session.task_id)));
+    const now = Date.now();
+    const data = (tasks || []).map((task) => {
+      const matching = taskSessions.filter((session) => String(session.task_id) === String(task.id));
+      const hoursSpent = matching.reduce((sum, session) => {
+        const end = session.ended_at ? new Date(session.ended_at).getTime() : now;
+        return sum + Math.max(0, end - new Date(session.started_at).getTime()) / 3_600_000;
+      }, 0);
+      const active = matching.filter((session) => session.status === "active" && !session.ended_at);
+      return {
+        ...task,
+        task_id: task.id,
+        labour_budget_id: task.budget_id,
+        companycam_project_id: task.job_id,
+        task_budgeted_hours: task.budget_minutes == null ? 0 : Number(task.budget_minutes) / 60,
+        hours_spent: hoursSpent,
+        my_active_started_at: active.find((session) => session.employee_id === userId)?.started_at || null,
+        active_painters: active.map((session) => ({
+          user_id: session.employee_id,
+          display_name: session.employees?.full_name || "Painter",
+          started_at: session.started_at,
+        })),
+      };
+    });
+    const fallbackBudget = budget ? {
+      ...budget,
+      companycam_project_id: budget.job_id,
+      source_quote_id: budget.quote_id,
+      source_quote_name: "Labour plan",
+      budgeted_hours: budget.budget_minutes == null ? 0 : Number(budget.budget_minutes) / 60,
+      revision: budget.version,
+      published_at: budget.created_at,
+    } : null;
 
     const plan = {
       ...normalizeProjectLabourTaskRows(data || [], fallbackBudget),
@@ -117,7 +135,7 @@ export function subscribeToProjectLabourTaskChanges(
         event: "*",
         schema: "public",
         table: LIVE_STATE_TABLE,
-        filter: `companycam_project_id=eq.${normalizedProjectId}`,
+        filter: `job_id=eq.${normalizedProjectId}`,
       },
       (payload) => onChange?.(payload),
     )
@@ -235,7 +253,7 @@ export async function getMyLatestTaskSession(taskId, userId) {
       .from(TIMER_TABLE)
       .select("id,client_entry_id,task_id,started_at,ended_at,status")
       .eq("task_id", String(taskId))
-      .eq("user_id", String(userId))
+      .eq("employee_id", String(userId))
       .not("ended_at", "is", null)
       .order("started_at", { ascending: false })
       .limit(1)
@@ -309,9 +327,9 @@ async function performFlush() {
 
 async function executeTaskOperation(operation) {
   if (operation.action === "status") {
-    const { data, error } = await supabase.rpc("set_project_labour_task_status", {
+    const { data, error } = await supabase.rpc("set_job_task_status", {
       requested_task_id: operation.taskId,
-      requested_status: operation.status,
+      requested_status: operation.status === "skipped" ? "cancelled" : operation.status,
     });
     return { data: Array.isArray(data) ? data[0] || null : data, error };
   }
@@ -332,39 +350,19 @@ async function executeTaskOperation(operation) {
       return { data: null, error: new Error("The over-budget note is too long.") };
     }
 
-    const inserted = await supabase
-      .from(REASON_TABLE)
-      .insert({
-        client_id: operation.clientId,
-        task_id: operation.taskId,
-        user_id: operation.userId,
-        reason: operation.reason,
-        note: operation.note || null,
-        hours_over: Math.max(0, Number(operation.hoursOver) || 0),
-        budget_revision: operation.budgetRevision ?? null,
-        created_at: operation.createdAt,
-      })
-      .select(
-        "id,client_id,task_id,user_id,reason,note,hours_over,budget_revision,created_at",
-      )
-      .single();
-    if (inserted.error?.code === "23505") {
-      return { data: null, error: null };
-    }
-    return { data: inserted.data || null, error: inserted.error };
+    const { data, error } = await runTaskCommand("task_issue", {
+      client_id: operation.clientId,
+      task_id: operation.taskId,
+      reason: operation.reason,
+      note: operation.note || null,
+      minutes_over: Math.round(Math.max(0, Number(operation.hoursOver) || 0) * 60),
+      metadata: { budget_revision: operation.budgetRevision },
+    });
+    return { data, error };
   }
 
   if (operation.action === "timer_stop") {
-    const { data, error } = await supabase
-      .from(TIMER_TABLE)
-      .update({
-        ended_at: operation.endedAt,
-        status: "complete",
-        updated_at: operation.endedAt,
-      })
-      .eq("user_id", operation.userId)
-      .is("ended_at", null)
-      .select("id,task_id,started_at,ended_at,status");
+    const { data, error } = await runTaskCommand("task_stop", { ended_at: operation.endedAt });
     return { data: data || [], error };
   }
 
@@ -374,21 +372,11 @@ async function executeTaskOperation(operation) {
     }
     // Only completed sessions can be corrected; the active timer uses Stop.
     // started_at is server-protected, so duration edits move ended_at only.
-    const { data, error } = await supabase
-      .from(TIMER_TABLE)
-      .update({
-        ended_at: operation.endedAt,
-        status: "complete",
-        updated_at: operation.createdAt,
-      })
-      .eq("id", operation.entryId)
-      .eq("user_id", operation.userId)
-      .not("ended_at", "is", null)
-      .select("id,task_id,started_at,ended_at,status");
-    if (!error && !(data || []).length) {
-      return { data: null, error: new Error("That session could not be updated.") };
-    }
-    return { data: (data || [])[0] || null, error };
+    const { data, error } = await runTaskCommand("task_adjust", {
+      entry_id: operation.entryId,
+      ended_at: operation.endedAt,
+    });
+    return { data, error };
   }
 
   if (operation.action === "timer_start") {
@@ -396,50 +384,14 @@ async function executeTaskOperation(operation) {
       return { data: null, error: new Error("A task and signed-in painter are required.") };
     }
 
-    const existing = await supabase
-      .from(TIMER_TABLE)
-      .select("id,client_entry_id,task_id,started_at,ended_at,status")
-      .eq("client_entry_id", operation.clientEntryId)
-      .maybeSingle();
-    if (existing.error) return { data: null, error: existing.error };
-    if (existing.data) return { data: existing.data, error: null };
-
-    const stopped = await executeTaskOperation({
-      action: "timer_stop",
-      userId: operation.userId,
-      endedAt: operation.startedAt,
-    });
-    if (stopped.error) return stopped;
-
-    const payload = {
+    const { data, error } = await runTaskCommand("task_start", {
       client_entry_id: operation.clientEntryId,
       task_id: operation.taskId,
-      user_id: operation.userId,
       time_entry_id: operation.timeEntryId || null,
       started_at: operation.startedAt,
-      ended_at: null,
-      status: "active",
-      metadata: { source: "mobile" },
-    };
-    let inserted = await supabase.from(TIMER_TABLE).insert(payload).select().single();
-    if (inserted.error?.code === "23503" && payload.time_entry_id) {
-      // The whole-shift row may still be syncing from an offline clock-in. Task
-      // time remains valid without the optional link and can still aggregate.
-      inserted = await supabase
-        .from(TIMER_TABLE)
-        .insert({ ...payload, time_entry_id: null })
-        .select()
-        .single();
-    }
-    if (inserted.error?.code === "23505") {
-      const duplicate = await supabase
-        .from(TIMER_TABLE)
-        .select("*")
-        .eq("client_entry_id", operation.clientEntryId)
-        .maybeSingle();
-      return { data: duplicate.data || null, error: duplicate.error };
-    }
-    return { data: inserted.data || null, error: inserted.error };
+      source: "mobile",
+    });
+    return { data, error };
   }
 
   return { data: null, error: new Error(`Unknown labour-task action: ${operation.action}`) };
@@ -449,10 +401,12 @@ function operationId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function isMissingLiveTasksFunction(error) {
-  const code = String(error?.code || "");
-  const message = String(error?.message || "");
-  return code === "PGRST202" || code === "42883" || /list_project_labour_tasks_live.*does not exist/i.test(message);
+function runTaskCommand(action, command) {
+  return supabase.rpc("record_time_entry_command", {
+    action,
+    command,
+    next_command: null,
+  });
 }
 
 function runTimerMutation(work) {

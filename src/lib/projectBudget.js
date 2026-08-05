@@ -58,9 +58,10 @@ export async function listProjectBudgetProgress(projectIds) {
 
   const results = await Promise.all(
     chunks.map((requestedProjectIds) =>
-      supabase.rpc("get_project_budget_progress", {
-        requested_project_ids: requestedProjectIds,
-      }),
+      supabase
+        .from("job_feed")
+        .select("id,status,budget_minutes,used_minutes,budget_percent_used,budget_status,updated_at")
+        .in("id", requestedProjectIds),
     ),
   );
 
@@ -278,14 +279,22 @@ function getSeededBudgetProgress(projects, projectIdsKey) {
 }
 
 function normalizeBudgetProgress(row) {
-  const percentUsed = row?.percent_used == null ? null : Number(row.percent_used);
-  const hoursUsed = row?.hours_used == null ? null : Number(row.hours_used);
+  const percentUsed = row?.budget_percent_used == null ? null : Number(row.budget_percent_used);
+  const hoursUsed = row?.used_minutes == null ? null : Number(row.used_minutes) / 60;
+  const rawStatus = String(row?.budget_status || "not_configured");
+  const status = rawStatus === "over_budget"
+    ? "over"
+    : rawStatus === "complete"
+      ? "at"
+      : rawStatus === "active"
+        ? "under"
+        : rawStatus;
   return {
-    companycamProjectId: String(row?.companycam_project_id || ""),
+    companycamProjectId: String(row?.id || ""),
     percentUsed: Number.isFinite(percentUsed) ? percentUsed : null,
     hoursUsed: Number.isFinite(hoursUsed) ? hoursUsed : null,
-    status: String(row?.budget_status || "not_configured"),
-    isComplete: row?.is_complete === true,
-    calculatedAt: row?.calculated_at || null,
+    status,
+    isComplete: row?.status === "completed",
+    calculatedAt: row?.updated_at || null,
   };
 }
