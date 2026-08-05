@@ -1,5 +1,10 @@
 # Agent Instructions
 
+## Branch Policy
+
+- Work on the current branch by default.
+- Do not create a Git branch unless the user explicitly asks for one.
+
 ## Release Verification
 
 Before submitting any Android build to Google Play, verify the release artifact can launch.
