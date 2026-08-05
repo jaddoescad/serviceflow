@@ -357,8 +357,71 @@ export async function getProjectById(projectId: string): Promise<Project | null>
   return data ? project(data) : null;
 }
 
-export async function resolveProjectId(projectId: string): Promise<string> {
-  return projectId;
+export type LegacyProjectResolution = {
+  kind: "job" | "lead";
+  id: string;
+};
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function resolveLegacyProject(projectId: string): Promise<LegacyProjectResolution | null> {
+  const supabase = await createClient();
+
+  if (uuidPattern.test(projectId)) {
+    const [{ data: job, error: jobError }, { data: lead, error: leadError }] = await Promise.all([
+      supabase.from("jobs").select("id").eq("id", projectId).maybeSingle(),
+      supabase.from("leads").select("id").eq("id", projectId).maybeSingle(),
+    ]);
+    if (jobError) throw new Error(`legacy job lookup: ${jobError.message}`);
+    if (leadError) throw new Error(`legacy lead lookup: ${leadError.message}`);
+    if (job) return { kind: "job", id: job.id };
+    if (lead) return { kind: "lead", id: lead.id };
+  }
+
+  const jobQueries = [
+    supabase.from("jobs").select("id").contains("companycam_project_ids", [projectId]).limit(1).maybeSingle(),
+    supabase.from("jobs").select("id").contains("metadata", { legacy_project_ids: [projectId] }).limit(1).maybeSingle(),
+    supabase.from("jobs").select("id").contains("metadata", { old_canonical_project_id: projectId }).limit(1).maybeSingle(),
+    supabase.from("jobs").select("id").contains("metadata", { old_project_id: projectId }).limit(1).maybeSingle(),
+  ];
+  const jobResults = await Promise.all(jobQueries);
+  for (const result of jobResults) {
+    if (result.error) throw new Error(`legacy job lookup: ${result.error.message}`);
+    if (result.data) return { kind: "job", id: result.data.id };
+  }
+
+  const proposalId = /^dripjobs-(\d+)$/.exec(projectId)?.[1];
+  if (proposalId) {
+    const { data: quote, error: quoteError } = await supabase
+      .from("quotes")
+      .select("id")
+      .eq("dripjobs_proposal_id", proposalId)
+      .maybeSingle();
+    if (quoteError) throw new Error(`legacy quote lookup: ${quoteError.message}`);
+    if (quote) {
+      const { data: job, error: jobError } = await supabase
+        .from("jobs")
+        .select("id")
+        .eq("accepted_quote_id", quote.id)
+        .maybeSingle();
+      if (jobError) throw new Error(`legacy proposal job lookup: ${jobError.message}`);
+      if (job) return { kind: "job", id: job.id };
+    }
+  }
+
+  const leadQueries = [
+    supabase.from("leads").select("id").contains("metadata", { legacy_project_ids: [projectId] }).limit(1).maybeSingle(),
+    supabase.from("leads").select("id").contains("metadata", { old_operational_project_id: projectId }).limit(1).maybeSingle(),
+    supabase.from("leads").select("id").contains("metadata", { companycam_project_id: projectId }).limit(1).maybeSingle(),
+    supabase.from("leads").select("id").contains("metadata", { old_project_id: projectId }).limit(1).maybeSingle(),
+  ];
+  const leadResults = await Promise.all(leadQueries);
+  for (const result of leadResults) {
+    if (result.error) throw new Error(`legacy lead lookup: ${result.error.message}`);
+    if (result.data) return { kind: "lead", id: result.data.id };
+  }
+
+  return null;
 }
 
 export async function getProjectTimeEntries(projectId: string, sinceIso?: string): Promise<TimeEntry[]> {

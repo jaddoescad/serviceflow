@@ -1,5 +1,4 @@
-import { CalculatorPage } from "@/components/calculator/calculator";
-import { getProjectById, resolveProjectId } from "@/lib/queries";
+import { resolveLegacyProject } from "@/lib/queries";
 import { notFound, redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -14,22 +13,10 @@ export default async function ProjectCalculatorPage({
   const { id } = await params;
   const { name } = await searchParams;
   const projectId = decodeURIComponent(id);
-  const canonicalProjectId = await resolveProjectId(projectId);
-  if (canonicalProjectId !== projectId) {
-    const query = name ? `?name=${encodeURIComponent(name)}` : "";
-    redirect(
-      `/jobs/${encodeURIComponent(canonicalProjectId)}/calculator${query}`,
-    );
-  }
-  const project = await getProjectById(projectId);
-
-  if (!project) notFound();
-
-  return (
-    <CalculatorPage
-      projectId={projectId}
-      projectName={project.name || name || null}
-      isLead={project.is_lead}
-    />
+  const resolution = await resolveLegacyProject(projectId);
+  if (!resolution) notFound();
+  const query = name ? `?name=${encodeURIComponent(name)}` : "";
+  redirect(
+    `/${resolution.kind === "job" ? "jobs" : "leads"}/${encodeURIComponent(resolution.id)}/calculator${query}`,
   );
 }
