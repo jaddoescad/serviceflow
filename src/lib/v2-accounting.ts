@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import {
-  isCostingInvoice,
+  selectCostingInvoiceJobAllocations,
   selectUsableInvoiceJobAllocations,
 } from "@/lib/invoice-allocation-selection";
 
@@ -42,12 +42,7 @@ export async function getJobInvoices(jobId: string) {
     .eq("job_id", jobId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`job invoices: ${error.message}`);
-  return selectUsableInvoiceJobAllocations(data ?? []).filter((allocation: any) => {
-    const invoice = Array.isArray(allocation.invoice)
-      ? allocation.invoice[0]
-      : allocation.invoice;
-    return invoice && isCostingInvoice(invoice);
-  });
+  return selectCostingInvoiceJobAllocations(data ?? []);
 }
 
 export async function getLedger() {

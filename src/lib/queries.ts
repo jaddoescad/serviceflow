@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   isCostingInvoice,
-  selectUsableInvoiceJobAllocations,
+  selectCostingInvoiceJobAllocations,
 } from "@/lib/invoice-allocation-selection";
 import { selectCurrentOperationalBudgets } from "@/lib/job-budget-selection";
 import type {
@@ -290,8 +290,8 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
     .select("id,invoice_id,invoice_line_id,job_id,subtotal_cents,tax_cents,metadata,created_at,updated_at,invoice:invoices(id,category,status,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
     .eq("invoice.category", "labour");
   if (error) throw new Error(`labour expenses: ${error.message}`);
-  return selectUsableInvoiceJobAllocations(data ?? []).flatMap((row: any) =>
-    row.invoice && isCostingInvoice(row.invoice)
+  return selectCostingInvoiceJobAllocations(data ?? []).flatMap((row: any) =>
+    row.invoice
       ? [{
           id: row.id,
           companycam_project_id: row.job_id,
@@ -347,7 +347,7 @@ export async function getJobMaterialSummaries(): Promise<Map<string, { amountBef
     .eq("invoice.category", "material");
   if (error) throw new Error(`material job costs: ${error.message}`);
   const result = new Map<string, { amountBeforeTax: number; lineCount: number }>();
-  for (const row of selectUsableInvoiceJobAllocations(data ?? [])) {
+  for (const row of selectCostingInvoiceJobAllocations(data ?? [])) {
     const invoice: any = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
     if (!invoice || invoice.category !== "material" || !isCostingInvoice(invoice)) continue;
     const current = result.get(row.job_id) ?? { amountBeforeTax: 0, lineCount: 0 };
