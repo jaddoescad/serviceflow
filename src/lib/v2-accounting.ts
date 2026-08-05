@@ -1,16 +1,23 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  isCostingInvoice,
+  selectUsableInvoiceJobAllocations,
+} from "@/lib/invoice-allocation-selection";
 
 export async function getUnifiedInvoices(category?: "customer" | "labour" | "material" | "other") {
   const supabase = await createClient();
   let query = supabase
     .from("invoices")
-    .select("*,contact:contacts(name),allocations:invoice_job_allocations(id,job_id,total_cents,needs_review,job:jobs(name))")
+    .select("*,contact:contacts(name),allocations:invoice_job_allocations(id,invoice_id,invoice_line_id,job_id,total_cents,needs_review,metadata,job:jobs(name))")
     .order("issued_on", { ascending: false, nullsFirst: false })
     .limit(2000);
   if (category) query = query.eq("category", category);
   const { data, error } = await query;
   if (error) throw new Error(`invoices: ${error.message}`);
-  return data ?? [];
+  return (data ?? []).map((invoice: any) => ({
+    ...invoice,
+    allocations: selectUsableInvoiceJobAllocations(invoice.allocations ?? []),
+  }));
 }
 
 export async function getUnifiedInvoice(invoiceId: string) {
@@ -21,7 +28,10 @@ export async function getUnifiedInvoice(invoiceId: string) {
     .eq("id", invoiceId)
     .maybeSingle();
   if (error) throw new Error(`invoice: ${error.message}`);
-  return data;
+  return data ? {
+    ...data,
+    allocations: selectUsableInvoiceJobAllocations(data.allocations ?? []),
+  } : data;
 }
 
 export async function getJobInvoices(jobId: string) {
@@ -32,7 +42,12 @@ export async function getJobInvoices(jobId: string) {
     .eq("job_id", jobId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`job invoices: ${error.message}`);
-  return data ?? [];
+  return selectUsableInvoiceJobAllocations(data ?? []).filter((allocation: any) => {
+    const invoice = Array.isArray(allocation.invoice)
+      ? allocation.invoice[0]
+      : allocation.invoice;
+    return invoice && isCostingInvoice(invoice);
+  });
 }
 
 export async function getLedger() {

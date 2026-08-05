@@ -1,4 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  isCostingInvoice,
+  selectUsableInvoiceJobAllocations,
+} from "@/lib/invoice-allocation-selection";
+import { selectCurrentOperationalBudgets } from "@/lib/job-budget-selection";
 import type {
   Assignment,
   EmployeeLocationPoint,
@@ -250,21 +255,28 @@ export async function getBudgets(): Promise<ProjectBudget[]> {
   const supabase = await createClient();
   const [{ data: jobs, error: jobError }, { data: budgets, error: budgetError }] = await Promise.all([
     supabase.from("jobs").select("id,contract_amount_cents,status,completed_on,updated_at"),
-    supabase.from("job_budgets").select("*").in("status", ["active", "closed"]).order("version", { ascending: false }),
+    supabase
+      .from("job_budgets")
+      .select("*")
+      .in("source", ["manual", "project_budget"])
+      .in("status", ["active", "closed"])
+      .order("updated_at", { ascending: false }),
   ]);
   if (jobError) throw new Error(`job amounts: ${jobError.message}`);
   if (budgetError) throw new Error(`budgets: ${budgetError.message}`);
-  const latest = new Map<string, any>();
-  for (const row of budgets ?? []) if (!latest.has(row.job_id)) latest.set(row.job_id, row);
+  const latest = selectCurrentOperationalBudgets(budgets ?? []);
   return (jobs ?? []).map((job: any) => {
     const budget = latest.get(job.id);
+    const budgetAmountCents = Number(budget?.amount_including_tax_cents ?? 0);
+    const contractAmountCents = Number(job.contract_amount_cents ?? 0);
+    const amountCents = budgetAmountCents > 0 ? budgetAmountCents : contractAmountCents;
     return {
       companycam_project_id: job.id,
       budgeted_hours: budget?.budget_minutes == null ? null : Number(budget.budget_minutes) / 60,
-      amount_including_tax: Number(job.contract_amount_cents ?? 0) > 0 ? Number(job.contract_amount_cents) / 100 : null,
+      amount_including_tax: amountCents > 0 ? amountCents / 100 : null,
       hourly_rate: budget?.hourly_rate_cents == null ? null : Number(budget.hourly_rate_cents) / 100,
       notes: budget?.notes ?? null,
-      labour_closed_at: budget?.closed_at ?? (job.status === "completed" ? job.updated_at : null),
+      labour_closed_at: budget?.closed_at ?? null,
       labour_invoice_job_started_on: budget?.metadata?.labour_invoice_job_started_on ?? null,
       updated_at: budget?.updated_at ?? job.updated_at,
     };
@@ -275,23 +287,27 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("invoice_job_allocations")
-    .select("id,job_id,subtotal_cents,tax_cents,created_at,updated_at,invoice:invoices(id,category,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
+    .select("id,invoice_id,invoice_line_id,job_id,subtotal_cents,tax_cents,metadata,created_at,updated_at,invoice:invoices(id,category,status,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
     .eq("invoice.category", "labour");
   if (error) throw new Error(`labour expenses: ${error.message}`);
-  return (data ?? []).flatMap((row: any) => row.invoice ? [{
-    id: row.id,
-    companycam_project_id: row.job_id,
-    worker_user_id: row.invoice.metadata?.worker_user_id ?? null,
-    worker_name: row.invoice.metadata?.worker_name ?? row.invoice.contact?.name ?? "Painter",
-    supplier_name: row.invoice.contact?.name ?? row.invoice.metadata?.supplier_name ?? "Labour",
-    invoice_number: row.invoice.invoice_number,
-    invoice_date: row.invoice.issued_on,
-    amount_before_tax: Number(row.subtotal_cents ?? 0) / 100,
-    tax_amount: Number(row.tax_cents ?? 0) / 100,
-    notes: row.invoice.metadata?.notes ?? null,
-    inserted_at: row.created_at,
-    updated_at: row.updated_at,
-  }] : []);
+  return selectUsableInvoiceJobAllocations(data ?? []).flatMap((row: any) =>
+    row.invoice && isCostingInvoice(row.invoice)
+      ? [{
+          id: row.id,
+          companycam_project_id: row.job_id,
+          worker_user_id: row.invoice.metadata?.worker_user_id ?? null,
+          worker_name: row.invoice.metadata?.worker_name ?? row.invoice.contact?.name ?? "Painter",
+          supplier_name: row.invoice.contact?.name ?? row.invoice.metadata?.supplier_name ?? "Labour",
+          invoice_number: row.invoice.invoice_number,
+          invoice_date: row.invoice.issued_on,
+          amount_before_tax: Number(row.subtotal_cents ?? 0) / 100,
+          tax_amount: Number(row.tax_cents ?? 0) / 100,
+          notes: row.invoice.metadata?.notes ?? null,
+          inserted_at: row.created_at,
+          updated_at: row.updated_at,
+        }]
+      : [],
+  );
 }
 
 export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
@@ -327,13 +343,13 @@ export async function getJobMaterialSummaries(): Promise<Map<string, { amountBef
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("invoice_job_allocations")
-    .select("job_id,subtotal_cents,invoice_line_id,invoice:invoices(category)")
+    .select("invoice_id,job_id,subtotal_cents,invoice_line_id,metadata,invoice:invoices(category,status)")
     .eq("invoice.category", "material");
   if (error) throw new Error(`material job costs: ${error.message}`);
   const result = new Map<string, { amountBeforeTax: number; lineCount: number }>();
-  for (const row of data ?? []) {
+  for (const row of selectUsableInvoiceJobAllocations(data ?? [])) {
     const invoice: any = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
-    if (!invoice || invoice.category !== "material") continue;
+    if (!invoice || invoice.category !== "material" || !isCostingInvoice(invoice)) continue;
     const current = result.get(row.job_id) ?? { amountBeforeTax: 0, lineCount: 0 };
     current.amountBeforeTax += Number(row.subtotal_cents ?? 0) / 100;
     if (row.invoice_line_id) current.lineCount += 1;

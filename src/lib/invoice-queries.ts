@@ -1,4 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  isCostingInvoice,
+  selectUsableInvoiceJobAllocations,
+} from "@/lib/invoice-allocation-selection";
 import type { InvoiceEntryRecord } from "@/lib/invoice-entry-queries";
 
 export type LabourInvoiceProjectLink = {
@@ -82,7 +86,7 @@ export async function getLabourInvoices(): Promise<LabourInvoiceRecord[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("invoices")
-    .select("*,contact:contacts(name),allocations:invoice_job_allocations(job_id,total_cents,needs_review,job:jobs(name,formatted_address,status)),evidence:evidence_links(document:documents(original_filename,storage_path,storage_bucket))")
+    .select("*,contact:contacts(name),allocations:invoice_job_allocations(invoice_id,invoice_line_id,job_id,total_cents,needs_review,metadata,job:jobs(name,formatted_address,status)),evidence:evidence_links(document:documents(original_filename,storage_path,storage_bucket))")
     .eq("category", "labour")
     .order("issued_on", { ascending: false, nullsFirst: false });
   if (error) throw error;
@@ -110,7 +114,7 @@ export async function getLabourInvoices(): Promise<LabourInvoiceRecord[]> {
       paid_amount: paid,
       payment_status: paid > total + 0.01 ? "overpaid" : paid >= total - 0.01 ? "paid" : paid > 0 ? "partially_paid" : "unpaid",
       verification_status: (invoice.allocations ?? []).some((row: any) => row.needs_review) ? "needs_review" : "verified",
-      labour_invoice_projects: (invoice.allocations ?? []).map((allocation: any, index: number) => ({
+      labour_invoice_projects: selectUsableInvoiceJobAllocations(invoice.allocations ?? []).map((allocation: any, index: number) => ({
         companycam_project_id: allocation.job_id,
         allocated_amount: Number(allocation.total_cents ?? 0) / 100,
         match_score: 100,
@@ -156,14 +160,14 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("invoice_job_allocations")
-    .select("job_id,subtotal_cents,needs_review,invoice:invoices(id,category,currency,issued_on,paid_cents,total_cents),invoice_line_id")
+    .select("invoice_id,job_id,subtotal_cents,needs_review,metadata,invoice:invoices(id,category,status,currency,issued_on,paid_cents,total_cents),invoice_line_id")
     .eq("invoice.category", "labour");
   if (error) throw error;
   const map = new Map<string, ProjectLabourInvoiceSummary>();
   const seen = new Map<string, Set<string>>();
-  for (const allocation of data ?? []) {
+  for (const allocation of selectUsableInvoiceJobAllocations(data ?? [])) {
     const invoice: any = Array.isArray(allocation.invoice) ? allocation.invoice[0] : allocation.invoice;
-    if (!invoice || invoice.category !== "labour") continue;
+    if (!invoice || invoice.category !== "labour" || !isCostingInvoice(invoice)) continue;
     const summary = map.get(allocation.job_id) ?? emptyProjectLabourInvoiceSummary();
     const currency = invoice.currency === "USD" ? "USD" : "CAD";
     summary.totals[currency] += Number(allocation.subtotal_cents ?? 0) / 100;
