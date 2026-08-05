@@ -45,6 +45,7 @@
     "test:dripjobs-job-identity": "node --test scripts/dripjobs-job-identity.test.mjs",
     "test:marketing-sales": "node --experimental-strip-types --test scripts/marketing-sales-metrics.test.mjs",
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
+    "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
     "test:invoice-allocations": "node --experimental-strip-types --test scripts/invoice-allocation-selection.test.mjs scripts/job-budget-selection.test.mjs"
   },
   "dependencies": {
