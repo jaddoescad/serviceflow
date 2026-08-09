@@ -516,6 +516,34 @@ export function computeTotals(state: Quote): CalculatorTotals {
   };
 }
 
+/**
+ * Roll up interior category prices exactly as staff see them on the room
+ * cards: each category line is rounded to a whole dollar before the lines are
+ * added together. This intentionally differs from rounding the raw aggregate
+ * once, which can drift by a few dollars across a larger quote.
+ */
+export function computeDisplayedInteriorParts(state: Quote): RoomPricing["parts"] {
+  const displayedParts: RoomPricing["parts"] = {
+    walls: 0,
+    thirdCoat: 0,
+    ceiling: 0,
+    popcorn: 0,
+    doors: 0,
+    trim: 0,
+    crown: 0,
+    closets: 0,
+  };
+
+  for (const room of state.rooms) {
+    const parts = priceRoom(room, state.paintTier, state.rates.interior).parts;
+    for (const key of Object.keys(displayedParts) as Array<keyof typeof displayedParts>) {
+      displayedParts[key] += Math.round(parts[key]);
+    }
+  }
+
+  return displayedParts;
+}
+
 // ---------------------------------------------------------------------------
 // State (de)serialization — tolerant of older saves / added rate fields
 // ---------------------------------------------------------------------------

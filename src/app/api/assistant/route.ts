@@ -13,6 +13,7 @@ import {
   QuoteStatus,
   Room,
   WashingChoice,
+  computeDisplayedInteriorParts,
   computeTotals,
   priceRoom,
   reviveQuote,
@@ -44,6 +45,8 @@ How to behave:
 - Never change rates or use a manual adjustment merely to hit a target price. Only do those when the user explicitly asks for a rate change, discount, amount off, or adjustment.
 - Treat corrections such as "no, what I meant" as replacing the immediately preceding measurements you invented, not adding another option. Clear that invented room/item set before creating the corrected one.
 - Every mutating tool that affects price returns the resulting summary. Read that result directly; do not call get_summary immediately afterward. Use get_summary only for a read-only question or when no mutation result contains the state you need.
+- For any question asking for the price of one or more interior categories (walls, trim, ceiling, doors, etc.), call get_interior_category_prices. Copy its returned whole-dollar values verbatim; never add room prices, add displayed rows, or redo the formulas yourself.
+- Category price answers are pre-HST and follow the visible room cards: each room's category line is rounded to a whole dollar before the lines are added. This prevents the few-dollar drift caused by rounding only after aggregation.
 - Check the mutation result matches the request (room count, names, exact surfaces, target price). If the one permitted correction still misses, explain the closest result instead of continuing to call tools.
 - Confirm in ONE short sentence with the new client price (pre-HST) and labour hours. Never invent totals or hours — read them from a tool result.
 - If a request is ambiguous or a tool reports an error, ask a brief clarifying question instead of guessing.
@@ -79,6 +82,17 @@ const newRoomFields = {
   trimCoats: roomFields.trimCoats,
   notes: roomFields.notes,
 };
+
+const interiorCategory = z.enum([
+  "walls",
+  "thirdCoat",
+  "ceiling",
+  "popcorn",
+  "doors",
+  "trim",
+  "crown",
+  "closets",
+]);
 
 function roomPatch(input: Record<string, unknown>): Partial<Room> {
   const patch: Partial<Room> = {};
@@ -152,6 +166,7 @@ export async function POST(request: Request) {
 
   const summarize = () => {
     const totals = computeTotals(working);
+    const displayedInteriorCategoryTotals = computeDisplayedInteriorParts(working);
     return JSON.stringify({
       quote: working.name,
       status: working.status,
@@ -159,6 +174,7 @@ export async function POST(request: Request) {
       clientPricePreHst: Math.round(totals.price),
       hstIncludedTotal: Math.round(totals.totalWithHst),
       labourHours: Number(totals.hours.toFixed(1)),
+      displayedInteriorCategoryTotals,
       rooms: working.rooms.map((room) => {
         const p = priceRoom(room, working.paintTier, working.rates.interior);
         return {
@@ -175,6 +191,9 @@ export async function POST(request: Request) {
           doors: room.doors ?? 0,
           closets: room.closets ?? 0,
           price: Math.round(p.total),
+          displayedCategoryPrices: Object.fromEntries(
+            Object.entries(p.parts).map(([category, price]) => [category, Math.round(price)]),
+          ),
           hours: Number(p.hours.toFixed(1)),
         };
       }),
@@ -344,6 +363,41 @@ export async function POST(request: Request) {
       },
     }),
     tool({
+      name: "get_interior_category_prices",
+      description:
+        "Get deterministic whole-dollar prices for one or more interior categories. Use this for every question about total walls, trim, ceilings, doors, or other interior category prices; never calculate those totals yourself.",
+      parameters: z.object({
+        categories: z.array(interiorCategory).min(1),
+        room: z.string().nullable().describe("Optional visible room name; null means all rooms"),
+      }),
+      async execute({ categories, room }) {
+        let rooms = working.rooms;
+        let scope = "all rooms";
+        if (room) {
+          const found = findRoom(room);
+          if ("error" in found) return found.error;
+          rooms = working.rooms.filter((candidate) => candidate.id === found.id);
+          scope = rooms[0]?.name ?? room;
+        }
+
+        const prices = Object.fromEntries(categories.map((category) => [category, 0])) as Record<
+          (typeof categories)[number],
+          number
+        >;
+        for (const candidate of rooms) {
+          const parts = priceRoom(candidate, working.paintTier, working.rates.interior).parts;
+          for (const category of categories) prices[category] += Math.round(parts[category]);
+        }
+
+        return JSON.stringify({
+          scope,
+          pricesPreHst: prices,
+          combinedPricePreHst: Object.values(prices).reduce((sum, price) => sum + price, 0),
+          rounding: "Each visible room/category price is rounded to a whole dollar before summing.",
+        });
+      },
+    }),
+    tool({
       name: "get_summary",
       description: "Read the current quote: rooms, exterior items, prices, labour hours.",
       parameters: z.object({}),
@@ -456,6 +510,8 @@ function toolLabel(name: string | undefined, argsJson: string | undefined): stri
       return "Clearing quote";
     case "get_summary":
       return "Checking totals";
+    case "get_interior_category_prices":
+      return "Calculating category prices";
     default:
       return name ?? "Working";
   }

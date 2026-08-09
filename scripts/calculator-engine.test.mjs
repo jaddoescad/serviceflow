@@ -9,6 +9,7 @@ import {
   INTERIOR_FUTURE_JOB_MULTIPLIER,
   baseRoomName,
   computeTotals,
+  computeDisplayedInteriorParts,
   makeExteriorLine,
   makeQuote,
   makeRoom,
@@ -85,6 +86,29 @@ test("interior: plausible generated room rounds to the requested $1,220 target",
 test("interior: third coat is 35% of walls, opt-in", () => {
   const p = priceRoom(room({ length: 12, width: 14, height: 8, walls: true, ceiling: false, thirdCoat: true }), "duration", IR);
   close(p.parts.thirdCoat, 574.08 * 0.35, 1e-9);
+});
+
+test("interior: displayed category totals sum the rounded room-card rows", () => {
+  const quote = makeQuote("displayed roll-up");
+  quote.rooms = Array.from({ length: 10 }, (_, index) =>
+    room({
+      id: `room-${index}`,
+      length: 5,
+      width: 5,
+      height: 8,
+      walls: true,
+      ceiling: false,
+      trim: true,
+      trimCoats: 1,
+    }),
+  );
+
+  const displayed = computeDisplayedInteriorParts(quote);
+  const firstRoom = priceRoom(quote.rooms[0], quote.paintTier, quote.rates.interior);
+  assert.equal(displayed.walls, Math.round(firstRoom.parts.walls) * quote.rooms.length);
+  assert.equal(displayed.trim, Math.round(firstRoom.parts.trim) * quote.rooms.length);
+  assert.notEqual(displayed.walls, Math.round(computeTotals(quote).interior.parts.walls));
+  assert.notEqual(displayed.trim, Math.round(computeTotals(quote).interior.parts.trim));
 });
 
 test("interior: paint tiers and flat closets", () => {
