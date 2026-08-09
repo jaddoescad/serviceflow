@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/kpi";
 import { ProjectTabs, type LocalTabKey } from "@/components/project-tabs";
+import { Badge } from "@/components/ui";
 
 /**
  * Job page chrome that paints immediately: breadcrumb, title, and live tabs.
@@ -19,7 +20,6 @@ export function JobShell({
   initialTab,
   overview,
   tasks,
-  entityKind,
 }: {
   projectId: string;
   name: string;
@@ -28,7 +28,6 @@ export function JobShell({
   initialTab: LocalTabKey;
   overview: React.ReactNode;
   tasks: React.ReactNode;
-  entityKind?: "job" | "lead";
 }) {
   const [tab, setTab] = useState<LocalTabKey>(initialTab);
   const pathname = usePathname();
@@ -40,7 +39,7 @@ export function JobShell({
 
   function switchTab(next: LocalTabKey) {
     setTab(next);
-    const base = `/${entityKind === "lead" ? "leads" : "jobs"}/${encodeURIComponent(projectId)}`;
+    const base = `/jobs/${encodeURIComponent(projectId)}`;
     const href = next === "tasks" ? `${base}/tasks` : base;
     if (typeof window !== "undefined" && window.location.pathname !== href) {
       window.history.pushState(null, "", href);
@@ -57,14 +56,17 @@ export function JobShell({
         <span>{name}</span>
       </div>
 
-      <PageHeader title={name} subtitle={address ?? undefined} />
+      <PageHeader
+        title={name}
+        subtitle={address ?? undefined}
+        actions={isLead ? <Badge tone="brand">Lead</Badge> : null}
+      />
 
       <ProjectTabs
         projectId={projectId}
         projectName={name}
         activeOverride={tab}
         onLocalSwitch={switchTab}
-        entityKind={entityKind ?? (isLead ? "lead" : "job")}
       />
 
       <div className={tab === "tasks" ? "hidden" : undefined}>{overview}</div>

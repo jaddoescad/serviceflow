@@ -14,7 +14,7 @@ test("briefing is one bounded report call", () => {
   const invocation = buildOttawaDbInvocation(options, "/safe/ottawa-db");
   assert.deepEqual(invocation, {
     executable: "/safe/ottawa-db",
-    args: ["--json", "query", "select public.hermes_briefing(30, 12) as report", "--limit", "1"],
+    args: ["query", "select public.hermes_briefing(30, 12) as report", "--limit", "1", "--json"],
   });
 });
 
@@ -33,14 +33,13 @@ test("labour dates reject invalid or ambiguous values", () => {
   assert.throws(() => parseReportArgs(["cash", "--date", "yesterday"]), /does not accept --date/);
 });
 
-test("JSON is a global ottawa-db option, not a query option", () => {
+test("JSON is a query option for the cloud ottawa-db parser", () => {
   const invocation = buildOttawaDbInvocation(
     parseReportArgs(["customer", "Abdullah Yacoub", "--json"]),
     "/safe/ottawa-db",
   );
-  assert.equal(invocation.args[0], "--json");
-  assert.equal(invocation.args[1], "query");
-  assert.equal(invocation.args.at(-1), "1");
+  assert.equal(invocation.args[0], "query");
+  assert.equal(invocation.args.at(-1), "--json");
 });
 
 test("job search is SQL escaped and never passed through a shell", () => {

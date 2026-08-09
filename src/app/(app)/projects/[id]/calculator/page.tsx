@@ -16,7 +16,5 @@ export default async function ProjectCalculatorPage({
   const resolution = await resolveLegacyProject(projectId);
   if (!resolution) notFound();
   const query = name ? `?name=${encodeURIComponent(name)}` : "";
-  redirect(
-    `/${resolution.kind === "job" ? "jobs" : "leads"}/${encodeURIComponent(resolution.id)}/calculator${query}`,
-  );
+  redirect(`/jobs/${encodeURIComponent(resolution.id)}/calculator${query}`);
 }

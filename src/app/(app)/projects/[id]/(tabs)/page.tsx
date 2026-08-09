@@ -8,5 +8,5 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
   const projectId = decodeURIComponent(id);
   const resolution = await resolveLegacyProject(projectId);
   if (!resolution) notFound();
-  redirect(`/${resolution.kind === "job" ? "jobs" : "leads"}/${encodeURIComponent(resolution.id)}`);
+  redirect(`/jobs/${encodeURIComponent(resolution.id)}`);
 }

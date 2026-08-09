@@ -27,14 +27,15 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verify the signed JWT locally instead of calling the Auth server for every
+  // navigation. The project's asymmetric signing key is cached via JWKS.
+  const { data } = await supabase.auth.getClaims();
+  const isAuthenticated = Boolean(data?.claims.sub);
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
-  if (!user && !isPublic) {
+  if (!isAuthenticated && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);

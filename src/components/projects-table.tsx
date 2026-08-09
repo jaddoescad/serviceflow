@@ -336,7 +336,7 @@ export function ProjectsTable({
                   <th className="px-2.5 py-2.5 font-medium">Material share</th>
                   <th
                     className="px-2.5 py-2.5 font-medium"
-                    title="Open jobs with clock activity appear first by latest clock-in; all other jobs follow by DripJobs start date"
+                    title="Open jobs appear first by labour activity: latest clock-in, then latest labour invoice; all other jobs follow by DripJobs start date"
                   >
                     Job start date ↓
                   </th>

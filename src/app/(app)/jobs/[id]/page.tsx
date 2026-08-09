@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
 import { getProjectShell } from "@/lib/project-data";
 import { JobShell } from "@/components/job-shell";
 import { OverviewSlot, TasksSlot } from "@/components/project-slots";
 import { OverviewPanelSkeleton, TasksPanelSkeleton } from "@/components/skeletons";
+import { LeadDetailView } from "@/components/lead-detail-view";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const jobId = decodeURIComponent(id);
   const shell = await getProjectShell(jobId);
-  if (!shell) notFound();
+  if (!shell) return <LeadDetailView leadId={jobId} initialTab="overview" />;
   return (
     <JobShell
       projectId={jobId}

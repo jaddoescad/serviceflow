@@ -8,11 +8,12 @@ function row(overrides) {
     jobStartedOn: null,
     labourClosedAt: null,
     lastClockIn: null,
+    labourInvoices: { latestInvoiceDate: null },
     ...overrides,
   };
 }
 
-test("open jobs with clock activity sort ahead of every other job", () => {
+test("open jobs with clock activity sort ahead of invoice-only and inactive jobs", () => {
   const ongoing = row({
     name: "Carina Stark",
     jobStartedOn: "2026-07-20",
@@ -28,12 +29,16 @@ test("open jobs with clock activity sort ahead of every other job", () => {
     name: "Newer job without hours",
     jobStartedOn: "2026-08-09",
   });
+  const subcontractorJob = row({
+    name: "Tom Benton",
+    labourInvoices: { latestInvoiceDate: "2026-07-31" },
+  });
 
   assert.deepEqual(
-    [newerCompleted, newerWithoutHours, ongoing]
+    [newerCompleted, newerWithoutHours, subcontractorJob, ongoing]
       .sort(compareJobsTableRows)
       .map((item) => item.name),
-    ["Carina Stark", "Newer job without hours", "Newer completed job"],
+    ["Carina Stark", "Tom Benton", "Newer job without hours", "Newer completed job"],
   );
 });
 
@@ -55,6 +60,23 @@ test("open clocked jobs use their latest clock-in before job start date", () => 
   );
 });
 
+test("open invoice-only jobs use their latest invoice date", () => {
+  const latestInvoice = row({
+    name: "Tom Benton",
+    labourInvoices: { latestInvoiceDate: "2026-07-31" },
+  });
+  const olderInvoice = row({
+    name: "Older subcontractor activity",
+    jobStartedOn: "2026-08-05",
+    labourInvoices: { latestInvoiceDate: "2026-07-25" },
+  });
+
+  assert.deepEqual(
+    [olderInvoice, latestInvoice].sort(compareJobsTableRows).map((item) => item.name),
+    ["Tom Benton", "Older subcontractor activity"],
+  );
+});
+
 test("all remaining jobs retain start-date then name ordering", () => {
   const rows = [
     row({ name: "Zulu", jobStartedOn: "2026-08-01" }),
@@ -63,6 +85,7 @@ test("all remaining jobs retain start-date then name ordering", () => {
       jobStartedOn: "2026-07-01",
       labourClosedAt: "2026-08-08T12:00:00Z",
       lastClockIn: "2026-08-09T12:00:00Z",
+      labourInvoices: { latestInvoiceDate: "2026-08-09" },
     }),
     row({ name: "Alpha", jobStartedOn: "2026-08-01" }),
   ];

@@ -120,9 +120,9 @@ export function buildReportSql(options) {
 }
 
 export function buildOttawaDbInvocation(options, executable = process.env.OTTAWA_DB_CLI || "ottawa-db") {
-  // ottawa-db treats output formatting as a global option, so it must precede
-  // the query subcommand. Query-specific bounds remain after the SQL text.
-  const args = options.json ? ["--json"] : [];
-  args.push("query", buildReportSql(options), "--limit", "1");
+  // ottawa-db defines output formatting on each subcommand. Keep --json after
+  // the query arguments so argparse assigns it to `query`, not the root parser.
+  const args = ["query", buildReportSql(options), "--limit", "1"];
+  if (options.json) args.push("--json");
   return { executable, args };
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
-import { Select } from "@/components/ui";
+import { Badge, Select } from "@/components/ui";
 import type { LabourBudgetTaskSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
@@ -103,12 +103,12 @@ export function CalculatorPage({
           <PageHeader
             title={displayName || "Job calculator"}
             subtitle="Prices and the labour budget update as you type"
+            actions={isLead ? <Badge tone="brand">Lead</Badge> : null}
           />
 
           <ProjectTabs
             projectId={projectId}
             projectName={displayName || ""}
-            entityKind={isLead ? "lead" : "job"}
           />
 
           {isLead ? (

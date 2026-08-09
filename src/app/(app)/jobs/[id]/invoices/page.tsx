@@ -1,19 +1,20 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
 import { UnifiedInvoicesTable } from "@/components/unified-invoices";
 import { getProjectShell } from "@/lib/project-data";
 import { fmtMoney } from "@/lib/format";
 import { getJobInvoices } from "@/lib/v2-accounting";
+import { LeadInvoicesView } from "@/components/lead-detail-view";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobInvoicesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jobId = decodeURIComponent(id);
-  const [shell, allocations] = await Promise.all([getProjectShell(jobId), getJobInvoices(jobId)]);
-  if (!shell) notFound();
+  const shell = await getProjectShell(jobId);
+  if (!shell) return <LeadInvoicesView leadId={jobId} />;
+  const allocations = await getJobInvoices(jobId);
   const byInvoice = new Map<string, any>();
   for (const allocation of allocations) {
     const invoice: any = Array.isArray(allocation.invoice) ? allocation.invoice[0] : allocation.invoice;
@@ -48,7 +49,7 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
         <span className="mx-1.5">/</span><span>Invoices</span>
       </div>
       <PageHeader title={shell.name} subtitle={shell.address ?? undefined} />
-      <ProjectTabs projectId={jobId} projectName={shell.name} entityKind="job" />
+      <ProjectTabs projectId={jobId} projectName={shell.name} />
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Kpi label="Invoices" value={invoices.length} />
         <Kpi label="Labour cost" value={fmtMoney(labour)} />

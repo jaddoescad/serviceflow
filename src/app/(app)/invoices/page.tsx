@@ -7,21 +7,19 @@ export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage() {
   await requireStaff();
-  const invoices = await getUnifiedInvoices();
-  const labour = invoices.filter((invoice) => invoice.category === "labour").length;
-  const materials = invoices.filter((invoice) => invoice.category === "material").length;
-  const customers = invoices.filter((invoice) => invoice.category === "customer").length;
-  const needsAllocation = invoices.filter((invoice) => !(invoice.allocations ?? []).length).length;
+  const invoices = await getUnifiedInvoices("labour");
+  const settled = invoices.filter((invoice) => Number(invoice.balance_cents) === 0).length;
+  const allocated = invoices.filter((invoice) => (invoice.allocations ?? []).length > 0).length;
+  const needsAllocation = invoices.length - allocated;
   return (
     <>
-      <PageHeader title="Invoices" subtitle="Customer, labour, and material invoices in one accounting model" />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label="Customer" value={customers} hint="receivable invoices" />
-        <Kpi label="Labour" value={labour} hint="payable painter invoices" />
-        <Kpi label="Material" value={materials} hint="payable supplier invoices" />
-        <Kpi label="No job allocation" value={needsAllocation} hint="includes legitimate overhead" tone={needsAllocation ? "warn" : "good"} />
+      <PageHeader title="Labour invoices" subtitle="Painter and subcontractor invoices, payments, and job allocations" />
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        <Kpi label="Labour invoices" value={invoices.length} hint="hourly and subcontractor" />
+        <Kpi label="Settled" value={settled} hint="zero remaining balance" tone="good" />
+        <Kpi label="Job allocated" value={allocated} hint={`${needsAllocation} still unallocated`} tone={needsAllocation ? "warn" : "good"} />
       </div>
-      <UnifiedInvoicesTable invoices={invoices} />
+      <UnifiedInvoicesTable invoices={invoices} title="Labour invoices" />
     </>
   );
 }

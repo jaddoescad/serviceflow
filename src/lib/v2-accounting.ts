@@ -25,7 +25,7 @@ export async function getUnifiedInvoice(invoiceId: string) {
   const [invoiceResult, evidenceResult] = await Promise.all([
     supabase
       .from("invoices")
-      .select("*,contact:contacts(name,email,phone),lines:invoice_lines(*),allocations:invoice_job_allocations(*,job:jobs(id,name)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(*,transaction:transactions(id,posted_on,description,amount_cents))")
+      .select("*,contact:contacts(name,email,phone),lines:invoice_lines(*),allocations:invoice_job_allocations(*,job:jobs(id,name,status,formatted_address)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(*,transaction:transactions(id,posted_on,description,counterparty,amount_cents,category,review_status,account:accounts(name,last_four)))")
       .eq("id", invoiceId)
       .maybeSingle(),
     supabase
@@ -39,10 +39,37 @@ export async function getUnifiedInvoice(invoiceId: string) {
   if (evidenceResult.error) {
     throw new Error(`invoice evidence: ${evidenceResult.error.message}`);
   }
+  const evidence = await Promise.all(
+    (evidenceResult.data ?? []).map(async (link: any) => {
+      const document = Array.isArray(link.document)
+        ? link.document[0] ?? null
+        : link.document;
+      if (!document) return link;
+
+      let signedUrl = document.source_url ?? null;
+      if (document.storage_bucket && document.storage_path) {
+        const signed = await supabase.storage
+          .from(document.storage_bucket)
+          .createSignedUrl(document.storage_path, 60 * 60);
+        if (signed.data?.signedUrl) signedUrl = signed.data.signedUrl;
+      }
+
+      return {
+        ...link,
+        document: {
+          ...document,
+          signed_url: signedUrl,
+        },
+      };
+    }),
+  );
   return data ? {
     ...data,
+    lines: [...(data.lines ?? [])].sort(
+      (left: any, right: any) => Number(left.line_number) - Number(right.line_number),
+    ),
     allocations: selectUsableInvoiceJobAllocations(data.allocations ?? []),
-    evidence: evidenceResult.data ?? [],
+    evidence,
   } : data;
 }
 

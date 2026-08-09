@@ -14,6 +14,8 @@ Use the versioned `ottawa` reports as the normal interface to the business. They
 3. Confirm `schema_version` is `1` and answer from the result immediately.
 4. State important warnings or non-`ok` source statuses.
 
+If the selected high-level command exits non-zero, stop after that one attempt and report the concise error. Do not run `--help`, retry argument variants, list/read/search files, or inspect the CLI implementation. Only begin a deeper fallback when the user explicitly asks for a deep audit.
+
 For crew activity, clock-in/out, hours, timesheets, or "what job was worked yesterday," always use `ottawa labour`. Its displayed times are already converted to `America/Toronto`; repeat those local values exactly. Never describe an entry as manual: the source table does not record an entry method. Use only the report's explicit `was_edited` and `approval_status` fields. Pending approval does not mean manual or edited.
 
 For any named-customer history, rundown, relationship, communication, or “what happened” question, always run:
@@ -26,7 +28,7 @@ This is the basic RAG path. It resolves the customer in the database, retrieves 
 
 If `resolution` is `ambiguous`, present the candidates and ask for one identifier. If it is `not_found`, say so. If a source status is `unavailable`, answer from the available sources and name the missing coverage; do not start a manual fallback unless the user explicitly requests a deep audit.
 
-Do not run `tables`, `describe`, `schema-search`, or raw SQL after a successful high-level report. Do not independently re-count a report. Use `ottawa-db` only when the user explicitly asks for a deep audit/raw query, or when the selected report fails or clearly lacks a necessary field.
+Do not run `tables`, `describe`, `schema-search`, or raw SQL after a successful high-level report. Do not independently re-count a report. Use `ottawa-db` only when the user explicitly asks for a deep audit or raw query.
 
 ## Boundaries
 
