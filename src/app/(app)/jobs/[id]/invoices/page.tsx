@@ -28,15 +28,17 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
       });
     }
   }
-  const invoices = [...byInvoice.values()];
+  const invoices = [...byInvoice.values()].sort((left, right) =>
+    String(right.issued_on ?? "").localeCompare(String(left.issued_on ?? "")),
+  );
   const labour = allocations.filter((row: any) => {
     const invoice = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
     return invoice?.category === "labour";
-  }).reduce((sum, row) => sum + Number(row.total_cents ?? 0), 0) / 100;
+  }).reduce((sum, row) => sum + Number(row.subtotal_cents ?? 0), 0) / 100;
   const materials = allocations.filter((row: any) => {
     const invoice = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
     return invoice?.category === "material";
-  }).reduce((sum, row) => sum + Number(row.total_cents ?? 0), 0) / 100;
+  }).reduce((sum, row) => sum + Number(row.subtotal_cents ?? 0), 0) / 100;
   return (
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
@@ -52,7 +54,11 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
         <Kpi label="Labour cost" value={fmtMoney(labour)} />
         <Kpi label="Material cost" value={fmtMoney(materials)} />
       </div>
-      <UnifiedInvoicesTable invoices={invoices} title="Job invoices and costs" />
+      <UnifiedInvoicesTable
+        invoices={invoices}
+        title="Job invoices and costs"
+        showJobAllocation
+      />
     </>
   );
 }

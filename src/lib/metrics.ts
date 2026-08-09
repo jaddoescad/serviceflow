@@ -36,6 +36,7 @@ export type ProjectRollup = {
   projectId: string;
   name: string;
   address: string | null;
+  jobStartedOn: string | null;
   labourExcluded: boolean;
   loggedHours: number;
   budgetedHours: number | null;
@@ -315,10 +316,12 @@ export function rollupProjects(
   const lastById = new Map<string, string>();
   const nameById = new Map<string, string>();
   const addrById = new Map<string, string | null>();
+  const startedOnById = new Map<string, string | null>();
 
   for (const p of projects) {
     nameById.set(p.companycam_id, p.name);
     addrById.set(p.companycam_id, p.formatted_address);
+    startedOnById.set(p.companycam_id, p.started_on);
   }
 
   for (const e of entries) {
@@ -408,6 +411,7 @@ export function rollupProjects(
       projectId: id,
       name,
       address: addrById.get(id) ?? null,
+      jobStartedOn: startedOnById.get(id) ?? null,
       labourExcluded,
       loggedHours: logged,
       budgetedHours,

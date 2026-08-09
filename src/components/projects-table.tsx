@@ -16,6 +16,7 @@ import {
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
 import type { ProjectMaterialSummary } from "@/lib/materials";
+import { compareJobsTableRows } from "@/lib/project-sort";
 import { AmountDialog } from "@/components/project-detail";
 
 type ProjectTableRow = ProjectRollup & {
@@ -168,40 +169,6 @@ function JobStatus({ row }: { row: ProjectTableRow }) {
   );
 }
 
-function activityTimestamp(value: string | null): number {
-  if (!value) return 0;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function recentActivity(row: ProjectTableRow): {
-  value: string | null;
-  source: "Invoice" | "Clock-in" | null;
-  timestamp: number;
-} {
-  const invoiceValue = row.labourInvoices.latestInvoiceDate
-    ? `${row.labourInvoices.latestInvoiceDate}T12:00:00`
-    : null;
-  const invoiceTimestamp = activityTimestamp(invoiceValue);
-  const clockInTimestamp = activityTimestamp(row.lastClockIn);
-
-  if (invoiceTimestamp >= clockInTimestamp && invoiceTimestamp > 0) {
-    return {
-      value: invoiceValue,
-      source: "Invoice",
-      timestamp: invoiceTimestamp,
-    };
-  }
-  if (clockInTimestamp > 0) {
-    return {
-      value: row.lastClockIn,
-      source: "Clock-in",
-      timestamp: clockInTimestamp,
-    };
-  }
-  return { value: null, source: null, timestamp: 0 };
-}
-
 export function ProjectsTable({
   rows,
   now,
@@ -228,13 +195,7 @@ export function ProjectsTable({
         if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       });
-    return matches
-      .map((row) => ({ row, activity: recentActivity(row) }))
-      .sort(
-        (left, right) =>
-          right.activity.timestamp - left.activity.timestamp ||
-          left.row.name.localeCompare(right.row.name, "en-CA"),
-    );
+    return matches.sort(compareJobsTableRows);
   }, [rows, search, filter, now]);
 
   // Only settled jobs produce a headline percentage. In-flight jobs carry a full
@@ -373,7 +334,12 @@ export function ProjectsTable({
                     Materials (pre-tax)
                   </th>
                   <th className="px-2.5 py-2.5 font-medium">Material share</th>
-                  <th className="px-2.5 py-2.5 font-medium">Recent activity ↓</th>
+                  <th
+                    className="px-2.5 py-2.5 font-medium"
+                    title="Open jobs with clock activity appear first by latest clock-in; all other jobs follow by DripJobs start date"
+                  >
+                    Job start date ↓
+                  </th>
                   <th
                     className="px-2.5 py-2.5 text-right font-medium"
                     title="Amount remaining after the chosen painter cost at 35%, 37%, and 40% of the pre-tax job amount"
@@ -384,7 +350,7 @@ export function ProjectsTable({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(({ row: r, activity }) => (
+                {filtered.map((r) => (
                   <tr
                     key={r.projectId}
                     className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]"
@@ -502,10 +468,7 @@ export function ProjectsTable({
                       />
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2.5 text-[var(--color-muted)]">
-                      <div>{fmtDate(activity.value)}</div>
-                      {activity.source ? (
-                        <div className="text-[10px]">{activity.source}</div>
-                      ) : null}
+                      {fmtDate(r.jobStartedOn)}
                     </td>
                     <td className="px-2.5 py-2.5 text-right tabular-nums">
                       <BudgetLeft

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ottawa Communications (Read Only)"
+  short_description: "Fast read-only Gmail and Quo customer evidence"
+  default_prompt: "Use $ottawa-communications-readonly to retrieve and summarize a customer communication history without making changes."

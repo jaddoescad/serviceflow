@@ -2,10 +2,40 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  invoiceJobCostCategory,
   isCostingInvoice,
   selectCostingInvoiceJobAllocations,
   selectUsableInvoiceJobAllocations,
 } from "../src/lib/invoice-allocation-selection.ts";
+
+test("uses material line type inside a labour invoice for job-cost display", () => {
+  assert.equal(invoiceJobCostCategory({
+    invoice_id: "invoice-1",
+    invoice_line_id: "line-1",
+    job_id: "job-1",
+    invoice: { category: "labour" },
+    line: { metadata: { entry_type: "material" } },
+  }), "material");
+});
+
+test("falls back to the invoice category when a line has no cost type", () => {
+  assert.equal(invoiceJobCostCategory({
+    invoice_id: "invoice-1",
+    invoice_line_id: null,
+    job_id: "job-1",
+    invoice: { category: "labour" },
+  }), "labour");
+});
+
+test("never treats an explicitly non-labour line as labour", () => {
+  assert.equal(invoiceJobCostCategory({
+    invoice_id: "invoice-1",
+    invoice_line_id: "line-1",
+    job_id: "job-1",
+    invoice: { category: "labour" },
+    line: { metadata: { entry_type: "other", cost_classification: "colour_consultation" } },
+  }), null);
+});
 
 test("keeps invoice-level allocations when no line allocation exists", () => {
   const allocation = {

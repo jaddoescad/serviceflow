@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import {
+  invoiceJobCostCategory,
   isCostingInvoice,
   selectCostingInvoiceJobAllocations,
   selectUsableInvoiceJobAllocations,
@@ -165,7 +166,7 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("invoice_job_allocations")
-      .select("id,invoice_id,job_id,subtotal_cents,needs_review,metadata,invoice:invoices(id,category,status,source_system,currency,issued_on,paid_cents,total_cents),invoice_line_id")
+      .select("id,invoice_id,job_id,subtotal_cents,needs_review,metadata,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system,currency,issued_on,paid_cents,total_cents),invoice_line_id")
       .eq("invoice.category", "labour")
       .order("id")
       .range(from, from + 999);
@@ -177,7 +178,7 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
   const seen = new Map<string, Set<string>>();
   for (const allocation of selectCostingInvoiceJobAllocations(rows)) {
     const invoice: any = Array.isArray(allocation.invoice) ? allocation.invoice[0] : allocation.invoice;
-    if (!invoice || invoice.category !== "labour" || !isCostingInvoice(invoice)) continue;
+    if (!invoice || invoiceJobCostCategory(allocation) !== "labour" || !isCostingInvoice(invoice)) continue;
     const summary = map.get(allocation.job_id) ?? emptyProjectLabourInvoiceSummary();
     const currency = invoice.currency === "USD" ? "USD" : "CAD";
     summary.totals[currency] += Number(allocation.subtotal_cents ?? 0) / 100;

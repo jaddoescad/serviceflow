@@ -11,8 +11,13 @@ type CostingInvoice = {
   status?: string | null;
 };
 
+type CostingInvoiceLine = {
+  metadata?: Record<string, unknown> | null;
+};
+
 type CostingInvoiceJobAllocationIdentity = InvoiceJobAllocationIdentity & {
   invoice?: CostingInvoice | CostingInvoice[] | null;
+  line?: CostingInvoiceLine | CostingInvoiceLine[] | null;
 };
 
 function pairKey(invoiceId: string, jobId: string): string {
@@ -66,6 +71,30 @@ function relatedInvoice(
   return Array.isArray(allocation.invoice)
     ? allocation.invoice[0] ?? null
     : allocation.invoice ?? null;
+}
+
+function relatedLine(
+  allocation: CostingInvoiceJobAllocationIdentity,
+): CostingInvoiceLine | null {
+  return Array.isArray(allocation.line)
+    ? allocation.line[0] ?? null
+    : allocation.line ?? null;
+}
+
+/**
+ * Mixed subcontractor invoices sometimes contain material reimbursements.
+ * The line's printed entry type is more specific than the invoice envelope,
+ * so use it when deciding which Jobs & Costs column receives the allocation.
+ */
+export function invoiceJobCostCategory(
+  allocation: CostingInvoiceJobAllocationIdentity,
+): "labour" | "material" | null {
+  const entryType = relatedLine(allocation)?.metadata?.entry_type;
+  if (entryType === "labour" || entryType === "material") return entryType;
+  if (entryType === "other") return null;
+
+  const category = relatedInvoice(allocation)?.category;
+  return category === "labour" || category === "material" ? category : null;
 }
 
 /**

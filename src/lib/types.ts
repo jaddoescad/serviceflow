@@ -89,6 +89,7 @@ export type EmployeeLocationPoint = {
 export type Project = {
   companycam_id: string;
   name: string;
+  started_on: string | null;
   formatted_address: string | null;
   city: string | null;
   state: string | null;

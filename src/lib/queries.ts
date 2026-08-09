@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import {
+  invoiceJobCostCategory,
   isCostingInvoice,
   selectCostingInvoiceJobAllocations,
 } from "@/lib/invoice-allocation-selection";
@@ -37,6 +38,7 @@ function project(row: any): Project {
   return {
     companycam_id: row.id,
     name: row.name,
+    started_on: row.started_on ?? null,
     formatted_address: row.formatted_address ?? row.address_line_1 ?? null,
     city: row.city,
     state: row.province,
@@ -289,7 +291,7 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("invoice_job_allocations")
-      .select("id,invoice_id,invoice_line_id,job_id,subtotal_cents,tax_cents,metadata,created_at,updated_at,invoice:invoices(id,category,status,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
+      .select("id,invoice_id,invoice_line_id,job_id,subtotal_cents,tax_cents,metadata,created_at,updated_at,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
       .eq("invoice.category", "labour")
       .order("id")
       .range(from, from + 999);
@@ -298,7 +300,7 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
     if ((data ?? []).length < 1000) break;
   }
   return selectCostingInvoiceJobAllocations(rows).flatMap((row: any) =>
-    row.invoice
+    row.invoice && invoiceJobCostCategory(row) === "labour"
       ? [{
           id: row.id,
           companycam_project_id: row.job_id,
@@ -352,8 +354,7 @@ export async function getJobMaterialSummaries(): Promise<Map<string, { amountBef
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("invoice_job_allocations")
-      .select("id,invoice_id,job_id,subtotal_cents,invoice_line_id,metadata,invoice:invoices(category,status)")
-      .eq("invoice.category", "material")
+      .select("id,invoice_id,job_id,subtotal_cents,invoice_line_id,metadata,line:invoice_lines(metadata),invoice:invoices(category,status,source_system)")
       .order("id")
       .range(from, from + 999);
     if (error) throw new Error(`material job costs: ${error.message}`);
@@ -363,7 +364,7 @@ export async function getJobMaterialSummaries(): Promise<Map<string, { amountBef
   const result = new Map<string, { amountBeforeTax: number; lineCount: number }>();
   for (const row of selectCostingInvoiceJobAllocations(rows)) {
     const invoice: any = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
-    if (!invoice || invoice.category !== "material" || !isCostingInvoice(invoice)) continue;
+    if (!invoice || invoiceJobCostCategory(row) !== "material" || !isCostingInvoice(invoice)) continue;
     const current = result.get(row.job_id) ?? { amountBeforeTax: 0, lineCount: 0 };
     current.amountBeforeTax += Number(row.subtotal_cents ?? 0) / 100;
     if (row.invoice_line_id) current.lineCount += 1;

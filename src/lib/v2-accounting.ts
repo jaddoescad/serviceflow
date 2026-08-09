@@ -22,15 +22,27 @@ export async function getUnifiedInvoices(category?: "customer" | "labour" | "mat
 
 export async function getUnifiedInvoice(invoiceId: string) {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("invoices")
-    .select("*,contact:contacts(name,email,phone),lines:invoice_lines(*),allocations:invoice_job_allocations(*,job:jobs(id,name)),payments:transaction_allocations(*,transaction:transactions(id,posted_on,description,amount_cents)),evidence:evidence_links(*,document:documents(*))")
-    .eq("id", invoiceId)
-    .maybeSingle();
+  const [invoiceResult, evidenceResult] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("*,contact:contacts(name,email,phone),lines:invoice_lines(*),allocations:invoice_job_allocations(*,job:jobs(id,name)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(*,transaction:transactions(id,posted_on,description,amount_cents))")
+      .eq("id", invoiceId)
+      .maybeSingle(),
+    supabase
+      .from("evidence_links")
+      .select("*,document:documents(*)")
+      .eq("entity_type", "invoice")
+      .eq("entity_id", invoiceId),
+  ]);
+  const { data, error } = invoiceResult;
   if (error) throw new Error(`invoice: ${error.message}`);
+  if (evidenceResult.error) {
+    throw new Error(`invoice evidence: ${evidenceResult.error.message}`);
+  }
   return data ? {
     ...data,
     allocations: selectUsableInvoiceJobAllocations(data.allocations ?? []),
+    evidence: evidenceResult.data ?? [],
   } : data;
 }
 
@@ -61,7 +73,7 @@ export async function getLedgerTransaction(transactionId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("transactions")
-    .select("*,account:accounts(*),allocations:transaction_allocations(*,invoice:invoices(id,invoice_number,category),job:jobs(id,name),contact:contacts(name))")
+    .select("*,account:accounts(*),allocations:transaction_allocations(*,invoice:invoices!transaction_allocations_invoice_id_fkey(id,invoice_number,category),job:jobs(id,name),contact:contacts(name))")
     .eq("id", transactionId)
     .maybeSingle();
   if (error) throw new Error(`transaction: ${error.message}`);

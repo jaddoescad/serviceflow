@@ -449,7 +449,8 @@ for (const source of invoices) {
           source_kind: "extracted",
           source_text: `Printed item from Dressing Rooms invoice ${source.number}: ${line[1]} — Paint Consultation`,
           needs_review: false,
-          entry_type: "labour",
+          // Dressing Rooms provides colour consultations, not painter labour.
+          entry_type: "other",
           quantity: 1,
           unit: "consultation",
           unit_price: line[2],
