@@ -34,19 +34,6 @@ function sourceTone(
   return "neutral";
 }
 
-function linkMethodLabel(
-  method: MarketingLead["dripJobs"][number]["linkMethod"],
-): string {
-  if (method === "proposal_number") return "Proposal ID";
-  if (method === "dripjobs_deal_id") return "DripJobs Deal ID";
-  if (method === "dripjobs_contact_uuid") return "DripJobs contact ID";
-  if (method === "manual") return "Manually confirmed";
-  if (method === "email_and_phone") return "Email + phone";
-  if (method === "email") return "Email";
-  if (method === "phone") return "Phone";
-  return "Saved evidence";
-}
-
 function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
   if (filter === "unlinked") return lead.dripJobs.length === 0;
@@ -234,7 +221,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
       ) : (
         <>
           <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full min-w-[1180px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead className="sticky top-0 z-10 bg-[var(--color-surface)]">
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                   <th className="px-4 py-2.5 font-medium">Created</th>
@@ -243,12 +230,10 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                   <th className="px-4 py-2.5 font-medium">Contact</th>
                   <th className="px-4 py-2.5 font-medium">Location</th>
                   <th className="px-4 py-2.5 font-medium">Progress</th>
-                  <th className="px-4 py-2.5 font-medium">DripJobs job</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((lead) => {
-                  const firstJob = lead.dripJobs[0];
                   const projectHref = `/jobs/${encodeURIComponent(lead.leadId)}`;
                   const estimateOn =
                     lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
@@ -276,10 +261,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                         {fmtDate(lead.createdOn)}
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="font-medium text-[var(--color-heading)]" title={lead.dealId}>{lead.name}</div>
-                        <div className="mt-0.5 max-w-48 truncate font-mono text-[10px] text-[var(--color-muted)]" title={lead.dealId}>
-                          {lead.dealId}
-                        </div>
+                        <div className="font-medium text-[var(--color-heading)]">{lead.name}</div>
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge tone={sourceTone(lead)}>{sourceLabel(lead)}</Badge>
@@ -313,27 +295,6 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                         {!jobCount && !estimateOn && lead.proposalAmount == null && !lead.proposalNumber ? (
                           <StatusText tone="neutral">Lead only</StatusText>
                         ) : null}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {firstJob ? (
-                          <div>
-                            <div className="font-medium text-[var(--color-heading)]">
-                              {firstJob.jobName}
-                            </div>
-                            <div className="mt-0.5 max-w-56 truncate text-xs text-[var(--color-muted)]">
-                              Proposal #{firstJob.proposalId} · {firstJob.status}
-                              {firstJob.amount > 0 ? ` · ${fmtMoney(firstJob.amount)}` : ""}
-                            </div>
-                            <div className="mt-1 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
-                              Saved relationship · {linkMethodLabel(firstJob.linkMethod)}
-                            </div>
-                            {lead.dripJobs.length > 1 ? (
-                              <div className="mt-1 text-xs text-[var(--color-muted)]">+{lead.dripJobs.length - 1} more linked jobs</div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <StatusText tone="neutral">Not linked</StatusText>
-                        )}
                       </td>
                     </tr>
                   );
