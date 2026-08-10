@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ottawa Meta Ads Reporting"
+  short_description: "Daily Meta leads, spend, and CPL reports"
+  default_prompt: "Use $ottawa-meta-ads-reporting to report yesterday’s Meta Ads leads and cost per lead."

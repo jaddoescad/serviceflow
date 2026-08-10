@@ -40,6 +40,7 @@ export async function install(argv) {
     "ottawa-painters-db-cli",
     "ottawa-painters-apis",
     "ottawa-time-entry-admin",
+    "ottawa-meta-ads-reporting",
   ];
   const targets = [
     path.join(bin, "ottawa"),

@@ -45,6 +45,7 @@
     "test:task-cli": "node --test scripts/project-task-cli.test.mjs",
     "test:time-cli": "node --test scripts/time-entry-cli.test.mjs",
     "test:hermes-time-cli": "node --test scripts/hermes-time-entry-cli.test.mjs",
+    "test:hermes-meta-ads": "node --test scripts/hermes-meta-ads-report.test.mjs",
     "test:project-sort": "node --experimental-strip-types --test scripts/project-sort.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
     "test:financial-settlements": "tsc src/lib/financial-settlement-status.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/financial-settlement-status.test.mjs",
