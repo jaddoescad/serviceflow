@@ -207,22 +207,31 @@ export function summarizeRows(rows) {
   };
 }
 
-function feedbackFor(daily, sevenDay) {
+function feedbackFor(daily, sevenDay, thirtyDay) {
   const feedback = [];
   const customer = daily.customer_acquisition;
-  const baseline = sevenDay.customer_acquisition;
+  const weekly = sevenDay.customer_acquisition;
+  const monthly = thirtyDay.customer_acquisition;
   if (customer.spend === 0) {
     feedback.push("No customer-acquisition spend was delivered on this date.");
   } else if (customer.leads === 0) {
     feedback.push("Customer-acquisition ads spent money without a Meta-attributed lead.");
-  } else if (baseline.cost_per_lead != null && customer.cost_per_lead != null) {
-    const difference = (customer.cost_per_lead - baseline.cost_per_lead) / baseline.cost_per_lead;
+  } else if (weekly.cost_per_lead != null && customer.cost_per_lead != null) {
+    const difference = (customer.cost_per_lead - weekly.cost_per_lead) / weekly.cost_per_lead;
     if (difference >= 0.2) {
       feedback.push(`Customer CPL was ${Math.round(difference * 100)}% above the seven-day average.`);
     } else if (difference <= -0.2) {
       feedback.push(`Customer CPL was ${Math.round(Math.abs(difference) * 100)}% below the seven-day average.`);
     } else {
       feedback.push("Customer CPL was within 20% of the seven-day average.");
+    }
+  }
+  if (weekly.cost_per_lead != null && monthly.cost_per_lead != null) {
+    const weeklyTrend = (weekly.cost_per_lead - monthly.cost_per_lead) / monthly.cost_per_lead;
+    if (weeklyTrend >= 0.15) {
+      feedback.push(`Seven-day customer CPL is ${Math.round(weeklyTrend * 100)}% above the 30-day baseline.`);
+    } else if (weeklyTrend <= -0.15) {
+      feedback.push(`Seven-day customer CPL is ${Math.round(Math.abs(weeklyTrend) * 100)}% below the 30-day baseline.`);
     }
   }
   const zeroLeadSpend = daily.campaigns
@@ -245,11 +254,13 @@ function money(value) {
 export function formatSlackReport(report) {
   const customer = report.daily.customer_acquisition;
   const recruiting = report.daily.recruiting;
-  const baseline = report.seven_day.customer_acquisition;
+  const weekly = report.seven_day.customer_acquisition;
+  const monthly = report.thirty_day.customer_acquisition;
   const lines = [
     `Meta Ads — ${report.period.date} (${report.timezone})`,
     `Customer leads: ${customer.leads} | Spend: ${money(customer.spend)} | CPL: ${money(customer.cost_per_lead)}`,
-    `7-day customer: ${baseline.leads} leads | ${money(baseline.spend)} spend | ${money(baseline.cost_per_lead)} CPL`,
+    `7-day customer: ${weekly.leads} leads | ${money(weekly.spend)} spend | ${money(weekly.cost_per_lead)} CPL`,
+    `30-day customer: ${monthly.leads} leads | ${money(monthly.spend)} spend | ${money(monthly.cost_per_lead)} CPL`,
   ];
   if (recruiting.spend > 0 || recruiting.leads > 0) {
     lines.push(
@@ -293,22 +304,31 @@ export async function buildReport({ date = null } = {}) {
     throw new Error("--date must use YYYY-MM-DD.");
   }
   const sevenDayStart = addDays(reportDate, -6);
-  const [account, dailyRows, sevenDayRows] = await Promise.all([
+  const thirtyDayStart = addDays(reportDate, -29);
+  const [account, dailyRows, sevenDayRows, thirtyDayRows] = await Promise.all([
     graphRequest(auth, auth.accountId, {
       fields: "id,name,account_status,currency,timezone_name",
     }),
     insightRows(auth, reportDate, reportDate),
     insightRows(auth, sevenDayStart, reportDate),
+    insightRows(auth, thirtyDayStart, reportDate),
   ]);
   const daily = summarizeRows(dailyRows);
   const sevenDay = summarizeRows(sevenDayRows);
+  const thirtyDay = summarizeRows(thirtyDayRows);
   const report = {
     schema_version: 1,
     status: "ok",
     source: "meta_marketing_api",
     generated_at: new Date().toISOString(),
     timezone: TIMEZONE,
-    period: { date: reportDate, seven_day_start: sevenDayStart, seven_day_end: reportDate },
+    period: {
+      date: reportDate,
+      seven_day_start: sevenDayStart,
+      seven_day_end: reportDate,
+      thirty_day_start: thirtyDayStart,
+      thirty_day_end: reportDate,
+    },
     account: {
       id: account.id,
       name: account.name,
@@ -318,7 +338,8 @@ export async function buildReport({ date = null } = {}) {
     },
     daily,
     seven_day: sevenDay,
-    feedback: feedbackFor(daily, sevenDay),
+    thirty_day: thirtyDay,
+    feedback: feedbackFor(daily, sevenDay, thirtyDay),
     warnings: ["Meta attribution can update after the reporting date."],
   };
   report.slack_text = formatSlackReport(report);

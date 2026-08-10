@@ -82,10 +82,12 @@ test("formats a concise Slack-ready report", () => {
     timezone: "America/Toronto",
     daily,
     seven_day: daily,
+    thirty_day: daily,
     feedback: ["Customer CPL was within 20% of the seven-day average."],
   };
   const text = formatSlackReport(report);
   assert.match(text, /Customer leads: 2 \| Spend: \$50\.00 \| CPL: \$25\.00/);
+  assert.match(text, /30-day customer: 2 leads/);
   assert.match(text, /Interior Leads: 2 leads/);
   assert.match(text, /Meta-attributed results/);
 });
