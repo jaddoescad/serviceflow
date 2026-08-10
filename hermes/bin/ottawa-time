@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+
+import { main } from "./hermes-time-entry-cli.mjs";
+
+try {
+  process.exitCode = await main(process.argv.slice(2));
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(
+    process.argv.includes("--json")
+      ? `${JSON.stringify({ schema_version: 1, status: "error", error: message })}\n`
+      : `Error: ${message}\n`,
+  );
+  process.exitCode = 1;
+}

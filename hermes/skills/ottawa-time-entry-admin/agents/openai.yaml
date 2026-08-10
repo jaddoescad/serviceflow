@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ottawa Time Entry Admin"
+  short_description: "Safely adjust Ottawa Painters clock-in times"
+  default_prompt: "Use $ottawa-time-entry-admin to change an employee clock-in time in Eastern local time."

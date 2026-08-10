@@ -39,10 +39,12 @@ export async function install(argv) {
     "ottawa-communications-readonly",
     "ottawa-painters-db-cli",
     "ottawa-painters-apis",
+    "ottawa-time-entry-admin",
   ];
   const targets = [
     path.join(bin, "ottawa"),
     path.join(bin, "ottawa-source"),
+    path.join(bin, "ottawa-time"),
     ...skillNames.map((name) => path.join(skills, name)),
   ];
 
@@ -54,7 +56,7 @@ export async function install(argv) {
 
   const actions = [
     `create ${bin}`,
-    `install ottawa and ottawa-source -> ${bin}`,
+    `install ottawa, ottawa-source, and ottawa-time -> ${bin}`,
     `copy scripts/lib -> ${path.join(bin, "lib")}`,
     `copy Hermes skills -> ${skills}`,
   ];
@@ -64,8 +66,10 @@ export async function install(argv) {
   await mkdir(skills, { recursive: true });
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa"), path.join(bin, "ottawa"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-source"), path.join(bin, "ottawa-source"));
+  await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-time"), path.join(bin, "ottawa-time"));
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-cli.mjs"), path.join(bin, "ottawa-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-source-cli.mjs"), path.join(bin, "ottawa-source-cli.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/hermes-time-entry-cli.mjs"), path.join(bin, "hermes-time-entry-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-report-contract.mjs"), path.join(bin, "lib/ottawa-report-contract.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-read-sources.mjs"), path.join(bin, "lib/ottawa-read-sources.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-customer-rag.mjs"), path.join(bin, "lib/ottawa-customer-rag.mjs"));
@@ -75,6 +79,7 @@ export async function install(argv) {
   }
   await chmod(path.join(bin, "ottawa"), 0o755);
   await chmod(path.join(bin, "ottawa-source"), 0o755);
+  await chmod(path.join(bin, "ottawa-time"), 0o755);
   return { prefix: options.prefix, actions };
 }
 
