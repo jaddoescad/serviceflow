@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const TIMEZONE = "America/Toronto";
 const DEFAULT_API_VERSION = "v25.0";
-const DEFAULT_ACCOUNT_ID = "act_762696206838329";
+const DEFAULT_ACCOUNT_ID = "act_3850392105107671";
 const DEFAULT_ENV_FILE = "/opt/data/hermes-meta-ads.env";
 
 function parseEnvFile(filePath) {
