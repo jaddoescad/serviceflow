@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { Card, EmptyState, StatusText } from "@/components/ui";
+import { Card, EmptyState, StatusText, cn } from "@/components/ui";
 import { fmtDate } from "@/lib/format";
+import {
+  invoiceReadinessLabel,
+  invoiceReadinessTone,
+  type InvoiceReadinessCheck,
+} from "@/lib/invoice-readiness";
 
 type InvoiceDetailProps = {
   invoice: any;
@@ -37,6 +42,75 @@ function canPreview(document: any) {
     mimeType === "application/pdf" ||
     mimeType.startsWith("image/") ||
     /\.(pdf|png|jpe?g|webp)$/.test(filename)
+  );
+}
+
+const checkStatusLabel: Record<InvoiceReadinessCheck["status"], string> = {
+  pass: "Pass",
+  pending: "Pending",
+  fail: "Needs review",
+};
+
+const checkStatusTone: Record<InvoiceReadinessCheck["status"], "neutral" | "good" | "warn"> = {
+  pass: "good",
+  pending: "neutral",
+  fail: "warn",
+};
+
+function ReadinessCard({ invoice }: InvoiceDetailProps) {
+  const readiness = invoice.readiness;
+  if (!readiness) return null;
+  const isVoid = readiness.state === "void";
+
+  return (
+    <Card className="mb-5 overflow-hidden">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-[var(--color-border)] px-4 py-3.5">
+        <div className="min-w-0">
+          <h2 className="font-display text-sm font-semibold text-[var(--color-heading)]">
+            Readiness
+          </h2>
+          <p className="mt-0.5 text-xs text-[var(--color-muted)]">{readiness.reason}</p>
+        </div>
+        <div className="flex shrink-0 items-baseline gap-3">
+          {!isVoid ? (
+            <span className="text-xs tabular-nums text-[var(--color-muted)]">
+              {readiness.passedCheckCount} of {readiness.checks.length} checks passed
+            </span>
+          ) : null}
+          <StatusText tone={invoiceReadinessTone(readiness.state)} className="text-sm">
+            {invoiceReadinessLabel(readiness.state)}
+          </StatusText>
+        </div>
+      </div>
+      <div className="divide-y divide-[var(--color-border)]">
+        {readiness.checks.map((check: InvoiceReadinessCheck) => (
+          <div
+            key={check.key}
+            className="flex items-baseline justify-between gap-4 px-4 py-3"
+          >
+            <div className="min-w-0">
+              <div
+                className={cn(
+                  "text-sm font-medium",
+                  isVoid ? "text-[var(--color-muted)]" : "text-[var(--color-heading)]",
+                )}
+              >
+                {check.label}
+              </div>
+              <div className="mt-0.5 text-xs leading-5 text-[var(--color-muted)]">
+                {check.detail}
+              </div>
+            </div>
+            <StatusText
+              tone={isVoid ? "neutral" : checkStatusTone[check.status]}
+              className={cn("shrink-0", isVoid && "text-[var(--color-muted)]")}
+            >
+              {isVoid ? "Informational" : checkStatusLabel[check.status]}
+            </StatusText>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -392,6 +466,10 @@ function LineItems({ invoice }: InvoiceDetailProps) {
 
 export function InvoiceDetail({ invoice }: InvoiceDetailProps) {
   const currency = invoice.currency ?? "CAD";
+  const labourReadiness = invoice.category === "labour" ? invoice.readiness : null;
+  const displayedPaidCents = labourReadiness?.matchedPaidCents ?? invoice.paid_cents;
+  const displayedBalanceCents =
+    labourReadiness?.remainingBalanceCents ?? invoice.balance_cents;
 
   return (
     <>
@@ -422,18 +500,22 @@ export function InvoiceDetail({ invoice }: InvoiceDetailProps) {
           </StatusText>
           <dl className="flex gap-5">
             <div>
-              <dt className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">Paid</dt>
-              <dd className="mt-0.5 font-semibold tabular-nums text-[var(--color-heading)]">{money(invoice.paid_cents, currency)}</dd>
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
+                {labourReadiness ? "Matched" : "Paid"}
+              </dt>
+              <dd className="mt-0.5 font-semibold tabular-nums text-[var(--color-heading)]">{money(displayedPaidCents, currency)}</dd>
             </div>
             <div>
               <dt className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">Balance</dt>
-              <dd className={`mt-0.5 font-semibold tabular-nums ${Number(invoice.balance_cents) > 0 ? "text-[var(--color-warn)]" : "text-[var(--color-good)]"}`}>
-                {money(invoice.balance_cents, currency)}
+              <dd className={`mt-0.5 font-semibold tabular-nums ${Number(displayedBalanceCents) > 0 ? "text-[var(--color-warn)]" : "text-[var(--color-good)]"}`}>
+                {money(displayedBalanceCents, currency)}
               </dd>
             </div>
           </dl>
         </div>
       </header>
+
+      {invoice.category === "labour" ? <ReadinessCard invoice={invoice} /> : null}
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(420px,0.85fr)_minmax(640px,1.15fr)]">
         <SourceDocument invoice={invoice} />

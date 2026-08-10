@@ -3,6 +3,43 @@ import {
   selectCostingInvoiceJobAllocations,
   selectUsableInvoiceJobAllocations,
 } from "@/lib/invoice-allocation-selection";
+import { deriveInvoiceReadiness } from "@/lib/invoice-readiness";
+
+async function getEvidenceForInvoices(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  invoiceIds: string[],
+) {
+  if (!invoiceIds.length) return new Map<string, any[]>();
+
+  const chunks: string[][] = [];
+  for (let index = 0; index < invoiceIds.length; index += 200) {
+    chunks.push(invoiceIds.slice(index, index + 200));
+  }
+
+  const results = await Promise.all(
+    chunks.map((ids) =>
+      supabase
+        .from("evidence_links")
+        .select(
+          "id,entity_id,evidence_role,metadata,document:documents(id,original_filename,mime_type,storage_bucket,storage_path,source_url)",
+        )
+        .eq("entity_type", "invoice")
+        .in("entity_id", ids),
+    ),
+  );
+  const evidenceByInvoice = new Map<string, any[]>();
+  for (const result of results) {
+    if (result.error) {
+      throw new Error(`invoice evidence: ${result.error.message}`);
+    }
+    for (const row of result.data ?? []) {
+      const rows = evidenceByInvoice.get(row.entity_id) ?? [];
+      rows.push(row);
+      evidenceByInvoice.set(row.entity_id, rows);
+    }
+  }
+  return evidenceByInvoice;
+}
 
 export async function getUnifiedInvoices(category?: "customer" | "labour" | "material" | "other") {
   const supabase = await createClient();
@@ -18,6 +55,37 @@ export async function getUnifiedInvoices(category?: "customer" | "labour" | "mat
     ...invoice,
     allocations: selectUsableInvoiceJobAllocations(invoice.allocations ?? []),
   }));
+}
+
+export async function getLabourInvoiceReviewInvoices() {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("invoices")
+    .select(
+      "*,contact:contacts(name),lines:invoice_lines(id,line_number,subtotal_cents,tax_cents,total_cents,source_kind,metadata),allocations:invoice_job_allocations(id,invoice_id,invoice_line_id,job_id,subtotal_cents,total_cents,needs_review,metadata,job:jobs(name)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(id,invoice_id,amount_cents,needs_review,reversed_at,transaction:transactions(id,posted_on,review_status))",
+    )
+    .eq("category", "labour")
+    .order("issued_on", { ascending: false, nullsFirst: false })
+    .limit(2000);
+  if (error) throw new Error(`labour invoice review: ${error.message}`);
+
+  const invoices = data ?? [];
+  const evidenceByInvoice = await getEvidenceForInvoices(
+    supabase,
+    invoices.map((invoice) => invoice.id),
+  );
+
+  return invoices.map((invoice: any) => {
+    const reviewableInvoice = {
+      ...invoice,
+      allocations: selectUsableInvoiceJobAllocations(invoice.allocations ?? []),
+      evidence: evidenceByInvoice.get(invoice.id) ?? [],
+    };
+    return {
+      ...reviewableInvoice,
+      readiness: deriveInvoiceReadiness(reviewableInvoice),
+    };
+  });
 }
 
 export async function getUnifiedInvoice(invoiceId: string) {
@@ -63,14 +131,19 @@ export async function getUnifiedInvoice(invoiceId: string) {
       };
     }),
   );
-  return data ? {
+  if (!data) return data;
+  const detailedInvoice = {
     ...data,
     lines: [...(data.lines ?? [])].sort(
       (left: any, right: any) => Number(left.line_number) - Number(right.line_number),
     ),
     allocations: selectUsableInvoiceJobAllocations(data.allocations ?? []),
     evidence,
-  } : data;
+  };
+  return {
+    ...detailedInvoice,
+    readiness: deriveInvoiceReadiness(detailedInvoice),
+  };
 }
 
 export async function getJobInvoices(jobId: string) {

@@ -49,6 +49,7 @@
     "test:project-sort": "node --experimental-strip-types --test scripts/project-sort.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
     "test:financial-settlements": "tsc src/lib/financial-settlement-status.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/financial-settlement-status.test.mjs",
+    "test:invoice-readiness": "node --experimental-strip-types --test scripts/invoice-readiness.test.mjs",
     "test:dripjobs-job-identity": "node --test scripts/dripjobs-job-identity.test.mjs",
     "test:marketing-sales": "node --experimental-strip-types --test scripts/marketing-sales-metrics.test.mjs",
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
