@@ -33,6 +33,7 @@ async function exists(target) {
 export async function install(argv) {
   const options = parseArgs(argv);
   const bin = path.join(options.prefix, "bin");
+  const cronScripts = path.join(options.prefix, "scripts");
   const skills = path.join(options.prefix, "skills");
   const skillNames = [
     "ottawa-operations",
@@ -46,6 +47,7 @@ export async function install(argv) {
     path.join(bin, "ottawa"),
     path.join(bin, "ottawa-source"),
     path.join(bin, "ottawa-time"),
+    path.join(cronScripts, "meta-ads-daily-report.sh"),
     ...skillNames.map((name) => path.join(skills, name)),
   ];
 
@@ -58,16 +60,22 @@ export async function install(argv) {
   const actions = [
     `create ${bin}`,
     `install ottawa, ottawa-source, and ottawa-time -> ${bin}`,
+    `install meta-ads-daily-report.sh -> ${cronScripts}`,
     `copy scripts/lib -> ${path.join(bin, "lib")}`,
     `copy Hermes skills -> ${skills}`,
   ];
   if (options.dryRun) return { prefix: options.prefix, actions };
 
   await mkdir(path.join(bin, "lib"), { recursive: true });
+  await mkdir(cronScripts, { recursive: true });
   await mkdir(skills, { recursive: true });
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa"), path.join(bin, "ottawa"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-source"), path.join(bin, "ottawa-source"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-time"), path.join(bin, "ottawa-time"));
+  await copyFile(
+    path.join(repositoryRoot, "hermes/scripts/meta-ads-daily-report.sh"),
+    path.join(cronScripts, "meta-ads-daily-report.sh"),
+  );
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-cli.mjs"), path.join(bin, "ottawa-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-source-cli.mjs"), path.join(bin, "ottawa-source-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/hermes-time-entry-cli.mjs"), path.join(bin, "hermes-time-entry-cli.mjs"));
@@ -81,6 +89,7 @@ export async function install(argv) {
   await chmod(path.join(bin, "ottawa"), 0o755);
   await chmod(path.join(bin, "ottawa-source"), 0o755);
   await chmod(path.join(bin, "ottawa-time"), 0o755);
+  await chmod(path.join(cronScripts, "meta-ads-daily-report.sh"), 0o755);
   return { prefix: options.prefix, actions };
 }
 
