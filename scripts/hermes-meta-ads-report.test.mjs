@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   addDays,
   classifyPurpose,
+  formatEnglishDate,
   formatSlackReport,
   leadCount,
   summarizeRows,
@@ -12,6 +13,10 @@ import {
 test("adds calendar days safely", () => {
   assert.equal(addDays("2026-08-10", -6), "2026-08-04");
   assert.equal(addDays("2026-03-01", -1), "2026-02-28");
+});
+
+test("formats report dates for people", () => {
+  assert.equal(formatEnglishDate("2026-08-09"), "August 9 2026");
 });
 
 test("uses Meta's aggregate lead action without double counting lead-like actions", () => {
@@ -86,8 +91,10 @@ test("formats a concise Slack-ready report", () => {
     feedback: ["Customer CPL was within 20% of the seven-day average."],
   };
   const text = formatSlackReport(report);
-  assert.match(text, /Customer leads: 2 \| Spend: \$50\.00 \| CPL: \$25\.00/);
-  assert.match(text, /30-day customer: 2 leads/);
+  assert.match(text, /Meta Ads — August 9 2026/);
+  assert.match(text, /Painting estimate leads: 2 \| Spend: \$50\.00 \| CPL: \$25\.00/);
+  assert.match(text, /Painting estimates — 30 days: 2 leads/);
   assert.match(text, /Interior Leads: 2 leads/);
-  assert.match(text, /Meta-attributed results/);
+  assert.match(text, /booked estimates and sales are not confirmed here/);
+  assert.doesNotMatch(text, /CRM|Meta-attributed|Customer leads/);
 });

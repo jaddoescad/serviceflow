@@ -51,6 +51,20 @@ export function addDays(dateOnly, days) {
   return date.toISOString().slice(0, 10);
 }
 
+export function formatEnglishDate(dateOnly) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly ?? "")) {
+    throw new Error("Date must use YYYY-MM-DD.");
+  }
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+    .format(new Date(`${dateOnly}T12:00:00.000Z`))
+    .replace(",", "");
+}
+
 function credentials() {
   const envFile = process.env.HERMES_META_ADS_ENV_FILE || DEFAULT_ENV_FILE;
   const localFallback = path.resolve(
@@ -213,9 +227,9 @@ function feedbackFor(daily, sevenDay, thirtyDay) {
   const weekly = sevenDay.customer_acquisition;
   const monthly = thirtyDay.customer_acquisition;
   if (customer.spend === 0) {
-    feedback.push("No customer-acquisition spend was delivered on this date.");
+    feedback.push("No painting-estimate ad spend was delivered on this date.");
   } else if (customer.leads === 0) {
-    feedback.push("Customer-acquisition ads spent money without a Meta-attributed lead.");
+    feedback.push("Painting-estimate ads spent money without a lead reported by Meta.");
   } else if (weekly.cost_per_lead != null && customer.cost_per_lead != null) {
     const difference = (customer.cost_per_lead - weekly.cost_per_lead) / weekly.cost_per_lead;
     if (difference >= 0.2) {
@@ -257,10 +271,10 @@ export function formatSlackReport(report) {
   const weekly = report.seven_day.customer_acquisition;
   const monthly = report.thirty_day.customer_acquisition;
   const lines = [
-    `Meta Ads — ${report.period.date} (${report.timezone})`,
-    `Customer leads: ${customer.leads} | Spend: ${money(customer.spend)} | CPL: ${money(customer.cost_per_lead)}`,
-    `7-day customer: ${weekly.leads} leads | ${money(weekly.spend)} spend | ${money(weekly.cost_per_lead)} CPL`,
-    `30-day customer: ${monthly.leads} leads | ${money(monthly.spend)} spend | ${money(monthly.cost_per_lead)} CPL`,
+    `Meta Ads — ${report.period.display_date ?? formatEnglishDate(report.period.date)}`,
+    `Painting estimate leads: ${customer.leads} | Spend: ${money(customer.spend)} | CPL: ${money(customer.cost_per_lead)}`,
+    `Painting estimates — 7 days: ${weekly.leads} leads | ${money(weekly.spend)} spend | ${money(weekly.cost_per_lead)} CPL`,
+    `Painting estimates — 30 days: ${monthly.leads} leads | ${money(monthly.spend)} spend | ${money(monthly.cost_per_lead)} CPL`,
   ];
   if (recruiting.spend > 0 || recruiting.leads > 0) {
     lines.push(
@@ -282,7 +296,7 @@ export function formatSlackReport(report) {
   if (report.feedback.length > 0) {
     lines.push("Feedback:", ...report.feedback.map((item) => `• ${item}`));
   }
-  lines.push("Meta-attributed results; CRM confirmation is reported separately.");
+  lines.push("Meta counted these leads from the ads; booked estimates and sales are not confirmed here.");
   return lines.join("\n");
 }
 
@@ -324,6 +338,7 @@ export async function buildReport({ date = null } = {}) {
     timezone: TIMEZONE,
     period: {
       date: reportDate,
+      display_date: formatEnglishDate(reportDate),
       seven_day_start: sevenDayStart,
       seven_day_end: reportDate,
       thirty_day_start: thirtyDayStart,
