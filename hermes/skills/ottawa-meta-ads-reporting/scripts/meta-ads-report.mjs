@@ -233,19 +233,19 @@ function feedbackFor(daily, sevenDay, thirtyDay) {
   } else if (weekly.cost_per_lead != null && customer.cost_per_lead != null) {
     const difference = (customer.cost_per_lead - weekly.cost_per_lead) / weekly.cost_per_lead;
     if (difference >= 0.2) {
-      feedback.push(`Customer CPL was ${Math.round(difference * 100)}% above the seven-day average.`);
+      feedback.push(`Painting inquiry cost was ${Math.round(difference * 100)}% above the seven-day average.`);
     } else if (difference <= -0.2) {
-      feedback.push(`Customer CPL was ${Math.round(Math.abs(difference) * 100)}% below the seven-day average.`);
+      feedback.push(`Painting inquiry cost was ${Math.round(Math.abs(difference) * 100)}% below the seven-day average.`);
     } else {
-      feedback.push("Customer CPL was within 20% of the seven-day average.");
+      feedback.push("Painting inquiry cost was within 20% of the seven-day average.");
     }
   }
   if (weekly.cost_per_lead != null && monthly.cost_per_lead != null) {
     const weeklyTrend = (weekly.cost_per_lead - monthly.cost_per_lead) / monthly.cost_per_lead;
     if (weeklyTrend >= 0.15) {
-      feedback.push(`Seven-day customer CPL is ${Math.round(weeklyTrend * 100)}% above the 30-day baseline.`);
+      feedback.push(`Seven-day painting inquiry cost is ${Math.round(weeklyTrend * 100)}% above the 30-day baseline.`);
     } else if (weeklyTrend <= -0.15) {
-      feedback.push(`Seven-day customer CPL is ${Math.round(Math.abs(weeklyTrend) * 100)}% below the 30-day baseline.`);
+      feedback.push(`Seven-day painting inquiry cost is ${Math.round(Math.abs(weeklyTrend) * 100)}% below the 30-day baseline.`);
     }
   }
   const zeroLeadSpend = daily.campaigns
@@ -253,7 +253,7 @@ function feedbackFor(daily, sevenDay, thirtyDay) {
     .slice(0, 3);
   if (zeroLeadSpend.length > 0) {
     feedback.push(
-      `Spend with zero attributed customer leads: ${zeroLeadSpend
+      `Spend with zero painting inquiries reported by Meta: ${zeroLeadSpend
         .map((campaign) => `${campaign.campaign_name} ($${campaign.spend.toFixed(2)})`)
         .join(", ")}.`,
     );
@@ -271,10 +271,10 @@ export function formatSlackReport(report) {
   const weekly = report.seven_day.customer_acquisition;
   const monthly = report.thirty_day.customer_acquisition;
   const lines = [
-    `Meta Ads — ${report.period.display_date ?? formatEnglishDate(report.period.date)}`,
-    `Painting estimate leads: ${customer.leads} | Spend: ${money(customer.spend)} | CPL: ${money(customer.cost_per_lead)}`,
-    `Painting estimates — 7 days: ${weekly.leads} leads | ${money(weekly.spend)} spend | ${money(weekly.cost_per_lead)} CPL`,
-    `Painting estimates — 30 days: ${monthly.leads} leads | ${money(monthly.spend)} spend | ${money(monthly.cost_per_lead)} CPL`,
+    `Meta Ads — Yesterday (${report.period.display_date ?? formatEnglishDate(report.period.date)})`,
+    `Yesterday's painting inquiries from Meta: ${customer.leads} | Ad spend: ${money(customer.spend)} | Cost per inquiry: ${money(customer.cost_per_lead)}`,
+    `Last 7 days — painting inquiries: ${weekly.leads} | Ad spend: ${money(weekly.spend)} | Cost per inquiry: ${money(weekly.cost_per_lead)}`,
+    `Last 30 days — painting inquiries: ${monthly.leads} | Ad spend: ${money(monthly.spend)} | Cost per inquiry: ${money(monthly.cost_per_lead)}`,
   ];
   if (recruiting.spend > 0 || recruiting.leads > 0) {
     lines.push(
@@ -296,7 +296,7 @@ export function formatSlackReport(report) {
   if (report.feedback.length > 0) {
     lines.push("Feedback:", ...report.feedback.map((item) => `• ${item}`));
   }
-  lines.push("Meta counted these leads from the ads; booked estimates and sales are not confirmed here.");
+  lines.push("Meta counted these inquiries from the ads; booked estimates and sales are not confirmed here.");
   return lines.join("\n");
 }
 

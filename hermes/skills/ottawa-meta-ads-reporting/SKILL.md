@@ -1,6 +1,6 @@
 ---
 name: ottawa-meta-ads-reporting
-description: Analyze Ottawa Painters Meta Ads performance from the read-only Marketing API connection. Use for daily or date-specific questions about Meta ad spend, painting estimate leads, recruiting leads, cost per lead, campaign performance, seven-day and 30-day trends, insights, actions, recommendations, or ads spending without attributed leads.
+description: Analyze Ottawa Painters Meta Ads performance from the read-only Marketing API connection. Use for daily or date-specific questions about Meta ad spend, painting inquiries from ads, recruiting leads, cost per inquiry, campaign performance, seven-day and 30-day trends, insights, actions, recommendations, or ads spending without inquiries.
 ---
 
 # Ottawa Meta Ads Reporting
@@ -29,8 +29,8 @@ When asked for a daily update or when running from cron, write the analysis your
 
 Keep the entire Slack update to 12 lines or fewer and include:
 
-1. Yesterday's painting estimate leads, spend, and CPL.
-2. Painting estimate results for the trailing 7 days and trailing 30 days.
+1. Yesterday's painting inquiries from Meta, spend, and cost per inquiry.
+2. Painting inquiry results for the trailing 7 days and trailing 30 days.
 3. Recruiting results separately in one compact line when there was recruiting activity.
 4. `Winners:` with at most two campaigns that have attributed leads and comparatively strong CPL or improving performance.
 5. `Watch:` with at most two campaigns or trends that spent without leads, have weak CPL, or materially worsened.
@@ -38,15 +38,15 @@ Keep the entire Slack update to 12 lines or fewer and include:
 
 Prefer decisions over narration. Mention percentage changes only when they materially change the recommendation. Never recommend scaling from a single day's result alone; use the 7-day and 30-day evidence. Do not claim CRM lead quality from Meta attribution data.
 
-Use `period.display_date` in the heading so the date reads like `August 9 2026`, never `2026-08-09`.
+Use `Meta Ads — Yesterday (August 9 2026)` as the heading, substituting `period.display_date`. Never show a bare date that leaves the reporting period ambiguous.
 
 ## Interpretation
 
-- Always label `customer_acquisition.leads` as `Painting estimate leads`, never `Customer leads`.
-- Explain this count as lead actions Meta assigned to painting customer-acquisition ads. It does not prove that each lead was unique, qualified, booked for an estimate, or sold.
+- Always label `customer_acquisition.leads` as `Yesterday's painting inquiries from Meta`, never `Customer leads` or `Painting estimate leads`.
+- Explain this count as inquiry actions Meta assigned to painting ads. It does not prove that each inquiry was unique, qualified, booked for an estimate, or sold.
 - Report recruiting results separately; never mix applications into customer leads.
 - Treat the seven-day and 30-day comparisons as directional because Meta attribution may update after the reporting date.
-- End with this plain-language note: `Meta counted these leads from the ads; booked estimates and sales are not confirmed here.`
+- End with this plain-language note: `Meta counted these inquiries from the ads; booked estimates and sales are not confirmed here.`
 - Translate warnings and feedback into plain language. Never use `Meta-attributed results` or `CRM confirmation` in the Slack update.
 
 ## Boundaries

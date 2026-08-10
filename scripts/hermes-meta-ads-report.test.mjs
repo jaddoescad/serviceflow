@@ -88,13 +88,13 @@ test("formats a concise Slack-ready report", () => {
     daily,
     seven_day: daily,
     thirty_day: daily,
-    feedback: ["Customer CPL was within 20% of the seven-day average."],
+    feedback: ["Painting inquiry cost was within 20% of the seven-day average."],
   };
   const text = formatSlackReport(report);
-  assert.match(text, /Meta Ads — August 9 2026/);
-  assert.match(text, /Painting estimate leads: 2 \| Spend: \$50\.00 \| CPL: \$25\.00/);
-  assert.match(text, /Painting estimates — 30 days: 2 leads/);
+  assert.match(text, /Meta Ads — Yesterday \(August 9 2026\)/);
+  assert.match(text, /Yesterday's painting inquiries from Meta: 2 \| Ad spend: \$50\.00 \| Cost per inquiry: \$25\.00/);
+  assert.match(text, /Last 30 days — painting inquiries: 2/);
   assert.match(text, /Interior Leads: 2 leads/);
-  assert.match(text, /booked estimates and sales are not confirmed here/);
-  assert.doesNotMatch(text, /CRM|Meta-attributed|Customer leads/);
+  assert.match(text, /Meta counted these inquiries from the ads/);
+  assert.doesNotMatch(text, /CRM|Meta-attributed|Customer leads|Painting estimate leads/);
 });
