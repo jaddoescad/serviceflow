@@ -268,32 +268,25 @@ function loadConfiguration(args) {
   const fileValues = Object.assign({}, ...[...new Set(candidates)].map(parseEnvFile));
   const values = { ...fileValues, ...process.env };
   const supabaseUrl = values.SUPABASE_URL || values.NEXT_PUBLIC_SUPABASE_URL || values.EXPO_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = values.SUPABASE_SERVICE_ROLE_KEY;
+  const timeEntryToken = values.HERMES_TIME_ENTRY_TOKEN;
   if (!supabaseUrl) throw new Error("Missing SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL).");
-  if (!serviceRoleKey) throw new Error("Missing server-side SUPABASE_SERVICE_ROLE_KEY.");
+  if (!timeEntryToken) throw new Error("Missing HERMES_TIME_ENTRY_TOKEN.");
 
   return {
     supabaseUrl: supabaseUrl.replace(/\/$/, ""),
-    serviceRoleKey,
+    timeEntryToken,
     actorEmail: args.actorEmail || values.TIME_ENTRY_ADMIN_EMAIL || DEFAULT_ACTOR_EMAIL,
   };
 }
 
-async function request(config, table, { method = "GET", params = {}, body = null, prefer = null } = {}) {
-  const url = new URL(`${config.supabaseUrl}/rest/v1/${table}`);
-  for (const [key, value] of Object.entries(params)) {
-    if (Array.isArray(value)) value.forEach((item) => url.searchParams.append(key, item));
-    else url.searchParams.set(key, value);
-  }
-  const response = await fetch(url, {
-    method,
+async function request(config, body) {
+  const response = await fetch(`${config.supabaseUrl}/functions/v1/hermes-time-entries`, {
+    method: "POST",
     headers: {
-      apikey: config.serviceRoleKey,
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(prefer ? { Prefer: prefer } : {}),
+      "Content-Type": "application/json",
+      "x-hermes-time-entry-token": config.timeEntryToken,
     },
-    body: body ? JSON.stringify(body) : null,
+    body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -325,21 +318,6 @@ async function confirm(message) {
   }
 }
 
-async function resolveActor(config, performRequest) {
-  const actors = await performRequest(config, "employee_profiles", {
-    params: {
-      select: "user_id,email,full_name,role,is_active",
-      email: `eq.${config.actorEmail}`,
-      is_active: "eq.true",
-      limit: "2",
-    },
-  });
-  if (actors.length !== 1 || !["admin", "manager"].includes(actors[0].role)) {
-    throw new Error(`Could not resolve one active admin/manager for ${config.actorEmail}.`);
-  }
-  return actors[0];
-}
-
 export async function runSetClockIn(args, dependencies = {}) {
   if (!args.employee) throw new Error("Employee name is required.");
   if (!args.at) throw new Error("Clock-in time is required.");
@@ -353,19 +331,16 @@ export async function runSetClockIn(args, dependencies = {}) {
   }
   const config = dependencies.config ?? loadConfiguration(args);
   const performRequest = dependencies.request ?? request;
-  const entries = await performRequest(config, "time_entries", {
-    params: {
-      select: "id,user_id,user_name,project_name,started_at,ended_at,status,original_started_at,start_edited_at,adjustment_history",
-      started_at: [`gte.${range.start.toISOString()}`, `lt.${range.end.toISOString()}`],
-      status: "neq.deleted",
-      order: "started_at.asc",
-      limit: "500",
-    },
-  });
-  const entry = selectClockInEntry(entries, args.employee, args.project);
-  if (entry.ended_at && requestedAt.getTime() > new Date(entry.ended_at).getTime()) {
-    throw new Error("Clock-in cannot be after the recorded clock-out.");
-  }
+  const requestBody = {
+    action: "setClockIn",
+    employee: args.employee,
+    project: args.project,
+    rangeStart: range.start.toISOString(),
+    rangeEnd: range.end.toISOString(),
+    startedAt: requestedAt.toISOString(),
+    apply: false,
+  };
+  const preview = await performRequest(config, requestBody);
 
   const result = {
     schema_version: 1,
@@ -373,46 +348,24 @@ export async function runSetClockIn(args, dependencies = {}) {
     status: args.dryRun ? "dry_run" : "updated",
     timezone: args.timeZone,
     work_date_local: range.dateKey,
-    entry_id: entry.id,
-    employee_name: entry.user_name,
-    project_name: entry.project_name,
-    previous_started_at: entry.started_at,
-    previous_clock_in_local: formatLocal(entry.started_at, args.timeZone),
+    entry_id: preview.entryId,
+    employee_name: preview.employeeName,
+    project_name: preview.projectName,
+    previous_started_at: preview.previousStartedAt,
+    previous_clock_in_local: formatLocal(preview.previousStartedAt, args.timeZone),
     requested_started_at: requestedAt.toISOString(),
     requested_clock_in_local: formatLocal(requestedAt, args.timeZone),
   };
 
-  if (new Date(entry.started_at).getTime() === requestedAt.getTime()) return { ...result, status: "unchanged" };
+  if (preview.status === "unchanged") return { ...result, status: "unchanged" };
   if (args.dryRun) return result;
   if (!args.yes && !(await (dependencies.confirm ?? confirm)(
-    `Change ${entry.user_name}'s clock-in from ${result.previous_clock_in_local} to ${result.requested_clock_in_local}?`,
+    `Change ${preview.employeeName}'s clock-in from ${result.previous_clock_in_local} to ${result.requested_clock_in_local}?`,
   ))) {
     return { ...result, status: "cancelled" };
   }
 
-  const actor = dependencies.actor ?? await resolveActor(config, performRequest);
-  const history = Array.isArray(entry.adjustment_history) ? [...entry.adjustment_history] : [];
-  history.push({
-    at: now.toISOString(),
-    by: actor.user_id,
-    by_role: actor.role,
-    source: "hermes_slack",
-    changes: { started_at: { from: entry.started_at, to: requestedAt.toISOString() } },
-  });
-  const updated = await performRequest(config, "time_entries", {
-    method: "PATCH",
-    params: { id: `eq.${entry.id}`, started_at: `eq.${entry.started_at}` },
-    body: {
-      original_started_at: entry.original_started_at ?? entry.started_at,
-      started_at: requestedAt.toISOString(),
-      start_edited_at: now.toISOString(),
-      adjustment_history: history,
-    },
-    prefer: "return=representation",
-  });
-  if (!Array.isArray(updated) || updated.length !== 1) {
-    throw new Error("The time entry changed before the update completed. Inspect it before trying again.");
-  }
+  await performRequest(config, { ...requestBody, apply: true });
   return result;
 }
 
@@ -429,8 +382,8 @@ Options:
   --date <date>           today (default), yesterday, or YYYY-MM-DD
   --project <name>        Limit entry selection to one project
   --timezone <IANA zone>  Defaults to America/Toronto
-  --actor-email <email>   Admin/manager recorded in the audit trail
-  --env-file <path>       Server-side Supabase environment file
+  --actor-email <email>   Reserved audit actor metadata
+  --env-file <path>       Server-side Hermes environment file
   --dry-run               Resolve and preview without changing the entry
   --json                  Print structured output
   -y, --yes               Apply without an interactive prompt

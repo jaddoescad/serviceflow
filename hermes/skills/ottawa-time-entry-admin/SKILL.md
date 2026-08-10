@@ -33,5 +33,5 @@ The command selects the earliest clock-in for the uniquely matched employee on t
 
 - Require explicit change language such as change, fix, adjust, or set. Do not write when the user is only asking what time someone clocked in.
 - Never create or delete a time entry, change clock-out, approve a timesheet, or edit notes under this skill.
-- Never expose credentials, environment values, authorization headers, or service-role keys.
+- Never expose credentials, environment values, authorization headers, or the dedicated Hermes token.
 - Never claim success from intent alone; require the command's structured success result.

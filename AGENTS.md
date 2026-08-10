@@ -11,6 +11,12 @@
 - Use the server-side `QUO_API_KEY` from `.env` for authentication.
 - Never expose the key in browser code, logs, documentation, commits, or user-facing output.
 
+## Deployment speed
+
+- For explicit deployment requests, ship and verify the smallest testable version first, then harden it unless the user asks for production hardening before testing.
+- Surface external-access blockers immediately. Do not silently expand a quick test deployment into a broader security or architecture project.
+- Use the dedicated `Hermes QA` employee, `Hermes Clock-In QA` job, and `hermes-clock-in-qa-fixture` time entry for Hermes clock-in tests. Never test write behavior against a real employee's entry unless the user explicitly names and authorizes that entry.
+
 ## Historical job accounting lock
 
 - Treat June 1, 2026 as the accounting cutoff. Do not create, update, reverse, or delete job-linked receipts, invoice allocations, direct transaction allocations, or budgets for a job whose verified `started_on` date is before `2026-06-01`.

@@ -54,27 +54,22 @@ test("uses an embedded local date when --date is omitted", async () => {
     parseCliArgs(["set-clock-in", "Scott", "2026-08-10T8am", "--dry-run"]),
     {
       now: new Date("2026-08-12T15:00:00.000Z"),
-      config: { supabaseUrl: "https://example.invalid", serviceRoleKey: "secret", actorEmail: "admin@example.com" },
-      request: async (_config, _table, options) => {
-        seen.push(options);
-        return [
-          {
-            id: "entry-id",
-            user_id: "scott-id",
-            user_name: "Scott Madden",
-            project_name: "First Job",
-            started_at: "2026-08-10T12:30:00.000Z",
-            ended_at: "2026-08-10T20:00:00.000Z",
-            status: "completed",
-          },
-        ];
+      config: { supabaseUrl: "https://example.invalid", timeEntryToken: "secret" },
+      request: async (_config, body) => {
+        seen.push(body);
+        return {
+          entryId: "entry-id",
+          employeeName: "Scott Madden",
+          projectName: "First Job",
+          previousStartedAt: "2026-08-10T12:30:00.000Z",
+          requestedStartedAt: body.startedAt,
+          status: "dry_run",
+        };
       },
     },
   );
-  assert.deepEqual(seen[0].params.started_at, [
-    "gte.2026-08-10T04:00:00.000Z",
-    "lt.2026-08-11T04:00:00.000Z",
-  ]);
+  assert.equal(seen[0].rangeStart, "2026-08-10T04:00:00.000Z");
+  assert.equal(seen[0].rangeEnd, "2026-08-11T04:00:00.000Z");
 });
 
 test("selects the earliest clock-in for one uniquely matched employee", () => {
@@ -156,31 +151,25 @@ test("rejects an employee-name collision", () => {
   );
 });
 
-test("updates one resolved entry with an optimistic filter and audit history", async () => {
+test("previews, confirms, and applies through the narrow endpoint", async () => {
   const calls = [];
-  const entry = {
-    id: "entry-id",
-    user_id: "scott-id",
-    user_name: "Scott Madden",
-    project_name: "First Job",
-    started_at: "2026-08-10T12:30:00.000Z",
-    ended_at: "2026-08-10T20:00:00.000Z",
-    status: "completed",
-    original_started_at: null,
-    adjustment_history: [],
-  };
-  const request = async (_config, table, options) => {
-    calls.push({ table, options });
-    if (options.method === "PATCH") return [{ ...entry, started_at: options.body.started_at }];
-    return [entry];
+  const request = async (_config, body) => {
+    calls.push(body);
+    return {
+      entryId: "entry-id",
+      employeeName: "Scott Madden",
+      projectName: "First Job",
+      previousStartedAt: "2026-08-10T12:30:00.000Z",
+      requestedStartedAt: body.startedAt,
+      status: body.apply ? "updated" : "dry_run",
+    };
   };
 
   const result = await runSetClockIn(
     parseCliArgs(["set-clock-in", "Scott", "8am", "--date", "2026-08-10", "--yes"]),
     {
       now: new Date("2026-08-10T15:00:00.000Z"),
-      config: { supabaseUrl: "https://example.invalid", serviceRoleKey: "secret", actorEmail: "admin@example.com" },
-      actor: { user_id: "admin-id", role: "admin" },
+      config: { supabaseUrl: "https://example.invalid", timeEntryToken: "secret" },
       request,
     },
   );
@@ -188,14 +177,9 @@ test("updates one resolved entry with an optimistic filter and audit history", a
   assert.equal(result.status, "updated");
   assert.equal(result.requested_started_at, "2026-08-10T12:00:00.000Z");
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0].options.params.started_at, [
-    "gte.2026-08-10T04:00:00.000Z",
-    "lt.2026-08-11T04:00:00.000Z",
-  ]);
-  assert.equal(calls[1].options.method, "PATCH");
-  assert.equal(calls[1].options.params.id, "eq.entry-id");
-  assert.equal(calls[1].options.params.started_at, "eq.2026-08-10T12:30:00.000Z");
-  assert.equal(calls[1].options.body.original_started_at, "2026-08-10T12:30:00.000Z");
-  assert.equal(calls[1].options.body.started_at, "2026-08-10T12:00:00.000Z");
-  assert.equal(calls[1].options.body.adjustment_history[0].source, "hermes_slack");
+  assert.equal(calls[0].rangeStart, "2026-08-10T04:00:00.000Z");
+  assert.equal(calls[0].rangeEnd, "2026-08-11T04:00:00.000Z");
+  assert.equal(calls[0].apply, false);
+  assert.equal(calls[1].startedAt, "2026-08-10T12:00:00.000Z");
+  assert.equal(calls[1].apply, true);
 });
