@@ -408,7 +408,7 @@ function headersObject(message) {
   return Object.fromEntries((message.payload?.headers ?? []).map((header) => [String(header.name).toLowerCase(), header.value]));
 }
 
-async function googleAccessToken(env, fetchImpl) {
+export async function googleAccessToken(env, fetchImpl) {
   const file = env.GOOGLE_TOKEN_FILE || "/opt/data/google_token.json";
   let credential;
   try {

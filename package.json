@@ -12,6 +12,7 @@
     "lint": "next lint",
     "clock-out": "node scripts/time-entry-cli.mjs clock-out",
     "hermes:time": "node scripts/hermes-time-entry-cli.mjs",
+    "hermes:gmail-label": "node scripts/ottawa-gmail-label-cli.mjs",
     "tasks": "node scripts/project-task-cli.mjs",
     "audit:invoice-entries": "node scripts/audit-invoice-entries.mjs",
     "audit:invoice-job-links": "node scripts/audit-invoice-entry-job-links.mjs",
@@ -55,7 +56,7 @@
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
     "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
     "test:invoice-allocations": "node --experimental-strip-types --test scripts/invoice-allocation-selection.test.mjs scripts/job-budget-selection.test.mjs",
-    "test:ottawa-cli": "node --test scripts/ottawa-cli.test.mjs scripts/ottawa-source-cli.test.mjs scripts/ottawa-customer-rag.test.mjs"
+    "test:ottawa-cli": "node --test scripts/ottawa-cli.test.mjs scripts/ottawa-source-cli.test.mjs scripts/ottawa-customer-rag.test.mjs scripts/ottawa-gmail-labeling.test.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

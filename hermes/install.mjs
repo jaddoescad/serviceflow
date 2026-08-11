@@ -38,6 +38,7 @@ export async function install(argv) {
   const skillNames = [
     "ottawa-operations",
     "ottawa-communications-readonly",
+    "ottawa-gmail-labeling",
     "ottawa-painters-db-cli",
     "ottawa-painters-apis",
     "ottawa-time-entry-admin",
@@ -47,6 +48,7 @@ export async function install(argv) {
     path.join(bin, "ottawa"),
     path.join(bin, "ottawa-source"),
     path.join(bin, "ottawa-time"),
+    path.join(bin, "ottawa-gmail-label"),
     path.join(cronScripts, "meta-ads-daily-report.sh"),
     ...skillNames.map((name) => path.join(skills, name)),
   ];
@@ -59,7 +61,7 @@ export async function install(argv) {
 
   const actions = [
     `create ${bin}`,
-    `install ottawa, ottawa-source, and ottawa-time -> ${bin}`,
+    `install ottawa, ottawa-source, ottawa-time, and ottawa-gmail-label -> ${bin}`,
     `install meta-ads-daily-report.sh -> ${cronScripts}`,
     `copy scripts/lib -> ${path.join(bin, "lib")}`,
     `copy Hermes skills -> ${skills}`,
@@ -72,6 +74,7 @@ export async function install(argv) {
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa"), path.join(bin, "ottawa"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-source"), path.join(bin, "ottawa-source"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-time"), path.join(bin, "ottawa-time"));
+  await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-gmail-label"), path.join(bin, "ottawa-gmail-label"));
   await copyFile(
     path.join(repositoryRoot, "hermes/scripts/meta-ads-daily-report.sh"),
     path.join(cronScripts, "meta-ads-daily-report.sh"),
@@ -79,9 +82,11 @@ export async function install(argv) {
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-cli.mjs"), path.join(bin, "ottawa-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-source-cli.mjs"), path.join(bin, "ottawa-source-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/hermes-time-entry-cli.mjs"), path.join(bin, "hermes-time-entry-cli.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/ottawa-gmail-label-cli.mjs"), path.join(bin, "ottawa-gmail-label-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-report-contract.mjs"), path.join(bin, "lib/ottawa-report-contract.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-read-sources.mjs"), path.join(bin, "lib/ottawa-read-sources.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-customer-rag.mjs"), path.join(bin, "lib/ottawa-customer-rag.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-gmail-labeling.mjs"), path.join(bin, "lib/ottawa-gmail-labeling.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-quo-scope.mjs"), path.join(bin, "lib/ottawa-quo-scope.mjs"));
   for (const skillName of skillNames) {
     await cp(path.join(repositoryRoot, `hermes/skills/${skillName}`), path.join(skills, skillName), { recursive: true, force: options.force });
@@ -89,6 +94,7 @@ export async function install(argv) {
   await chmod(path.join(bin, "ottawa"), 0o755);
   await chmod(path.join(bin, "ottawa-source"), 0o755);
   await chmod(path.join(bin, "ottawa-time"), 0o755);
+  await chmod(path.join(bin, "ottawa-gmail-label"), 0o755);
   await chmod(path.join(cronScripts, "meta-ads-daily-report.sh"), 0o755);
   return { prefix: options.prefix, actions };
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ottawa Gmail Labeling"
+  short_description: "Safely apply approved Gmail labels"
+  default_prompt: "Use $ottawa-gmail-labeling to apply an approved label to the requested Gmail message."
