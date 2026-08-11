@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { parseArgs } from "./ottawa-gmail-label-cli.mjs";
 import {
   addGmailLabel,
   configuredGmailScopes,
+  gmailLabelAllowlist,
   parseLabelAllowlist,
   resolveApprovedUserLabel,
 } from "./lib/ottawa-gmail-labeling.mjs";
@@ -24,6 +28,17 @@ test("CLI parses bounded add arguments", () => {
 
 test("allowlist parsing is compact and deterministic", () => {
   assert.deepEqual(parseLabelAllowlist("Painting Estimate Lead,Label_42\nPainting Estimate Lead"), ["Painting Estimate Lead", "Label_42"]);
+});
+
+test("allowlist falls back to Hermes persisted env without loading other keys", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "gmail-label-env-"));
+  const file = path.join(directory, ".env");
+  try {
+    await writeFile(file, "UNRELATED_SECRET=do-not-load\nHERMES_GMAIL_LABEL_ALLOWLIST='Quotes,Review'\n", "utf8");
+    assert.equal(await gmailLabelAllowlist({ HERMES_ENV_FILE: file }), "Quotes,Review");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("only allowlisted user labels resolve", () => {

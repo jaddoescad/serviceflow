@@ -22,6 +22,27 @@ export function parseLabelAllowlist(value) {
     .filter(Boolean))];
 }
 
+export function parseDotEnvValue(contents, key) {
+  const escapedKey = String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(contents ?? "").match(new RegExp(`^(?:export\\s+)?${escapedKey}=(.*)$`, "m"));
+  if (!match) return "";
+  const value = match[1].trim();
+  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+export async function gmailLabelAllowlist(env = process.env) {
+  if (String(env.HERMES_GMAIL_LABEL_ALLOWLIST ?? "").trim()) return env.HERMES_GMAIL_LABEL_ALLOWLIST;
+  const file = env.HERMES_ENV_FILE || "/opt/data/.env";
+  try {
+    return parseDotEnvValue(await readFile(file, "utf8"), "HERMES_GMAIL_LABEL_ALLOWLIST");
+  } catch {
+    return "";
+  }
+}
+
 export function configuredGmailScopes(credential) {
   const raw = [credential?.scope, credential?.scopes]
     .flatMap((value) => Array.isArray(value) ? value : String(value ?? "").split(/[\s,]+/))
@@ -80,7 +101,7 @@ export async function addGmailLabel({ messageId, labelSelector, dryRun = false, 
   const id = cleanSelector(messageId, "Message ID");
   if (!/^[A-Za-z0-9_-]{5,225}$/.test(id)) throw new Error("Message ID is invalid");
   const labels = await listGmailLabels(env, fetchImpl, accessToken);
-  const label = resolveApprovedUserLabel(labels, labelSelector, env.HERMES_GMAIL_LABEL_ALLOWLIST);
+  const label = resolveApprovedUserLabel(labels, labelSelector, await gmailLabelAllowlist(env));
   if (dryRun) return { status: "dry_run", message_id: id, label: { id: label.id, name: label.name } };
   if (!confirmed) throw new Error("A live label change requires --yes after an explicit user request");
 
