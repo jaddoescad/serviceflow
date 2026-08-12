@@ -6,7 +6,7 @@ import { Button, Card, EmptyState, Input, Select, cn } from "@/components/ui";
 import { fmtDate, fmtMoney } from "@/lib/format";
 import type { MarketingLead } from "@/lib/types";
 
-type ProgressFilter = "all" | "unlinked" | "lead" | "estimate" | "job" | "proposal";
+type ProgressFilter = "all" | "lead" | "estimate" | "job" | "proposal";
 
 type Stage = {
   label: string;
@@ -22,7 +22,6 @@ const PROGRESS_SCOPES: Array<{
   title: string;
 }> = [
   { value: "all", label: "All", title: "All records" },
-  { value: "unlinked", label: "Unlinked", title: "No DripJobs job" },
   { value: "lead", label: "Lead", title: "No estimate, proposal, or job yet" },
   { value: "estimate", label: "Estimate", title: "Estimate booked" },
   { value: "proposal", label: "Proposal", title: "Proposal recorded" },
@@ -48,7 +47,6 @@ function sourceTone(lead: MarketingLead): "neutral" | "brand" | "good" {
 
 function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
-  if (filter === "unlinked") return lead.dripJobs.length === 0;
   if (filter === "lead") {
     return (
       lead.dripJobs.length === 0 &&
