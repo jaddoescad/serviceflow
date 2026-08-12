@@ -11,7 +11,7 @@ export default async function LeadsPage() {
     <>
       <PageHeader
         title="Leads & Estimates"
-        subtitle="All Leads is the lead source; DripJobs is the job source. Their relationship is saved with auditable evidence."
+        subtitle={`${leads.length.toLocaleString("en-CA")} leads from All Leads, matched to DripJobs with auditable evidence`}
       />
       <LeadsTable leads={leads} />
     </>

@@ -20,6 +20,11 @@ import type {
   TimeEntry,
 } from "@/lib/types";
 
+// PostgREST serializes `.in(...)` filters into the request URL. Keeping UUID
+// batches well below Supabase's 16 KB URL/header limit avoids network-level
+// `fetch failed` errors before the query can reach Postgres.
+const POSTGREST_IN_FILTER_BATCH_SIZE = 200;
+
 function timeEntry(row: any): TimeEntry {
   return {
     ...row,
@@ -148,11 +153,18 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
 
   const leadIds = rows.map((row) => row.id);
   const quotes: any[] = [];
-  for (let index = 0; index < leadIds.length; index += 500) {
+  for (
+    let index = 0;
+    index < leadIds.length;
+    index += POSTGREST_IN_FILTER_BATCH_SIZE
+  ) {
     const { data, error } = await supabase
       .from("quotes")
       .select("*,job:jobs(id,name,status,started_on,completed_on)")
-      .in("lead_id", leadIds.slice(index, index + 500));
+      .in(
+        "lead_id",
+        leadIds.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
+      );
     if (error) throw new Error(`lead quotes: ${error.message}`);
     quotes.push(...(data ?? []));
   }
