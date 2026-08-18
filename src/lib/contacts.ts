@@ -146,7 +146,7 @@ async function getAllCustomerRows() {
     supabase
       .from("jobs")
       .select(
-        "id,contact_id,lead_id,status,is_feed_visible,formatted_address,address_line_1,city,province,postal_code,created_at,updated_at,accepted_quote:quotes(status,accepted_at)",
+        "id,contact_id,lead_id,status,is_feed_visible,formatted_address,address_line_1,city,province,postal_code,created_at,updated_at,accepted_quote:quotes(lead_id,status,accepted_at)",
       )
       .not("contact_id", "is", null)
       .order("updated_at", { ascending: false })
@@ -179,7 +179,8 @@ export const getCustomerContacts = cache(async (): Promise<ContactSummary[]> => 
     const contactJobs = jobsByContact.get(contact.id) ?? [];
     const jobsByProject = new Map<string, Row[]>();
     for (const job of contactJobs) {
-      const key = job.lead_id ? `lead:${job.lead_id}` : `job:${job.id}`;
+      const projectLeadId = relation(job.accepted_quote)?.lead_id ?? job.lead_id;
+      const key = projectLeadId ? `lead:${projectLeadId}` : `job:${job.id}`;
       const list = jobsByProject.get(key) ?? [];
       list.push(job);
       jobsByProject.set(key, list);
@@ -188,7 +189,10 @@ export const getCustomerContacts = cache(async (): Promise<ContactSummary[]> => 
       .map(currentJob)
       .filter((job): job is Row => Boolean(job));
     const convertedLeadIds = new Set(
-      selectedJobs.flatMap((job) => (job.lead_id ? [job.lead_id] : [])),
+      selectedJobs.flatMap((job) => {
+        const projectLeadId = relation(job.accepted_quote)?.lead_id ?? job.lead_id;
+        return projectLeadId ? [projectLeadId] : [];
+      }),
     );
     const openLeads = contactLeads.filter((lead) => !convertedLeadIds.has(lead.id));
     const recent = [...selectedJobs, ...openLeads].sort(
@@ -246,14 +250,14 @@ export const getContactDetail = cache(
     let jobQuery = supabase
       .from("jobs")
       .select(
-        "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,dripjobs_proposal_id,status,accepted_at)",
+        "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,lead_id,dripjobs_proposal_id,status,accepted_at)",
       )
       .eq("contact_id", contactId);
     if (leadIds.length) {
       jobQuery = supabase
         .from("jobs")
         .select(
-          "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,dripjobs_proposal_id,status,accepted_at)",
+          "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,lead_id,dripjobs_proposal_id,status,accepted_at)",
         )
         .or(`contact_id.eq.${contactId},lead_id.in.(${leadIds.join(",")})`);
     }
@@ -266,10 +270,11 @@ export const getContactDetail = cache(
     const jobsByLead = new Map<string, Row[]>();
     const orphanJobs: Row[] = [];
     for (const job of jobs ?? []) {
-      if (job.lead_id && knownLeadIds.has(job.lead_id)) {
-        const list = jobsByLead.get(job.lead_id) ?? [];
+      const projectLeadId = relation(job.accepted_quote)?.lead_id ?? job.lead_id;
+      if (projectLeadId && knownLeadIds.has(projectLeadId)) {
+        const list = jobsByLead.get(projectLeadId) ?? [];
         list.push(job);
-        jobsByLead.set(job.lead_id, list);
+        jobsByLead.set(projectLeadId, list);
       } else if (job.is_feed_visible !== false) {
         orphanJobs.push(job);
       }
