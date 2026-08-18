@@ -120,11 +120,12 @@ export async function LeadDetailView({
       projectId={leadId}
       name={name}
       address={lead.address ?? null}
+      status={lead.status}
       isLead
-      initialTab={initialTab}
-      overview={overview}
-      tasks={<EmptyLeadTasks />}
-    />
+      activeTab={initialTab}
+    >
+      {initialTab === "tasks" ? <EmptyLeadTasks /> : overview}
+    </JobShell>
   );
 }
 
@@ -149,7 +150,7 @@ export async function LeadInvoicesView({ leadId }: { leadId: string }) {
         subtitle={lead.address ?? undefined}
         actions={<Badge tone="brand">Lead</Badge>}
       />
-      <ProjectTabs projectId={leadId} projectName={name} />
+      <ProjectTabs projectId={leadId} projectName={name} isLead />
       <Card>
         <CardHeader title="Invoices" subtitle="Invoices for this lead will appear here" />
         <EmptyState>No invoices yet.</EmptyState>

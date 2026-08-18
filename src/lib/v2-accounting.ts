@@ -1,9 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import {
+  invoiceJobCostCategory,
   selectCostingInvoiceJobAllocations,
   selectUsableInvoiceJobAllocations,
 } from "@/lib/invoice-allocation-selection";
 import { deriveInvoiceReadiness } from "@/lib/invoice-readiness";
+import {
+  isContractorInvoiceReviewRecord,
+  isHistoricalLabourInvoice,
+} from "@/lib/invoice-review-visibility";
+import {
+  isDripJobsJobAmountBudget,
+  selectCurrentOperationalBudgets,
+} from "@/lib/job-budget-selection";
 
 async function getEvidenceForInvoices(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -62,28 +71,109 @@ export async function getLabourInvoiceReviewInvoices() {
   const { data, error } = await supabase
     .from("invoices")
     .select(
-      "*,contact:contacts(name),lines:invoice_lines(id,line_number,subtotal_cents,tax_cents,total_cents,source_kind,metadata),allocations:invoice_job_allocations(id,invoice_id,invoice_line_id,job_id,subtotal_cents,total_cents,needs_review,metadata,job:jobs(name)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(id,invoice_id,amount_cents,needs_review,reversed_at,transaction:transactions(id,posted_on,review_status))",
+      "*,contact:contacts(name),lines:invoice_lines(id,line_number,subtotal_cents,tax_cents,total_cents,source_kind,metadata),allocations:invoice_job_allocations(id,invoice_id,invoice_line_id,job_id,subtotal_cents,total_cents,needs_review,metadata,job:jobs(name,status,started_on,completed_on,production_month)),payments:transaction_allocations!transaction_allocations_invoice_id_fkey(id,invoice_id,amount_cents,needs_review,reversed_at,transaction:transactions(id,posted_on,review_status))",
     )
-    .eq("category", "labour")
+    .eq("direction", "payable")
+    .in("category", ["labour", "other"])
     .order("issued_on", { ascending: false, nullsFirst: false })
     .limit(2000);
   if (error) throw new Error(`labour invoice review: ${error.message}`);
 
-  const invoices = data ?? [];
-  const evidenceByInvoice = await getEvidenceForInvoices(
-    supabase,
-    invoices.map((invoice) => invoice.id),
-  );
+  const invoices = (data ?? []).filter(isContractorInvoiceReviewRecord);
+  const [evidenceByInvoice, jobBudgetResult] = await Promise.all([
+    getEvidenceForInvoices(
+      supabase,
+      invoices.map((invoice) => invoice.id),
+    ),
+    supabase
+      .from("job_budgets")
+      .select(
+        "id,job_id,source,status,version,updated_at,amount_including_tax_cents,metadata",
+      )
+      .in("source", ["manual", "project_budget"])
+      .in("status", ["active", "closed"])
+      .limit(5000),
+  ]);
+  if (jobBudgetResult.error) {
+    throw new Error(`DripJobs job amounts: ${jobBudgetResult.error.message}`);
+  }
 
-  return invoices.map((invoice: any) => {
+  const revenueByJob = new Map<string, number>();
+  const currentBudgets = selectCurrentOperationalBudgets(
+    jobBudgetResult.data ?? [],
+  );
+  for (const [jobId, budget] of currentBudgets) {
+    if (!isDripJobsJobAmountBudget(budget)) continue;
+    revenueByJob.set(jobId, Number(budget.amount_including_tax_cents));
+  }
+
+  const reviewableInvoices = invoices.map((invoice: any) => {
+    const invoiceMetadata = invoice.metadata ?? {};
+    const listMetadata = invoice.category === "other"
+      ? {
+          ...invoiceMetadata,
+          job_allocation_required:
+            typeof invoiceMetadata.job_allocation_required === "boolean"
+              ? invoiceMetadata.job_allocation_required
+              : false,
+        }
+      : invoice.metadata;
     const reviewableInvoice = {
       ...invoice,
+      metadata: listMetadata,
       allocations: selectUsableInvoiceJobAllocations(invoice.allocations ?? []),
       evidence: evidenceByInvoice.get(invoice.id) ?? [],
     };
     return {
       ...reviewableInvoice,
       readiness: deriveInvoiceReadiness(reviewableInvoice),
+    };
+  });
+  const costingAllocations = selectCostingInvoiceJobAllocations(
+    reviewableInvoices.flatMap((invoice: any) => {
+      if (invoice.readiness?.paymentState === "void") return [];
+      const linesById = new Map(
+        (invoice.lines ?? []).map((line: any) => [line.id, line]),
+      );
+      return (invoice.allocations ?? []).map((allocation: any) => ({
+        ...allocation,
+        line: allocation.invoice_line_id
+          ? linesById.get(allocation.invoice_line_id) ?? null
+          : null,
+        invoice: {
+          category: invoice.category,
+          source_system: invoice.source_system,
+          status: invoice.status,
+        },
+      }));
+    }),
+  ).filter((allocation: any) => invoiceJobCostCategory(allocation) === "labour");
+  const labourSubtotalByJob = new Map<string, number>();
+  for (const allocation of costingAllocations) {
+    labourSubtotalByJob.set(
+      allocation.job_id,
+      (labourSubtotalByJob.get(allocation.job_id) ?? 0) +
+        Number(allocation.subtotal_cents ?? 0),
+    );
+  }
+
+  return reviewableInvoices.map((invoice: any) => {
+    const allocations = (invoice.allocations ?? []).map((allocation: any) => {
+      return {
+        ...allocation,
+        job_revenue_before_hst_cents:
+          revenueByJob.get(allocation.job_id) ?? null,
+        total_job_labour_subtotal_cents:
+          labourSubtotalByJob.get(allocation.job_id) ?? 0,
+      };
+    });
+    const reviewableInvoice = {
+      ...invoice,
+      allocations,
+    };
+    return {
+      ...reviewableInvoice,
+      historical: isHistoricalLabourInvoice(reviewableInvoice),
     };
   });
 }

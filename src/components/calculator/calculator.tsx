@@ -109,6 +109,7 @@ export function CalculatorPage({
           <ProjectTabs
             projectId={projectId}
             projectName={displayName || ""}
+            isLead={isLead}
           />
 
           {isLead ? (

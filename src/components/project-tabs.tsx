@@ -3,78 +3,85 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export type ProjectTabKey = "overview" | "tasks" | "invoices" | "calculator";
-export type LocalTabKey = "overview" | "tasks";
+export type ProjectTabKey =
+  | "photos"
+  | "labour"
+  | "tasks"
+  | "invoices"
+  | "calculator";
+/** Retained for the legacy component while project routes use ProjectTabKey. */
+export type LocalTabKey = "photos" | "tasks";
 
 export function ProjectTabs({
   projectId,
   projectName,
   activeOverride,
-  onLocalSwitch,
+  isLead: _isLead = false,
+  photoCount,
 }: {
   projectId: string;
   projectName: string;
-  /** Controlled active tab (used by the job view's instant switching). */
   activeOverride?: ProjectTabKey;
-  /** When set, Overview/Tasks switch in place instead of navigating. */
-  onLocalSwitch?: (tab: LocalTabKey) => void;
+  isLead?: boolean;
+  photoCount?: number;
 }) {
   const pathname = usePathname();
   const active: ProjectTabKey =
     activeOverride ??
     (pathname.endsWith("/tasks")
       ? "tasks"
-      : pathname.endsWith("/invoices")
-        ? "invoices"
-        : pathname.endsWith("/calculator")
-          ? "calculator"
-          : "overview");
+      : pathname.endsWith("/labour")
+        ? "labour"
+        : pathname.endsWith("/invoices")
+          ? "invoices"
+          : pathname.endsWith("/calculator")
+            ? "calculator"
+            : "photos");
 
   const base = `/jobs/${encodeURIComponent(projectId)}`;
-  const tabs: { key: ProjectTabKey; label: string; href: string }[] = [
-    { key: "overview", label: "Overview", href: base },
+  const tabs: {
+    key: ProjectTabKey;
+    label: string;
+    href: string;
+    count?: number;
+  }[] = [
+    { key: "photos", label: "Photos", href: base, count: photoCount },
+    { key: "labour", label: "Labour & Financials", href: `${base}/labour` },
     { key: "tasks", label: "Tasks", href: `${base}/tasks` },
     { key: "invoices", label: "Invoices", href: `${base}/invoices` },
     {
       key: "calculator",
-      label: "Accepted Quote / Calculator",
+      label: "Quote / Calculator",
       href: `${base}/calculator?name=${encodeURIComponent(projectName)}`,
     },
   ];
 
   return (
-    <div
-      role="tablist"
+    <nav
       aria-label="Project sections"
-      className="mb-6 inline-flex rounded-xl bg-[var(--color-surface-2)] p-1"
+      className="mb-6 flex w-full gap-1 overflow-x-auto border-b border-[var(--color-border)]"
     >
       {tabs.map((tab) => {
         const isActive = tab.key === active;
-        const className = `rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+        const className = `-mb-px whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
           isActive
-            ? "bg-[var(--color-brand)] text-[var(--color-brand-ink)] shadow-sm"
-            : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            ? "border-[var(--color-heading)] text-[var(--color-heading)]"
+            : "border-transparent text-[var(--color-muted)] hover:text-[var(--color-text)]"
         }`;
-        if (onLocalSwitch && (tab.key === "overview" || tab.key === "tasks")) {
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={`cursor-pointer ${className}`}
-              onClick={() => onLocalSwitch(tab.key as LocalTabKey)}
-            >
-              {tab.label}
-            </button>
-          );
-        }
         return (
-          <Link key={tab.key} href={tab.href} role="tab" aria-selected={isActive} className={className}>
+          <Link
+            key={tab.key}
+            href={tab.href}
+            aria-current={isActive ? "page" : undefined}
+            className={className}
+          >
             {tab.label}
+            {tab.count !== undefined ? (
+              <span className="ml-1 font-normal text-[var(--color-muted)]">({tab.count})</span>
+            ) : null}
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

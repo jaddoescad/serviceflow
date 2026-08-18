@@ -1,9 +1,9 @@
 import { Suspense } from "react";
+import { notFound, redirect } from "next/navigation";
 import { getProjectShell } from "@/lib/project-data";
 import { JobShell } from "@/components/job-shell";
-import { OverviewSlot, TasksSlot } from "@/components/project-slots";
-import { OverviewPanelSkeleton, TasksPanelSkeleton } from "@/components/skeletons";
-import { LeadDetailView } from "@/components/lead-detail-view";
+import { TasksSlot } from "@/components/project-slots";
+import { TasksPanelSkeleton } from "@/components/skeletons";
 
 export const dynamic = "force-dynamic";
 
@@ -11,24 +11,23 @@ export default async function JobTasksPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const jobId = decodeURIComponent(id);
   const shell = await getProjectShell(jobId);
-  if (!shell) return <LeadDetailView leadId={jobId} initialTab="tasks" />;
+  if (!shell) notFound();
+  if (shell.canonicalJobId) {
+    redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/tasks`);
+  }
   return (
     <JobShell
       projectId={jobId}
       name={shell.name}
       address={shell.address}
-      isLead={false}
-      initialTab="tasks"
-      overview={
-        <Suspense fallback={<OverviewPanelSkeleton />}>
-          <OverviewSlot projectId={jobId} />
-        </Suspense>
-      }
-      tasks={
-        <Suspense fallback={<TasksPanelSkeleton />}>
-          <TasksSlot projectId={jobId} />
-        </Suspense>
-      }
-    />
+      status={shell.status}
+      photoCount={shell.photoCount}
+      isLead={shell.isLead}
+      activeTab="tasks"
+    >
+      <Suspense fallback={<TasksPanelSkeleton />}>
+        <TasksSlot projectId={jobId} />
+      </Suspense>
+    </JobShell>
   );
 }

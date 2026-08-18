@@ -1,0 +1,8 @@
+{
+  "approvals": [
+    {
+      "event": "pre_tool_call",
+      "command": "python3 /opt/data/agent-hooks/ottawa-tool-policy.py"
+    }
+  ]
+}

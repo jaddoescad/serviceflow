@@ -37,6 +37,7 @@ export type ProjectRollup = {
   name: string;
   address: string | null;
   jobStartedOn: string | null;
+  productionMonth: string | null;
   labourExcluded: boolean;
   loggedHours: number;
   budgetedHours: number | null;
@@ -114,6 +115,7 @@ export type ProjectEntryDetail = {
 
 export type ProjectLabourExpenseDetail = {
   id: string;
+  invoiceId: string;
   workerName: string;
   supplierName: string;
   invoiceNumber: string;
@@ -317,11 +319,13 @@ export function rollupProjects(
   const nameById = new Map<string, string>();
   const addrById = new Map<string, string | null>();
   const startedOnById = new Map<string, string | null>();
+  const productionMonthById = new Map<string, string | null>();
 
   for (const p of projects) {
     nameById.set(p.companycam_id, p.name);
     addrById.set(p.companycam_id, p.formatted_address);
     startedOnById.set(p.companycam_id, p.started_on);
+    productionMonthById.set(p.companycam_id, p.production_month);
   }
 
   for (const e of entries) {
@@ -412,6 +416,7 @@ export function rollupProjects(
       name,
       address: addrById.get(id) ?? null,
       jobStartedOn: startedOnById.get(id) ?? null,
+      productionMonth: productionMonthById.get(id) ?? null,
       labourExcluded,
       loggedHours: logged,
       budgetedHours,
@@ -588,6 +593,7 @@ export function projectDetails(
     }
     project.labourExpenses.push({
       id: expense.id,
+      invoiceId: expense.invoice_id,
       workerName: expense.worker_name,
       supplierName: expense.supplier_name,
       invoiceNumber: expense.invoice_number,

@@ -1,11 +1,10 @@
-import Link from "next/link";
-import { PageHeader, Kpi } from "@/components/kpi";
-import { ProjectTabs } from "@/components/project-tabs";
+import { notFound, redirect } from "next/navigation";
+import { Kpi } from "@/components/kpi";
+import { JobShell } from "@/components/job-shell";
 import { UnifiedInvoicesTable } from "@/components/unified-invoices";
 import { getProjectShell } from "@/lib/project-data";
 import { fmtMoney } from "@/lib/format";
 import { getJobInvoices } from "@/lib/v2-accounting";
-import { LeadInvoicesView } from "@/components/lead-detail-view";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +12,10 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const jobId = decodeURIComponent(id);
   const shell = await getProjectShell(jobId);
-  if (!shell) return <LeadInvoicesView leadId={jobId} />;
+  if (!shell) notFound();
+  if (shell.canonicalJobId) {
+    redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/invoices`);
+  }
   const allocations = await getJobInvoices(jobId);
   const byInvoice = new Map<string, any>();
   for (const allocation of allocations) {
@@ -41,15 +43,15 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
     return invoice?.category === "material";
   }).reduce((sum, row) => sum + Number(row.subtotal_cents ?? 0), 0) / 100;
   return (
-    <>
-      <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href="/jobs" className="hover:text-[var(--color-text)]">Jobs & Budgets</Link>
-        <span className="mx-1.5">/</span>
-        <Link href={`/jobs/${jobId}`} className="hover:text-[var(--color-text)]">{shell.name}</Link>
-        <span className="mx-1.5">/</span><span>Invoices</span>
-      </div>
-      <PageHeader title={shell.name} subtitle={shell.address ?? undefined} />
-      <ProjectTabs projectId={jobId} projectName={shell.name} />
+    <JobShell
+      projectId={jobId}
+      name={shell.name}
+      address={shell.address}
+      status={shell.status}
+      photoCount={shell.photoCount}
+      isLead={shell.isLead}
+      activeTab="invoices"
+    >
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <Kpi label="Invoices" value={invoices.length} />
         <Kpi label="Labour cost" value={fmtMoney(labour)} />
@@ -60,6 +62,6 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
         title="Job invoices and costs"
         showJobAllocation
       />
-    </>
+    </JobShell>
   );
 }

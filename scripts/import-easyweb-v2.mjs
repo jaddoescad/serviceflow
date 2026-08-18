@@ -7,33 +7,34 @@ import { createClient } from "@supabase/supabase-js";
 
 const APPLY = process.argv.includes("--apply");
 const PROJECT_REF = "bwbckdkouqghdadpkjvn";
-const CAPTURED_AT = "2026-08-06T23:55:00.000Z";
+const CAPTURED_AT = "2026-08-16T23:55:00.000Z";
+const OBSERVED_ON = "2026-08-16";
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
 const sources = [
   {
     accountSlug: "td-chequing-6970",
-    filePath: "/Users/jadslim/Downloads/accountactivity (2).csv",
-    evidenceFilename: "TD EasyWeb Chequing 6970 through 2026-08-05.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity.csv",
+    evidenceFilename: "TD EasyWeb Chequing 6970 downloaded 2026-08-16.csv",
   },
   {
     accountSlug: "td-visa-6650",
-    filePath: "/Users/jadslim/Downloads/accountactivity (3).csv",
-    evidenceFilename: "TD EasyWeb Visa 6650 statement 2026-07-07 to 2026-08-05.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity (1).csv",
+    evidenceFilename: "TD EasyWeb Visa 6650 downloaded 2026-08-16.csv",
   },
   {
     accountSlug: "td-visa-3660",
-    filePath: "/Users/jadslim/Downloads/accountactivity (4).csv",
-    evidenceFilename: "TD EasyWeb Visa 3660 statement 2026-07-07 to 2026-08-05.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity (2).csv",
+    evidenceFilename: "TD EasyWeb Visa 3660 downloaded 2026-08-16.csv",
   },
 ];
 
 const accountSnapshots = {
   "td-chequing-6970": {
-    current_balance_cents: 5_053_220,
-    available_balance_cents: 5_053_220,
+    current_balance_cents: 6_033_893,
+    available_balance_cents: 6_033_893,
     pending_cents: null,
-    note: "EasyWeb current balance includes August 6 activity that is not available in the CSV until the close of the previous business day.",
+    note: "EasyWeb balance observed August 16; the CSV is current through the close of the previous business day, and four August 17 bank-dated deposits are preserved from visible posted activity.",
   },
   "td-investor-7861": {
     current_balance_cents: 0,
@@ -42,16 +43,16 @@ const accountSnapshots = {
     note: "EasyWeb shows no transactions and a zero balance.",
   },
   "td-visa-6650": {
-    current_balance_cents: 348_368,
-    available_balance_cents: 500_000,
-    pending_cents: 5_052,
-    note: "EasyWeb shows a pending Slack charge of $50.52; pending activity is excluded from the ledger import.",
+    current_balance_cents: 126_500,
+    available_balance_cents: 614_300,
+    pending_cents: 9_170,
+    note: "EasyWeb shows a $91.70 pending Home Depot charge; pending activity is excluded. The August 14 payment is preserved from visible posted activity because EasyWeb warns that recent payments may be absent from CSV downloads.",
   },
   "td-visa-3660": {
-    current_balance_cents: 22_014,
-    available_balance_cents: 675_400,
-    pending_cents: 52_499,
-    note: "EasyWeb shows a pending Preston Paint Center charge of $524.99; pending activity is excluded from the ledger import.",
+    current_balance_cents: 0,
+    available_balance_cents: 750_000,
+    pending_cents: 0,
+    note: "EasyWeb shows a zero balance and no pending activity. The August 14 payment is preserved from visible posted activity because recent payments may be absent from CSV downloads.",
   },
 };
 
@@ -222,6 +223,115 @@ const visiblePostedRows = [
       method: "Email",
       sent_by: "OTTAWA PAINTERS",
       cancellable_when_observed: true,
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-07-28",
+    description: "SEND E-TFR ***GaR",
+    amount_cents: -153_342,
+    running_balance_cents: 5_084_432,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: OBSERVED_ON,
+      status: "Deposited",
+      date_sent: "2026-07-28",
+      recipient: "elaine custkmer",
+      recipient_destination: "elainekeveney@gmail.com",
+      confirmation_masked: "CA***GaR",
+      method: "Email",
+      sent_by: "OTTAWA PAINTERS",
+      reason: "Recipient identity is preserved, but the business purpose remains for review.",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-10",
+    description: "SEND E-TFR ***qzd",
+    amount_cents: -1_000_000,
+    running_balance_cents: 4_566_149,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: OBSERVED_ON,
+      status: "Autodeposited",
+      date_sent: "2026-08-09",
+      recipient: "Scott Madden",
+      recipient_destination: "scott@caledonianpainting.ca",
+      confirmation_masked: "C1AeYs***qzd",
+      method: "Email",
+      sent_by: "OTTAWA PAINTERS",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "E-TRANSFER ***k9J",
+    amount_cents: 163_399,
+    running_balance_cents: 6_033_893,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "Bank-dated August 17 deposit visible in EasyWeb but not yet included in the previous-business-day CSV download.",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "E-TFR ***dFN EPAY",
+    amount_cents: 91_153,
+    running_balance_cents: 5_870_494,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "Bank-dated August 17 deposit visible in EasyWeb but not yet included in the previous-business-day CSV download.",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "E-TRANSFER ***eJR",
+    amount_cents: 114_610,
+    running_balance_cents: 5_779_341,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "Bank-dated August 17 deposit visible in EasyWeb but not yet included in the previous-business-day CSV download.",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "E-TFR ***wxT EPAY",
+    amount_cents: 200_000,
+    running_balance_cents: 5_664_731,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "Bank-dated August 17 deposit visible in EasyWeb but not yet included in the previous-business-day CSV download.",
+    },
+  },
+  {
+    accountSlug: "td-visa-6650",
+    posted_on: "2026-08-14",
+    description: "PAYMENT - THANK YOU",
+    amount_cents: 708_475,
+    running_balance_cents: 126_500,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "EasyWeb shows the payment as posted, but warns that recently posted payments may be omitted from CSV downloads.",
+    },
+  },
+  {
+    accountSlug: "td-visa-3660",
+    posted_on: "2026-08-14",
+    description: "PAYMENT - THANK YOU",
+    amount_cents: 74_513,
+    running_balance_cents: 0,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "EasyWeb shows the payment as posted, but warns that recently posted payments may be omitted from CSV downloads.",
     },
   },
 ];
@@ -546,7 +656,7 @@ const visibleEvidenceHash = sha256(visibleEvidencePayload);
 const visibleDocument = {
   id: stableUuid(`document:td-easyweb:visible:${visibleEvidenceHash}`),
   kind: "bank_activity_observation",
-  original_filename: "TD EasyWeb visible posted activity observed 2026-08-06.json",
+  original_filename: `TD EasyWeb visible posted activity observed ${OBSERVED_ON}.json`,
   mime_type: "application/json",
   size_bytes: Buffer.byteLength(visibleEvidencePayload),
   content_sha256: visibleEvidenceHash,
@@ -575,12 +685,69 @@ for (const account of accounts) {
   maxExistingDateByAccount.set(account.id, dates.at(-1) ?? null);
 }
 const existingSourceKeys = new Set(existingTransactions.map((row) => row.source_key));
+const exactTransactionKey = (accountId, postedOn, description, amountCents) =>
+  [accountId, postedOn, normalizedDescription(description), Number(amountCents)].join("|");
+const transferReference = (description) =>
+  normalizedDescription(description).match(/\*{3}([a-z0-9]{3})/i)?.[1]?.toUpperCase() ?? null;
+const dayNumber = (value) => Math.floor(Date.parse(`${value}T00:00:00Z`) / 86_400_000);
+const remainingExistingExactCounts = new Map();
+for (const transaction of existingTransactions) {
+  const key = exactTransactionKey(
+    transaction.account_id,
+    transaction.posted_on,
+    transaction.description,
+    transaction.amount_cents,
+  );
+  remainingExistingExactCounts.set(
+    key,
+    (remainingExistingExactCounts.get(key) ?? 0) + 1,
+  );
+}
+const remainingExistingReferenceMatches = existingTransactions
+  .map((transaction) => ({
+    transaction,
+    reference: transferReference(transaction.description),
+  }))
+  .filter((row) => row.reference);
 const candidates = [];
 for (const row of parsedRows) {
-  const maxExistingDate = maxExistingDateByAccount.get(row.account.id);
-  if (existingSourceKeys.has(row.source_key)) continue;
-  if (maxExistingDate && row.posted_on <= maxExistingDate) continue;
+  const exactKey = exactTransactionKey(
+    row.account.id,
+    row.posted_on,
+    row.description,
+    row.amount_cents,
+  );
+  const existingExactCount = remainingExistingExactCounts.get(exactKey) ?? 0;
+  if (existingSourceKeys.has(row.source_key) || existingExactCount > 0) {
+    if (existingExactCount > 0) {
+      remainingExistingExactCounts.set(exactKey, existingExactCount - 1);
+    }
+    continue;
+  }
+  const reference = transferReference(row.description);
+  if (reference) {
+    const referenceMatchIndex = remainingExistingReferenceMatches.findIndex(
+      (existing) =>
+        existing.reference === reference &&
+        existing.transaction.account_id === row.account.id &&
+        Number(existing.transaction.amount_cents) === row.amount_cents &&
+        Math.abs(
+          dayNumber(existing.transaction.posted_on) - dayNumber(row.posted_on),
+        ) <= 1,
+    );
+    if (referenceMatchIndex >= 0) {
+      remainingExistingReferenceMatches.splice(referenceMatchIndex, 1);
+      continue;
+    }
+  }
   const classification = classify(row.description, row.amount_cents, row.account.account_type);
+  const observedEvidence = visiblePostedRows.find(
+    (visible) =>
+      visible.accountSlug === row.source.accountSlug &&
+      visible.posted_on === row.posted_on &&
+      visible.description === row.description &&
+      visible.amount_cents === row.amount_cents,
+  )?.evidence;
   candidates.push({
     id: stableUuid(`transaction:${row.account.id}:${row.source_key}`),
     account_id: row.account.id,
@@ -590,7 +757,7 @@ for (const row of parsedRows) {
     posted_on: row.posted_on,
     transaction_on: row.posted_on,
     description: row.description,
-    counterparty: null,
+    counterparty: observedEvidence?.recipient ?? null,
     amount_cents: row.amount_cents,
     tax_cents: 0,
     net_cents: row.amount_cents,
@@ -598,6 +765,7 @@ for (const row of parsedRows) {
     ...classification,
     running_balance_cents: row.running_balance_cents,
     metadata: {
+      ...(observedEvidence ?? {}),
       source: "td_easyweb_csv",
       source_document_sha256: row.contentHash,
       source_filename: row.source.evidenceFilename,
@@ -624,7 +792,14 @@ for (const row of visiblePostedRows) {
       normalizedDescription(transaction.description) === row.description &&
       Number(transaction.amount_cents) === row.amount_cents,
   );
-  if (exactExisting) continue;
+  const exactCandidate = candidates.find(
+    (candidate) =>
+      candidate.account_id === account.id &&
+      candidate.posted_on === row.posted_on &&
+      normalizedDescription(candidate.description) === row.description &&
+      Number(candidate.amount_cents) === row.amount_cents,
+  );
+  if (exactExisting || exactCandidate) continue;
   const classification = classify(row.description, row.amount_cents, account.account_type);
   candidates.push({
     id: stableUuid(`transaction:${account.id}:${sourceKey}`),
@@ -687,6 +862,7 @@ const preview = {
     account: accounts.find((account) => account.id === row.account_id).slug,
     date: row.posted_on,
     description: row.description,
+    counterparty: row.counterparty,
     amount_cents: row.amount_cents,
     running_balance_cents: row.running_balance_cents,
     category: row.category,
@@ -759,7 +935,7 @@ for (const [slug, snapshot] of Object.entries(accountSnapshots)) {
     },
     evidence: {
       source: "TD EasyWeb visible account activity",
-      observed_on: "2026-08-06",
+      observed_on: OBSERVED_ON,
       note: snapshot.note,
     },
     occurred_at: CAPTURED_AT,

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
-import { fmtCurrencyTotals, fmtMoney, fmtDate } from "@/lib/format";
+import { fmtCurrencyTotals, fmtMoney, fmtDate, fmtMonthYear } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
@@ -23,6 +23,8 @@ type ProjectTableRow = ProjectRollup & {
   labourInvoices: ProjectLabourInvoiceSummary;
   materials: ProjectMaterialSummary;
 };
+
+const UNSCHEDULED_MONTH = "unscheduled";
 
 function painterBudget(row: ProjectTableRow): number | null {
   return row.amountBeforeTax == null
@@ -180,12 +182,39 @@ export function ProjectsTable({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [productionMonthFilter, setProductionMonthFilter] = useState("all");
   const [budgetFor, setBudgetFor] = useState<ProjectRollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const productionMonths = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          rows
+            .map((row) => row.productionMonth?.slice(0, 7) ?? null)
+            .filter((month): month is string => Boolean(month)),
+        ),
+      ).sort((left, right) => right.localeCompare(left)),
+    [rows],
+  );
+  const hasUnscheduledJobs = useMemo(
+    () => rows.some((row) => !row.productionMonth),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const matches = rows.filter((r) => {
+        const rowProductionMonth = r.productionMonth?.slice(0, 7) ?? null;
+        if (
+          productionMonthFilter === UNSCHEDULED_MONTH &&
+          rowProductionMonth != null
+        ) return false;
+        if (
+          productionMonthFilter !== "all" &&
+          productionMonthFilter !== UNSCHEDULED_MONTH &&
+          rowProductionMonth !== productionMonthFilter
+        ) return false;
         if (filter === "budgeted" && r.amountBeforeTax == null) return false;
         if (filter === "over" && r.status !== "over") return false;
         if (filter === "nobudget" && r.amountBeforeTax != null) return false;
@@ -196,7 +225,32 @@ export function ProjectsTable({
         return true;
       });
     return matches.sort(compareJobsTableRows);
-  }, [rows, search, filter, now]);
+  }, [rows, search, filter, productionMonthFilter, now]);
+
+  const visibleAmountSummary = useMemo(() => {
+    const jobsWithAmount = filtered.filter(
+      (row) => row.amountBeforeTax != null,
+    );
+    return {
+      jobCount: filtered.length,
+      amountCount: jobsWithAmount.length,
+      missingAmountCount: filtered.length - jobsWithAmount.length,
+      totalBeforeHst:
+        jobsWithAmount.length > 0
+          ? jobsWithAmount.reduce(
+              (total, row) => total + Number(row.amountBeforeTax),
+              0,
+            )
+          : null,
+    };
+  }, [filtered]);
+
+  const selectedMonthLabel =
+    productionMonthFilter === "all"
+      ? "All production months"
+      : productionMonthFilter === UNSCHEDULED_MONTH
+        ? "Unscheduled"
+        : fmtMonthYear(`${productionMonthFilter}-01`);
 
   // Only settled jobs produce a headline percentage. In-flight jobs carry a full
   // contract value against a part-spent labour cost, so averaging them in would
@@ -287,6 +341,51 @@ export function ProjectsTable({
               <option value="nobudget">No amount set</option>
             </Select>
           </Field>
+          <Field label="Production month">
+            <Select
+              value={productionMonthFilter}
+              onChange={(event) => setProductionMonthFilter(event.target.value)}
+              className="min-w-44"
+            >
+              <option value="all">All months</option>
+              {productionMonths.map((month) => (
+                <option key={month} value={month}>
+                  {fmtMonthYear(`${month}-01`)}
+                </option>
+              ))}
+              {hasUnscheduledJobs ? (
+                <option value={UNSCHEDULED_MONTH}>Unscheduled</option>
+              ) : null}
+            </Select>
+          </Field>
+        </div>
+
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <div>
+            <div className="text-xs font-medium text-[var(--color-muted)]">
+              Total job value before HST
+            </div>
+            <div className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
+              {fmtMoney(visibleAmountSummary.totalBeforeHst)}
+            </div>
+          </div>
+          <div className="text-right text-xs text-[var(--color-muted)]">
+            <div className="font-medium text-[var(--color-text)]">
+              {selectedMonthLabel} · {visibleAmountSummary.jobCount}{" "}
+              {visibleAmountSummary.jobCount === 1 ? "job" : "jobs"}
+            </div>
+            <div className="mt-0.5">
+              {visibleAmountSummary.missingAmountCount > 0
+                ? `${visibleAmountSummary.amountCount} included · ${visibleAmountSummary.missingAmountCount} missing ${visibleAmountSummary.missingAmountCount === 1 ? "amount" : "amounts"} excluded`
+                : visibleAmountSummary.jobCount > 0
+                  ? "All visible jobs have amounts"
+                  : "No visible jobs"}
+            </div>
+          </div>
         </div>
 
         {error ? (
@@ -296,27 +395,33 @@ export function ProjectsTable({
         ) : null}
 
         {filtered.length === 0 ? (
-          <EmptyState>No jobs match.</EmptyState>
+          <EmptyState>
+            {productionMonthFilter === "all"
+              ? "No jobs match the current filters."
+              : `No jobs in ${selectedMonthLabel} match the current filters.`}
+          </EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] table-fixed text-[13px]">
+            <table className="w-full min-w-[1360px] table-fixed text-[13px]">
               <colgroup>
-                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
-                <col className="w-[8%]" />
-                <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[9%]" />
+                <col className="w-[7%]" />
                 <col className="w-[8%]" />
+                <col className="w-[7%]" />
                 <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[7%]" />
-                <col className="w-[6%]" />
+                <col className="w-[5%]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                   <th className="px-2.5 py-2.5 font-medium">Job</th>
+                  <th className="px-2.5 py-2.5 font-medium">Production month</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Painter budget (40%)</th>
                   <th
@@ -358,6 +463,7 @@ export function ProjectsTable({
                     <td className="px-2.5 py-2.5">
                       <Link
                         href={`/jobs/${encodeURIComponent(r.projectId)}`}
+                        prefetch={false}
                         className="block w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
                         aria-label={`View details for ${r.name}`}
                       >
@@ -368,6 +474,9 @@ export function ProjectsTable({
                           <div className="truncate text-xs text-[var(--color-muted)]">{r.address}</div>
                         ) : null}
                       </Link>
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2.5 font-medium text-[var(--color-text)]">
+                      {fmtMonthYear(r.productionMonth)}
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
                       <div className="flex items-center justify-end gap-1.5">
@@ -423,6 +532,7 @@ export function ProjectsTable({
                         <>
                           <Link
                             href={`/jobs/${encodeURIComponent(r.projectId)}/invoices`}
+                            prefetch={false}
                             className="font-medium text-[var(--color-brand-strong)] underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current"
                             aria-label={`View ${r.labourInvoices.invoiceCount} labour ${
                               r.labourInvoices.invoiceCount === 1

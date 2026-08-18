@@ -152,6 +152,15 @@
   --display-space: -0.01em;
 }
 
+:root {
+  --sidebar-bg: #172b3f;
+  --sidebar-surface: #20364c;
+  --sidebar-active: #31475f;
+  --sidebar-border: #3a5066;
+  --sidebar-text: #f4f7fb;
+  --sidebar-muted: #aab7c7;
+}
+
 html,
 body {
   background: var(--color-bg);
@@ -170,6 +179,14 @@ body {
 
 * {
   border-color: var(--color-border);
+}
+
+[data-sidebar] {
+  color-scheme: dark;
+}
+
+[data-sidebar] * {
+  border-color: var(--sidebar-border);
 }
 
 .font-display {

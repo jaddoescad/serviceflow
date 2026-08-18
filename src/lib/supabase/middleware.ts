@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 const PUBLIC_PATHS = ["/login", "/auth"];
 
 export async function updateSession(request: NextRequest) {
+  const path = request.nextUrl.pathname;
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -27,19 +28,44 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Verify the signed JWT locally instead of calling the Auth server for every
-  // navigation. The project's asymmetric signing key is cached via JWKS.
-  const { data } = await supabase.auth.getClaims();
-  const isAuthenticated = Boolean(data?.claims.sub);
+  let userId: string | null = null;
+  try {
+    const { data, error } = await supabase.auth.getClaims();
+    if (error) throw error;
+    userId = data?.claims.sub ?? null;
+  } catch (error) {
+    const authError = error as { code?: string; status?: number };
+    if (authError.code !== "over_request_rate_limit" && authError.status !== 429) {
+      throw error;
+    }
 
-  const path = request.nextUrl.pathname;
+    // Older sessions can still carry a symmetric JWT after a project moves to
+    // asymmetric signing. Refresh once so subsequent getClaims calls validate
+    // locally with the project's cached ES256 JWKS instead of hitting Auth.
+    const { error: refreshError } = await supabase.auth.refreshSession();
+    if (!refreshError) {
+      const { data, error: claimsError } = await supabase.auth.getClaims();
+      if (!claimsError) userId = data?.claims.sub ?? null;
+    }
+    console.warn(JSON.stringify({
+      level: "warn",
+      message: "Supabase Auth rate-limit recovery",
+      path,
+      recovered: Boolean(userId),
+    }));
+  }
+
+  const isAuthenticated = Boolean(userId);
+
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
 
   if (!isAuthenticated && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", path);
-    return NextResponse.redirect(url);
+    const redirectResponse = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
   }
 
   return response;

@@ -135,7 +135,7 @@ export function StatGrid({
   children,
   className,
 }: {
-  columns?: 2 | 3 | 4;
+  columns?: 2 | 3 | 4 | 5;
   children: React.ReactNode;
   className?: string;
 }) {
@@ -143,6 +143,7 @@ export function StatGrid({
     2: "sm:grid-cols-2",
     3: "sm:grid-cols-3",
     4: "sm:grid-cols-2 xl:grid-cols-4",
+    5: "sm:grid-cols-2 xl:grid-cols-5",
   }[columns];
   return (
     <div

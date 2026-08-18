@@ -1,76 +1,72 @@
-"use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { PageHeader } from "@/components/kpi";
-import { ProjectTabs, type LocalTabKey } from "@/components/project-tabs";
+import { ProjectTabs, type ProjectTabKey } from "@/components/project-tabs";
 import { Badge } from "@/components/ui";
 
-/**
- * Job page chrome that paints immediately: breadcrumb, title, and live tabs.
- * The panels stream in as Suspense children; switching tabs is instant and
- * works even while a panel is still loading (its skeleton shows instead).
- */
+function statusLabel(status: string | null, isLead: boolean): string {
+  if (!status) return isLead ? "Lead" : "Job";
+  return status
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function statusTone(status: string | null, isLead: boolean): "brand" | "good" | "warn" | "neutral" {
+  const value = status?.toLocaleLowerCase("en-CA") ?? "";
+  if (["completed", "won", "paid"].includes(value)) return "good";
+  if (["scheduled", "in_progress", "active"].includes(value)) return "brand";
+  if (["pending", "on_hold"].includes(value)) return "warn";
+  return isLead ? "brand" : "neutral";
+}
+
+/** Shared project chrome. Route-level tabs keep hidden financial queries from running on Photos. */
 export function JobShell({
   projectId,
   name,
   address,
+  status = null,
+  photoCount,
   isLead,
-  initialTab,
-  overview,
-  tasks,
+  activeTab,
+  children,
 }: {
   projectId: string;
   name: string;
   address: string | null;
+  status?: string | null;
+  photoCount?: number;
   isLead: boolean;
-  initialTab: LocalTabKey;
-  overview: React.ReactNode;
-  tasks: React.ReactNode;
+  activeTab: ProjectTabKey;
+  children: React.ReactNode;
 }) {
-  const [tab, setTab] = useState<LocalTabKey>(initialTab);
-  const pathname = usePathname();
-
-  // Follow browser back/forward.
-  useEffect(() => {
-    setTab(pathname.endsWith("/tasks") ? "tasks" : "overview");
-  }, [pathname]);
-
-  function switchTab(next: LocalTabKey) {
-    setTab(next);
-    const base = `/jobs/${encodeURIComponent(projectId)}`;
-    const href = next === "tasks" ? `${base}/tasks` : base;
-    if (typeof window !== "undefined" && window.location.pathname !== href) {
-      window.history.pushState(null, "", href);
-    }
-  }
-
   return (
     <>
-      <div className="mb-2 text-xs text-[var(--color-muted)]">
-        <Link href={isLead ? "/leads" : "/jobs"} className="hover:text-[var(--color-text)]">
-          {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
+      <header className="mb-4">
+        <Link
+          href={isLead ? "/leads" : "/jobs"}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)] transition-colors hover:text-[var(--color-heading)]"
+        >
+          <span aria-hidden="true">‹</span>
+          {isLead ? "Leads & Estimates" : "Projects"}
         </Link>
-        <span className="mx-1.5">/</span>
-        <span>{name}</span>
-      </div>
-
-      <PageHeader
-        title={name}
-        subtitle={address ?? undefined}
-        actions={isLead ? <Badge tone="brand">Lead</Badge> : null}
-      />
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--color-heading)] sm:text-3xl">
+            {name}
+          </h1>
+          <Badge tone={statusTone(status, isLead)}>{statusLabel(status, isLead)}</Badge>
+        </div>
+        {address ? (
+          <p className="mt-1 text-sm text-[var(--color-muted)]">{address}</p>
+        ) : null}
+      </header>
 
       <ProjectTabs
         projectId={projectId}
         projectName={name}
-        activeOverride={tab}
-        onLocalSwitch={switchTab}
+        activeOverride={activeTab}
+        isLead={isLead}
+        photoCount={photoCount}
       />
 
-      <div className={tab === "tasks" ? "hidden" : undefined}>{overview}</div>
-      <div className={tab === "tasks" ? undefined : "hidden"}>{tasks}</div>
+      {children}
     </>
   );
 }

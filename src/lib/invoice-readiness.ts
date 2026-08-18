@@ -4,6 +4,10 @@ export type InvoiceReadinessState =
   | "paid"
   | "void";
 
+export type InvoicePaymentState = "unpaid" | "paid" | "void";
+
+export type InvoiceReviewState = "not_required" | "complete" | "needs_review";
+
 export type InvoiceReadinessCheckKey =
   | "source"
   | "supplier"
@@ -75,8 +79,14 @@ export type InvoiceReadinessInput = {
 export type InvoiceReadiness = {
   state: InvoiceReadinessState;
   reason: string;
+  paymentState: InvoicePaymentState;
+  paymentReason: string;
+  reviewState: InvoiceReviewState;
+  reviewReason: string;
   checks: InvoiceReadinessCheck[];
   passedCheckCount: number;
+  allocationRequired: boolean;
+  allocationTargetSubtotalCents: number;
   allocatedSubtotalCents: number;
   allocationVarianceCents: number;
   matchedPaidCents: number;
@@ -86,6 +96,20 @@ export type InvoiceReadiness = {
 };
 
 const VOID_STATUSES = new Set(["void", "voided"]);
+const NON_JOB_ALLOCATION_STATUSES = new Set([
+  "not_invoice",
+  "overhead_unmatched",
+  "supporting_document",
+]);
+const NON_JOB_LINE_TYPES = new Set([
+  "administrative",
+  "commission",
+  "expense",
+  "other",
+  "sales",
+  "va",
+  "virtual_assistant",
+]);
 
 function cents(value: number | string | null | undefined): number {
   const parsed = Number(value ?? 0);
@@ -141,6 +165,80 @@ function invoiceIsVoid(invoice: InvoiceReadinessInput): boolean {
   );
 }
 
+function userConfirmedPayment(
+  invoice: InvoiceReadinessInput,
+): { confirmedOn: string | null } | null {
+  const confirmation = invoice.metadata?.payment_confirmation;
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation)) {
+    return null;
+  }
+  const values = confirmation as Record<string, unknown>;
+  if (
+    values.status !== "paid" ||
+    values.confirmation_method !== "user_confirmation" ||
+    normalizeStatus(invoice.status) !== "paid" ||
+    cents(invoice.paid_cents) < cents(invoice.total_cents) ||
+    cents(invoice.balance_cents) !== 0
+  ) {
+    return null;
+  }
+  return {
+    confirmedOn:
+      typeof values.confirmed_on === "string" ? values.confirmed_on : null,
+  };
+}
+
+function booleanMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+): boolean | null {
+  return typeof metadata?.[key] === "boolean"
+    ? (metadata[key] as boolean)
+    : null;
+}
+
+function lineRequiresJobAllocation(line: InvoiceLine): boolean {
+  const explicit = booleanMetadata(line.metadata, "job_allocation_required");
+  if (explicit !== null) return explicit;
+
+  const entryType = normalizeStatus(line.metadata?.entry_type);
+  if (entryType === "other" && line.metadata?.is_adjustment === true) {
+    return true;
+  }
+  return !entryType || !NON_JOB_LINE_TYPES.has(entryType);
+}
+
+function jobAllocationTarget(
+  invoice: InvoiceReadinessInput,
+  lines: InvoiceLine[],
+  subtotalCents: number,
+): { required: boolean; subtotalCents: number } {
+  const explicit = booleanMetadata(invoice.metadata, "job_allocation_required");
+  if (explicit === false) return { required: false, subtotalCents: 0 };
+  if (explicit === true) return { required: true, subtotalCents };
+
+  const status = normalizeStatus(invoice.status);
+  const importedStatus = normalizeStatus(invoice.metadata?.match_status);
+  if (
+    NON_JOB_ALLOCATION_STATUSES.has(status) ||
+    NON_JOB_ALLOCATION_STATUSES.has(importedStatus)
+  ) {
+    return { required: false, subtotalCents: 0 };
+  }
+
+  if (!lines.length) return { required: true, subtotalCents };
+
+  const jobCostLines = lines.filter(lineRequiresJobAllocation);
+  const targetSubtotalCents = jobCostLines.reduce(
+    (sum, line) => sum + cents(line.subtotal_cents),
+    0,
+  );
+  return {
+    required: jobCostLines.length > 0,
+    subtotalCents: targetSubtotalCents,
+  };
+}
+
 function sourceDocument(invoice: InvoiceReadinessInput): RelatedDocument | null {
   const evidence = invoice.evidence ?? [];
   const ordered = [
@@ -185,6 +283,42 @@ export function invoiceReadinessTone(
   }[state] as "neutral" | "good" | "warn" | "brand";
 }
 
+export function invoicePaymentLabel(state: InvoicePaymentState): string {
+  return {
+    unpaid: "Unpaid",
+    paid: "Paid",
+    void: "Void",
+  }[state];
+}
+
+export function invoicePaymentTone(
+  state: InvoicePaymentState,
+): "neutral" | "good" | "warn" {
+  return {
+    unpaid: "warn",
+    paid: "good",
+    void: "neutral",
+  }[state] as "neutral" | "good" | "warn";
+}
+
+export function invoiceReviewLabel(state: InvoiceReviewState): string {
+  return {
+    not_required: "Not needed",
+    complete: "Complete",
+    needs_review: "Needs review",
+  }[state];
+}
+
+export function invoiceReviewTone(
+  state: InvoiceReviewState,
+): "neutral" | "good" | "warn" {
+  return {
+    not_required: "neutral",
+    complete: "good",
+    needs_review: "warn",
+  }[state] as "neutral" | "good" | "warn";
+}
+
 /**
  * Read-only readiness calculation shared by invoice lists and details.
  * Bank allocations, rather than the stored invoice balance, are payment truth.
@@ -202,12 +336,17 @@ export function deriveInvoiceReadiness(
   const activePayments = (invoice.payments ?? []).filter(
     (payment) => !payment.reversed_at,
   );
+  const confirmedPayment = userConfirmedPayment(invoice);
 
+  const allocationTarget = jobAllocationTarget(invoice, lines, subtotalCents);
+  const allocationRequired = allocationTarget.required;
+  const allocationTargetSubtotalCents = allocationTarget.subtotalCents;
   const allocatedSubtotalCents = allocations.reduce(
     (sum, allocation) => sum + cents(allocation.subtotal_cents),
     0,
   );
-  const allocationVarianceCents = subtotalCents - allocatedSubtotalCents;
+  const allocationVarianceCents =
+    allocationTargetSubtotalCents - allocatedSubtotalCents;
   const matchedPaidCents = activePayments.reduce(
     (sum, payment) => sum + cents(payment.amount_cents),
     0,
@@ -307,15 +446,17 @@ export function deriveInvoiceReadiness(
     allocations.map((allocation) => allocation.job_id).filter(Boolean),
   ).size;
   const allocationMatches =
-    allocations.length > 0 &&
     !allocationNeedsReview &&
-    allocationVarianceCents === 0;
+    allocationVarianceCents === 0 &&
+    (!allocationRequired || allocations.length > 0);
   const allocationCheck: InvoiceReadinessCheck = allocationMatches
     ? {
         key: "allocation",
         label: "Job allocation",
         status: "pass",
-        detail: `${money(allocatedSubtotalCents, currency)} across ${jobCount} ${jobCount === 1 ? "job" : "jobs"}`,
+        detail: allocationRequired
+          ? `${money(allocatedSubtotalCents, currency)} across ${jobCount} ${jobCount === 1 ? "job" : "jobs"}`
+          : "Not required for this invoice",
       }
     : {
         key: "allocation",
@@ -340,7 +481,16 @@ export function deriveInvoiceReadiness(
         "needs_review",
   );
   let paymentCheck: InvoiceReadinessCheck;
-  if (paymentWithoutTransaction) {
+  if (confirmedPayment) {
+    paymentCheck = {
+      key: "payment",
+      label: "Payment confirmation",
+      status: "pass",
+      detail: confirmedPayment.confirmedOn
+        ? `User confirmed paid on ${dateLabel(confirmedPayment.confirmedOn)} · no bank transaction matched`
+        : "User confirmed paid · no bank transaction matched",
+    };
+  } else if (paymentWithoutTransaction) {
     paymentCheck = {
       key: "payment",
       label: "Bank payment",
@@ -400,10 +550,45 @@ export function deriveInvoiceReadiness(
     "reversal_reason",
     "reason",
   ]);
+  const isVoid = invoiceIsVoid(invoice);
+  const paymentState: InvoicePaymentState = isVoid
+    ? "void"
+    : confirmedPayment || (totalCents > 0 && matchedPaidCents >= totalCents)
+      ? "paid"
+      : "unpaid";
+  const paymentReason = isVoid
+    ? voidReason
+      ? `Void · ${voidReason}`
+      : "Void · excluded from payment"
+    : paymentState === "paid"
+      ? confirmedPayment
+        ? confirmedPayment.confirmedOn
+          ? `User confirmed paid on ${dateLabel(confirmedPayment.confirmedOn)} · no bank transaction matched`
+          : "User confirmed paid · no bank transaction matched"
+        : remainingBalanceCents < 0
+        ? `${money(matchedPaidCents, currency)} matched · ${money(Math.abs(remainingBalanceCents), currency)} overpaid`
+        : paidOn
+          ? `Cleared by matched bank payment on ${dateLabel(paidOn)}`
+          : "Cleared by matched bank payment"
+      : matchedPaidCents > 0
+        ? `${money(matchedPaidCents, currency)} matched · ${money(remainingBalanceCents, currency)} remaining`
+        : `${money(remainingBalanceCents, currency)} outstanding`;
+  const reviewState: InvoiceReviewState = paymentState !== "paid"
+    ? "not_required"
+    : failedCheck
+      ? "needs_review"
+      : "complete";
+  const reviewReason = reviewState === "needs_review"
+    ? failedCheck?.detail ?? "A paid invoice check needs review"
+    : reviewState === "complete"
+      ? "No other invoice issues"
+      : paymentState === "void"
+        ? "Void invoices do not require review"
+        : "Review begins after payment";
 
   let state: InvoiceReadinessState;
   let reason: string;
-  if (invoiceIsVoid(invoice)) {
+  if (isVoid) {
     state = "void";
     reason = voidReason ? `Void · ${voidReason}` : "Void · excluded from payment";
   } else if (failedCheck) {
@@ -411,7 +596,11 @@ export function deriveInvoiceReadiness(
     reason = failedCheck.detail;
   } else if (paymentCheck.status === "pass") {
     state = "paid";
-    reason = paidOn
+    reason = confirmedPayment
+      ? confirmedPayment.confirmedOn
+        ? `User confirmed paid on ${dateLabel(confirmedPayment.confirmedOn)} · no bank transaction matched`
+        : "User confirmed paid · no bank transaction matched"
+      : paidOn
       ? `Cleared by matched bank payment on ${dateLabel(paidOn)}`
       : "Cleared by matched bank payment";
   } else {
@@ -425,8 +614,14 @@ export function deriveInvoiceReadiness(
   return {
     state,
     reason,
+    paymentState,
+    paymentReason,
+    reviewState,
+    reviewReason,
     checks,
     passedCheckCount: checks.filter((check) => check.status === "pass").length,
+    allocationRequired,
+    allocationTargetSubtotalCents,
     allocatedSubtotalCents,
     allocationVarianceCents,
     matchedPaidCents,

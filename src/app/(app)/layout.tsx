@@ -1,8 +1,6 @@
 import { requireStaff } from "@/lib/auth";
-import { MobileNav, Nav } from "@/components/nav";
+import { MobileNav, Nav, SidebarAccount } from "@/components/nav";
 import { SignOutButton } from "@/components/sign-out";
-import { Avatar, Badge } from "@/components/ui";
-import { initials } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -31,32 +29,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)] py-5 md:flex">
-        <div className="mb-6 flex items-center gap-2.5 px-5">
-          <span className="font-display inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-brand)] text-sm font-bold text-[var(--color-brand-ink)]">
+      <aside
+        data-sidebar
+        className="sticky top-0 hidden h-svh w-[17rem] shrink-0 flex-col bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] md:flex"
+      >
+        <div className="mb-5 flex h-[84px] shrink-0 items-center gap-3 px-5">
+          <span className="font-display inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#2979ff] text-sm font-bold text-white shadow-[0_8px_24px_rgba(41,121,255,0.3)]">
             OP
           </span>
           <div className="leading-tight">
-            <div className="text-sm font-semibold text-[var(--color-heading)]">Ottawa Painters</div>
-            <div className="text-[11px] text-[var(--color-muted)]">Admin dashboard</div>
+            <div className="text-sm font-semibold text-[var(--sidebar-text)]">Ottawa Painters</div>
+            <div className="mt-0.5 text-[11px] text-[var(--sidebar-muted)]">Admin dashboard</div>
           </div>
         </div>
         <Nav />
-        <div className="mt-auto border-t border-[var(--color-border)] px-4 pt-4">
-          <div className="flex items-center gap-2.5">
-            <Avatar label={initials(name)} />
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-xs font-medium">{name}</div>
-              <Badge tone={profile.role === "admin" ? "brand" : "neutral"}>{profile.role}</Badge>
-            </div>
-          </div>
-          <div className="mt-3">
-            <SignOutButton />
-          </div>
-        </div>
+        <SidebarAccount name={name} role={profile.role} />
       </aside>
       <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--color-bg)]">
-        <MobileNav />
+        <MobileNav name={name} role={profile.role} />
         <div className="app-content mx-auto w-full max-w-[1800px] flex-1 px-4 py-5 lg:px-6 lg:py-6">
           {children}
         </div>

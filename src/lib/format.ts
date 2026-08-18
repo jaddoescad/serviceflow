@@ -78,6 +78,19 @@ export function fmtDate(value: string | null): string {
   });
 }
 
+export function fmtMonthYear(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value,
+  );
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-CA", {
+    timeZone: OTTAWA_TZ,
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function fmtDistance(meters: number | null | undefined): string {
   if (meters == null || !Number.isFinite(meters)) return "—";
   if (meters < 1000) return `${Math.round(meters)} m`;

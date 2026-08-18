@@ -90,6 +90,7 @@ export type Project = {
   companycam_id: string;
   name: string;
   started_on: string | null;
+  production_month: string | null;
   formatted_address: string | null;
   city: string | null;
   state: string | null;
@@ -121,6 +122,12 @@ export type MarketingLeadJob = {
   jobCompletionOn: string | null;
   linkMethod: MarketingLeadJobLinkMethod;
   linkConfidence: number;
+};
+
+export type MarketingLeadMedia = {
+  id: string;
+  ownerProjectId: string;
+  mediaType: "image" | "video";
 };
 
 export type MarketingLead = {
@@ -155,7 +162,9 @@ export type MarketingLead = {
   isExterior: boolean;
   isCabinets: boolean;
   sourceRowNumber: number | null;
-  dripJobs: MarketingLeadJob[];
+  job: MarketingLeadJob | null;
+  media: MarketingLeadMedia[];
+  mediaCount: number;
 };
 
 export type ProjectBudget = {
@@ -174,6 +183,7 @@ export type ProjectBudget = {
 
 export type ProjectLabourExpense = {
   id: string;
+  invoice_id: string;
   companycam_project_id: string;
   worker_user_id: string | null;
   worker_name: string;

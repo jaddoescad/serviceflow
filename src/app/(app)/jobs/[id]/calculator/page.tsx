@@ -1,8 +1,9 @@
 import { CalculatorPage } from "@/components/calculator/calculator";
 import { getProjectById } from "@/lib/queries";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { resolveLeadProject } from "@/lib/canonical-project";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,12 @@ export default async function JobCalculatorPage({
         isLead={false}
       />
     );
+  }
+
+  const resolution = await resolveLeadProject(jobId);
+  if (!resolution) notFound();
+  if (resolution.jobId) {
+    redirect(`/jobs/${encodeURIComponent(resolution.jobId)}/calculator`);
   }
 
   await requireStaff();

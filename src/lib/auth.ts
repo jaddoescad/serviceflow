@@ -10,9 +10,13 @@ import type { EmployeeProfile } from "@/lib/types";
  */
 export const requireStaff = cache(async function requireStaff(): Promise<EmployeeProfile> {
   const supabase = await createClient();
-  const { data } = await supabase.auth.getClaims();
-  const userId = data?.claims.sub;
-
+  // Middleware has already verified the JWT for this request. Read the
+  // refreshed cookie locally here so the layout does not call Auth a second
+  // time and does not depend on a custom forwarded request header.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user.id;
   if (!userId) redirect("/login");
 
   const { data: profile } = await supabase

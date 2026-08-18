@@ -101,6 +101,43 @@ export function OverviewPanelSkeleton() {
   );
 }
 
+/** Photo grid and description rail while project media streams in. */
+export function PhotosPanelSkeleton() {
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading project photos"
+      className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]"
+    >
+      <div>
+        <Block className="mb-4 h-5 w-48" />
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index}>
+              <Block className="aspect-[4/3] w-full rounded-xl" />
+              <Block className="mt-2 h-3 w-28" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-4">
+        <Card className="p-5">
+          <Block className="h-5 w-20" />
+          <Block className="mt-6 h-4 w-2/3" />
+          <Block className="mt-3 h-3 w-full" />
+          <Block className="mt-2 h-3 w-3/4" />
+        </Card>
+        <Card className="p-5">
+          <Block className="h-5 w-24" />
+          <Block className="mt-6 h-3 w-full" />
+          <Block className="mt-2 h-3 w-4/5" />
+          <Block className="mt-2 h-3 w-2/3" />
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 /** Tasks panel while its data streams in. */
 export function TasksPanelSkeleton() {
   return (

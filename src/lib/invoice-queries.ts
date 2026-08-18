@@ -62,6 +62,11 @@ export type ProjectLabourInvoiceSummary = {
   needsReview: boolean;
 };
 
+export type ProjectMaterialCostSummary = {
+  invoiceCount: number;
+  amountBeforeTax: number;
+};
+
 const totals = () => ({ CAD: 0, USD: 0 });
 
 export function emptyProjectLabourInvoiceSummary(): ProjectLabourInvoiceSummary {
@@ -204,6 +209,30 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
 
 export async function getProjectLabourInvoiceSummary(projectId: string): Promise<ProjectLabourInvoiceSummary> {
   return (await getProjectLabourInvoiceSummaries()).get(projectId) ?? emptyProjectLabourInvoiceSummary();
+}
+
+/** Small, job-scoped query for the materials figure on the project summary. */
+export async function getProjectMaterialCostSummary(
+  projectId: string,
+): Promise<ProjectMaterialCostSummary> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("invoice_job_allocations")
+    .select(
+      "id,invoice_id,invoice_line_id,job_id,subtotal_cents,metadata,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system)",
+    )
+    .eq("job_id", projectId);
+  if (error) throw new Error(`project material costs: ${error.message}`);
+
+  const invoiceIds = new Set<string>();
+  let amountBeforeTax = 0;
+  for (const allocation of selectCostingInvoiceJobAllocations(data ?? [])) {
+    if (invoiceJobCostCategory(allocation) !== "material") continue;
+    invoiceIds.add(allocation.invoice_id);
+    amountBeforeTax += Number(allocation.subtotal_cents ?? 0) / 100;
+  }
+
+  return { invoiceCount: invoiceIds.size, amountBeforeTax };
 }
 
 export function isInvoiceInCurrentJob(): boolean {

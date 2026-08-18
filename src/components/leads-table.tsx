@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, EmptyState, Input, Select, cn } from "@/components/ui";
@@ -49,7 +50,7 @@ function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
   if (filter === "lead") {
     return (
-      lead.dripJobs.length === 0 &&
+      !lead.job &&
       !lead.estimateScheduledOn &&
       !lead.estimateAppointmentOn &&
       !lead.proposalNumber &&
@@ -60,16 +61,13 @@ function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "estimate") {
     return Boolean(lead.estimateScheduledOn || lead.estimateAppointmentOn);
   }
-  if (filter === "job") return lead.dripJobs.length > 0;
+  if (filter === "job") return Boolean(lead.job);
   return Boolean(lead.proposalNumber || lead.proposalAmount || lead.proposalOn);
 }
 
 function leadStage(lead: MarketingLead): Stage {
-  if (lead.dripJobs.length > 0) {
-    return {
-      label: lead.dripJobs.length === 1 ? "Job" : `${lead.dripJobs.length} jobs`,
-      tone: "good",
-    };
+  if (lead.job) {
+    return { label: "Job", tone: "good" };
   }
   if (lead.proposalNumber || lead.proposalAmount != null || lead.proposalOn) {
     return { label: "Proposal", tone: "warn" };
@@ -129,6 +127,46 @@ function PhotoPlaceholder({ text }: { text?: string }) {
       ) : (
         <ImageIcon className="h-3.5 w-3.5" />
       )}
+    </div>
+  );
+}
+
+function LeadMediaPreview({ lead }: { lead: MarketingLead }) {
+  const photos = lead.media.filter((item) => item.mediaType === "image").slice(0, 2);
+  if (!photos.length) {
+    return (
+      <div className="flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
+        <PhotoPlaceholder />
+        <span>{lead.mediaCount > 0 ? "No image preview" : "No photos"}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex items-center justify-end gap-1.5"
+      aria-label={`${lead.mediaCount} ${lead.mediaCount === 1 ? "photo or video" : "photos and videos"}`}
+    >
+      {photos.map((photo) => (
+        <div
+          key={photo.id}
+          className="relative h-[52px] w-[52px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
+        >
+          <Image
+            src={`/api/jobs/${encodeURIComponent(photo.ownerProjectId)}/media/${encodeURIComponent(photo.id)}`}
+            alt=""
+            fill
+            unoptimized
+            sizes="52px"
+            className="object-cover"
+          />
+        </div>
+      ))}
+      {lead.mediaCount > photos.length ? (
+        <span className="min-w-7 text-right text-[11px] font-medium text-[var(--color-muted)]">
+          +{lead.mediaCount - photos.length}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -195,7 +233,9 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         lead.dealId,
         lead.rawLeadSource,
         lead.proposalNumber,
-        ...lead.dripJobs.flatMap((job) => [job.jobName, job.proposalId, job.status]),
+        lead.job?.jobName,
+        lead.job?.proposalId,
+        lead.job?.status,
       ].some((value) => value?.toLocaleLowerCase("en-CA").includes(needle));
     });
   }, [leads, month, search, source, year]);
@@ -341,7 +381,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
           <>
             <div className="max-h-[72vh] overflow-auto">
               {visible.map((lead) => {
-                const projectHref = `/jobs/${encodeURIComponent(lead.leadId)}`;
+                const projectHref = `/jobs/${encodeURIComponent(lead.job?.jobId ?? lead.leadId)}`;
                 const estimateOn = lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
                 const hasProposal =
                   lead.proposalAmount != null || Boolean(lead.proposalNumber);
@@ -362,8 +402,6 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                       event.preventDefault();
                       router.push(projectHref);
                     }}
-                    onMouseEnter={() => router.prefetch(projectHref)}
-                    onFocus={() => router.prefetch(projectHref)}
                     className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] px-4 py-3 outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto_7rem_auto]"
                   >
                     <div className="min-w-0">
@@ -420,9 +458,8 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                       Created {fmtDate(lead.createdOn)}
                     </span>
 
-                    <div className="hidden gap-1.5 lg:flex">
-                      <PhotoPlaceholder />
-                      <PhotoPlaceholder text="photo" />
+                    <div className="hidden lg:block">
+                      <LeadMediaPreview lead={lead} />
                     </div>
                   </div>
                 );

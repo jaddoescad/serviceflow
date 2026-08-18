@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+
+import { contractorInvoiceEnvironment, run } from "./ottawa-contractor-invoice-cli.mjs";
+
+process.exitCode = await run(process.argv.slice(2), await contractorInvoiceEnvironment(process.env));

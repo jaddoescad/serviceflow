@@ -13,17 +13,43 @@ import type {
   EmployeeTrackingStatus,
   MarketingLead,
   MarketingLeadJob,
+  MarketingLeadMedia,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
   ProjectLabourTask,
   TimeEntry,
 } from "@/lib/types";
+import { selectCanonicalJobId } from "@/lib/project-routing";
 
 // PostgREST serializes `.in(...)` filters into the request URL. Keeping UUID
 // batches well below Supabase's 16 KB URL/header limit avoids network-level
 // `fetch failed` errors before the query can reach Postgres.
 const POSTGREST_IN_FILTER_BATCH_SIZE = 200;
+
+const COMPANYCAM_LEAD_JOB_EXCEPTIONS_WITH_ACCOUNTING_EVIDENCE = new Set([
+  "38b6208e-12dd-5e62-b963-591a89868d91", // Graeme Archibald
+  "99a4cb86-ec09-54c1-8a95-ffac416cf844", // Katie Kobia
+]);
+
+function isMisclassifiedCompanyCamLeadJob(row: any): boolean {
+  const labels = Array.isArray(row.metadata?.labels)
+    ? row.metadata.labels.map((label: any) =>
+        String(label?.display_value ?? label?.value ?? "")
+          .trim()
+          .toLocaleLowerCase("en-CA"),
+      )
+    : [];
+  return (
+    !COMPANYCAM_LEAD_JOB_EXCEPTIONS_WITH_ACCOUNTING_EVIDENCE.has(row.id) &&
+    row.source === "legacy_companycam" &&
+    Number(row.contract_amount_cents) === 0 &&
+    !row.accepted_quote_id &&
+    labels.some((label: string) =>
+      ["lead", "proposal sent"].includes(label),
+    )
+  );
+}
 
 function timeEntry(row: any): TimeEntry {
   return {
@@ -44,6 +70,7 @@ function project(row: any): Project {
     companycam_id: row.id,
     name: row.name,
     started_on: row.started_on ?? null,
+    production_month: row.production_month ?? null,
     formatted_address: row.formatted_address ?? row.address_line_1 ?? null,
     city: row.city,
     state: row.province,
@@ -134,7 +161,9 @@ export async function getProjects(): Promise<Project[]> {
     .order("updated_at", { ascending: false })
     .limit(2000);
   if (error) throw new Error(`jobs: ${error.message}`);
-  return (data ?? []).map(project);
+  return (data ?? [])
+    .filter((row) => !isMisclassifiedCompanyCamLeadJob(row))
+    .map(project);
 }
 
 export async function getMarketingLeads(): Promise<MarketingLead[]> {
@@ -160,7 +189,9 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
   ) {
     const { data, error } = await supabase
       .from("quotes")
-      .select("*,job:jobs(id,name,status,started_on,completed_on)")
+      .select(
+        "*,job:jobs(id,name,status,started_on,completed_on,contract_amount_cents,is_feed_visible,updated_at)",
+      )
       .in(
         "lead_id",
         leadIds.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
@@ -175,22 +206,73 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
     quotesByLead.set(quote.lead_id, list);
   }
 
-  return rows.map((row) => {
+  const prepared = rows.map((row) => {
     const metadata = row.metadata ?? {};
-    const dripJobs: MarketingLeadJob[] = (quotesByLead.get(row.id) ?? [])
-      .filter((quote) => quote.job)
-      .map((quote) => ({
-        jobId: quote.job.id,
-        proposalId: quote.dripjobs_proposal_id ?? quote.id,
-        jobName: quote.job.name,
-        status: quote.job.status,
-        amount: Number(quote.amount_cents ?? 0) / 100,
-        proposalSignedOn: quote.accepted_at,
-        jobStartOn: quote.job.started_on,
-        jobCompletionOn: quote.job.completed_on,
-        linkMethod: "dripjobs_deal_id",
-        linkConfidence: 1,
-      }));
+    const leadQuotes = quotesByLead.get(row.id) ?? [];
+    const canonicalJobId = selectCanonicalJobId(
+      leadQuotes.flatMap((quote) => {
+        const relatedJobs = Array.isArray(quote.job)
+          ? quote.job
+          : quote.job
+            ? [quote.job]
+            : [];
+        return relatedJobs.map((job: any) => ({
+          jobId: String(job.id),
+          acceptedAt: quote.accepted_at,
+          updatedAt: quote.updated_at ?? job.updated_at,
+          isFeedVisible: job.is_feed_visible,
+          quoteStatus: quote.status,
+        }));
+      }),
+    );
+    const canonicalQuote = canonicalJobId
+      ? leadQuotes.find((quote) => {
+          const relatedJobs = Array.isArray(quote.job)
+            ? quote.job
+            : quote.job
+              ? [quote.job]
+              : [];
+          return relatedJobs.some((job: any) => job.id === canonicalJobId);
+        })
+      : null;
+    const canonicalJob = canonicalQuote
+      ? Array.isArray(canonicalQuote.job)
+        ? canonicalQuote.job.find((job: any) => job.id === canonicalJobId)
+        : canonicalQuote.job
+      : null;
+    const job: MarketingLeadJob | null = canonicalJob
+      ? {
+          jobId: canonicalJob.id,
+          proposalId: canonicalQuote.dripjobs_proposal_id ?? canonicalQuote.id,
+          jobName: canonicalJob.name,
+          status: canonicalJob.status,
+          amount: Number(canonicalJob.contract_amount_cents ?? 0) / 100,
+          proposalSignedOn: canonicalQuote.accepted_at,
+          jobStartOn: canonicalJob.started_on,
+          jobCompletionOn: canonicalJob.completed_on,
+          linkMethod: "dripjobs_deal_id",
+          linkConfidence: 1,
+        }
+      : null;
+    const currentProposal = canonicalQuote ??
+      [...leadQuotes]
+        .filter((quote) => !["superseded", "declined", "expired"].includes(quote.status))
+        .sort(
+          (left, right) =>
+            Date.parse(right.updated_at ?? right.created_at ?? "") -
+            Date.parse(left.updated_at ?? left.created_at ?? ""),
+        )[0] ??
+      null;
+    const currentProposalNumber = currentProposal?.dripjobs_proposal_id ?? null;
+    const metadataProposalNumber = metadata.proposal_number ?? null;
+    const proposalNumber = currentProposalNumber ?? metadataProposalNumber;
+    const proposalAmount = job
+      ? job.amount
+      : metadata.proposal_amount != null
+        ? Number(metadata.proposal_amount)
+        : currentProposal && Number(currentProposal.amount_cents ?? 0) > 0
+          ? Number(currentProposal.amount_cents) / 100
+          : null;
     return {
       leadId: row.id,
       dealId: row.dripjobs_deal_id ?? row.id,
@@ -206,16 +288,74 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
       postalCode: row.postal_code,
       estimateScheduledOn: row.estimate_scheduled_on,
       estimateAppointmentOn: row.estimate_appointment_on,
-      proposalNumber: metadata.proposal_number ?? null,
-      proposalAmount: metadata.proposal_amount ?? null,
-      proposalOn: metadata.proposal_on ?? null,
+      proposalNumber,
+      proposalAmount,
+      proposalOn: canonicalQuote?.accepted_at ?? metadata.proposal_on ?? null,
       jobCrew: metadata.job_crew ?? null,
       isInterior: row.is_interior,
       isExterior: row.is_exterior,
       isCabinets: row.is_cabinets,
       sourceRowNumber: metadata.source_row_number ?? null,
-      dripJobs,
+      job,
+      media: [] as MarketingLeadMedia[],
+      mediaCount: 0,
     } as MarketingLead;
+  });
+
+  const leadMediaOwners = prepared
+    .filter((lead) => !lead.job)
+    .map((lead) => lead.leadId);
+  const jobMediaOwners = prepared.flatMap((lead) =>
+    lead.job ? [lead.job.jobId] : [],
+  );
+  const mediaRequests: Array<PromiseLike<{ data: any[] | null; error: any }>> = [];
+  for (let index = 0; index < leadMediaOwners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
+    mediaRequests.push(
+      supabase
+        .from("job_media")
+        .select("id,job_id,lead_id,media_type,captured_at,created_at")
+        .in(
+          "lead_id",
+          leadMediaOwners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
+        )
+        .order("captured_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
+    );
+  }
+  for (let index = 0; index < jobMediaOwners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
+    mediaRequests.push(
+      supabase
+        .from("job_media")
+        .select("id,job_id,lead_id,media_type,captured_at,created_at")
+        .in(
+          "job_id",
+          jobMediaOwners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
+        )
+        .order("captured_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false }),
+    );
+  }
+
+  const mediaByOwner = new Map<string, MarketingLeadMedia[]>();
+  for (const result of await Promise.all(mediaRequests)) {
+    if (result.error) throw new Error(`lead media: ${result.error.message}`);
+    for (const row of result.data ?? []) {
+      const ownerProjectId = row.job_id ?? row.lead_id;
+      if (!ownerProjectId) continue;
+      const list = mediaByOwner.get(ownerProjectId) ?? [];
+      list.push({
+        id: row.id,
+        ownerProjectId,
+        mediaType: row.media_type === "video" ? "video" : "image",
+      });
+      mediaByOwner.set(ownerProjectId, list);
+    }
+  }
+
+  return prepared.map((lead) => {
+    const ownerProjectId = lead.job?.jobId ?? lead.leadId;
+    const media = mediaByOwner.get(ownerProjectId) ?? [];
+    return { ...lead, media, mediaCount: media.length };
   });
 }
 
@@ -315,6 +455,7 @@ export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]
     row.invoice && invoiceJobCostCategory(row) === "labour"
       ? [{
           id: row.id,
+          invoice_id: row.invoice.id,
           companycam_project_id: row.job_id,
           worker_user_id: row.invoice.metadata?.worker_user_id ?? null,
           worker_name: row.invoice.metadata?.worker_name ?? row.invoice.contact?.name ?? "Painter",

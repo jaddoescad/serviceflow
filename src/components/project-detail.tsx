@@ -1,46 +1,45 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   Avatar,
   Badge,
   Button,
   Card,
-  CardHeader,
   Field,
   Input,
+  Stat,
+  StatGrid,
   StatusText,
 } from "@/components/ui";
-import { Kpi } from "@/components/kpi";
-import { fmtHours, fmtMoney, fmtDate, fmtTime, initials } from "@/lib/format";
+import { fmtHours, fmtMoney, fmtDate, initials } from "@/lib/format";
 import { setJobAmount, setLabourClosed } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
   LABOUR_MAX_PERCENT,
   LABOUR_MIN_PERCENT,
 } from "@/lib/metrics";
-import type { BudgetStatus, ProjectDetail, ProjectRollup } from "@/lib/metrics";
+import type { ProjectDetail, ProjectRollup } from "@/lib/metrics";
 import {
   allocateBonusByHours,
   calculateBonusPool,
 } from "@/lib/bonus";
 
-const statusTone: Record<BudgetStatus, "good" | "warn" | "bad" | "neutral"> = {
-  under: "good",
-  near: "warn",
-  over: "bad",
-  none: "neutral",
-};
-
-/** Overview tab content: money KPIs, crew hours, invoices, recent entries. */
+/** Consolidated overview: one labour summary and one combined labour-cost table. */
 export function ProjectOverviewPanel({
   project,
   detail,
   canManage,
+  materialCostSummary,
 }: {
   project: ProjectRollup;
   detail?: ProjectDetail;
   canManage: boolean;
+  materialCostSummary: {
+    invoiceCount: number;
+    amountBeforeTax: number;
+  };
 }) {
   const [editingAmount, setEditingAmount] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +47,25 @@ export function ProjectOverviewPanel({
 
   const crew = detail?.crew ?? [];
   const labourExpenses = detail?.labourExpenses ?? [];
-  const maxCrewHours = Math.max(...crew.map((member) => member.hours), 0);
+  const labourInvoices = [
+    ...labourExpenses
+      .reduce((byInvoice, expense) => {
+        const current = byInvoice.get(expense.invoiceId);
+        if (current) {
+          current.amountBeforeTax += expense.amountBeforeTax;
+          current.taxAmount += expense.taxAmount;
+        } else {
+          byInvoice.set(expense.invoiceId, { ...expense });
+        }
+        return byInvoice;
+      }, new Map<string, (typeof labourExpenses)[number]>())
+      .values(),
+  ];
+  const totalClockedHours = crew.reduce((sum, member) => sum + member.hours, 0);
+  const invoicedTotal = labourInvoices.reduce(
+    (sum, invoice) => sum + invoice.amountBeforeTax,
+    0,
+  );
   const activeEntryCount = detail?.activeEntryCount ?? 0;
   const bonusPool = calculateBonusPool(
     project.amountBeforeTax,
@@ -63,7 +80,20 @@ export function ProjectOverviewPanel({
       hours: member.hours,
     })),
   );
-
+  const bonusByCrewId = new Map(
+    bonusAllocation.allocations.map((allocation) => [allocation.id, allocation]),
+  );
+  const allowance =
+    project.amountBeforeTax == null
+      ? null
+      : project.amountBeforeTax * (LABOUR_ALERT_PERCENT / 100);
+  const budgetVariance = allowance == null ? null : allowance - project.wageCost;
+  const costSourceHint =
+    project.labourCostSource === "invoices"
+      ? "Labour invoices selected"
+      : invoicedTotal > 0
+        ? `Clocked wages selected · ${fmtMoney(project.clockedWageCost - invoicedTotal)} above invoices`
+        : "Clocked wages selected";
   const labourClosed = Boolean(project.labourClosedAt);
   // Completing settles the job's labour cost, so it only makes sense once the
   // job has an amount to measure against. Excluded and untouched jobs opt out.
@@ -91,267 +121,257 @@ export function ProjectOverviewPanel({
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {labourClosed ? (
-            <StatusText tone="good">Labour completed {fmtDate(project.labourClosedAt)}</StatusText>
-          ) : canCompleteLabour ? (
-            <StatusText tone="neutral">Labour not completed</StatusText>
-          ) : null}
-          {activeEntryCount > 0 ? <StatusText tone="good">{activeEntryCount} on clock</StatusText> : null}
-          {project.invoicedHours > project.clockedHours ? <StatusText tone="neutral">invoice hours</StatusText> : null}
-          {project.expenseCount > 0 ? (
-            <StatusText tone="neutral">
-              {project.expenseCount} fixed {project.expenseCount === 1 ? "invoice" : "invoices"}
-            </StatusText>
-          ) : null}
-          <StatusText tone={statusTone[project.status]}>
-            {project.wageSharePercent == null ? "no amount" : `${project.wageSharePercent.toFixed(1)}% of job`}
-          </StatusText>
-          {project.unpricedHours > 0 ? <StatusText tone="warn">{fmtHours(project.unpricedHours)} unpriced</StatusText> : null}
-        </div>
-        {canManage ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" onClick={() => setEditingAmount(true)} disabled={pending}>
-              Edit amount
-            </Button>
-            {canCompleteLabour ? (
-              <Button
-                variant={labourClosed ? "ghost" : "primary"}
-                onClick={() => toggleLabourClosed(!labourClosed)}
-                disabled={pending}
-                title={
-                  labourClosed
-                    ? "Reopen if another painter invoice still has to land"
-                    : "Mark once every painter invoice for this job is in. Only completed jobs count toward the headline labour share."
-                }
-              >
-                {labourClosed ? "Reopen labour" : "Mark job completed"}
-              </Button>
-            ) : project.labourBucket === "missing_amount" ? (
-              <span className="text-xs text-[var(--color-warn)]">
-                Set a job amount before completing
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
       {error ? (
-        <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bad-soft)] px-4 py-2 text-sm text-[var(--color-bad)]">
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bad-soft)] px-4 py-2 text-sm text-[var(--color-bad)]"
+        >
           {error}
         </div>
       ) : null}
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi
-          label="Job value"
-          value={fmtMoney(project.amountBeforeTax)}
-          hint={
-            project.amountBeforeTax != null
-              ? "before HST · manual amount, no tax added or removed"
-              : "before HST"
-          }
-        />
-        <Kpi
-          label="Labour allowance"
-          value={
-            project.labourAllowanceLow != null && project.labourAllowanceHigh != null
-              ? `${fmtMoney(project.labourAllowanceLow)}–${fmtMoney(project.labourAllowanceHigh)}`
-              : "—"
-          }
-          hint="35–37% of the job amount"
-        />
-        <Kpi
-          label="Painter budget"
-          value={project.labourExcluded ? "—" : fmtMoney(project.wageCost)}
-          hint={`larger of invoices or clocked wages · ${
-            project.labourCostSource === "invoices"
-              ? "invoices chosen"
-              : "clocked wages chosen"
-          }`}
-        />
-        <Kpi
-          label="Used by painters"
-          value={project.wageSharePercent != null ? `${project.wageSharePercent.toFixed(1)}%` : "—"}
-          tone={project.status === "over" ? "bad" : project.status === "near" ? "warn" : "neutral"}
-          hint="of the job amount"
-        />
-      </div>
-
-      <PainterBonus
-        project={project}
-        crew={crew}
-        bonusPool={bonusPool}
-        totalHours={bonusAllocation.totalHours}
-        allocations={bonusAllocation.allocations}
-      />
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
-        <section aria-labelledby="crew-hours-title">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <h3 id="crew-hours-title" className="font-display text-sm font-semibold text-[var(--color-heading)]">
-                Hours by crew member
+      <div className="min-w-0 space-y-5">
+          <Card className="overflow-hidden">
+            <div className="flex flex-col gap-3 border-b border-[var(--color-border)] px-5 py-4 md:flex-row md:items-center md:justify-between">
+              <h3 className="font-display text-sm font-semibold text-[var(--color-heading)]">
+                Job financials
               </h3>
-              <p className="text-xs text-[var(--color-muted)]">
-                {crew.length} {crew.length === 1 ? "person" : "people"} logged time
-              </p>
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                {activeEntryCount > 0 ? (
+                  <StatusText tone="good">{activeEntryCount} on clock</StatusText>
+                ) : null}
+                <Badge tone={labourClosed ? "good" : "warn"}>
+                  {labourClosed
+                    ? `Completed ${fmtDate(project.labourClosedAt)}`
+                    : "Labour not completed"}
+                </Badge>
+                {canManage ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="subtle"
+                      onClick={() => setEditingAmount(true)}
+                      disabled={pending}
+                    >
+                      Edit job value
+                    </Button>
+                    {canCompleteLabour ? (
+                      <Button
+                        size="sm"
+                        variant={labourClosed ? "ghost" : "primary"}
+                        onClick={() => toggleLabourClosed(!labourClosed)}
+                        disabled={pending}
+                        aria-describedby="labour-completion-help"
+                      >
+                        {labourClosed ? "Reopen labour" : "Mark job completed"}
+                      </Button>
+                    ) : project.labourBucket === "missing_amount" ? (
+                      <span className="text-xs text-[var(--color-warn)]">
+                        Set a job value before completing
+                      </span>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+              <span id="labour-completion-help" className="sr-only">
+                Mark complete once every painter invoice for this job is recorded. Reopen labour if another painter invoice still needs to be added.
+              </span>
             </div>
-            <span className="text-xs text-[var(--color-muted)]">{detail?.entryCount ?? 0} entries</span>
-          </div>
 
-          {crew.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center text-sm text-[var(--color-muted)]">
-              No crew time entries have been recorded for this job.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {crew.map((member) => (
-                <div key={member.crewId} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar label={initials(member.name)} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="truncate text-sm font-medium">{member.name}</span>
-                        <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtMoney(member.wageCost)}</span>
-                      </div>
-                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-                        <div
-                          className="h-full rounded-full bg-[var(--color-brand)]"
-                          style={{ width: `${maxCrewHours ? (member.hours / maxCrewHours) * 100 : 0}%` }}
-                        />
-                      </div>
-                      <div className="mt-1.5 flex justify-between text-[11px] text-[var(--color-muted)]">
-                        <span>
-                          {fmtHours(member.hours)} · {formatPayRates(member.hourlyRates)}
-                        </span>
-                        <span>Last {fmtDate(member.lastActivity)}</span>
-                      </div>
-                      {member.unpricedHours > 0 ? (
-                        <div className="mt-1 text-[11px] text-[var(--color-warn)]">
-                          {fmtHours(member.unpricedHours)} has no applicable pay rate
-                        </div>
-                      ) : null}
-                    </div>
+            <StatGrid columns={5} className="border-b border-[var(--color-border)]">
+              <Stat
+                label="Job value"
+                value={
+                  project.amountBeforeTax == null
+                    ? "—"
+                    : fmtMoney(project.amountBeforeTax)
+                }
+                hint="Before HST"
+              />
+              <Stat
+                label="Labour budget"
+                value={allowance == null ? "—" : fmtMoney(allowance)}
+                hint="40% of job value"
+              />
+              <Stat
+                label="Labour cost"
+                value={project.labourExcluded ? "—" : fmtMoney(project.wageCost)}
+                hint={project.labourExcluded ? undefined : costSourceHint}
+              />
+              <Stat
+                label="Material cost"
+                value={fmtMoney(materialCostSummary.amountBeforeTax)}
+                hint={
+                  materialCostSummary.invoiceCount > 0
+                    ? `${materialCostSummary.invoiceCount} allocated ${materialCostSummary.invoiceCount === 1 ? "invoice" : "invoices"} · before HST`
+                    : "No material invoices linked"
+                }
+              />
+              <Stat
+                label="Budget position"
+                value={
+                  budgetVariance == null
+                    ? "—"
+                    : budgetVariance >= 0
+                      ? `${fmtMoney(budgetVariance)} remaining`
+                      : `${fmtMoney(Math.abs(budgetVariance))} over`
+                }
+                hint={
+                  project.wageSharePercent == null
+                    ? undefined
+                    : `${project.wageSharePercent.toFixed(1)}% of job value`
+                }
+                tone={budgetVariance == null ? "neutral" : budgetVariance >= 0 ? "good" : "bad"}
+              />
+            </StatGrid>
+
+            {crew.length === 0 && labourInvoices.length === 0 ? (
+              <div className="px-5 py-10 text-center text-sm text-[var(--color-muted)]">
+                No labour costs have been recorded for this job.
+              </div>
+            ) : (
+              <div>
+                <section aria-labelledby="crew-cost-table-title">
+                  <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-3">
+                    <h4 id="crew-cost-table-title" className="text-sm font-semibold text-[var(--color-heading)]">
+                      Crew
+                    </h4>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {labourExpenses.length > 0 ? (
-            <div className="mt-5">
-              <div className="mb-2">
-                <h4 className="font-display text-sm font-semibold text-[var(--color-heading)]">Fixed labour invoices</h4>
-                <p className="text-xs text-[var(--color-muted)]">Subcontract costs recorded without invented hours</p>
-              </div>
-              <div className="space-y-2">
-                {labourExpenses.map((expense) => (
-                  <div key={expense.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                    <div className="flex items-start gap-3">
-                      <Avatar label={initials(expense.workerName)} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <span className="truncate text-sm font-medium">
-                            {expense.workerName} · {expense.supplierName}
-                          </span>
-                          <span className="shrink-0 text-sm font-semibold tabular-nums">
-                            {fmtMoney(expense.amountBeforeTax)}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-muted)]">
-                          <span>Invoice #{expense.invoiceNumber}</span>
-                          <span>·</span>
-                          <span>{fmtDate(`${expense.invoiceDate}T12:00:00`)}</span>
-                          {expense.taxAmount === 0 ? (
-                            <>
-                              <span>·</span>
-                              <span>No HST</span>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
+                  {crew.length === 0 ? (
+                    <div className="px-5 py-7 text-sm text-[var(--color-muted)]">
+                      No crew time has been recorded.
                     </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[520px] text-[13px]">
+                        <thead>
+                          <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                            <th className="px-5 py-2.5 font-medium">Painter</th>
+                            <th className="px-4 py-2.5 text-right font-medium">Hours</th>
+                            <th className="px-4 py-2.5 text-right font-medium">Wages</th>
+                            <th className="px-5 py-2.5 text-right font-medium">Bonus</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {crew.map((member) => {
+                            const allocation = bonusByCrewId.get(member.crewId);
+                            return (
+                              <tr key={member.crewId} className="border-b border-[var(--color-border)]">
+                                <td className="px-5 py-3.5">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar label={initials(member.name)} />
+                                    <div className="min-w-0">
+                                      <div className="truncate font-medium text-[var(--color-heading)]">
+                                        {member.name}
+                                      </div>
+                                      <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+                                        Last {fmtDate(member.lastActivity)} · {formatPayRates(member.hourlyRates)}
+                                        {allocation ? ` · ${allocation.sharePercent.toFixed(1)}% of hours` : ""}
+                                      </div>
+                                      {member.unpricedHours > 0 ? (
+                                        <div className="mt-0.5 text-[11px] text-[var(--color-warn)]">
+                                          {fmtHours(member.unpricedHours)} unpriced
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium tabular-nums">
+                                  {fmtHours(member.hours)}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3.5 text-right font-medium tabular-nums">
+                                  {fmtMoney(member.wageCost)}
+                                </td>
+                                <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold tabular-nums text-[var(--color-good)]">
+                                  {allocation ? fmtMoney(allocation.bonusAmount) : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        {crew.length > 1 ? (
+                          <tfoot>
+                            <tr className="bg-[var(--color-surface-2)] font-semibold text-[var(--color-heading)]">
+                              <td className="px-5 py-3">Total</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{fmtHours(totalClockedHours)}</td>
+                              <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(project.clockedWageCost)}</td>
+                              <td className="px-5 py-3 text-right tabular-nums text-[var(--color-good)]">
+                                {bonusPool == null ? "—" : fmtMoney(bonusPool)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        ) : null}
+                      </table>
+                    </div>
+                  )}
+                </section>
+
+                <section aria-labelledby="labour-invoice-table-title" className="border-t border-[var(--color-border)]">
+                  <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-3">
+                    <h4 id="labour-invoice-table-title" className="text-sm font-semibold text-[var(--color-heading)]">
+                      Labour invoices
+                    </h4>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        <section aria-labelledby="recent-entries-title">
-          <div className="mb-3">
-            <h3 id="recent-entries-title" className="font-display text-sm font-semibold text-[var(--color-heading)]">
-              Recent time entries
-            </h3>
-            <p className="text-xs text-[var(--color-muted)]">The latest shifts logged to this job</p>
-          </div>
-
-          {!detail?.recentEntries.length ? (
-            <div className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-8 text-center text-sm text-[var(--color-muted)]">
-              No time entries to show.
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-[13px]">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
-                      <th className="px-3 py-2 font-medium">Painter</th>
-                      <th className="px-3 py-2 font-medium">Date</th>
-                      <th className="px-3 py-2 font-medium">Time</th>
-                      <th className="px-3 py-2 text-right font-medium">Hours</th>
-                      <th className="px-3 py-2 text-right font-medium">Rate</th>
-                      <th className="px-3 py-2 text-right font-medium">Wages</th>
-                      <th className="px-3 py-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.recentEntries.map((entry) => (
-                      <tr key={entry.id} className="border-b border-[var(--color-border)] last:border-0">
-                        <td className="max-w-[150px] px-3 py-2.5">
-                          <div className="truncate font-medium">{entry.userName}</div>
-                          {entry.notes ? (
-                            <div className="truncate text-[11px] text-[var(--color-muted)]" title={entry.notes}>
-                              {entry.notes}
-                            </div>
+                  {labourInvoices.length === 0 ? (
+                    <div className="px-5 py-7 text-sm text-[var(--color-muted)]">
+                      No active labour invoices are linked to this job.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[480px] text-[13px]">
+                          <thead>
+                            <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
+                              <th className="px-5 py-2.5 font-medium">Vendor / invoice</th>
+                              <th className="px-4 py-2.5 font-medium">Date</th>
+                              <th className="px-5 py-2.5 text-right font-medium">Labour · before HST</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {labourInvoices.map((expense) => (
+                              <tr key={expense.invoiceId} className="border-b border-[var(--color-border)]">
+                                <td className="px-5 py-3.5">
+                                  <div className="flex items-center gap-3">
+                                    <Avatar label={initials(expense.workerName)} />
+                                    <div className="min-w-0">
+                                      <div className="truncate font-medium text-[var(--color-heading)]">
+                                        {expense.workerName}
+                                      </div>
+                                      <Link
+                                        href={`/invoices/${encodeURIComponent(expense.invoiceId)}`}
+                                        prefetch={false}
+                                        className="mt-0.5 inline-block text-[11px] font-medium text-[var(--color-brand-strong)] hover:underline"
+                                      >
+                                        Invoice #{expense.invoiceNumber}
+                                      </Link>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3.5 text-[var(--color-muted)]">
+                                  {fmtDate(`${expense.invoiceDate}T12:00:00`)}
+                                </td>
+                                <td className="whitespace-nowrap px-5 py-3.5 text-right font-semibold tabular-nums">
+                                  {fmtMoney(expense.amountBeforeTax)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {labourInvoices.length > 1 ? (
+                            <tfoot>
+                              <tr className="bg-[var(--color-surface-2)] font-semibold text-[var(--color-heading)]">
+                                <td className="px-5 py-3" colSpan={2}>Total</td>
+                                <td className="px-5 py-3 text-right tabular-nums">{fmtMoney(invoicedTotal)}</td>
+                              </tr>
+                            </tfoot>
                           ) : null}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-[var(--color-muted)]">{fmtDate(entry.startedAt)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          {fmtTime(entry.startedAt)}–{entry.status === "active" ? "now" : fmtTime(entry.endedAt)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium tabular-nums">
-                          {fmtHours(entry.hours)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
-                          {entry.hourlyRate != null ? `${fmtMoney(entry.hourlyRate)}/h` : "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right font-medium tabular-nums">
-                          {entry.wageCost != null ? (
-                            fmtMoney(entry.wageCost)
-                          ) : (
-                            <span className="text-xs font-medium text-[var(--color-warn)]">unpriced</span>
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          {entry.status === "active" ? (
-                            <StatusText tone="good">on clock</StatusText>
-                          ) : entry.approved ? (
-                            <StatusText tone="good">approved</StatusText>
-                          ) : (
-                            <StatusText tone="warn">pending</StatusText>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </section>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </Card>
       </div>
 
       {editingAmount ? (
@@ -363,171 +383,6 @@ export function ProjectOverviewPanel({
         />
       ) : null}
     </>
-  );
-}
-
-function PainterBonus({
-  project,
-  crew,
-  bonusPool,
-  totalHours,
-  allocations,
-}: {
-  project: ProjectRollup;
-  crew: ProjectDetail["crew"];
-  bonusPool: number | null;
-  totalHours: number;
-  allocations: ReturnType<typeof allocateBonusByHours>["allocations"];
-}) {
-  const allowance =
-    project.amountBeforeTax == null
-      ? null
-      : project.amountBeforeTax * (LABOUR_ALERT_PERCENT / 100);
-  const sourceLabel =
-    project.labourCostSource === "invoices"
-      ? "labour invoices"
-      : "clocked wages";
-  const isFinal = Boolean(project.labourClosedAt);
-
-  return (
-    <Card className="mb-6 overflow-hidden">
-      <CardHeader
-        title="Painter bonus"
-        subtitle="The amount left inside the 40% painter budget, split by each painter’s share of clocked hours"
-        right={
-          <Badge tone={isFinal ? "good" : "warn"}>
-            {isFinal ? "Final" : "Live estimate"}
-          </Badge>
-        }
-      />
-
-      {bonusPool == null || allowance == null ? (
-        <div className="px-5 py-8 text-center text-sm text-[var(--color-muted)]">
-          Set the job amount before HST to calculate the painter bonus.
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-px border-b border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">
-            <div className="bg-[var(--color-surface)] px-5 py-4">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
-                40% painter budget
-              </div>
-              <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
-                {fmtMoney(allowance)}
-              </div>
-            </div>
-            <div className="bg-[var(--color-surface)] px-5 py-4">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
-                Painter cost
-              </div>
-              <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
-                {fmtMoney(project.wageCost)}
-              </div>
-              <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                {sourceLabel} chosen
-              </div>
-            </div>
-            <div className="bg-[var(--color-surface)] px-5 py-4">
-              <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">
-                {isFinal ? "Final bonus pool" : "Estimated bonus pool"}
-              </div>
-              <div
-                className={`mt-1 text-xl font-semibold tabular-nums ${
-                  bonusPool > 0
-                    ? "text-[var(--color-good)]"
-                    : "text-[var(--color-muted)]"
-                }`}
-              >
-                {fmtMoney(bonusPool)}
-              </div>
-            </div>
-          </div>
-
-          {crew.length === 0 || allocations.length === 0 ? (
-            <div className="px-5 py-8 text-center">
-              <p className="text-sm text-[var(--color-muted)]">
-                No clocked painter hours are available to split this bonus.
-              </p>
-              <p className="mt-1 text-[11px] text-[var(--color-muted)]">
-                Invoice costs can set the pool, but a painter needs clocked hours
-                to receive a share.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-[13px]">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left text-[11px] uppercase tracking-[0.08em] text-[var(--color-muted)]">
-                    <th className="px-5 py-2.5 font-medium">Painter</th>
-                    <th className="px-5 py-2.5 text-right font-medium">
-                      Hours
-                    </th>
-                    <th className="px-5 py-2.5 text-right font-medium">
-                      Share
-                    </th>
-                    <th className="px-5 py-2.5 text-right font-medium">
-                      Bonus
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allocations.map((allocation) => (
-                    <tr
-                      key={allocation.id}
-                      className="border-b border-[var(--color-border)] last:border-0"
-                    >
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar label={initials(allocation.name)} />
-                          <span className="font-medium">{allocation.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-[var(--color-muted)]">
-                        {fmtHours(allocation.hours)}
-                      </td>
-                      <td className="px-5 py-3 text-right font-medium tabular-nums">
-                        {allocation.sharePercent.toFixed(1)}%
-                      </td>
-                      <td className="px-5 py-3 text-right font-semibold tabular-nums text-[var(--color-good)]">
-                        {fmtMoney(allocation.bonusAmount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-[var(--color-border)] font-medium">
-                    <td className="px-5 py-3">Total</td>
-                    <td className="px-5 py-3 text-right tabular-nums">
-                      {fmtHours(totalHours)}
-                    </td>
-                    <td className="px-5 py-3 text-right tabular-nums">
-                      100.0%
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold tabular-nums">
-                      {fmtMoney(bonusPool)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-
-          <div className="border-t border-[var(--color-border)] px-5 py-3 text-[11px] leading-4 text-[var(--color-muted)]">
-            {allocations.length > 0 ? (
-              <>
-                Each painter receives their clocked hours ÷ {fmtHours(totalHours)} total
-                hours × {fmtMoney(bonusPool)}.{" "}
-              </>
-            ) : (
-              <>The bonus can be split once painter hours are clocked. </>
-            )}
-            {sourceLabel === "labour invoices"
-              ? "Invoices determine the painter cost; clocked hours only determine the split."
-              : "Clocked wages determine the painter cost and clocked hours determine the split."}
-          </div>
-        </>
-      )}
-    </Card>
   );
 }
 
@@ -546,19 +401,67 @@ export function AmountDialog({
   project: ProjectRollup;
   pending: boolean;
   onClose: () => void;
-  onSave: (input: { projectId: string; amountBeforeTax: number | null; notes?: string | null }) => void;
+  onSave: (input: { projectId: string; amountBeforeTax: number | null }) => void;
 }) {
   const [amount, setAmount] = useState(project.amountBeforeTax?.toString() ?? "");
+  const dialogRef = useRef<HTMLDivElement>(null);
   const numericAmount = amount.trim() === "" ? null : Number(amount);
   const allowanceLow = numericAmount != null ? numericAmount * (LABOUR_MIN_PERCENT / 100) : null;
   const allowanceHigh = numericAmount != null ? numericAmount * (LABOUR_MAX_PERCENT / 100) : null;
 
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialog?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !pending) {
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose, pending]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <Card className="w-full max-w-md p-5">
-        <div onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-sm font-semibold">Job amount · {project.name}</h3>
-          <p className="mb-4 text-xs text-[var(--color-muted)]">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="job-amount-dialog-title"
+          aria-describedby="job-amount-dialog-description"
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
+          className="outline-none"
+        >
+          <h3 id="job-amount-dialog-title" className="text-sm font-semibold">
+            Job amount · {project.name}
+          </h3>
+          <p id="job-amount-dialog-description" className="mb-4 text-xs text-[var(--color-muted)]">
             Enter the job amount before HST. The dashboard uses exactly what you enter.
           </p>
           <Field label="Job amount before HST (CAD)">

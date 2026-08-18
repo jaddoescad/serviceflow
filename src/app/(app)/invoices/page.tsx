@@ -11,8 +11,8 @@ export default async function InvoicesPage() {
   return (
     <>
       <PageHeader
-        title="Labour invoices"
-        subtitle="Payment readiness review for painter and subcontractor invoices"
+        title="Contractor invoices"
+        subtitle="Payment review for job labour and contractor company expenses"
       />
       <LabourInvoiceReview invoices={invoices} />
     </>
