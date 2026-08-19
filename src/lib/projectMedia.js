@@ -176,20 +176,21 @@ async function uploadVideoInParts({
   const partsUrl = `${baseUrl}/v1/media-uploads/${encodeURIComponent(uploadId)}/parts`;
 
   const parts = [];
+  // A file handle reads a byte range straight from storage. Blob slices were
+  // not sent intact by the native fetch, which is what failed the upload.
+  let handle = null;
   try {
+    handle = body.open();
     let offset = 0;
     let partNumber = 1;
     while (offset < byteSize) {
-      const end = Math.min(offset + chunkSize, byteSize);
-      const part = await uploadPartWithRetry(
-        partsUrl,
-        token,
-        objectKey,
-        partNumber,
-        body.slice(offset, end),
-      );
+      const length = Math.min(chunkSize, byteSize - offset);
+      handle.offset = offset;
+      const chunk = handle.readBytes(length);
+      if (!chunk?.length) throw new Error("Could not read the video from storage.");
+      const part = await uploadPartWithRetry(partsUrl, token, objectKey, partNumber, chunk);
       parts.push({ partNumber: part.partNumber, etag: part.etag });
-      offset = end;
+      offset += chunk.length;
       partNumber += 1;
     }
   } catch (error) {
@@ -199,6 +200,8 @@ async function uploadVideoInParts({
       headers: { Authorization: `Bearer ${token}`, "x-object-key": objectKey },
     }).catch(() => {});
     throw error;
+  } finally {
+    handle?.close?.();
   }
 
   const completeResponse = await expoFetch(
@@ -258,16 +261,23 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
   const token = await requireAccessToken();
 
   if (mediaKind === "video" && byteSize > MULTIPART_THRESHOLD_BYTES) {
-    return uploadVideoInParts({
-      baseUrl,
-      token,
-      projectId,
-      projectKind,
-      asset,
-      body,
-      byteSize,
-      mimeType,
-    });
+    try {
+      return await uploadVideoInParts({
+        baseUrl,
+        token,
+        projectId,
+        projectKind,
+        asset,
+        body,
+        byteSize,
+        mimeType,
+      });
+    } catch (error) {
+      // Anything that still fits in one request falls back to the path that has
+      // always worked rather than failing the capture outright.
+      if (byteSize > MAX_VIDEO_BYTES) throw error;
+      console.warn("[project-media] Multipart upload failed, retrying as one request", error?.message);
+    }
   }
 
   // expo/fetch understands expo-file-system File as a Blob and streams it from

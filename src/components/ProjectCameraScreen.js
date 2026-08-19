@@ -245,12 +245,20 @@ export default function ProjectCameraScreen({
     // the same thing on any lens arrangement.
     const rawZoom = controller?.zoom ?? 1;
     const displayZoom = controller?.displayableZoomFactor ?? rawZoom;
-    zoomBoundsRef.current = {
+    const bounds = {
       rawPerDisplay: displayZoom > 0 ? rawZoom / displayZoom : 1,
       min: controller?.minZoom ?? rawZoom,
       max: controller?.maxZoom ?? rawZoom,
     };
-    setCurrentZoom(displayZoom);
+    zoomBoundsRef.current = bounds;
+
+    // The multi-lens device opens on the ultra-wide (0.5x). Start on 1x, which
+    // is what people expect a camera to open at.
+    const rawForOneX = Math.min(Math.max(bounds.rawPerDisplay, bounds.min), bounds.max);
+    setCurrentZoom(1);
+    Promise.resolve(controller?.setZoom?.(rawForOneX)).catch(() => {
+      setCurrentZoom(displayZoom);
+    });
     setCameraReady(true);
   }, [device]);
 
