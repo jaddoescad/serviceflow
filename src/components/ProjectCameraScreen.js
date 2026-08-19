@@ -63,7 +63,9 @@ export default function ProjectCameraScreen({
   // Poster frame grabbed when a recording starts, attached when it finishes.
   const pendingPosterRef = useRef(null);
   const pinchRef = useRef(null);
+  const controllerRef = useRef(null);
   const zoomRef = useRef(1);
+  const zoomBadgeAtRef = useRef(0);
   const zoomBoundsRef = useRef({ min: 1, max: 1 });
   const previewReadyRef = useRef(false);
   const focusAtRef = useRef(() => {});
@@ -261,13 +263,25 @@ export default function ProjectCameraScreen({
         if (!startDistance) return;
         const { min, max } = zoomBoundsRef.current;
         const scaled = (touchDistance(touches) / startDistance) * startZoom;
-        setZoom(Math.min(Math.max(scaled, min), max));
-        setZoomVisible(true);
+        const next = Math.min(Math.max(scaled, min), max);
+        if (Math.abs(next - zoomRef.current) < 0.01) return;
+        zoomRef.current = next;
+        // Drive the native controller directly. Routing zoom through React
+        // state re-rendered the whole screen on every pinch frame, which made
+        // zooming visibly lag behind the fingers.
+        controllerRef.current?.setZoom(next).catch(() => {});
+        const now = Date.now();
+        if (now - zoomBadgeAtRef.current > 90) {
+          zoomBadgeAtRef.current = now;
+          setZoom(next);
+          setZoomVisible(true);
+        }
       },
       onPanResponderRelease: (event, gesture) => {
         const wasPinch = Boolean(pinchRef.current);
         pinchRef.current = null;
         if (wasPinch) {
+          setZoom(zoomRef.current);
           setZoomVisible(false);
           return;
         }
@@ -282,7 +296,6 @@ export default function ProjectCameraScreen({
     }),
   ).current;
 
-  zoomRef.current = zoom;
   zoomBoundsRef.current = { min: minZoom, max: maxZoom };
   previewReadyRef.current = previewReady;
   focusAtRef.current = focusAt;
@@ -322,6 +335,7 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
     setPreviewFailed(false);
     setPreviewRetryCount(0);
+    zoomRef.current = 1;
     setZoom(1);
     setFocusPoint(null);
     setFacing((current) => (current === "back" ? "front" : "back"));
@@ -530,7 +544,6 @@ export default function ProjectCameraScreen({
             ref={cameraRef}
             style={[styles.cameraPreview, cameraViewport]}
             isActive={cameraActive}
-            zoom={zoom}
             device={device}
             outputs={outputs}
             resizeMode="cover"
@@ -539,9 +552,15 @@ export default function ProjectCameraScreen({
             torchMode={mode === "video" && flash === "on" && device.hasTorch ? "on" : "off"}
             onStarted={() => {
               console.info("[project-camera] Capture session started", { device: device.id });
+              // The controller only exists once the session is running; the
+              // pinch handler writes zoom straight to it.
+              controllerRef.current = cameraRef.current?.controller ?? null;
+              zoomRef.current = 1;
+              setZoom(1);
               setCameraReady(true);
             }}
             onStopped={() => {
+              controllerRef.current = null;
               setCameraReady(false);
               setPreviewReady(false);
             }}
