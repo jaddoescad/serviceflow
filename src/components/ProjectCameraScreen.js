@@ -291,8 +291,17 @@ export default function ProjectCameraScreen({
   const handlePreviewStopped = useCallback(() => setPreviewReady(false), []);
 
   const handleCameraError = useCallback((cameraError) => {
+    const message = String(cameraError?.message || "");
+    // Android's CameraX raises OperationCanceledException whenever a focus or
+    // zoom action is superseded by the next one, or the session reconfigures.
+    // It is routine and self-correcting, so it must not sit on screen as an
+    // error the user cannot act on.
+    if (/cancel/i.test(message)) {
+      console.info("[project-camera] Camera control operation cancelled", message);
+      return;
+    }
     console.error("[project-camera] Native camera error", cameraError);
-    setError(cameraError?.message || "Camera preview unavailable.");
+    setError(message || "Camera preview unavailable.");
   }, []);
 
   // The native pinch changes zoom without telling JS, and the controller has no
@@ -326,6 +335,14 @@ export default function ProjectCameraScreen({
       Math.abs(step - currentZoom) < Math.abs(closest - currentZoom) ? step : closest,
     );
   }, [availableZoomSteps, currentZoom]);
+
+  // Clear a transient error once the preview is running again, so the banner
+  // reflects the current state rather than something that already recovered.
+  useEffect(() => {
+    if (!error || !previewReady) return undefined;
+    const timeout = setTimeout(() => setError(""), 6000);
+    return () => clearTimeout(timeout);
+  }, [error, previewReady]);
 
   const retryPreview = () => {
     setError("");
