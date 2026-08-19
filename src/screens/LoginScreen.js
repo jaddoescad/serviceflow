@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
@@ -25,6 +26,16 @@ export default function LoginScreen() {
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const passwordRef = React.useRef(null);
+  const scrollRef = React.useRef(null);
+
+  // Scroll the form up once the keyboard is actually on screen. Doing this in
+  // onFocus lands short, because the keyboard has no height yet at that point.
+  React.useEffect(() => {
+    const shown = Keyboard.addListener("keyboardDidShow", () => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => shown.remove();
+  }, []);
 
   // Auth session ownership lives in App.js (getSession + onAuthStateChange).
   // This screen only handles the sign-in form.
@@ -73,6 +84,7 @@ export default function LoginScreen() {
         {/* Scrollable so the focused field can move above the keyboard rather
             than sitting behind it, and so short screens are not cut off. */}
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
