@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp b/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp
+index fc67410..ec2f708 100644
+--- a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp
++++ b/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp
+@@ -57,7 +57,7 @@ namespace margelo::nitro::camera::views {
+ 
+   HybridFrameRendererViewComponentDescriptor::HybridFrameRendererViewComponentDescriptor(const react::ComponentDescriptorParameters& parameters)
+     : ConcreteComponentDescriptor(parameters,
+-                                  react::RawPropsParser()) {}
++                                  react::RawPropsParser(/* useRawPropsJsiValue */ true)) {}
+ 
+   std::shared_ptr<const react::Props> HybridFrameRendererViewComponentDescriptor::cloneProps(const react::PropsParserContext& context,
+                                                                                              const std::shared_ptr<const react::Props>& props,
+diff --git a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridPreviewViewComponent.cpp b/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridPreviewViewComponent.cpp
+index d9eac55..561eed1 100644
+--- a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridPreviewViewComponent.cpp
++++ b/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridPreviewViewComponent.cpp
+@@ -112,7 +112,7 @@ namespace margelo::nitro::camera::views {
+ 
+   HybridPreviewViewComponentDescriptor::HybridPreviewViewComponentDescriptor(const react::ComponentDescriptorParameters& parameters)
+     : ConcreteComponentDescriptor(parameters,
+-                                  react::RawPropsParser()) {}
++                                  react::RawPropsParser(/* useRawPropsJsiValue */ true)) {}
+ 
+   std::shared_ptr<const react::Props> HybridPreviewViewComponentDescriptor::cloneProps(const react::PropsParserContext& context,
+                                                                                        const std::shared_ptr<const react::Props>& props,

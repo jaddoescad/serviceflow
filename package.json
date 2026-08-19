@@ -33,7 +33,8 @@
     "qa:v2-client": "node scripts/qa-v2-client.cjs",
     "qa:time-entry-backend": "node scripts/qa-time-entry-commands.mjs",
     "qa:smoke:web": "node scripts/qa-web-smoke.cjs",
-    "qa:preflight": "npm run qa:node && npm run qa:doctor && npm run qa:secrets && npm run qa:location && npm run qa:v2-client && npm run qa:audit"
+    "qa:preflight": "npm run qa:node && npm run qa:doctor && npm run qa:secrets && npm run qa:location && npm run qa:v2-client && npm run qa:audit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -68,6 +69,7 @@
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
     "expo-doctor": "^1.19.10",
+    "patch-package": "^8.0.1",
     "playwright-core": "^1.61.1",
     "typescript": "^5.3.3"
   },
