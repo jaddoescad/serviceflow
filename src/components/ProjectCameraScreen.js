@@ -30,7 +30,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const ACCENT = "#58c7d6";
 const MAX_VIDEO_SECONDS = 60;
-const MAX_USABLE_ZOOM = 10;
+// Raw zoom is a device-specific factor, not a display factor: on a triple-lens
+// iPhone raw 1.0 is the ultra-wide (shown as 0.5x). Bounds are therefore taken
+// from the running controller, and the badge shows displayableZoomFactor.
+const MAX_ZOOM_MULTIPLE = 15;
+// Pinch distance maps to zoom exponentially so one gesture covers useful range.
+const PINCH_GAIN = 2.5;
 const FOCUS_INDICATOR_MS = 900;
 // Below this movement a touch is a tap (focus) rather than a drag.
 const TAP_SLOP_PX = 12;
@@ -66,6 +71,10 @@ export default function ProjectCameraScreen({
   const controllerRef = useRef(null);
   const zoomRef = useRef(1);
   const zoomBadgeAtRef = useRef(0);
+  const zoomInFlightRef = useRef(false);
+  const queuedZoomRef = useRef(null);
+  const applyZoomRef = useRef(() => {});
+  const publishZoomBadgeRef = useRef(() => {});
   const zoomBoundsRef = useRef({ min: 1, max: 1 });
   const previewReadyRef = useRef(false);
   const focusAtRef = useRef(() => {});
@@ -99,8 +108,6 @@ export default function ProjectCameraScreen({
   const device = (facing === "front" ? frontDevice : backDevice) || backDevice || frontDevice;
   const canFlip = Boolean(backDevice && frontDevice);
   const canUseFlash = mode === "video" ? Boolean(device?.hasTorch) : Boolean(device?.hasFlash);
-  const minZoom = device?.minZoom ?? 1;
-  const maxZoom = Math.min(device?.maxZoom ?? 1, MAX_USABLE_ZOOM);
 
   // Both outputs stay attached to the Camera at all times so toggling the
   // Photo/Video UI mode never reconfigures the native camera session.
@@ -197,6 +204,36 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
   }, [cameraActive]);
 
+  // setZoom is async; firing one per touch frame builds a backlog that makes
+  // zoom trail the fingers. Keep at most one in flight and coalesce the rest.
+  const applyZoom = (value) => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (zoomInFlightRef.current) {
+      queuedZoomRef.current = value;
+      return;
+    }
+    zoomInFlightRef.current = true;
+    Promise.resolve(controller.setZoom(value))
+      .catch(() => {})
+      .finally(() => {
+        zoomInFlightRef.current = false;
+        const queued = queuedZoomRef.current;
+        queuedZoomRef.current = null;
+        if (queued != null) applyZoomRef.current(queued);
+      });
+  };
+  applyZoomRef.current = applyZoom;
+
+  const publishZoomBadge = (force) => {
+    const now = Date.now();
+    if (!force && now - zoomBadgeAtRef.current < 90) return;
+    zoomBadgeAtRef.current = now;
+    const displayable = controllerRef.current?.displayableZoomFactor;
+    setZoom(typeof displayable === "number" ? displayable : zoomRef.current);
+  };
+  publishZoomBadgeRef.current = publishZoomBadge;
+
   const showFocusIndicator = (x, y) => {
     setFocusPoint({ x, y });
     focusOpacity.setValue(1);
@@ -262,26 +299,22 @@ export default function ProjectCameraScreen({
         const { startDistance, startZoom } = pinchRef.current;
         if (!startDistance) return;
         const { min, max } = zoomBoundsRef.current;
-        const scaled = (touchDistance(touches) / startDistance) * startZoom;
+        const ratio = touchDistance(touches) / startDistance;
+        const scaled = startZoom * Math.pow(ratio, PINCH_GAIN);
         const next = Math.min(Math.max(scaled, min), max);
-        if (Math.abs(next - zoomRef.current) < 0.01) return;
+        if (Math.abs(next - zoomRef.current) < 0.005) return;
         zoomRef.current = next;
-        // Drive the native controller directly. Routing zoom through React
-        // state re-rendered the whole screen on every pinch frame, which made
-        // zooming visibly lag behind the fingers.
-        controllerRef.current?.setZoom(next).catch(() => {});
-        const now = Date.now();
-        if (now - zoomBadgeAtRef.current > 90) {
-          zoomBadgeAtRef.current = now;
-          setZoom(next);
-          setZoomVisible(true);
-        }
+        // Written straight to the native controller: routing zoom through React
+        // state re-rendered the screen on every pinch frame.
+        applyZoomRef.current(next);
+        setZoomVisible(true);
+        publishZoomBadge(false);
       },
       onPanResponderRelease: (event, gesture) => {
         const wasPinch = Boolean(pinchRef.current);
         pinchRef.current = null;
         if (wasPinch) {
-          setZoom(zoomRef.current);
+          publishZoomBadgeRef.current(true);
           setZoomVisible(false);
           return;
         }
@@ -296,7 +329,6 @@ export default function ProjectCameraScreen({
     }),
   ).current;
 
-  zoomBoundsRef.current = { min: minZoom, max: maxZoom };
   previewReadyRef.current = previewReady;
   focusAtRef.current = focusAt;
 
@@ -335,9 +367,8 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
     setPreviewFailed(false);
     setPreviewRetryCount(0);
-    zoomRef.current = 1;
-    setZoom(1);
     setFocusPoint(null);
+    // Zoom bounds and starting value come from the new device in onStarted.
     setFacing((current) => (current === "back" ? "front" : "back"));
   };
 
@@ -553,10 +584,21 @@ export default function ProjectCameraScreen({
             onStarted={() => {
               console.info("[project-camera] Capture session started", { device: device.id });
               // The controller only exists once the session is running; the
-              // pinch handler writes zoom straight to it.
-              controllerRef.current = cameraRef.current?.controller ?? null;
-              zoomRef.current = 1;
-              setZoom(1);
+              // pinch handler writes zoom straight to it. Its current zoom is
+              // the device's default lens (raw 2.0 on a triple-lens iPhone),
+              // which must not be overwritten with a raw 1.0 ultra-wide.
+              const controller = cameraRef.current?.controller ?? null;
+              controllerRef.current = controller;
+              const startZoom = controller?.zoom ?? 1;
+              zoomRef.current = startZoom;
+              zoomBoundsRef.current = {
+                min: controller?.minZoom ?? 1,
+                max: Math.min(
+                  controller?.maxZoom ?? startZoom,
+                  startZoom * MAX_ZOOM_MULTIPLE,
+                ),
+              };
+              publishZoomBadgeRef.current(true);
               setCameraReady(true);
             }}
             onStopped={() => {
@@ -597,7 +639,7 @@ export default function ProjectCameraScreen({
           </View>
         ) : null}
 
-        {zoomVisible || zoom > minZoom + 0.05 ? (
+        {zoomVisible ? (
           <View pointerEvents="none" style={styles.zoomBadge}>
             <Text style={styles.zoomBadgeText}>{zoom.toFixed(1)}×</Text>
           </View>
