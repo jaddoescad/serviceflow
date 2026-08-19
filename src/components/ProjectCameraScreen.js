@@ -222,8 +222,12 @@ export default function ProjectCameraScreen({
   );
 
   const handleCameraStarted = useCallback(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- device read for logging only
     console.info("[project-camera] Capture session started", {
       device: deviceIdRef.current,
+      lenses: (device?.physicalDevices || []).map((lens) => lens?.type).join(","),
+      minZoom: device?.minZoom,
+      maxZoom: device?.maxZoom,
     });
     // The controller exists only once the session runs. Its current zoom is the
     // device's default lens, which is 1x to the user: on a triple-lens iPhone
@@ -238,7 +242,7 @@ export default function ProjectCameraScreen({
     };
     setZoomMultiple(1);
     setCameraReady(true);
-  }, []);
+  }, [device]);
 
   const handleCameraStopped = useCallback(() => {
     controllerRef.current = null;

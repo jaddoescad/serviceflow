@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Animated,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from "react-native";
+import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -29,6 +28,8 @@ import { registerPushToken } from "./src/lib/pushTokenRegistration";
 import { isLocationTrackingFeatureEnabled } from "./src/lib/locationTrackingFeature";
 import { palette as COLORS } from "./src/theme";
 import UpdateReadyPrompt from "./src/components/UpdateReadyPrompt";
+
+const Stack = createNativeStackNavigator();
 
 const BASE_TABS = [
   { key: "clock", label: "Clock In", icon: "clock" },
@@ -51,9 +52,16 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
-  // True while the detail screen has a full-screen surface of its own (camera).
-  // The back-swipe must not fire underneath it and pull the whole screen away.
-  const [detailFullScreen, setDetailFullScreen] = useState(false);
+  const navigationRef = useNavigationContainerRef();
+
+  const openProject = useCallback(
+    (project) => {
+      if (!project) return;
+      setSelectedProject(project);
+      navigationRef.navigate("ProjectDetail");
+    },
+    [navigationRef],
+  );
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -153,7 +161,7 @@ function AppRoot() {
             enabled={activeTab === "clock" && !selectedProject}
             user={session.user}
             painterName={painterName}
-            onViewProject={setSelectedProject}
+            onViewProject={openProject}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
             todayWorkedMs={tracking.todayWorkedMs}
@@ -173,7 +181,7 @@ function AppRoot() {
         >
           <ProjectsScreen
             enabled={activeTab === "projects" && !selectedProject}
-            onSelectProject={setSelectedProject}
+            onSelectProject={openProject}
             activeShift={tracking.activeShift}
             projectTimeTotals={tracking.projectTimeTotals}
             myProjectTimeTotals={tracking.myProjectTimeTotals}
@@ -226,100 +234,62 @@ function AppRoot() {
           />
         ))}
       </View>
-      {selectedProject ? (
-        <SwipeBackOverlay
-          enabled={!detailFullScreen}
-          onBack={() => setSelectedProject(null)}
-        >
-          <ProjectDetailScreen
-            project={selectedProject}
-            onBack={() => setSelectedProject(null)}
-            onFullScreenChange={setDetailFullScreen}
-            entries={tracking.teamEntries}
-            activeShift={tracking.activeShift}
-            activeElapsedMs={tracking.activeElapsedMs}
-            clockOutPending={clockOutPending}
-            trackingNotice={tracking.trackingNotice}
-            projects={trackingProjects}
-            user={session.user}
-            canViewTeamTime={canManageProjects}
-            onClockIn={tracking.clockIn}
-            onClockOut={clockOutWithPending}
-            onSwitchProject={tracking.switchProject}
-            onOpenActiveClock={() => {
-              setSelectedProject(null);
-              setActiveTab("clock");
-            }}
-            onDeleteTimeEntry={tracking.deleteTimeEntry}
-            onUpdateTimeEntry={tracking.updateTimeEntry}
-          />
-        </SwipeBackOverlay>
-      ) : null}
     </View>
+  );
+
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          // UIKit owns the push animation and its interactive pop gesture, so
+          // the edge swipe behaves exactly like every other iOS app.
+          gestureEnabled: true,
+          contentStyle: { backgroundColor: COLORS.white },
+        }}
+      >
+        <Stack.Screen name="Main">{() => mainShell}</Stack.Screen>
+        <Stack.Screen name="ProjectDetail">
+          {({ navigation }) => (
+            <DetailHost onDismissed={() => setSelectedProject(null)}>
+              {selectedProject ? (
+                <ProjectDetailScreen
+                  project={selectedProject}
+                  onBack={() => navigation.goBack()}
+                  entries={tracking.teamEntries}
+                  activeShift={tracking.activeShift}
+                  activeElapsedMs={tracking.activeElapsedMs}
+                  clockOutPending={clockOutPending}
+                  trackingNotice={tracking.trackingNotice}
+                  projects={trackingProjects}
+                  user={session.user}
+                  canViewTeamTime={canManageProjects}
+                  onClockIn={tracking.clockIn}
+                  onClockOut={clockOutWithPending}
+                  onSwitchProject={tracking.switchProject}
+                  onOpenActiveClock={() => {
+                    setActiveTab("clock");
+                    navigation.goBack();
+                  }}
+                  onDeleteTimeEntry={tracking.deleteTimeEntry}
+                  onUpdateTimeEntry={tracking.updateTimeEntry}
+                />
+              ) : null}
+            </DetailHost>
+          )}
+        </Stack.Screen>
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
 
-// Narrow enough to match iOS's own back-swipe zone: a wider strip meant
-// ordinary taps and scrolls near the left edge kept dismissing the screen.
-const SWIPE_EDGE_WIDTH = 26;
-
-function SwipeBackOverlay({ onBack, enabled = true, children }) {
-  const { width: screenWidth } = useWindowDimensions();
-  const translateX = useRef(new Animated.Value(0)).current;
-  const onBackRef = useRef(onBack);
-  onBackRef.current = onBack;
-  // Keep the live screen width in a ref so the (stable) PanResponder always reads
-  // the current value after rotation instead of a stale module-load constant.
-  const screenWidthRef = useRef(screenWidth);
-  screenWidthRef.current = screenWidth;
-  // Read through a ref so the (stable) PanResponder sees the current value.
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      // Only claim the gesture when it starts near the left edge and is clearly
-      // a rightward horizontal drag, so vertical scrolling still works.
-      onMoveShouldSetPanResponder: (_evt, gesture) =>
-        enabledRef.current &&
-        gesture.x0 <= SWIPE_EDGE_WIDTH &&
-        // A deliberate drag, not a stray finger: 14px of travel, and clearly
-        // more horizontal than vertical.
-        gesture.dx > 14 &&
-        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 2,
-      onPanResponderMove: (_evt, gesture) => {
-        translateX.setValue(Math.max(0, gesture.dx));
-      },
-      onPanResponderRelease: (_evt, gesture) => {
-        const screenWidthNow = screenWidthRef.current;
-        // Either drag most of the way across, or flick hard after a real drag.
-        // The old thresholds dismissed on a short, slow nudge.
-        const shouldDismiss =
-          gesture.dx > screenWidthNow * 0.45 || (gesture.vx > 0.8 && gesture.dx > 80);
-        if (shouldDismiss) {
-          Animated.timing(translateX, {
-            toValue: screenWidthNow,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => onBackRef.current?.());
-        } else {
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
-      },
-    }),
-  ).current;
-
-  return (
-    <Animated.View
-      style={[styles.detailOverlay, { transform: [{ translateX }] }]}
-      {...panResponder.panHandlers}
-    >
-      {children}
-    </Animated.View>
-  );
+// Clears the selected project once UIKit has finished popping the screen so the
+// tab screens behind it resume.
+function DetailHost({ onDismissed, children }) {
+  const onDismissedRef = useRef(onDismissed);
+  onDismissedRef.current = onDismissed;
+  useEffect(() => () => onDismissedRef.current?.(), []);
+  return children;
 }
 
 function TabButton({ icon, label, active, onPress }) {
