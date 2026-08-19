@@ -277,12 +277,17 @@ export async function fetchTimeEntryRows() {
   const { data, error } = await supabase
     .from("time_entries")
     .select("*")
+    // Deleting an entry marks it status='deleted' and keeps the row for the
+    // audit trail. Without this filter those hours came back on the next
+    // refresh and kept counting towards every painter's total.
+    .neq("status", "deleted")
     .order("started_at", { ascending: false })
     .limit(500);
 
   if (error) return null;
 
   return (data || []).filter((row) => {
+    if (row?.status === "deleted") return false;
     if (queuedDeletes.ids.has(String(row.id))) return false;
     if (queuedDeletes.clientEntryIds.has(String(row.client_entry_id))) return false;
     return true;
