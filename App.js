@@ -48,6 +48,10 @@ export default function App() {
 }
 
 function AppRoot() {
+  useEffect(() => {
+    console.info("[nav] app booted with navigation build");
+  }, []);
+
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
