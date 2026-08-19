@@ -18,6 +18,17 @@
         "credentialsSource": "remote"
       }
     },
+    "simcheck": {
+      "distribution": "internal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "simulator": true
+      }
+    },
     "pilot": {
       "channel": "pilot",
       "environment": "production",
