@@ -155,21 +155,22 @@ const styles = StyleSheet.create({
   },
   flex: { flex: 1 },
   content: {
-    // Top-aligned, as before. Centering left a large gap above the logo and
-    // pushed the form into the middle of the screen.
+    // Top-aligned. SafeAreaView already clears the status bar, so this padding
+    // is measured from below it, not from the top of the screen.
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: Platform.select({ ios: 72, android: 48, default: 60 }),
+    paddingHorizontal: 28,
+    paddingTop: 32,
     paddingBottom: 32
   },
   logo: {
     alignSelf: "center",
-    // Same size as before on a normal phone; shrinks rather than overflowing on
-    // narrow screens instead of being pinned to 320x180.
+    // An explicit height, not aspectRatio: aspectRatio produced a box far taller
+    // than the artwork, and "contain" then centred the logo in all that dead
+    // space. maxWidth keeps it from overflowing a narrow screen.
     width: "100%",
     maxWidth: 320,
-    aspectRatio: 320 / 180,
-    marginBottom: 28
+    height: 180,
+    marginBottom: 34
   },
   form: {
     width: "100%",
