@@ -2,7 +2,6 @@ import React from "react";
 import {
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   ScrollView,
   Platform,
   Pressable,
@@ -28,9 +27,12 @@ export default function LoginScreen() {
   const passwordRef = React.useRef(null);
   const scrollRef = React.useRef(null);
 
-  // Scroll the form up once the keyboard is actually on screen. Doing this in
-  // onFocus lands short, because the keyboard has no height yet at that point.
+  // iOS handles this natively via automaticallyAdjustKeyboardInsets on the
+  // ScrollView. Android has no equivalent, so scroll the form up by hand once
+  // the keyboard is actually on screen -- at onFocus time it still has no
+  // height, so scrolling there lands short.
   React.useEffect(() => {
+    if (Platform.OS !== "android") return undefined;
     const shown = Keyboard.addListener("keyboardDidShow", () => {
       scrollRef.current?.scrollToEnd({ animated: true });
     });
@@ -75,16 +77,14 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        // Android's manifest already sets adjustResize, so letting
-        // KeyboardAvoidingView also resize would double-adjust the layout.
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
-        {/* Scrollable so the focused field can move above the keyboard rather
-            than sitting behind it, and so short screens are not cut off. */}
-        <ScrollView
+      {/* No KeyboardAvoidingView: on iOS it double-adjusts against
+          automaticallyAdjustKeyboardInsets, and on Android it is a no-op since
+          the manifest already sets adjustResize. */}
+      <ScrollView
           ref={scrollRef}
+          // iOS insets the scroll view by the keyboard and scrolls the focused
+          // field into view itself. Ignored on Android.
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -156,8 +156,7 @@ export default function LoginScreen() {
 
           <Text style={styles.helper}>Employee accounts are created by the office.</Text>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
