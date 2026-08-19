@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   AppState,
   Image,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -12,6 +14,8 @@ import {
   Text,
   View,
 } from "react-native";
+import { Paths } from "expo-file-system";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Camera,
@@ -26,6 +30,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const ACCENT = "#58c7d6";
 const MAX_VIDEO_SECONDS = 60;
+const MAX_USABLE_ZOOM = 10;
+const FOCUS_INDICATOR_MS = 900;
+// Below this movement a touch is a tap (focus) rather than a drag.
+const TAP_SLOP_PX = 12;
 const PREVIEW_START_TIMEOUT_MS = 3000;
 const AUTOMATIC_PREVIEW_RETRIES = 1;
 // Widest side cluster is flash + flip (44 + 8 + 44) plus edge padding; the
@@ -49,8 +57,18 @@ export default function ProjectCameraScreen({
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const cameraRef = useRef(null);
   const captureBusyRef = useRef(false);
   const activeRecorderRef = useRef(null);
+  // Poster frame grabbed when a recording starts, attached when it finishes.
+  const pendingPosterRef = useRef(null);
+  const pinchRef = useRef(null);
+  const zoomRef = useRef(1);
+  const zoomBoundsRef = useRef({ min: 1, max: 1 });
+  const previewReadyRef = useRef(false);
+  const focusAtRef = useRef(() => {});
+  const focusOpacity = useRef(new Animated.Value(0)).current;
+  const focusScale = useRef(new Animated.Value(1)).current;
   const closeAfterRecordingRef = useRef(false);
   const automaticPermissionRequestRef = useRef(false);
   const cameraPermission = useCameraPermission();
@@ -69,12 +87,18 @@ export default function ProjectCameraScreen({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [sessionCaptures, setSessionCaptures] = useState([]);
   const [error, setError] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [zoomVisible, setZoomVisible] = useState(false);
+  const [focusPoint, setFocusPoint] = useState(null);
+  const [viewerItem, setViewerItem] = useState(null);
 
   const backDevice = useCameraDevice("back");
   const frontDevice = useCameraDevice("front");
   const device = (facing === "front" ? frontDevice : backDevice) || backDevice || frontDevice;
   const canFlip = Boolean(backDevice && frontDevice);
   const canUseFlash = mode === "video" ? Boolean(device?.hasTorch) : Boolean(device?.hasFlash);
+  const minZoom = device?.minZoom ?? 1;
+  const maxZoom = Math.min(device?.maxZoom ?? 1, MAX_USABLE_ZOOM);
 
   // Both outputs stay attached to the Camera at all times so toggling the
   // Photo/Video UI mode never reconfigures the native camera session.
@@ -154,6 +178,10 @@ export default function ProjectCameraScreen({
     setMode("photo");
     setRecording(false);
     setSessionCaptures([]);
+    setZoom(1);
+    setFocusPoint(null);
+    setViewerItem(null);
+    pendingPosterRef.current = null;
     closeAfterRecordingRef.current = false;
     if (activeRecorderRef.current) {
       activeRecorderRef.current.stopRecording().catch(() => {});
@@ -167,6 +195,98 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
   }, [cameraActive]);
 
+  const showFocusIndicator = (x, y) => {
+    setFocusPoint({ x, y });
+    focusOpacity.setValue(1);
+    focusScale.setValue(1.35);
+    Animated.parallel([
+      Animated.timing(focusScale, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(focusOpacity, {
+        toValue: 0,
+        delay: FOCUS_INDICATOR_MS,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) setFocusPoint(null);
+    });
+  };
+
+  const focusAt = (x, y) => {
+    if (!previewReadyRef.current) return;
+    showFocusIndicator(x, y);
+    // A focus request can fail while the session reconfigures; the indicator
+    // still gives the tap feedback the stock camera app provides.
+    cameraRef.current?.focusTo({ x, y }).catch(() => {});
+  };
+
+  const touchDistance = (touches) => {
+    const [a, b] = touches;
+    return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+  };
+
+  // Pinch-to-zoom and tap-to-focus are handled here rather than through
+  // VisionCamera's native gesture recognizers: the native ones attach to the
+  // preview view where React Native's touch handler swallows them, and they
+  // give no on-screen feedback.
+  // Created once: a responder rebuilt mid-pinch would drop the active gesture,
+  // so live values are read through refs instead of closed-over state.
+  const previewGestures = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2,
+      onPanResponderGrant: (event) => {
+        const touches = event.nativeEvent.touches;
+        pinchRef.current =
+          touches.length >= 2
+            ? { startDistance: touchDistance(touches), startZoom: zoomRef.current }
+            : null;
+      },
+      onPanResponderMove: (event) => {
+        const touches = event.nativeEvent.touches;
+        if (touches.length < 2) return;
+        if (!pinchRef.current) {
+          pinchRef.current = {
+            startDistance: touchDistance(touches),
+            startZoom: zoomRef.current,
+          };
+          return;
+        }
+        const { startDistance, startZoom } = pinchRef.current;
+        if (!startDistance) return;
+        const { min, max } = zoomBoundsRef.current;
+        const scaled = (touchDistance(touches) / startDistance) * startZoom;
+        setZoom(Math.min(Math.max(scaled, min), max));
+        setZoomVisible(true);
+      },
+      onPanResponderRelease: (event, gesture) => {
+        const wasPinch = Boolean(pinchRef.current);
+        pinchRef.current = null;
+        if (wasPinch) {
+          setZoomVisible(false);
+          return;
+        }
+        if (Math.abs(gesture.dx) > TAP_SLOP_PX || Math.abs(gesture.dy) > TAP_SLOP_PX) return;
+        const { locationX, locationY } = event.nativeEvent;
+        focusAtRef.current(locationX, locationY);
+      },
+      onPanResponderTerminate: () => {
+        pinchRef.current = null;
+        setZoomVisible(false);
+      },
+    }),
+  ).current;
+
+  zoomRef.current = zoom;
+  zoomBoundsRef.current = { min: minZoom, max: maxZoom };
+  previewReadyRef.current = previewReady;
+  focusAtRef.current = focusAt;
+
   const retryPreview = () => {
     setError("");
     setCameraReady(false);
@@ -176,8 +296,24 @@ export default function ProjectCameraScreen({
     setPreviewRetryKey((key) => key + 1);
   };
 
-  const rememberCapture = (uri, kind) => {
-    setSessionCaptures((current) => [{ uri, kind }, ...current]);
+  const rememberCapture = (uri, kind, posterUri) => {
+    setSessionCaptures((current) => [{ uri, kind, posterUri }, ...current]);
+  };
+
+  // Videos have no thumbnail of their own, so grab the live preview frame at
+  // the moment recording starts and use it as the filmstrip poster.
+  const capturePosterFrame = async () => {
+    try {
+      const snapshot = await cameraRef.current?.takeSnapshot();
+      if (!snapshot) return null;
+      const directory = Paths.cache.uri.replace(/^file:\/\//, "").replace(/\/?$/, "/");
+      const path = `${directory}poster-${Date.now()}.jpg`;
+      await snapshot.saveToFileAsync(path, "jpg", 70);
+      return toFileUri(path);
+    } catch (posterError) {
+      console.warn("[project-camera] Could not capture poster frame", posterError);
+      return null;
+    }
   };
 
   const flipFacing = () => {
@@ -186,6 +322,8 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
     setPreviewFailed(false);
     setPreviewRetryCount(0);
+    setZoom(1);
+    setFocusPoint(null);
     setFacing((current) => (current === "back" ? "front" : "back"));
   };
 
@@ -270,7 +408,8 @@ export default function ProjectCameraScreen({
       await recorder.startRecording(
         (filePath) => {
           const uri = toFileUri(filePath);
-          rememberCapture(uri, "video");
+          rememberCapture(uri, "video", pendingPosterRef.current);
+          pendingPosterRef.current = null;
           onCapture?.({
             uri,
             mimeType: Platform.OS === "ios" ? "video/quicktime" : "video/mp4",
@@ -288,6 +427,9 @@ export default function ProjectCameraScreen({
       );
       activeRecorderRef.current = recorder;
       setRecording(true);
+      capturePosterFrame().then((posterUri) => {
+        pendingPosterRef.current = posterUri;
+      });
     } catch (nextError) {
       setError(nextError?.message || "The video could not be recorded.");
       activeRecorderRef.current = null;
@@ -320,6 +462,7 @@ export default function ProjectCameraScreen({
       return {
         key: capture.uri,
         uri: capture.uri,
+        posterUri: capture.posterUri,
         kind: capture.kind,
         status: queueItem ? queueItem.status : "queued",
         attempts: queueItem?.attempts || 0,
@@ -384,16 +527,16 @@ export default function ProjectCameraScreen({
         {visible && cameraPermission.hasPermission && device && cameraViewport ? (
           <Camera
             key={`${device.id}-${facing}-${previewRetryKey}`}
+            ref={cameraRef}
             style={[styles.cameraPreview, cameraViewport]}
             isActive={cameraActive}
+            zoom={zoom}
             device={device}
             outputs={outputs}
             resizeMode="cover"
             implementationMode={Platform.OS === "android" ? "compatible" : undefined}
             mirrorMode={facing === "front" ? "on" : "off"}
             torchMode={mode === "video" && flash === "on" && device.hasTorch ? "on" : "off"}
-            enableNativeZoomGesture
-            enableNativeTapToFocusGesture
             onStarted={() => {
               console.info("[project-camera] Capture session started", { device: device.id });
               setCameraReady(true);
@@ -414,6 +557,31 @@ export default function ProjectCameraScreen({
               setError(cameraError?.message || "Camera preview unavailable.");
             }}
           />
+        ) : null}
+
+        {previewReady ? (
+          <View style={styles.gestureLayer} {...previewGestures.panHandlers}>
+            {focusPoint ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.focusSquare,
+                  {
+                    left: focusPoint.x - 38,
+                    top: focusPoint.y - 38,
+                    opacity: focusOpacity,
+                    transform: [{ scale: focusScale }],
+                  },
+                ]}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {zoomVisible || zoom > minZoom + 0.05 ? (
+          <View pointerEvents="none" style={styles.zoomBadge}>
+            <Text style={styles.zoomBadgeText}>{zoom.toFixed(1)}×</Text>
+          </View>
         ) : null}
 
         {!permissionMissing && device && !previewReady ? (
@@ -530,18 +698,27 @@ export default function ProjectCameraScreen({
               {filmstripItems.map((item) => (
                 <Pressable
                   key={item.key}
-                  accessibilityRole={item.status === "failed" ? "button" : "image"}
-                  accessibilityLabel={`${item.kind === "video" ? "Video" : "Photo"} capture, ${describeStatus(item)}`}
-                  disabled={item.status !== "failed" || !item.localId}
-                  onPress={() => onRetryUpload?.(item.localId)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${item.kind === "video" ? "video" : "photo"} capture, ${describeStatus(item)}`}
+                  disabled={!item.uri}
+                  onPress={() => setViewerItem(item)}
                   style={({ pressed }) => [styles.sessionItem, pressed && styles.sessionItemPressed]}
                 >
-                  {item.kind === "video" || !item.uri ? (
-                    <View style={[styles.sessionThumb, styles.videoThumb]}>
-                      <Ionicons name="videocam" size={20} color="#fff" />
+                  {item.kind === "video" ? (
+                    <View style={styles.sessionThumb}>
+                      {item.posterUri ? (
+                        <Image source={{ uri: item.posterUri }} style={styles.sessionThumb} />
+                      ) : (
+                        <View style={[styles.sessionThumb, styles.videoThumb]} />
+                      )}
+                      <View style={styles.videoBadge}>
+                        <Ionicons name="play" size={11} color="#fff" />
+                      </View>
                     </View>
-                  ) : (
+                  ) : item.uri ? (
                     <Image source={{ uri: item.uri }} style={styles.sessionThumb} />
+                  ) : (
+                    <View style={[styles.sessionThumb, styles.videoThumb]} />
                   )}
                   {item.status === "failed" ? (
                     <View style={styles.sessionFailedOverlay}>
@@ -642,14 +819,144 @@ export default function ProjectCameraScreen({
             </View>
           </View>
         </View>
+
+        {viewerItem ? (
+          <CaptureViewer
+            item={viewerItem}
+            insets={insets}
+            statusLabel={describeStatus(viewerItem)}
+            onRetryUpload={onRetryUpload}
+            onClose={() => setViewerItem(null)}
+          />
+        ) : null}
       </View>
     </Modal>
+  );
+}
+
+// Rendered only while a capture is open so the video player is created and torn
+// down with the viewer rather than living for the whole camera session.
+function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
+  const isVideo = item.kind === "video";
+  const player = useVideoPlayer(isVideo ? item.uri : null, (instance) => {
+    if (!instance) return;
+    instance.loop = true;
+    instance.play();
+  });
+
+  return (
+    <View style={[styles.viewerLayer, { paddingTop: Math.max(insets.top, 14) }]}>
+      {isVideo ? (
+        <VideoView
+          player={player}
+          style={styles.viewerMedia}
+          contentFit="contain"
+          nativeControls
+        />
+      ) : (
+        <Image source={{ uri: item.uri }} style={styles.viewerMedia} resizeMode="contain" />
+      )}
+
+      <View style={[styles.viewerBar, { paddingTop: Math.max(insets.top, 14) }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close preview"
+          style={({ pressed }) => [styles.roundButton, pressed && styles.roundButtonPressed]}
+          onPress={onClose}
+          hitSlop={10}
+        >
+          <Ionicons name="close" size={26} color="#fff" />
+        </Pressable>
+        <Text style={styles.viewerStatus} numberOfLines={1}>{statusLabel}</Text>
+      </View>
+
+      {item.status === "failed" && item.localId ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry upload"
+          style={[styles.viewerRetry, { bottom: Math.max(insets.bottom, 16) + 16 }]}
+          onPress={() => {
+            onRetryUpload?.(item.localId);
+            onClose();
+          }}
+        >
+          <Ionicons name="refresh" size={18} color="#0b2025" />
+          <Text style={styles.previewRetryButtonText}>Retry upload</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#050708" },
   cameraPreview: { position: "absolute", top: 0, left: 0 },
+  gestureLayer: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
+  focusSquare: {
+    position: "absolute",
+    width: 76,
+    height: 76,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: "#ffd479",
+    backgroundColor: "transparent",
+  },
+  zoomBadge: {
+    position: "absolute",
+    alignSelf: "center",
+    bottom: 210,
+    zIndex: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: "rgba(8,15,18,0.78)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
+  },
+  zoomBadgeText: { color: "#fff", fontSize: 13, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  videoBadge: {
+    position: "absolute",
+    left: 3,
+    bottom: 3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(8,15,18,0.72)",
+  },
+  viewerLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+    backgroundColor: "#05080a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerMedia: { width: "100%", height: "100%" },
+  viewerBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    backgroundColor: "rgba(4,8,10,0.5)",
+  },
+  viewerStatus: { flex: 1, color: "rgba(255,255,255,0.82)", fontSize: 13, fontWeight: "700" },
+  viewerRetry: {
+    position: "absolute",
+    alignSelf: "center",
+    minHeight: 44,
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: ACCENT,
+  },
   previewStatusLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
