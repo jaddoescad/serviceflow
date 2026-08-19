@@ -13,7 +13,6 @@ import {
   Image,
   Linking,
   Modal,
-  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -40,12 +39,9 @@ const MAX_VIDEO_SECONDS = 60;
 // Raw zoom is a device-specific factor, not a display factor: on a triple-lens
 // iPhone raw 1.0 is the ultra-wide (shown as 0.5x). Bounds are therefore taken
 // from the running controller, and the badge shows displayableZoomFactor.
-const MAX_ZOOM_MULTIPLE = 15;
-// Pinch distance maps to zoom exponentially so one gesture covers useful range.
-const PINCH_GAIN = 2.5;
+// Offered zoom steps, as multiples of the device's default (1x) lens.
+const ZOOM_STEPS = [0.5, 1, 2, 3];
 const FOCUS_INDICATOR_MS = 900;
-// Below this movement a touch is a tap (focus) rather than a drag.
-const TAP_SLOP_PX = 12;
 const PREVIEW_START_TIMEOUT_MS = 3000;
 const AUTOMATIC_PREVIEW_RETRIES = 1;
 // Widest side cluster is flash + flip (44 + 8 + 44) plus edge padding; the
@@ -56,35 +52,6 @@ const NAV_SIDE_RESERVED_WIDTH = 112;
 const toFileUri = (path) => (String(path).startsWith("file://") ? path : `file://${path}`);
 
 const IMPLEMENTATION_MODE = Platform.OS === "android" ? "compatible" : undefined;
-
-// Holds its own state and is driven imperatively, so updating the zoom readout
-// during a pinch re-renders this badge alone rather than the camera screen.
-const ZoomBadge = React.forwardRef(function ZoomBadge(_props, ref) {
-  const [badge, setBadge] = useState(null);
-  const hideTimerRef = useRef(null);
-  useEffect(() => () => clearTimeout(hideTimerRef.current), []);
-  useImperativeHandle(
-    ref,
-    () => ({
-      update: (value) => {
-        setBadge(value);
-        clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = setTimeout(() => setBadge(null), 1200);
-      },
-      hide: () => {
-        clearTimeout(hideTimerRef.current);
-        setBadge(null);
-      },
-    }),
-    [],
-  );
-  if (badge == null) return null;
-  return (
-    <View pointerEvents="none" style={styles.zoomBadge}>
-      <Text style={styles.zoomBadgeText}>{badge.toFixed(1)}×</Text>
-    </View>
-  );
-});
 
 const formatClock = (totalSeconds) => {
   const clamped = Math.max(0, Math.min(totalSeconds, MAX_VIDEO_SECONDS));
@@ -105,19 +72,9 @@ export default function ProjectCameraScreen({
   const activeRecorderRef = useRef(null);
   // Poster frame grabbed when a recording starts, attached when it finishes.
   const pendingPosterRef = useRef(null);
-  const pinchRef = useRef(null);
   const controllerRef = useRef(null);
-  const zoomRef = useRef(1);
-  const zoomBadgeAtRef = useRef(0);
-  const zoomInFlightRef = useRef(false);
-  const queuedZoomRef = useRef(null);
-  const applyZoomRef = useRef(() => {});
-  const publishZoomBadgeRef = useRef(() => {});
-  const zoomBadgeRef = useRef(null);
   const deviceIdRef = useRef(null);
-  const zoomBoundsRef = useRef({ min: 1, max: 1 });
-  const previewReadyRef = useRef(false);
-  const focusAtRef = useRef(() => {});
+  const zoomBoundsRef = useRef({ min: 1, max: 1, neutral: 1 });
   const focusOpacity = useRef(new Animated.Value(0)).current;
   const focusScale = useRef(new Animated.Value(1)).current;
   const closeAfterRecordingRef = useRef(false);
@@ -140,6 +97,7 @@ export default function ProjectCameraScreen({
   const [error, setError] = useState("");
   const [focusPoint, setFocusPoint] = useState(null);
   const [viewerItem, setViewerItem] = useState(null);
+  const [zoomMultiple, setZoomMultiple] = useState(1);
 
   const backDevice = useCameraDevice("back");
   const frontDevice = useCameraDevice("front");
@@ -241,39 +199,19 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
   }, [cameraActive]);
 
-  // setZoom is async; firing one per touch frame builds a backlog that makes
-  // zoom trail the fingers. Keep at most one in flight and coalesce the rest.
-  const applyZoom = (value) => {
+  // Zoom is a discrete choice rather than a continuous gesture: VisionCamera v5
+  // ships no reference pinch implementation, and driving setZoom from JS per
+  // touch frame was never smooth. Each press is a single native call.
+  const selectZoom = (multiple) => {
     const controller = controllerRef.current;
     if (!controller) return;
-    if (zoomInFlightRef.current) {
-      queuedZoomRef.current = value;
-      return;
-    }
-    zoomInFlightRef.current = true;
-    Promise.resolve(controller.setZoom(value))
-      .catch(() => {})
-      .finally(() => {
-        zoomInFlightRef.current = false;
-        const queued = queuedZoomRef.current;
-        queuedZoomRef.current = null;
-        if (queued != null) applyZoomRef.current(queued);
-      });
+    const { min, max, neutral } = zoomBoundsRef.current;
+    const raw = Math.min(Math.max(neutral * multiple, min), max);
+    setZoomMultiple(multiple);
+    Promise.resolve(controller.setZoom(raw)).catch((zoomError) => {
+      console.warn("[project-camera] Could not set zoom", zoomError);
+    });
   };
-  applyZoomRef.current = applyZoom;
-
-  // The badge owns its own state so a pinch never re-renders this screen — and
-  // therefore never re-renders the native camera view underneath it.
-  const publishZoomBadge = (force) => {
-    const now = Date.now();
-    if (!force && now - zoomBadgeAtRef.current < 90) return;
-    zoomBadgeAtRef.current = now;
-    const displayable = controllerRef.current?.displayableZoomFactor;
-    zoomBadgeRef.current?.update(
-      typeof displayable === "number" ? displayable : zoomRef.current,
-    );
-  };
-  publishZoomBadgeRef.current = publishZoomBadge;
 
   const showFocusIndicator = (x, y) => {
     setFocusPoint({ x, y });
@@ -296,84 +234,27 @@ export default function ProjectCameraScreen({
     });
   };
 
-  const focusAt = (x, y) => {
-    if (!previewReadyRef.current) return;
-    showFocusIndicator(x, y);
+  // Focus options match VisionCamera's own example app.
+  const handlePreviewTouch = (event) => {
+    const { locationX, locationY } = event.nativeEvent;
+    showFocusIndicator(locationX, locationY);
     // A focus request can fail while the session reconfigures; the indicator
     // still gives the tap feedback the stock camera app provides.
-    cameraRef.current?.focusTo({ x, y }).catch(() => {});
-  };
-
-  const touchDistance = (touches) => {
-    const [a, b] = touches;
-    return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+    cameraRef.current
+      ?.focusTo(
+        { x: locationX, y: locationY },
+        { adaptiveness: "continuous", autoResetAfter: 3, responsiveness: "snappy" },
+      )
+      .catch(() => {});
   };
 
   // Pinch-to-zoom and tap-to-focus are handled here rather than through
   // VisionCamera's native gesture recognizers: the native ones attach to the
   // preview view where React Native's touch handler swallows them, and they
   // give no on-screen feedback.
-  // Created once: a responder rebuilt mid-pinch would drop the active gesture,
-  // so live values are read through refs instead of closed-over state.
-  const previewGestures = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2,
-      onPanResponderGrant: (event) => {
-        const touches = event.nativeEvent.touches;
-        pinchRef.current =
-          touches.length >= 2
-            ? { startDistance: touchDistance(touches), startZoom: zoomRef.current }
-            : null;
-      },
-      onPanResponderMove: (event) => {
-        const touches = event.nativeEvent.touches;
-        if (touches.length < 2) return;
-        if (!pinchRef.current) {
-          pinchRef.current = {
-            startDistance: touchDistance(touches),
-            startZoom: zoomRef.current,
-          };
-          return;
-        }
-        const { startDistance, startZoom } = pinchRef.current;
-        if (!startDistance) return;
-        const { min, max } = zoomBoundsRef.current;
-        const ratio = touchDistance(touches) / startDistance;
-        const scaled = startZoom * Math.pow(ratio, PINCH_GAIN);
-        const next = Math.min(Math.max(scaled, min), max);
-        if (Math.abs(next - zoomRef.current) < 0.005) return;
-        zoomRef.current = next;
-        // Written straight to the native controller: routing zoom through React
-        // state re-rendered the screen on every pinch frame.
-        applyZoomRef.current(next);
-        publishZoomBadgeRef.current(false);
-      },
-      onPanResponderRelease: (event, gesture) => {
-        const wasPinch = Boolean(pinchRef.current);
-        pinchRef.current = null;
-        if (wasPinch) {
-          publishZoomBadgeRef.current(true);
-          return;
-        }
-        if (Math.abs(gesture.dx) > TAP_SLOP_PX || Math.abs(gesture.dy) > TAP_SLOP_PX) return;
-        const { locationX, locationY } = event.nativeEvent;
-        focusAtRef.current(locationX, locationY);
-      },
-      onPanResponderTerminate: () => {
-        pinchRef.current = null;
-        zoomBadgeRef.current?.hide();
-      },
-    }),
-  ).current;
-
-  previewReadyRef.current = previewReady;
-  focusAtRef.current = focusAt;
-
   // Every <Camera> prop below is kept referentially stable. Inline arrows and
   // array literals made React.memo useless, so any state change on this screen
-  // re-rendered the native camera view — which is what made zooming stutter.
+  // re-rendered the native camera view.
   deviceIdRef.current = device?.id ?? null;
 
   const cameraStyle = useMemo(
@@ -385,17 +266,18 @@ export default function ProjectCameraScreen({
     console.info("[project-camera] Capture session started", {
       device: deviceIdRef.current,
     });
-    // The controller only exists once the session is running; the pinch handler
-    // writes zoom straight to it. Its current zoom is the device's default lens
-    // (raw 2.0 on a triple-lens iPhone), not a raw 1.0 ultra-wide.
+    // The controller exists only once the session runs. Its current zoom is the
+    // device's default lens, which is 1x to the user: on a triple-lens iPhone
+    // that is raw 2.0, and raw 1.0 would be the 0.5x ultra-wide.
     const controller = cameraRef.current?.controller ?? null;
     controllerRef.current = controller;
-    const startZoom = controller?.zoom ?? 1;
-    zoomRef.current = startZoom;
+    const neutral = controller?.zoom ?? 1;
     zoomBoundsRef.current = {
-      min: controller?.minZoom ?? 1,
-      max: Math.min(controller?.maxZoom ?? startZoom, startZoom * MAX_ZOOM_MULTIPLE),
+      neutral,
+      min: controller?.minZoom ?? neutral,
+      max: controller?.maxZoom ?? neutral,
     };
+    setZoomMultiple(1);
     setCameraReady(true);
   }, []);
 
@@ -679,7 +561,7 @@ export default function ProjectCameraScreen({
         ) : null}
 
         {previewReady ? (
-          <View style={styles.gestureLayer} {...previewGestures.panHandlers}>
+          <View style={styles.gestureLayer} onTouchEnd={handlePreviewTouch}>
             {focusPoint ? (
               <Animated.View
                 pointerEvents="none"
@@ -696,8 +578,6 @@ export default function ProjectCameraScreen({
             ) : null}
           </View>
         ) : null}
-
-        <ZoomBadge ref={zoomBadgeRef} />
 
         {!permissionMissing && device && !previewReady ? (
           <View pointerEvents="box-none" style={styles.previewStatusLayer}>
@@ -866,6 +746,37 @@ export default function ProjectCameraScreen({
             </View>
           ) : null}
 
+          {previewReady ? (
+            <View style={styles.zoomRow}>
+              {ZOOM_STEPS.filter((step) => {
+                const { min, max, neutral } = zoomBoundsRef.current;
+                const raw = neutral * step;
+                return step === 1 || (raw >= min && raw <= max);
+              }).map((step) => (
+                <Pressable
+                  key={step}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Zoom ${step}x`}
+                  accessibilityState={{ selected: zoomMultiple === step }}
+                  onPress={() => selectZoom(step)}
+                  style={[
+                    styles.zoomStep,
+                    zoomMultiple === step && styles.zoomStepActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.zoomStepText,
+                      zoomMultiple === step && styles.zoomStepTextActive,
+                    ]}
+                  >
+                    {step === 1 ? "1×" : `${step}×`}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
           <View style={styles.modeSwitch}>
             <Pressable
               accessibilityRole="button"
@@ -1016,19 +927,31 @@ const styles = StyleSheet.create({
     borderColor: "#ffd479",
     backgroundColor: "transparent",
   },
-  zoomBadge: {
-    position: "absolute",
+  zoomRow: {
     alignSelf: "center",
-    bottom: 210,
-    zIndex: 3,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: "rgba(8,15,18,0.78)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.24)",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 14,
   },
-  zoomBadgeText: { color: "#fff", fontSize: 13, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  zoomStep: {
+    minWidth: 46,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(18,26,30,0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+  },
+  zoomStepActive: { backgroundColor: "#fff", borderColor: "#fff" },
+  zoomStepText: {
+    color: "rgba(255,255,255,0.86)",
+    fontSize: 13,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  zoomStepTextActive: { color: "#0b1518" },
   videoBadge: {
     position: "absolute",
     left: 3,
