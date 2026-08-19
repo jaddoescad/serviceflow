@@ -38,11 +38,6 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.ottawapainters.app",
-      config: googleMapsApiKeyIos
-        ? {
-            googleMapsApiKey: googleMapsApiKeyIos
-          }
-        : undefined,
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         UIBackgroundModes: ["location", "fetch"],
