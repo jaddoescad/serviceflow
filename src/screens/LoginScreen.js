@@ -2,6 +2,7 @@ import React from "react";
 import {
   Image,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
   TextInput,
   View
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme";
 
@@ -59,11 +61,22 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.screen}
-    >
-      <View style={styles.content}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView
+        // Android's manifest already sets adjustResize, so letting
+        // KeyboardAvoidingView also resize would double-adjust the layout.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.flex}
+      >
+        {/* Scrollable so the focused field can move above the keyboard rather
+            than sitting behind it, and so short screens are not cut off. */}
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
         <Image source={logo} resizeMode="contain" style={styles.logo} />
 
         <View style={styles.form}>
@@ -128,9 +141,10 @@ export default function LoginScreen() {
           </Pressable>
 
           <Text style={styles.helper}>Employee accounts are created by the office.</Text>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -139,25 +153,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface
   },
+  flex: { flex: 1 },
   content: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: Platform.select({ ios: 92, android: 62, default: 76 })
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 32
   },
   logo: {
     alignSelf: "center",
-    height: 180,
-    marginBottom: 34,
-    width: 320
+    // Scales with the screen instead of a fixed 320x180, which looked oversized
+    // on smaller and denser Android displays.
+    width: "62%",
+    maxWidth: 260,
+    aspectRatio: 320 / 180,
+    marginBottom: 28
   },
   form: {
-    width: "100%"
+    width: "100%",
+    // Keeps the form a sensible width on tablets and large phones.
+    maxWidth: 420,
+    alignSelf: "center"
   },
   label: {
     color: colors.brandDeep,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "700",
-    marginBottom: 10
+    marginBottom: 8
   },
   input: {
     backgroundColor: colors.surface,
@@ -165,11 +187,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     color: colors.ink,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "500",
-    height: 58,
-    marginBottom: 24,
-    paddingHorizontal: 18
+    height: 52,
+    marginBottom: 18,
+    paddingHorizontal: 16
   },
   passwordRow: {
     alignItems: "center",
@@ -178,13 +200,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     flexDirection: "row",
-    height: 58,
-    paddingLeft: 18
+    height: 52,
+    paddingLeft: 16
   },
   passwordInput: {
     color: colors.ink,
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "500",
     height: "100%"
   },
@@ -212,7 +234,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.brand,
     borderRadius: 10,
-    height: 58,
+    height: 52,
     justifyContent: "center"
   },
   buttonDisabled: {
@@ -224,7 +246,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "800"
   },
   helper: {
