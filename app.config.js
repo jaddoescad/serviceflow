@@ -25,7 +25,7 @@ module.exports = {
   expo: {
     name: "ServiceFlow",
     slug: "serviceflow",
-    version: "1.4.0",
+    version: "1.5.0",
     orientation: "portrait",
     icon: "./assets/serviceflow-icon.png",
     userInterfaceStyle: "light",
@@ -75,7 +75,7 @@ module.exports = {
     },
     // Bare native projects require a literal OTA runtime version. Increment
     // this whenever a release changes native code or native dependencies.
-    runtimeVersion: "1.4.0",
+    runtimeVersion: "1.5.0",
     updates: {
       url: `https://u.expo.dev/${easProjectId}`,
       fallbackToCacheTimeout: 0
