@@ -1895,8 +1895,10 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
 
   const dismissResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 2,
+      // Capture phase: the pages scroll horizontally, and the scroll view claims
+      // the touch first otherwise, so a downward drag never reached us.
+      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
       onPanResponderMove: (_event, gesture) => {
         dismissY.setValue(Math.max(0, gesture.dy));
       },
@@ -1935,7 +1937,28 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
       onRequestClose={closeViewer}
     >
       <Animated.View
-        style={[styles.viewerBackdrop, { transform: [{ translateY: dismissY }] }]}
+        style={[
+          styles.viewerBackdrop,
+          {
+            // The media follows the finger, shrinking and fading as it goes,
+            // the way the iOS photo viewer does.
+            opacity: dismissY.interpolate({
+              inputRange: [0, 320],
+              outputRange: [1, 0.25],
+              extrapolate: "clamp",
+            }),
+            transform: [
+              { translateY: dismissY },
+              {
+                scale: dismissY.interpolate({
+                  inputRange: [0, 320],
+                  outputRange: [1, 0.88],
+                  extrapolate: "clamp",
+                }),
+              },
+            ],
+          },
+        ]}
         {...dismissResponder.panHandlers}
       >
         <StatusBar style="light" backgroundColor="#050607" />

@@ -868,8 +868,9 @@ function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
   onCloseRef.current = onClose;
   const dismissResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 2,
+      // Capture phase so a downward drag wins over anything scrollable beneath.
+      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
       onPanResponderMove: (_event, gesture) => dismissY.setValue(Math.max(0, gesture.dy)),
       onPanResponderRelease: (_event, gesture) => {
         if (gesture.dy > 140 || gesture.vy > 0.8) {
@@ -894,7 +895,24 @@ function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
     <Animated.View
       style={[
         styles.viewerLayer,
-        { paddingTop: Math.max(insets.top, 14), transform: [{ translateY: dismissY }] },
+        {
+          paddingTop: Math.max(insets.top, 14),
+          opacity: dismissY.interpolate({
+            inputRange: [0, 320],
+            outputRange: [1, 0.25],
+            extrapolate: "clamp",
+          }),
+          transform: [
+            { translateY: dismissY },
+            {
+              scale: dismissY.interpolate({
+                inputRange: [0, 320],
+                outputRange: [1, 0.88],
+                extrapolate: "clamp",
+              }),
+            },
+          ],
+        },
       ]}
       {...dismissResponder.panHandlers}
     >
