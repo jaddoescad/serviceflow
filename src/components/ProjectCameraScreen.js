@@ -94,6 +94,8 @@ export default function ProjectCameraScreen({
   const [sessionCaptures, setSessionCaptures] = useState([]);
   const [error, setError] = useState("");
   const [viewerItem, setViewerItem] = useState(null);
+  // True between tapping stop and the recorded file landing.
+  const [finalizing, setFinalizing] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(1);
 
   // Ask for the virtual multi-lens device so the ultra-wide is part of the same
@@ -186,6 +188,7 @@ export default function ProjectCameraScreen({
     setError("");
     setMode("photo");
     setRecording(false);
+    setFinalizing(false);
     stopRequestedRef.current = false;
     setSessionCaptures([]);
     setViewerItem(null);
@@ -414,6 +417,7 @@ export default function ProjectCameraScreen({
   const finishRecording = () => {
     activeRecorderRef.current = null;
     stopRequestedRef.current = false;
+    setFinalizing(false);
     setRecording(false);
     if (closeAfterRecordingRef.current) {
       closeAfterRecordingRef.current = false;
@@ -430,10 +434,17 @@ export default function ProjectCameraScreen({
         stopRequestedRef.current = true;
         return;
       }
-      activeRecorderRef.current.stopRecording().catch(() => {});
+      // The file is finalised asynchronously and that takes a moment on a long
+      // clip. Leave the recording state now so the shutter and timer respond at
+      // once, and show that the video is being saved.
+      setRecording(false);
+      setFinalizing(true);
+      activeRecorderRef.current.stopRecording().catch(() => {
+        setFinalizing(false);
+      });
       return;
     }
-    if (captureBusyRef.current) return;
+    if (captureBusyRef.current || finalizing) return;
     if (!(await ensureMicrophonePermission())) {
       setError("Microphone access is required to record video with sound. Enable it in Settings.");
       return;
@@ -754,6 +765,13 @@ export default function ProjectCameraScreen({
                 </Pressable>
               ))}
             </ScrollView>
+          ) : null}
+
+          {finalizing ? (
+            <View style={styles.savingPill}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.recordingTime}>Saving…</Text>
+            </View>
           ) : null}
 
           {recording ? (
@@ -1197,6 +1215,17 @@ const styles = StyleSheet.create({
   shutterDisabled: { opacity: 0.45 },
   captureCounter: { minWidth: 38, height: 38, paddingHorizontal: 10, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(43,132,150,0.92)", borderWidth: 1, borderColor: "rgba(255,255,255,0.6)" },
   captureCounterText: { color: "#fff", fontSize: 14, fontWeight: "900" },
+  savingPill: {
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: "rgba(8,15,18,0.82)",
+    marginBottom: 12,
+  },
   recordingPill: {
     alignSelf: "center",
     flexDirection: "row",
