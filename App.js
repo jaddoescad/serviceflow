@@ -53,12 +53,26 @@ function AppRoot() {
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
   const navigationRef = useNavigationContainerRef();
+  // The navigation object handed to the Main screen. Preferred over the
+  // container ref, which only works once the container reports ready.
+  const mainNavigationRef = useRef(null);
 
   const openProject = useCallback(
     (project) => {
       if (!project) return;
       setSelectedProject(project);
-      navigationRef.navigate("ProjectDetail");
+      const navigator = mainNavigationRef.current ?? navigationRef;
+      console.info("[nav] openProject", {
+        project: project?.name,
+        viaScreen: Boolean(mainNavigationRef.current),
+        containerReady: navigationRef?.isReady?.() ?? null,
+      });
+      try {
+        navigator.navigate("ProjectDetail");
+        console.info("[nav] navigate dispatched");
+      } catch (navError) {
+        console.error("[nav] navigate threw", navError?.message);
+      }
     },
     [navigationRef],
   );
@@ -248,10 +262,22 @@ function AppRoot() {
           contentStyle: { backgroundColor: COLORS.white },
         }}
       >
-        <Stack.Screen name="Main">{() => mainShell}</Stack.Screen>
+        <Stack.Screen name="Main">
+          {({ navigation }) => {
+            mainNavigationRef.current = navigation;
+            return mainShell;
+          }}
+        </Stack.Screen>
         <Stack.Screen name="ProjectDetail">
           {({ navigation }) => (
-            <DetailHost onDismissed={() => setSelectedProject(null)}>
+            <DetailHost
+              onDismissed={() => setSelectedProject(null)}
+              onMounted={() =>
+                console.info("[nav] ProjectDetail mounted", {
+                  hasProject: Boolean(selectedProject),
+                })
+              }
+            >
               {selectedProject ? (
                 <ProjectDetailScreen
                   project={selectedProject}
@@ -285,10 +311,15 @@ function AppRoot() {
 
 // Clears the selected project once UIKit has finished popping the screen so the
 // tab screens behind it resume.
-function DetailHost({ onDismissed, children }) {
+function DetailHost({ onDismissed, onMounted, children }) {
   const onDismissedRef = useRef(onDismissed);
   onDismissedRef.current = onDismissed;
-  useEffect(() => () => onDismissedRef.current?.(), []);
+  const onMountedRef = useRef(onMounted);
+  onMountedRef.current = onMounted;
+  useEffect(() => {
+    onMountedRef.current?.();
+    return () => onDismissedRef.current?.();
+  }, []);
   return children;
 }
 
