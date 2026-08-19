@@ -169,7 +169,7 @@ function AppRoot() {
     );
   }
 
-  return (
+  const mainShell = (
     <View style={styles.shell}>
       <View style={[styles.content, { paddingTop: insets.top }]}>
         <View
