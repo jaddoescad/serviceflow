@@ -7,6 +7,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import JobPhotosPanel from "./JobPhotosPanel";
 import ProjectLabourTasksPanel from "../../components/ProjectLabourTasksPanel";
 
 // Active shift layout: the job is the header, every fixed control (timer,
@@ -48,7 +49,6 @@ export default function ActiveClockInBody({
   onSwitchProject,
   onClockOut,
   onViewProject,
-  onOpenCamera,
   onOpenPhotos,
 }) {
   return (
@@ -177,16 +177,10 @@ export default function ActiveClockInBody({
           <Ionicons name="chevron-forward" size={16} color={MUTED} />
         </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [styles.cameraButton, !onOpenCamera && styles.busy, pressed && onOpenCamera && styles.pressedDim]}
-          accessibilityRole="button"
-          accessibilityLabel="Take photos or video for this job"
-          disabled={!onOpenCamera}
-          onPress={onOpenCamera}
-        >
-          <Ionicons name="camera" size={19} color={WHITE} />
-          <Text style={styles.cameraButtonText}>Take Photo or Video</Text>
-        </Pressable>
+      </View>
+
+      <View style={styles.photosSection}>
+        <JobPhotosPanel project={project} onOpenAll={onOpenPhotos} />
       </View>
 
       <View style={styles.tasksSection}>
@@ -195,18 +189,6 @@ export default function ActiveClockInBody({
           activeShift={activeShift}
           tracking={labourTasks}
         />
-
-        <Pressable
-          style={({ pressed }) => [styles.photosRow, !onOpenPhotos && styles.busy, pressed && onOpenPhotos && styles.pressedDim]}
-          accessibilityRole="button"
-          accessibilityLabel="View job photos"
-          disabled={!onOpenPhotos}
-          onPress={onOpenPhotos}
-        >
-          <Ionicons name="images-outline" size={17} color={NAVY} />
-          <Text style={styles.viewProjectText}>Photos</Text>
-          <Ionicons name="chevron-forward" size={16} color={MUTED} />
-        </Pressable>
       </View>
     </ScrollView>
   );
@@ -275,16 +257,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: HAIRLINE, paddingVertical: 12,
   },
   viewProjectText: { flex: 1, color: NAVY, fontSize: 13.5, fontWeight: "800" },
-  cameraButton: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    minHeight: 46, borderRadius: 12, marginTop: 10, backgroundColor: NAVY,
-  },
-  cameraButtonText: { color: WHITE, fontSize: 14, fontWeight: "900", letterSpacing: 0.2 },
-  photosRow: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: WHITE, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
-    marginTop: 10, borderWidth: 1, borderColor: HAIRLINE,
-  },
+  photosSection: { marginHorizontal: 10, marginTop: 10 },
   tasksSection: { marginHorizontal: 10, marginTop: 10 },
   busy: { opacity: 0.55 },
   pressedDim: { opacity: 0.85 },

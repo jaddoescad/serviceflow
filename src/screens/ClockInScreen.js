@@ -809,7 +809,6 @@ function ActiveClockInView({
         onSwitchProject={onSwitchProject}
         onClockOut={onClockOut}
         onViewProject={onViewProject}
-        onOpenCamera={project ? () => onViewProject?.(project, "camera") : null}
         onOpenPhotos={project ? () => onViewProject?.(project, "photos") : null}
       />
     </View>
