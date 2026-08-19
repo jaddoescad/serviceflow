@@ -53,6 +53,15 @@ target 'ServiceFlow' do
   )
 
   post_install do |installer|
+    # Xcode 26 Clang rejects RN 0.81's bundled fmt under C++20 consteval rules;
+    # fmt itself is fine as C++17.
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+        end
+      end
+    end
     react_native_post_install(
       installer,
       config[:reactNativePath],
