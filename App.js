@@ -51,6 +51,9 @@ function AppRoot() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
+  // True while the detail screen has a full-screen surface of its own (camera).
+  // The back-swipe must not fire underneath it and pull the whole screen away.
+  const [detailFullScreen, setDetailFullScreen] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -224,10 +227,14 @@ function AppRoot() {
         ))}
       </View>
       {selectedProject ? (
-        <SwipeBackOverlay onBack={() => setSelectedProject(null)}>
+        <SwipeBackOverlay
+          enabled={!detailFullScreen}
+          onBack={() => setSelectedProject(null)}
+        >
           <ProjectDetailScreen
             project={selectedProject}
             onBack={() => setSelectedProject(null)}
+            onFullScreenChange={setDetailFullScreen}
             entries={tracking.teamEntries}
             activeShift={tracking.activeShift}
             activeElapsedMs={tracking.activeElapsedMs}
@@ -252,9 +259,11 @@ function AppRoot() {
   );
 }
 
-const SWIPE_EDGE_WIDTH = 40;
+// Narrow enough to match iOS's own back-swipe zone: a wider strip meant
+// ordinary taps and scrolls near the left edge kept dismissing the screen.
+const SWIPE_EDGE_WIDTH = 26;
 
-function SwipeBackOverlay({ onBack, children }) {
+function SwipeBackOverlay({ onBack, enabled = true, children }) {
   const { width: screenWidth } = useWindowDimensions();
   const translateX = useRef(new Animated.Value(0)).current;
   const onBackRef = useRef(onBack);
@@ -263,21 +272,30 @@ function SwipeBackOverlay({ onBack, children }) {
   // the current value after rotation instead of a stale module-load constant.
   const screenWidthRef = useRef(screenWidth);
   screenWidthRef.current = screenWidth;
+  // Read through a ref so the (stable) PanResponder sees the current value.
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   const panResponder = useRef(
     PanResponder.create({
       // Only claim the gesture when it starts near the left edge and is clearly
       // a rightward horizontal drag, so vertical scrolling still works.
       onMoveShouldSetPanResponder: (_evt, gesture) =>
+        enabledRef.current &&
         gesture.x0 <= SWIPE_EDGE_WIDTH &&
-        gesture.dx > 6 &&
-        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+        // A deliberate drag, not a stray finger: 14px of travel, and clearly
+        // more horizontal than vertical.
+        gesture.dx > 14 &&
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) * 2,
       onPanResponderMove: (_evt, gesture) => {
         translateX.setValue(Math.max(0, gesture.dx));
       },
       onPanResponderRelease: (_evt, gesture) => {
         const screenWidthNow = screenWidthRef.current;
-        const shouldDismiss = gesture.dx > screenWidthNow * 0.33 || gesture.vx > 0.35;
+        // Either drag most of the way across, or flick hard after a real drag.
+        // The old thresholds dismissed on a short, slow nudge.
+        const shouldDismiss =
+          gesture.dx > screenWidthNow * 0.45 || (gesture.vx > 0.8 && gesture.dx > 80);
         if (shouldDismiss) {
           Animated.timing(translateX, {
             toValue: screenWidthNow,

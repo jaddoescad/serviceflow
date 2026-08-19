@@ -94,7 +94,12 @@ export default function ProjectCameraScreen({
   const [viewerItem, setViewerItem] = useState(null);
   const [zoomMultiple, setZoomMultiple] = useState(1);
 
-  const backDevice = useCameraDevice("back");
+  // Ask for the virtual multi-lens device so the ultra-wide is part of the same
+  // session; the default back device is wide-angle only, whose minimum zoom is
+  // 1x, which is why no 0.5x step was offered.
+  const backDevice = useCameraDevice("back", {
+    physicalDevices: ["ultra-wide-angle", "wide-angle", "telephoto"],
+  });
   const frontDevice = useCameraDevice("front");
   const device = (facing === "front" ? frontDevice : backDevice) || backDevice || frontDevice;
   const canFlip = Boolean(backDevice && frontDevice);

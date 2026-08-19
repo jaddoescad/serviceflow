@@ -945,6 +945,7 @@ function filterProjectOptions(projects, query) {
 }
 
 export default function ProjectDetailScreen({
+  onFullScreenChange,
   project,
   onBack,
   entries = [],
@@ -974,6 +975,13 @@ export default function ProjectDetailScreen({
   const [mediaError, setMediaError] = useState('');
   const [mediaDeletePending, setMediaDeletePending] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+
+  // Tell the parent when a full-screen surface is up so its back-swipe stands
+  // down; otherwise a swipe inside the camera dismisses this screen under it.
+  useEffect(() => {
+    onFullScreenChange?.(cameraOpen);
+    return () => onFullScreenChange?.(false);
+  }, [cameraOpen, onFullScreenChange]);
   const [clockActionPending, setClockActionPending] = useState(false);
   const [jobReasonPrompt, setJobReasonPrompt] = useState(null);
   const [clockActionError, setClockActionError] = useState('');
