@@ -48,9 +48,6 @@ export default function App() {
 }
 
 function AppRoot() {
-  useEffect(() => {
-    console.info("[nav] app booted with navigation build");
-  }, []);
 
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,17 +63,7 @@ function AppRoot() {
       if (!project) return;
       setSelectedProject(project);
       const navigator = mainNavigationRef.current ?? navigationRef;
-      console.info("[nav] openProject", {
-        project: project?.name,
-        viaScreen: Boolean(mainNavigationRef.current),
-        containerReady: navigationRef?.isReady?.() ?? null,
-      });
-      try {
-        navigator.navigate("ProjectDetail");
-        console.info("[nav] navigate dispatched");
-      } catch (navError) {
-        console.error("[nav] navigate threw", navError?.message);
-      }
+      navigator.navigate("ProjectDetail");
     },
     [navigationRef],
   );
@@ -274,14 +261,7 @@ function AppRoot() {
         </Stack.Screen>
         <Stack.Screen name="ProjectDetail">
           {({ navigation }) => (
-            <DetailHost
-              onDismissed={() => setSelectedProject(null)}
-              onMounted={() =>
-                console.info("[nav] ProjectDetail mounted", {
-                  hasProject: Boolean(selectedProject),
-                })
-              }
-            >
+            <DetailHost onDismissed={() => setSelectedProject(null)}>
               {selectedProject ? (
                 <ProjectDetailScreen
                   project={selectedProject}
@@ -315,15 +295,10 @@ function AppRoot() {
 
 // Clears the selected project once UIKit has finished popping the screen so the
 // tab screens behind it resume.
-function DetailHost({ onDismissed, onMounted, children }) {
+function DetailHost({ onDismissed, children }) {
   const onDismissedRef = useRef(onDismissed);
   onDismissedRef.current = onDismissed;
-  const onMountedRef = useRef(onMounted);
-  onMountedRef.current = onMounted;
-  useEffect(() => {
-    onMountedRef.current?.();
-    return () => onDismissedRef.current?.();
-  }, []);
+  useEffect(() => () => onDismissedRef.current?.(), []);
   return children;
 }
 
