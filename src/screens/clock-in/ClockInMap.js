@@ -251,6 +251,23 @@ export default function ClockInMap({
           setRegionTick((tick) => tick + 1);
         }}
       >
+        {/* Native platform pins, each memoized so a pin is only re-committed to
+            the native map when its OWN coordinate/color actually changes — never
+            because the parent re-rendered (GPS tick, tap, zoom). That
+            reconciliation churn is what makes react-native-maps drop markers on
+            iOS during map gestures (issue #5911). */}
+        {projectMarkers.map((marker) => (
+          <ProjectPin key={`project-${marker.id}`} marker={marker} onSelect={handleSelectProject} />
+        ))}
+
+        {/* Overlays render AFTER the pins on purpose. Selecting a job makes the
+            circle and route lines appear, and when they were rendered first
+            every marker behind them shifted index. react-native-maps keeps
+            overlays and annotations in separate native collections, so those
+            shifted indices don't map to real subviews and the mount crashes
+            (NSRangeException, insertObject:atIndex:). Appending instead keeps
+            marker indices fixed. Apple Maps draws annotations above overlays
+            regardless of child order, so this does not change what you see. */}
         {selectedJobCoordinate ? (
           <Circle
             center={selectedJobCoordinate}
@@ -287,14 +304,6 @@ export default function ClockInMap({
           </>
         ) : null}
 
-        {/* Native platform pins, each memoized so a pin is only re-committed to
-            the native map when its OWN coordinate/color actually changes — never
-            because the parent re-rendered (GPS tick, tap, zoom). That
-            reconciliation churn is what makes react-native-maps drop markers on
-            iOS during map gestures (issue #5911). */}
-        {projectMarkers.map((marker) => (
-          <ProjectPin key={`project-${marker.id}`} marker={marker} onSelect={handleSelectProject} />
-        ))}
       </MapView>
 
       {/* Always-visible name labels: a non-interactive overlay (not markers), so
@@ -302,9 +311,10 @@ export default function ClockInMap({
           projection and hidden while a gesture is in flight so they can't lag. */}
       {showLabels && labelPoints.length ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {labelPoints.map((label) => {
+          {labelPoints
+            .filter((label) => label.id === selectedLabelId || labelsAllowedByZoom)
+            .map((label) => {
             const isSelected = label.id === selectedLabelId;
-            if (!isSelected && !labelsAllowedByZoom) return null;
             return (
               <View
                 key={`label-${label.id}`}
