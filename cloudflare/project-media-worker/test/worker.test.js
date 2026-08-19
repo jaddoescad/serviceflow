@@ -438,6 +438,18 @@ test("thumbnail extracts a frame from a video without exposing the bucket", asyn
   assert.equal(calls[0].hasBody, true);
   assert.equal(calls[2].options.mode, "frame");
   assert.equal(calls[2].options.format, "jpg");
+
+  // The frame is stored, so a second request serves it without transforming.
+  queueSupabase(200, [row]);
+  env.MEDIA = { input: () => assert.fail("cached frame must not be re-transformed") };
+  const second = await worker.fetch(
+    new Request(`${BASE}/v1/media/${row.id}/thumbnail`, {
+      headers: { Authorization: `Bearer ${fakeJwt()}` },
+    }),
+    env,
+  );
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("Content-Type"), "image/jpeg");
 });
 
 test("thumbnail requires auth and refuses photos", async () => {

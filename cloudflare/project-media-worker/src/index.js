@@ -36,6 +36,21 @@ const THUMBNAIL_HEIGHT = 360;
 // One second in, so we skip the black frame most recordings start on.
 const THUMBNAIL_TIME = "1s";
 
+// Stored alongside the video so a deleted video takes its frame with it.
+function thumbnailObjectKey(objectKey) {
+  return `${objectKey}.thumb.jpg`;
+}
+
+function thumbnailHeaders(etag) {
+  const headers = {
+    "Content-Type": "image/jpeg",
+    "Cache-Control": "private, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (etag) headers.ETag = etag;
+  return headers;
+}
+
 function withCors(headers = {}) {
   return { ...CORS_HEADERS, ...headers };
 }
@@ -362,6 +377,18 @@ async function handleMediaThumbnail(request, env, mediaId) {
   if (!row) return errorResponse(404, "Media not found.");
   if (row.media_type !== "video") return errorResponse(400, "Media is not a video.");
 
+  // Serve a previously generated frame if we have one. A stored frame costs
+  // nothing to serve, so each video is transformed once ever rather than once
+  // per month, and repeat views skip the transformer entirely.
+  const cacheKey = thumbnailObjectKey(row.object_key);
+  const cached = await env.MEDIA_BUCKET.get(cacheKey);
+  if (cached) {
+    return new Response(cached.body, {
+      status: 200,
+      headers: withCors(thumbnailHeaders(cached.httpEtag)),
+    });
+  }
+
   const object = await env.MEDIA_BUCKET.get(row.object_key);
   if (!object) return errorResponse(404, "Media file not found.");
 
@@ -371,14 +398,16 @@ async function handleMediaThumbnail(request, env, mediaId) {
       .output({ mode: "frame", time: THUMBNAIL_TIME, format: "jpg" })
       .response();
 
-    return new Response(frame.body, {
+    // Buffer so the same bytes can be stored and returned; a frame is tens of
+    // kilobytes, well within a Worker's memory.
+    const bytes = await frame.arrayBuffer();
+    await env.MEDIA_BUCKET.put(cacheKey, bytes, {
+      httpMetadata: { contentType: "image/jpeg" },
+    });
+
+    return new Response(bytes, {
       status: 200,
-      headers: withCors({
-        "Content-Type": "image/jpeg",
-        // Frames never change for a given object, and Cloudflare bills a unique
-        // transformation once a month, so cache hard.
-        "Cache-Control": "private, max-age=31536000, immutable",
-      }),
+      headers: withCors(thumbnailHeaders(null)),
     });
   } catch (error) {
     // A frame is a nicety: fall back to the placeholder tile rather than an error
@@ -413,6 +442,8 @@ async function handleMediaDelete(request, env, mediaId) {
   }
 
   await env.MEDIA_BUCKET.delete(row.object_key).catch(() => {});
+  // Remove any cached still frame too, so deleting a video leaves nothing behind.
+  await env.MEDIA_BUCKET.delete(thumbnailObjectKey(row.object_key)).catch(() => {});
   return new Response(null, { status: 204, headers: withCors() });
 }
 
