@@ -420,6 +420,7 @@ export default function ClockInScreen({
           onSwitchProject={switchSuggestedProject}
           onClockOut={stopClockIn}
           onViewProject={displayProject ? () => onViewProject?.(displayProject) : null}
+          onOpenPhotos={displayProject ? () => onViewProject?.(displayProject, "photos") : null}
         />
         {jobReasonSheet}
         <ProjectSwitcherModal
@@ -776,6 +777,7 @@ function ActiveClockInView({
   onSwitchProject,
   onClockOut,
   onViewProject,
+  onOpenPhotos,
 }) {
   const distanceText =
     locationStatus?.activeDistance == null ? null : formatDistance(locationStatus.activeDistance);
@@ -809,7 +811,7 @@ function ActiveClockInView({
         onSwitchProject={onSwitchProject}
         onClockOut={onClockOut}
         onViewProject={onViewProject}
-        onOpenPhotos={project ? () => onViewProject?.(project, "photos") : null}
+        onOpenPhotos={onOpenPhotos}
       />
     </View>
   );

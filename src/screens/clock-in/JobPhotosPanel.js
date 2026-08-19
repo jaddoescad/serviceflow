@@ -23,7 +23,7 @@ const HAIRLINE = "#e4eae8";
 // gallery; the rest are reachable through the count.
 const PREVIEW_COUNT = 4;
 
-export default function JobPhotosPanel({ project, onOpenAll }) {
+export default function JobPhotosPanel({ project, onOpenAll, showCamera = true }) {
   const projectId = getProjectId(project);
   const projectKind = project?.is_lead ? "lead" : "job";
   const [media, setMedia] = useState([]);
@@ -81,9 +81,20 @@ export default function JobPhotosPanel({ project, onOpenAll }) {
   const total = media.length + pending.length;
   const remaining = Math.max(0, total - previews.length);
 
+  const uploading = pending.filter((item) => item.status === "uploading").length;
+  const failed = pending.filter((item) => item.status === "failed");
+  // Surface why an upload stopped instead of leaving a capture sitting there
+  // marked "waiting" with no explanation.
+  const failureReason = failed[0]?.error || null;
+
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
+      <Pressable
+        style={styles.header}
+        accessibilityRole="button"
+        accessibilityLabel="Open job photos"
+        onPress={onOpenAll}
+      >
         <Ionicons name="images-outline" size={17} color={NAVY} />
         <Text style={styles.title}>Photos</Text>
         {loading && !media.length ? (
@@ -91,7 +102,8 @@ export default function JobPhotosPanel({ project, onOpenAll }) {
         ) : (
           <Text style={styles.count}>{total}</Text>
         )}
-      </View>
+        <Ionicons name="chevron-forward" size={15} color={MUTED} />
+      </Pressable>
 
       {previews.length ? (
         <Pressable
@@ -139,25 +151,53 @@ export default function JobPhotosPanel({ project, onOpenAll }) {
         </Text>
       )}
 
-      <Pressable
-        style={({ pressed }) => [styles.cameraButton, pressed && styles.pressedDim]}
-        accessibilityRole="button"
-        accessibilityLabel="Take a photo or video for this job"
-        disabled={!projectId}
-        onPress={() => setCameraOpen(true)}
-      >
-        <Ionicons name="camera" size={19} color={WHITE} />
-        <Text style={styles.cameraButtonText}>Take Photo or Video</Text>
-      </Pressable>
+      {uploading ? (
+        <View style={styles.statusRow}>
+          <ActivityIndicator size="small" color={MUTED} />
+          <Text style={styles.statusText}>
+            Uploading {uploading} {uploading === 1 ? "item" : "items"}…
+          </Text>
+        </View>
+      ) : null}
 
-      <ProjectCameraScreen
-        visible={cameraOpen}
-        projectName={project?.name || "Project"}
-        queueItems={pending}
-        onRetryUpload={uploads.retry}
-        onCapture={(asset) => uploads.enqueue(asset)}
-        onClose={() => setCameraOpen(false)}
-      />
+      {failed.length ? (
+        <Pressable
+          style={({ pressed }) => [styles.errorRow, pressed && styles.pressedDim]}
+          accessibilityRole="button"
+          accessibilityLabel="Retry failed uploads"
+          onPress={uploads.retryAll}
+        >
+          <Ionicons name="alert-circle" size={15} color="#a5321f" />
+          <Text style={styles.errorText} numberOfLines={2}>
+            {failed.length} upload{failed.length === 1 ? "" : "s"} failed
+            {failureReason ? `: ${failureReason}` : ""}. Tap to retry.
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {showCamera ? (
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.cameraButton, pressed && styles.pressedDim]}
+            accessibilityRole="button"
+            accessibilityLabel="Take a photo or video for this job"
+            disabled={!projectId}
+            onPress={() => setCameraOpen(true)}
+          >
+            <Ionicons name="camera" size={19} color={WHITE} />
+            <Text style={styles.cameraButtonText}>Take Photo or Video</Text>
+          </Pressable>
+
+          <ProjectCameraScreen
+            visible={cameraOpen}
+            projectName={project?.name || "Project"}
+            queueItems={pending}
+            onRetryUpload={uploads.retry}
+            onCapture={(asset) => uploads.enqueue(asset)}
+            onClose={() => setCameraOpen(false)}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -205,6 +245,19 @@ const styles = StyleSheet.create({
   moreTile: { alignItems: "center", justifyContent: "center", backgroundColor: "#eef2f1" },
   moreText: { color: NAVY, fontSize: 14, fontWeight: "900" },
   empty: { color: MUTED, fontSize: 12.5, fontWeight: "600", marginTop: 10 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
+  statusText: { color: MUTED, fontSize: 12.5, fontWeight: "700" },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: "#fdecea",
+  },
+  errorText: { flex: 1, color: "#a5321f", fontSize: 12, fontWeight: "700" },
   cameraButton: {
     flexDirection: "row",
     alignItems: "center",

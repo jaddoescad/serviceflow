@@ -30,6 +30,7 @@ import { buildPainterClockInSummaries } from '../lib/projectClockInSummary';
 import { buildProjectClockInDays } from '../lib/timeTracking';
 import ProjectLabourTasksPanel from '../components/ProjectLabourTasksPanel';
 import ProjectCameraScreen from '../components/ProjectCameraScreen';
+import JobPhotosPanel from './clock-in/JobPhotosPanel';
 import OverBudgetReasonSheet from '../components/OverBudgetReasonSheet';
 import { useProjectLabourTasks } from '../lib/useProjectLabourTasks';
 import { getProjectId } from '../lib/projectRepository';
@@ -1390,6 +1391,14 @@ export default function ProjectDetailScreen({
               {clockFeedback ? (
                 <Text style={styles.errorText}>{clockFeedback}</Text>
               ) : null}
+
+              <View style={styles.photosPanelSlot}>
+                <JobPhotosPanel
+                  project={project}
+                  showCamera={false}
+                  onOpenAll={() => setActiveTab('photos')}
+                />
+              </View>
 
               <View style={styles.recentHeader}>
                 <Text style={styles.recentTitle}>{recentTitle}</Text>
@@ -2865,6 +2874,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     marginBottom: 10,
   },
+  photosPanelSlot: { marginTop: 16, marginBottom: 4 },
   recentTitle: {
     color: INK,
     fontSize: 15,
