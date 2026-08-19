@@ -10,6 +10,7 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		296DD89FDC6DE152D60E7198 /* libPods-ServiceFlow.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 8FA8131A55852E43951D3C02 /* libPods-ServiceFlow.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		5078BD2510DF10179611312A /* ReactNativeFeatureFlagsOverride.mm in Sources */ = {isa = PBXBuildFile; fileRef = 4B99E0BB6E492E2F8A4EA64D /* ReactNativeFeatureFlagsOverride.mm */; };
 		7BAE4316AA28A685ED40898E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DFC9D3B3F340A647BEA2B0F8 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		D5E09B63191F64FFA2E98095 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B36BA15310C490AEC5C8540B /* ExpoModulesProvider.swift */; };
@@ -20,6 +21,7 @@
 		13B07F961A680F5B00A75B9A /* ServiceFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ServiceFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = ServiceFlow/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ServiceFlow/Info.plist; sourceTree = "<group>"; };
+		4B99E0BB6E492E2F8A4EA64D /* ReactNativeFeatureFlagsOverride.mm */ = {isa = PBXFileReference; includeInIndex = 1; path = ReactNativeFeatureFlagsOverride.mm; sourceTree = "<group>"; };
 		50B5056B2AD73CB940F2FAC9 /* Pods-ServiceFlow.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ServiceFlow.debug.xcconfig"; path = "Target Support Files/Pods-ServiceFlow/Pods-ServiceFlow.debug.xcconfig"; sourceTree = "<group>"; };
 		8FA8131A55852E43951D3C02 /* libPods-ServiceFlow.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ServiceFlow.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = ServiceFlow/SplashScreen.storyboard; sourceTree = "<group>"; };
@@ -54,6 +56,7 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				DFC9D3B3F340A647BEA2B0F8 /* PrivacyInfo.xcprivacy */,
+				4B99E0BB6E492E2F8A4EA64D /* ReactNativeFeatureFlagsOverride.mm */,
 			);
 			name = ServiceFlow;
 			sourceTree = "<group>";
@@ -335,6 +338,7 @@
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
 				D5E09B63191F64FFA2E98095 /* ExpoModulesProvider.swift in Sources */,
+				5078BD2510DF10179611312A /* ReactNativeFeatureFlagsOverride.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
