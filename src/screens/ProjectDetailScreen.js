@@ -1732,9 +1732,14 @@ function ProjectMediaPanel({
                       )
                     ) : (
                       pending ? (
-                        <Image source={{ uri: item.local_uri }} style={styles.photoImage} resizeMode="cover" />
+                        <Image
+                            source={{ uri: item.local_uri }}
+                            style={styles.photoImage}
+                            resizeMode="cover"
+                            resizeMethod="resize"
+                          />
                       ) : (
-                        <PrivateMediaImage media={item} style={styles.photoImage} resizeMode="cover" />
+                        <PrivateMediaImage media={item} style={styles.photoImage} resizeMode="cover" thumbnail />
                       )
                     )}
                     {pending ? (
@@ -1841,7 +1846,7 @@ function VideoThumbnail({ media, style }) {
   );
 }
 
-function PrivateMediaImage({ media, style, resizeMode = 'contain' }) {
+function PrivateMediaImage({ media, style, resizeMode = 'contain', thumbnail = false }) {
   const uri = usePrivateMediaUri(media);
   if (!uri) {
     return (
@@ -1854,7 +1859,17 @@ function PrivateMediaImage({ media, style, resizeMode = 'contain' }) {
   const source = Platform.OS === 'web'
     ? { uri }
     : { uri, headers: media?.headers };
-  return <Image source={source} style={style} resizeMode={resizeMode} />;
+  return (
+    <Image
+      source={source}
+      style={style}
+      resizeMode={resizeMode}
+      // Android decodes at full resolution by default. Job photos are up to
+      // 3000px wide, so a grid of them stalls scrolling and quietly fails to
+      // render once memory runs short; "resize" decodes to the display size.
+      resizeMethod={thumbnail ? 'resize' : 'auto'}
+    />
+  );
 }
 
 function PrivateMediaVideo({ media, style }) {

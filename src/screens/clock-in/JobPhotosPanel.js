@@ -119,6 +119,8 @@ export default function JobPhotosPanel({ project, onOpenAll, showCamera = true }
                   source={item.headers ? { uri: item.uri, headers: item.headers } : { uri: item.uri }}
                   style={styles.thumbImage}
                   resizeMode="cover"
+                  // Decode at tile size on Android rather than full resolution.
+                  resizeMethod="resize"
                 />
               ) : (
                 <View style={[styles.thumbImage, styles.thumbFallback]} />

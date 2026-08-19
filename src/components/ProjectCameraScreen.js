@@ -114,7 +114,13 @@ export default function ProjectCameraScreen({
   const photoOutput = usePhotoOutput({ containerFormat: "jpeg", quality: 0.85 });
   // Full quality: long recordings upload in parts, so file size is no longer
   // constrained by a single request.
-  const videoOutput = useVideoOutput({ enableAudio: microphonePermission.hasPermission });
+  // Record MP4 rather than iOS's default QuickTime container: .mov recordings
+  // (which also default to HEVC) frequently fail to play on Android, so a video
+  // shot on an iPhone was unwatchable for a painter on Android.
+  const videoOutput = useVideoOutput({
+    enableAudio: microphonePermission.hasPermission,
+    fileType: "mp4",
+  });
   const outputs = useMemo(() => [photoOutput, videoOutput], [photoOutput, videoOutput]);
   const cameraActive = visible && appState === "active";
 
@@ -458,6 +464,9 @@ export default function ProjectCameraScreen({
     // second one that lands as a stop.
     setRecording(true);
     try {
+      // H.264 rather than the default (likely HEVC): every Android device can
+      // decode it, so an iPhone recording stays watchable across the crew.
+      await videoOutput.setOutputSettings({ codec: "h264" }).catch(() => {});
       const recorder = await videoOutput.createRecorder({ maxDuration: MAX_VIDEO_SECONDS });
       const startedAt = Date.now();
       await recorder.startRecording(
@@ -467,10 +476,10 @@ export default function ProjectCameraScreen({
           pendingPosterRef.current = null;
           onCapture?.({
             uri,
-            mimeType: Platform.OS === "ios" ? "video/quicktime" : "video/mp4",
+            mimeType: "video/mp4",
             type: "video",
             duration: Date.now() - startedAt,
-            fileName: `project-${startedAt}.${Platform.OS === "ios" ? "mov" : "mp4"}`,
+            fileName: `project-${startedAt}.mp4`,
             creationTime: startedAt,
           });
           finishRecording();
