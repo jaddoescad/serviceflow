@@ -54,14 +54,17 @@ function AppRoot() {
   const [activeTab, setActiveTab] = useState("clock");
   const [selectedProject, setSelectedProject] = useState(null);
   const navigationRef = useNavigationContainerRef();
+  // Lets a caller open the project screen straight into the camera or photos.
+  const [detailAction, setDetailAction] = useState(null);
   // The navigation object handed to the Main screen. Preferred over the
   // container ref, which only works once the container reports ready.
   const mainNavigationRef = useRef(null);
 
   const openProject = useCallback(
-    (project) => {
+    (project, action = null) => {
       if (!project) return;
       setSelectedProject(project);
+      setDetailAction(action);
       const navigator = mainNavigationRef.current ?? navigationRef;
       navigator.navigate("ProjectDetail");
     },
@@ -265,6 +268,7 @@ function AppRoot() {
               {selectedProject ? (
                 <ProjectDetailScreen
                   project={selectedProject}
+                  initialAction={detailAction}
                   onBack={() => navigation.goBack()}
                   entries={tracking.teamEntries}
                   activeShift={tracking.activeShift}

@@ -947,6 +947,7 @@ function filterProjectOptions(projects, query) {
 }
 
 export default function ProjectDetailScreen({
+  initialAction = null,
   project,
   onBack,
   entries = [],
@@ -976,6 +977,14 @@ export default function ProjectDetailScreen({
   const [mediaError, setMediaError] = useState('');
   const [mediaDeletePending, setMediaDeletePending] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+
+  // Opened from the clock-in screen with an intent: land on photos, and raise
+  // the camera when that is what was asked for.
+  useEffect(() => {
+    if (!initialAction) return;
+    setActiveTab('photos');
+    if (initialAction === 'camera') setCameraOpen(true);
+  }, [initialAction]);
   const [clockActionPending, setClockActionPending] = useState(false);
   const [jobReasonPrompt, setJobReasonPrompt] = useState(null);
   const [clockActionError, setClockActionError] = useState('');
