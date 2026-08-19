@@ -21,6 +21,8 @@ import {
   View,
 } from "react-native";
 import { Paths } from "expo-file-system";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { useSharedValue } from "react-native-reanimated";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -74,6 +76,7 @@ export default function ProjectCameraScreen({
   const pendingPosterRef = useRef(null);
   const controllerRef = useRef(null);
   const deviceIdRef = useRef(null);
+  const multiTouchRef = useRef(false);
   const zoomBoundsRef = useRef({ min: 1, max: 1, neutral: 1 });
   const focusOpacity = useRef(new Animated.Value(0)).current;
   const focusScale = useRef(new Animated.Value(1)).current;
@@ -208,9 +211,9 @@ export default function ProjectCameraScreen({
     const { min, max, neutral } = zoomBoundsRef.current;
     const raw = Math.min(Math.max(neutral * multiple, min), max);
     setZoomMultiple(multiple);
-    Promise.resolve(controller.setZoom(raw)).catch((zoomError) => {
-      console.warn("[project-camera] Could not set zoom", zoomError);
-    });
+    // Writing the SharedValue is what actually moves the camera; the binding
+    // pushes it to the session, so no direct setZoom call is needed.
+    zoomValue.value = raw;
   };
 
   const showFocusIndicator = (x, y) => {
@@ -235,7 +238,17 @@ export default function ProjectCameraScreen({
   };
 
   // Focus options match VisionCamera's own example app.
+  const handlePreviewTouchStart = (event) => {
+    if (event.nativeEvent.touches.length > 1) multiTouchRef.current = true;
+  };
+
   const handlePreviewTouch = (event) => {
+    // Ignore the tail of a pinch: a second finger lifting must not refocus.
+    if (event.nativeEvent.touches.length > 0) return;
+    if (multiTouchRef.current) {
+      multiTouchRef.current = false;
+      return;
+    }
     const { locationX, locationY } = event.nativeEvent;
     showFocusIndicator(locationX, locationY);
     // A focus request can fail while the session reconfigures; the indicator
@@ -252,6 +265,29 @@ export default function ProjectCameraScreen({
   // VisionCamera's native gesture recognizers: the native ones attach to the
   // preview view where React Native's touch handler swallows them, and they
   // give no on-screen feedback.
+  // Zoom is a Reanimated SharedValue, which VisionCamera binds directly to the
+  // capture session on the UI thread. The pinch therefore never touches JS --
+  // the reason a hand-rolled PanResponder version could not be made smooth.
+  const zoomValue = useSharedValue(1);
+  const pinchStartZoom = useSharedValue(1);
+  const zoomLimits = useSharedValue({ min: 1, max: 1 });
+
+  const pinchGesture = useMemo(
+    () =>
+      Gesture.Pinch()
+        .onBegin(() => {
+          "worklet";
+          pinchStartZoom.value = zoomValue.value;
+        })
+        .onUpdate((event) => {
+          "worklet";
+          const { min, max } = zoomLimits.value;
+          const next = pinchStartZoom.value * event.scale;
+          zoomValue.value = Math.min(Math.max(next, min), max);
+        }),
+    [pinchStartZoom, zoomLimits, zoomValue],
+  );
+
   // Every <Camera> prop below is kept referentially stable. Inline arrows and
   // array literals made React.memo useless, so any state change on this screen
   // re-rendered the native camera view.
@@ -272,11 +308,14 @@ export default function ProjectCameraScreen({
     const controller = cameraRef.current?.controller ?? null;
     controllerRef.current = controller;
     const neutral = controller?.zoom ?? 1;
-    zoomBoundsRef.current = {
+    const bounds = {
       neutral,
       min: controller?.minZoom ?? neutral,
       max: controller?.maxZoom ?? neutral,
     };
+    zoomBoundsRef.current = bounds;
+    zoomLimits.value = { min: bounds.min, max: bounds.max };
+    zoomValue.value = neutral;
     setZoomMultiple(1);
     setCameraReady(true);
   }, []);
@@ -529,7 +568,7 @@ export default function ProjectCameraScreen({
       statusBarTranslucent
       onRequestClose={closeCamera}
     >
-      <View
+      <GestureHandlerRootView
         style={styles.screen}
         onLayout={({ nativeEvent }) => {
           const { width, height } = nativeEvent.layout;
@@ -546,6 +585,7 @@ export default function ProjectCameraScreen({
             ref={cameraRef}
             style={cameraStyle}
             isActive={cameraActive}
+            zoom={zoomValue}
             device={device}
             outputs={outputs}
             resizeMode="cover"
@@ -561,7 +601,12 @@ export default function ProjectCameraScreen({
         ) : null}
 
         {previewReady ? (
-          <View style={styles.gestureLayer} onTouchEnd={handlePreviewTouch}>
+          <GestureDetector gesture={pinchGesture}>
+            <View
+              style={styles.gestureLayer}
+              onTouchStart={handlePreviewTouchStart}
+              onTouchEnd={handlePreviewTouch}
+            >
             {focusPoint ? (
               <Animated.View
                 pointerEvents="none"
@@ -575,8 +620,9 @@ export default function ProjectCameraScreen({
                   },
                 ]}
               />
-            ) : null}
-          </View>
+              ) : null}
+            </View>
+          </GestureDetector>
         ) : null}
 
         {!permissionMissing && device && !previewReady ? (
@@ -855,7 +901,7 @@ export default function ProjectCameraScreen({
             onClose={() => setViewerItem(null)}
           />
         ) : null}
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
