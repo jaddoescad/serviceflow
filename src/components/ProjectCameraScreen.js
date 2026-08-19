@@ -39,7 +39,7 @@ const MAX_VIDEO_SECONDS = 60;
 // iPhone raw 1.0 is the ultra-wide (shown as 0.5x). Bounds are therefore taken
 // from the running controller, and the badge shows displayableZoomFactor.
 // Offered zoom steps, as multiples of the device's default (1x) lens.
-const ZOOM_STEPS = [0.5, 1, 2, 3];
+const ZOOM_STEPS = [0.5, 1, 2];
 const PREVIEW_START_TIMEOUT_MS = 3000;
 const AUTOMATIC_PREVIEW_RETRIES = 1;
 // Widest side cluster is flash + flip (44 + 8 + 44) plus edge padding; the
@@ -697,6 +697,7 @@ export default function ProjectCameraScreen({
                   accessibilityRole="button"
                   accessibilityLabel={`Zoom ${step}x`}
                   accessibilityState={{ selected: zoomMultiple === step }}
+                  hitSlop={8}
                   onPress={() => selectZoom(step)}
                   style={[
                     styles.zoomStep,
@@ -721,13 +722,14 @@ export default function ProjectCameraScreen({
               accessibilityRole="button"
               accessibilityLabel="Photo mode"
               accessibilityState={{ selected: mode === "photo", disabled: recording }}
+              hitSlop={8}
               disabled={recording}
               onPress={() => chooseMode("photo")}
               style={[styles.modeSegment, mode === "photo" && styles.modeSegmentActive]}
             >
               <Ionicons
                 name="camera"
-                size={18}
+                size={15}
                 color={mode === "photo" ? "#0b1518" : "rgba(255,255,255,0.72)"}
               />
               <Text style={[styles.modeSegmentText, mode === "photo" && styles.modeSegmentTextActive]}>
@@ -738,13 +740,14 @@ export default function ProjectCameraScreen({
               accessibilityRole="button"
               accessibilityLabel="Video mode"
               accessibilityState={{ selected: mode === "video", disabled: recording }}
+              hitSlop={8}
               disabled={recording}
               onPress={() => chooseMode("video")}
               style={[styles.modeSegment, mode === "video" && styles.modeSegmentActive]}
             >
               <Ionicons
                 name="videocam"
-                size={18}
+                size={15}
                 color={mode === "video" ? "#0b1518" : "rgba(255,255,255,0.72)"}
               />
               <Text style={[styles.modeSegmentText, mode === "video" && styles.modeSegmentTextActive]}>
@@ -859,16 +862,16 @@ const styles = StyleSheet.create({
   zoomRow: {
     alignSelf: "center",
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 14,
+    gap: 6,
+    marginBottom: 10,
   },
   zoomStep: {
-    minWidth: 46,
-    height: 38,
-    borderRadius: 19,
+    minWidth: 34,
+    height: 30,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: 7,
     backgroundColor: "rgba(18,26,30,0.72)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.22)",
@@ -876,7 +879,7 @@ const styles = StyleSheet.create({
   zoomStepActive: { backgroundColor: "#fff", borderColor: "#fff" },
   zoomStepText: {
     color: "rgba(255,255,255,0.86)",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "800",
     fontVariant: ["tabular-nums"],
   },
@@ -1025,27 +1028,27 @@ const styles = StyleSheet.create({
   modeSwitch: {
     alignSelf: "center",
     flexDirection: "row",
-    padding: 4,
-    borderRadius: 28,
+    padding: 3,
+    borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.14)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
-    marginBottom: 18,
+    marginBottom: 12,
   },
   modeSegment: {
-    minWidth: 128,
-    minHeight: 48,
-    borderRadius: 24,
+    minWidth: 88,
+    minHeight: 34,
+    borderRadius: 17,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 7,
-    paddingHorizontal: 18,
+    gap: 5,
+    paddingHorizontal: 12,
   },
   modeSegmentActive: { backgroundColor: "#fff" },
   modeSegmentText: {
     color: "rgba(255,255,255,0.72)",
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "800",
     letterSpacing: 0.3,
   },
