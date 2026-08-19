@@ -191,7 +191,10 @@ export default function JobPhotosPanel({ project, onOpenAll, showCamera = true }
           <ProjectCameraScreen
             visible={cameraOpen}
             projectName={project?.name || "Project"}
-            queueItems={pending}
+            // Every item, not just the unfinished ones: the camera matches a
+            // capture to its queue entry by uri, and a finished upload removed
+            // from that list looks unmatched, which it renders as "waiting".
+            queueItems={uploads.items}
             onRetryUpload={uploads.retry}
             onCapture={(asset) => uploads.enqueue(asset)}
             onClose={() => setCameraOpen(false)}
