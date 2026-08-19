@@ -78,6 +78,10 @@ function attachMediaAccess(row, baseUrl, token) {
   return {
     ...row,
     url: `${baseUrl}/v1/media/${row.id}`,
+    // Videos carry a still-frame URL the worker renders on demand; photos have
+    // no separate thumbnail, so the field stays null.
+    thumbnailUrl:
+      row.media_type === "video" ? `${baseUrl}/v1/media/${row.id}/thumbnail` : null,
     headers: { Authorization: `Bearer ${token}` },
   };
 }

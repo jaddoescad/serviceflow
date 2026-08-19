@@ -9,6 +9,11 @@
   // Preserve the Supabase variables configured in Cloudflare when deploying
   // from this checked-in config. Local development reads .dev.vars instead.
   "keep_vars": true,
+  // Media Transformations: extracts still frames from stored videos. Takes the
+  // R2 body directly, so the bucket stays private.
+  "media": {
+    "binding": "MEDIA"
+  },
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",

@@ -30,6 +30,12 @@ const CORS_HEADERS = {
   "Access-Control-Max-Age": "86400",
 };
 
+// A grid tile is small; 640x360 covers 3x displays without paying for more.
+const THUMBNAIL_WIDTH = 640;
+const THUMBNAIL_HEIGHT = 360;
+// One second in, so we skip the black frame most recordings start on.
+const THUMBNAIL_TIME = "1s";
+
 function withCors(headers = {}) {
   return { ...CORS_HEADERS, ...headers };
 }
@@ -341,6 +347,47 @@ async function handleMediaFetch(request, env, mediaId, { headOnly }) {
   });
 }
 
+// Still frame from a stored video, produced by Cloudflare Media Transformations.
+// The binding takes the R2 body directly, so the bucket stays private: no public
+// URL and no presigned link is ever created. Same JWT + RLS check as the video.
+async function handleMediaThumbnail(request, env, mediaId) {
+  const token = getBearerToken(request);
+  if (!token) return errorResponse(401, "Missing bearer token.");
+  if (!UUID_PATTERN.test(mediaId)) return errorResponse(400, "Invalid media id.");
+  if (!env.MEDIA) return errorResponse(501, "Media transformations are not enabled.");
+
+  const { status, row } = await fetchMediaRow(env, token, mediaId);
+  if (status === 401) return errorResponse(401, "Not authorized.");
+  if (status !== 200) return errorResponse(502, "Could not verify media access.");
+  if (!row) return errorResponse(404, "Media not found.");
+  if (row.media_type !== "video") return errorResponse(400, "Media is not a video.");
+
+  const object = await env.MEDIA_BUCKET.get(row.object_key);
+  if (!object) return errorResponse(404, "Media file not found.");
+
+  try {
+    const frame = await env.MEDIA.input(object.body)
+      .transform({ width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT, fit: "cover" })
+      .output({ mode: "frame", time: THUMBNAIL_TIME, format: "jpg" })
+      .response();
+
+    return new Response(frame.body, {
+      status: 200,
+      headers: withCors({
+        "Content-Type": "image/jpeg",
+        // Frames never change for a given object, and Cloudflare bills a unique
+        // transformation once a month, so cache hard.
+        "Cache-Control": "private, max-age=31536000, immutable",
+      }),
+    });
+  } catch (error) {
+    // A frame is a nicety: fall back to the placeholder tile rather than an error
+    // that would make the whole grid look broken.
+    console.warn("Thumbnail generation failed", error?.message);
+    return errorResponse(422, "Could not extract a frame from this video.");
+  }
+}
+
 async function handleMediaDelete(request, env, mediaId) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
@@ -392,6 +439,12 @@ export default {
       if (method !== "PUT") return errorResponse(405, "Method not allowed.");
       const projectKind = uploadMatch[1] === "leads" ? "lead" : "job";
       return handleUpload(request, env, projectKind, decodeURIComponent(uploadMatch[2]));
+    }
+
+    const thumbnailMatch = pathname.match(/^\/v1\/media\/([^/]+)\/thumbnail$/);
+    if (thumbnailMatch) {
+      if (method !== "GET") return errorResponse(405, "Method not allowed.");
+      return handleMediaThumbnail(request, env, decodeURIComponent(thumbnailMatch[1]));
     }
 
     const mediaMatch = pathname.match(/^\/v1\/media\/([^/]+)$/);

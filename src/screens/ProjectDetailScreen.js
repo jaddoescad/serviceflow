@@ -1701,12 +1701,15 @@ function ProjectMediaPanel({
                     }}
                   >
                     {item.media_type === 'video' ? (
-                      <View style={[styles.photoImage, styles.videoGridTile]}>
-                        <View style={styles.videoPlayCircle}>
-                          <Ionicons name="play" size={24} color="#fff" />
+                      pending ? (
+                        <View style={[styles.photoImage, styles.videoGridTile]}>
+                          <View style={styles.videoPlayCircle}>
+                            <Ionicons name="play" size={24} color="#fff" />
+                          </View>
                         </View>
-                        <Text style={styles.videoGridLabel}>VIDEO</Text>
-                      </View>
+                      ) : (
+                        <VideoThumbnail media={item} style={styles.photoImage} />
+                      )
                     ) : (
                       pending ? (
                         <Image source={{ uri: item.local_uri }} style={styles.photoImage} resizeMode="cover" />
@@ -1789,6 +1792,33 @@ function usePrivateMediaUri(media) {
   }, [media?.headers?.Authorization, media?.id, media?.url]);
 
   return Platform.OS === 'web' ? webUri : media?.url;
+}
+
+function VideoThumbnail({ media, style }) {
+  const [failed, setFailed] = useState(false);
+  const source = useMemo(() => {
+    if (!media?.thumbnailUrl) return null;
+    return Platform.OS === 'web'
+      ? { uri: media.thumbnailUrl }
+      : { uri: media.thumbnailUrl, headers: media.headers };
+  }, [media?.headers, media?.thumbnailUrl]);
+
+  return (
+    <View style={[style, styles.videoGridTile]}>
+      {source && !failed ? (
+        <Image
+          source={source}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          // Older videos, or ones the transformer cannot read, keep the tile.
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+      <View style={styles.videoPlayCircle}>
+        <Ionicons name="play" size={24} color="#fff" />
+      </View>
+    </View>
+  );
 }
 
 function PrivateMediaImage({ media, style, resizeMode = 'contain' }) {
@@ -2643,15 +2673,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingLeft: 3,
     backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  videoGridLabel: {
-    position: 'absolute',
-    left: 10,
-    bottom: 9,
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1,
   },
   mediaCardMeta: {
     minHeight: 29,

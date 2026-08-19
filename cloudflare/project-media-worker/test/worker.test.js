@@ -404,6 +404,81 @@ test("media HEAD returns headers with no body", async () => {
   assert.equal((await response.arrayBuffer()).byteLength, 0);
 });
 
+test("thumbnail extracts a frame from a video without exposing the bucket", async () => {
+  const { row } = await seedMediaRow({ mediaKind: "video" });
+  queueSupabase(200, [row]);
+  const calls = [];
+  env.MEDIA = {
+    input(body) {
+      calls.push({ stage: "input", hasBody: Boolean(body) });
+      return {
+        transform(options) {
+          calls.push({ stage: "transform", options });
+          return this;
+        },
+        output(options) {
+          calls.push({ stage: "output", options });
+          return this;
+        },
+        response: async () => new Response(new Uint8Array([1, 2, 3])),
+      };
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request(`${BASE}/v1/media/${row.id}/thumbnail`, {
+      headers: { Authorization: `Bearer ${fakeJwt()}` },
+    }),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "image/jpeg");
+  assert.match(response.headers.get("Cache-Control"), /immutable/);
+  assert.equal(calls[0].hasBody, true);
+  assert.equal(calls[2].options.mode, "frame");
+  assert.equal(calls[2].options.format, "jpg");
+});
+
+test("thumbnail requires auth and refuses photos", async () => {
+  const anonymous = await worker.fetch(
+    new Request(`${BASE}/v1/media/${crypto.randomUUID()}/thumbnail`),
+    env,
+  );
+  assert.equal(anonymous.status, 401);
+
+  const { row } = await seedMediaRow();
+  queueSupabase(200, [row]);
+  env.MEDIA = { input: () => assert.fail("photos must not be transformed") };
+  const photo = await worker.fetch(
+    new Request(`${BASE}/v1/media/${row.id}/thumbnail`, {
+      headers: { Authorization: `Bearer ${fakeJwt()}` },
+    }),
+    env,
+  );
+  assert.equal(photo.status, 400);
+});
+
+test("thumbnail falls back with 422 when the transformer cannot read the video", async () => {
+  const { row } = await seedMediaRow({ mediaKind: "video" });
+  queueSupabase(200, [row]);
+  env.MEDIA = {
+    input: () => ({
+      transform() { return this; },
+      output() { return this; },
+      response: async () => { throw new Error("unsupported codec"); },
+    }),
+  };
+
+  const response = await worker.fetch(
+    new Request(`${BASE}/v1/media/${row.id}/thumbnail`, {
+      headers: { Authorization: `Bearer ${fakeJwt()}` },
+    }),
+    env,
+  );
+  assert.equal(response.status, 422);
+});
+
 test("delete treats a zero-row REST delete as forbidden and keeps R2", async () => {
   const { row } = await seedMediaRow();
   queueSupabase(200, [row]);
