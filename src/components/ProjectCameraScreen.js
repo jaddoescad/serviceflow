@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -48,6 +55,37 @@ const NAV_SIDE_RESERVED_WIDTH = 112;
 // VisionCamera returns raw filesystem paths; RN image/upload APIs need file:// URLs.
 const toFileUri = (path) => (String(path).startsWith("file://") ? path : `file://${path}`);
 
+const IMPLEMENTATION_MODE = Platform.OS === "android" ? "compatible" : undefined;
+
+// Holds its own state and is driven imperatively, so updating the zoom readout
+// during a pinch re-renders this badge alone rather than the camera screen.
+const ZoomBadge = React.forwardRef(function ZoomBadge(_props, ref) {
+  const [badge, setBadge] = useState(null);
+  const hideTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(hideTimerRef.current), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      update: (value) => {
+        setBadge(value);
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => setBadge(null), 1200);
+      },
+      hide: () => {
+        clearTimeout(hideTimerRef.current);
+        setBadge(null);
+      },
+    }),
+    [],
+  );
+  if (badge == null) return null;
+  return (
+    <View pointerEvents="none" style={styles.zoomBadge}>
+      <Text style={styles.zoomBadgeText}>{badge.toFixed(1)}×</Text>
+    </View>
+  );
+});
+
 const formatClock = (totalSeconds) => {
   const clamped = Math.max(0, Math.min(totalSeconds, MAX_VIDEO_SECONDS));
   return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
@@ -75,6 +113,8 @@ export default function ProjectCameraScreen({
   const queuedZoomRef = useRef(null);
   const applyZoomRef = useRef(() => {});
   const publishZoomBadgeRef = useRef(() => {});
+  const zoomBadgeRef = useRef(null);
+  const deviceIdRef = useRef(null);
   const zoomBoundsRef = useRef({ min: 1, max: 1 });
   const previewReadyRef = useRef(false);
   const focusAtRef = useRef(() => {});
@@ -98,8 +138,6 @@ export default function ProjectCameraScreen({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [sessionCaptures, setSessionCaptures] = useState([]);
   const [error, setError] = useState("");
-  const [zoom, setZoom] = useState(1);
-  const [zoomVisible, setZoomVisible] = useState(false);
   const [focusPoint, setFocusPoint] = useState(null);
   const [viewerItem, setViewerItem] = useState(null);
 
@@ -187,7 +225,6 @@ export default function ProjectCameraScreen({
     setMode("photo");
     setRecording(false);
     setSessionCaptures([]);
-    setZoom(1);
     setFocusPoint(null);
     setViewerItem(null);
     pendingPosterRef.current = null;
@@ -225,12 +262,16 @@ export default function ProjectCameraScreen({
   };
   applyZoomRef.current = applyZoom;
 
+  // The badge owns its own state so a pinch never re-renders this screen — and
+  // therefore never re-renders the native camera view underneath it.
   const publishZoomBadge = (force) => {
     const now = Date.now();
     if (!force && now - zoomBadgeAtRef.current < 90) return;
     zoomBadgeAtRef.current = now;
     const displayable = controllerRef.current?.displayableZoomFactor;
-    setZoom(typeof displayable === "number" ? displayable : zoomRef.current);
+    zoomBadgeRef.current?.update(
+      typeof displayable === "number" ? displayable : zoomRef.current,
+    );
   };
   publishZoomBadgeRef.current = publishZoomBadge;
 
@@ -307,15 +348,13 @@ export default function ProjectCameraScreen({
         // Written straight to the native controller: routing zoom through React
         // state re-rendered the screen on every pinch frame.
         applyZoomRef.current(next);
-        setZoomVisible(true);
-        publishZoomBadge(false);
+        publishZoomBadgeRef.current(false);
       },
       onPanResponderRelease: (event, gesture) => {
         const wasPinch = Boolean(pinchRef.current);
         pinchRef.current = null;
         if (wasPinch) {
           publishZoomBadgeRef.current(true);
-          setZoomVisible(false);
           return;
         }
         if (Math.abs(gesture.dx) > TAP_SLOP_PX || Math.abs(gesture.dy) > TAP_SLOP_PX) return;
@@ -324,13 +363,63 @@ export default function ProjectCameraScreen({
       },
       onPanResponderTerminate: () => {
         pinchRef.current = null;
-        setZoomVisible(false);
+        zoomBadgeRef.current?.hide();
       },
     }),
   ).current;
 
   previewReadyRef.current = previewReady;
   focusAtRef.current = focusAt;
+
+  // Every <Camera> prop below is kept referentially stable. Inline arrows and
+  // array literals made React.memo useless, so any state change on this screen
+  // re-rendered the native camera view — which is what made zooming stutter.
+  deviceIdRef.current = device?.id ?? null;
+
+  const cameraStyle = useMemo(
+    () => [styles.cameraPreview, cameraViewport],
+    [cameraViewport],
+  );
+
+  const handleCameraStarted = useCallback(() => {
+    console.info("[project-camera] Capture session started", {
+      device: deviceIdRef.current,
+    });
+    // The controller only exists once the session is running; the pinch handler
+    // writes zoom straight to it. Its current zoom is the device's default lens
+    // (raw 2.0 on a triple-lens iPhone), not a raw 1.0 ultra-wide.
+    const controller = cameraRef.current?.controller ?? null;
+    controllerRef.current = controller;
+    const startZoom = controller?.zoom ?? 1;
+    zoomRef.current = startZoom;
+    zoomBoundsRef.current = {
+      min: controller?.minZoom ?? 1,
+      max: Math.min(controller?.maxZoom ?? startZoom, startZoom * MAX_ZOOM_MULTIPLE),
+    };
+    setCameraReady(true);
+  }, []);
+
+  const handleCameraStopped = useCallback(() => {
+    controllerRef.current = null;
+    setCameraReady(false);
+    setPreviewReady(false);
+  }, []);
+
+  const handlePreviewStarted = useCallback(() => {
+    console.info("[project-camera] Preview received its first frame", {
+      device: deviceIdRef.current,
+    });
+    setPreviewReady(true);
+    setPreviewFailed(false);
+    setError("");
+  }, []);
+
+  const handlePreviewStopped = useCallback(() => setPreviewReady(false), []);
+
+  const handleCameraError = useCallback((cameraError) => {
+    console.error("[project-camera] Native camera error", cameraError);
+    setError(cameraError?.message || "Camera preview unavailable.");
+  }, []);
 
   const retryPreview = () => {
     setError("");
@@ -573,50 +662,19 @@ export default function ProjectCameraScreen({
           <Camera
             key={`${device.id}-${facing}-${previewRetryKey}`}
             ref={cameraRef}
-            style={[styles.cameraPreview, cameraViewport]}
+            style={cameraStyle}
             isActive={cameraActive}
             device={device}
             outputs={outputs}
             resizeMode="cover"
-            implementationMode={Platform.OS === "android" ? "compatible" : undefined}
+            implementationMode={IMPLEMENTATION_MODE}
             mirrorMode={facing === "front" ? "on" : "off"}
             torchMode={mode === "video" && flash === "on" && device.hasTorch ? "on" : "off"}
-            onStarted={() => {
-              console.info("[project-camera] Capture session started", { device: device.id });
-              // The controller only exists once the session is running; the
-              // pinch handler writes zoom straight to it. Its current zoom is
-              // the device's default lens (raw 2.0 on a triple-lens iPhone),
-              // which must not be overwritten with a raw 1.0 ultra-wide.
-              const controller = cameraRef.current?.controller ?? null;
-              controllerRef.current = controller;
-              const startZoom = controller?.zoom ?? 1;
-              zoomRef.current = startZoom;
-              zoomBoundsRef.current = {
-                min: controller?.minZoom ?? 1,
-                max: Math.min(
-                  controller?.maxZoom ?? startZoom,
-                  startZoom * MAX_ZOOM_MULTIPLE,
-                ),
-              };
-              publishZoomBadgeRef.current(true);
-              setCameraReady(true);
-            }}
-            onStopped={() => {
-              controllerRef.current = null;
-              setCameraReady(false);
-              setPreviewReady(false);
-            }}
-            onPreviewStarted={() => {
-              console.info("[project-camera] Preview received its first frame", { device: device.id });
-              setPreviewReady(true);
-              setPreviewFailed(false);
-              setError("");
-            }}
-            onPreviewStopped={() => setPreviewReady(false)}
-            onError={(cameraError) => {
-              console.error("[project-camera] Native camera error", cameraError);
-              setError(cameraError?.message || "Camera preview unavailable.");
-            }}
+            onStarted={handleCameraStarted}
+            onStopped={handleCameraStopped}
+            onPreviewStarted={handlePreviewStarted}
+            onPreviewStopped={handlePreviewStopped}
+            onError={handleCameraError}
           />
         ) : null}
 
@@ -639,11 +697,7 @@ export default function ProjectCameraScreen({
           </View>
         ) : null}
 
-        {zoomVisible ? (
-          <View pointerEvents="none" style={styles.zoomBadge}>
-            <Text style={styles.zoomBadgeText}>{zoom.toFixed(1)}×</Text>
-          </View>
-        ) : null}
+        <ZoomBadge ref={zoomBadgeRef} />
 
         {!permissionMissing && device && !previewReady ? (
           <View pointerEvents="box-none" style={styles.previewStatusLayer}>
