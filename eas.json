@@ -10,7 +10,25 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "environment": "production",
+      "autoIncrement": true,
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "credentialsSource": "remote"
+      }
+    },
+    "pilot": {
+      "channel": "pilot",
+      "environment": "production",
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "credentialsSource": "remote"
+      }
     },
     "production": {
       "channel": "production",
@@ -19,6 +37,7 @@
         "credentialsSource": "local"
       },
       "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
         "credentialsSource": "remote"
       }
     }
@@ -28,6 +47,11 @@
       "android": {
         "track": "alpha"
       },
+      "ios": {
+        "ascAppId": "6787451069"
+      }
+    },
+    "pilot": {
       "ios": {
         "ascAppId": "6787451069"
       }

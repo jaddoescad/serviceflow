@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleURLTypes</key>
@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>15</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GMSApiKey</key>
 	<string>AIzaSyDINaaGARjrPxhPBUDi8vcoVqq5RQV0WdI</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
@@ -48,8 +48,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>ServiceFlow uses the camera to take job-site photos and videos for project records.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ServiceFlow uses your location during an active shift to confirm job-site and travel time.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ServiceFlow uses the microphone to record audio when you capture job-site videos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ServiceFlow accesses your photo library so you can attach existing photos and videos to a project.</string>
 	<key>RCTNewArchEnabled</key>
 	<false/>
 	<key>UIBackgroundModes</key>

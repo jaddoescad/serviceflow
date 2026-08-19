@@ -23,7 +23,7 @@ import {
   markJobOverBudgetReasonAnswered,
   submitJobOverBudgetReason,
 } from "../lib/jobOverBudget";
-import { getLatestActiveCompanyCamProject, getProjectId, searchJobsForClockIn } from "../lib/projectRepository";
+import { getLatestActiveProject, getProjectId, searchJobsForClockIn } from "../lib/projectRepository";
 import { formatDistance } from "../lib/timeTracking";
 import { summarizeAdjustments } from "../lib/timeEntryPresenters";
 import { useProjectLabourTasks } from "../lib/useProjectLabourTasks";
@@ -93,7 +93,7 @@ export default function ClockInScreen({
     async function loadProject() {
       setLoading(true);
       setError("");
-      const { project: latestProject, error: queryError } = await getLatestActiveCompanyCamProject();
+      const { project: latestProject, error: queryError } = await getLatestActiveProject();
 
       if (cancelled) return;
 
@@ -464,7 +464,7 @@ export default function ClockInScreen({
               // the 250ms debounce before the query has actually run.
               if (text.trim()) setSearching(true);
             }}
-            placeholder="Search all jobs"
+            placeholder="Search all projects and leads"
             placeholderTextColor={COLORS.muted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -493,9 +493,16 @@ export default function ClockInScreen({
                   <Ionicons name="location" size={15} color={COLORS.teal} />
                 </View>
                 <View style={styles.searchResultText}>
-                  <Text style={styles.searchResultName} numberOfLines={1}>
-                    {result.name}
-                  </Text>
+                  <View style={styles.searchResultTitleRow}>
+                    <Text style={styles.searchResultName} numberOfLines={1}>
+                      {result.name}
+                    </Text>
+                    {result.is_lead ? (
+                      <View style={styles.leadPill}>
+                        <Text style={styles.leadPillText}>LEAD</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   <Text style={styles.searchResultAddress} numberOfLines={1}>
                     {formatAddress(result) || "No address on file"}
                   </Text>
@@ -504,7 +511,7 @@ export default function ClockInScreen({
             ))}
             {!searching && !searchResults.length ? (
               <Text style={styles.searchEmpty}>
-                {searchError || "No matching jobs found."}
+                {searchError || "No matching projects or leads found."}
               </Text>
             ) : null}
           </View>
@@ -552,7 +559,7 @@ export default function ClockInScreen({
                     No active project
                   </Text>
                   <Text style={styles.projectAddress} numberOfLines={1}>
-                    {error || "Sync CompanyCam to load a job."}
+                    {error || "No active jobs are available."}
                   </Text>
                 </>
               )}
@@ -563,37 +570,39 @@ export default function ClockInScreen({
           </Pressable>
         </View>
 
-        <View style={[styles.clockInWrap, { bottom: insets.bottom + 22 }]} {...BOX_NONE_PROPS}>
-          {clockInFeedback ? (
-            <View style={styles.clockInFeedback}>
-              <Ionicons name="alert-circle" size={16} color={COLORS.navy} />
-              <Text style={styles.clockInFeedbackText}>{clockInFeedback}</Text>
-            </View>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Start clock in"
-            disabled={clockInDisabled}
-            style={({ pressed }) => [
-              styles.clockInPill,
-              clockInDisabled && styles.clockInDisabled,
-              pressed && !clockInDisabled && styles.clockInPressed,
-            ]}
-            onPress={() => {
-              Keyboard.dismiss();
-              startClockIn();
-            }}
-          >
-            <View style={styles.playCircle}>
-              {clockingIn ? (
-                <ActivityIndicator size="small" color={COLORS.navy} />
-              ) : (
-                <Ionicons name="play" size={16} color={COLORS.navy} />
-              )}
-            </View>
-            <Text style={styles.clockInText}>{clockingIn ? "Clocking In" : "Clock In"}</Text>
-          </Pressable>
-        </View>
+        {!displayProject?.is_lead ? (
+          <View style={[styles.clockInWrap, { bottom: insets.bottom + 22 }]} {...BOX_NONE_PROPS}>
+            {clockInFeedback ? (
+              <View style={styles.clockInFeedback}>
+                <Ionicons name="alert-circle" size={16} color={COLORS.navy} />
+                <Text style={styles.clockInFeedbackText}>{clockInFeedback}</Text>
+              </View>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Start clock in"
+              disabled={clockInDisabled}
+              style={({ pressed }) => [
+                styles.clockInPill,
+                clockInDisabled && styles.clockInDisabled,
+                pressed && !clockInDisabled && styles.clockInPressed,
+              ]}
+              onPress={() => {
+                Keyboard.dismiss();
+                startClockIn();
+              }}
+            >
+              <View style={styles.playCircle}>
+                {clockingIn ? (
+                  <ActivityIndicator size="small" color={COLORS.navy} />
+                ) : (
+                  <Ionicons name="play" size={16} color={COLORS.navy} />
+                )}
+              </View>
+              <Text style={styles.clockInText}>{clockingIn ? "Clocking In" : "Clock In"}</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       {jobReasonSheet}
     </View>
@@ -999,10 +1008,28 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  searchResultTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
   searchResultName: {
+    flexShrink: 1,
     color: COLORS.ink,
     fontSize: 13,
     fontWeight: "900",
+  },
+  leadPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#e8f1ff",
+  },
+  leadPillText: {
+    color: "#245c9c",
+    fontSize: 8.5,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
   searchResultAddress: {
     color: COLORS.muted,

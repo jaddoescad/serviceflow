@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppState } from "react-native";
 import { getEmployeeDisplayName, upsertEmployeeProfileForUser } from "./employeeRepository";
-import { listActiveProjectAssignmentIds, listMappedCompanyCamProjects } from "./projectRepository";
+import { listActiveProjectAssignmentIds, listMappedProjects } from "./projectRepository";
 
 export function useEmployeeProjectContext(session) {
   const sessionUser = session?.user || null;
@@ -15,7 +15,7 @@ export function useEmployeeProjectContext(session) {
       return;
     }
 
-    const { projects } = await listMappedCompanyCamProjects();
+    const { projects } = await listMappedProjects();
     setTrackingProjects(projects);
   }, [sessionUser?.id]);
 

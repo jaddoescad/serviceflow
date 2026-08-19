@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BudgetProgressBadge } from "../components/BudgetProgress";
 import {
   getProjectId,
-  listActiveCompanyCamProjectPage,
+  listActiveProjectPage,
 } from "../lib/projectRepository";
 import { palette as COLORS } from "../theme";
 
@@ -79,7 +79,7 @@ export default function ProjectsScreen({
     const assignedProjectIdsForQuery =
       !trimmedSearch && filter === "assigned" ? relevantAssignedIds : null;
 
-    const result = await listActiveCompanyCamProjectPage({
+    const result = await listActiveProjectPage({
       page: pageToLoad,
       pageSize: PROJECTS_PAGE_SIZE,
       search: trimmedSearch,
@@ -97,7 +97,7 @@ export default function ProjectsScreen({
       filter === "active" &&
       trackedProjectIds.length
     ) {
-      const activityResult = await listActiveCompanyCamProjectPage({
+      const activityResult = await listActiveProjectPage({
         page: 0,
         pageSize: Math.max(PROJECTS_PAGE_SIZE, trackedProjectIds.length),
         projectIds: trackedProjectIds,

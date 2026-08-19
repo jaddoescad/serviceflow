@@ -25,6 +25,10 @@
     "qa:labour-tasks-mobile": "node scripts/qa-project-labour-tasks-mobile.mjs",
     "qa:labour-task-reasons": "node scripts/qa-labour-task-over-budget-reasons.mjs",
     "qa:project-clock-ins": "node scripts/qa-project-clock-in-summary.mjs",
+    "qa:lead-clock-in": "node scripts/qa-lead-clock-in-sql.mjs",
+    "qa:project-media": "node scripts/qa-project-media.mjs",
+    "qa:project-media-sql": "node scripts/qa-project-media-sql.mjs",
+    "import:companycam-media": "node --env-file=.env.local scripts/import-companycam-media.mjs",
     "qa:location": "node scripts/qa-location-tracking.cjs",
     "qa:v2-client": "node scripts/qa-v2-client.cjs",
     "qa:time-entry-backend": "node scripts/qa-time-entry-commands.mjs",
@@ -34,22 +38,28 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.107.0",
-    "expo": "~54.0.36",
+    "expo": "~54.0.37",
     "expo-asset": "~12.0.13",
-    "expo-constants": "~18.0.13",
+    "expo-constants": "~18.0.14",
+    "expo-file-system": "~19.0.24",
     "expo-font": "~14.0.12",
+    "expo-image-picker": "~17.0.11",
     "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.17",
     "expo-status-bar": "~3.0.9",
     "expo-task-manager": "~14.0.9",
-    "expo-updates": "~29.0.19",
+    "expo-updates": "~29.0.20",
+    "expo-video": "~3.0.16",
     "leaflet": "^1.9.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-maps": "1.20.1",
+    "react-native-nitro-image": "^0.15.1",
+    "react-native-nitro-modules": "^0.36.5",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-url-polyfill": "^3.0.0",
+    "react-native-vision-camera": "^5.2.2",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
@@ -71,6 +81,11 @@
     "doctor": {
       "appConfigFieldsNotSyncedCheck": {
         "enabled": false
+      },
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-nitro-image"
+        ]
       }
     }
   }

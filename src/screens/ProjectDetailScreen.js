@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
+  FlatList,
   Image,
   Modal,
-  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,19 +15,27 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BudgetHoursPanel } from '../components/BudgetProgress';
 import {
   getBudgetProgressPresentation,
   useProjectBudgetProgress,
 } from '../lib/projectBudget';
-import { supabase } from '../lib/supabase';
 import { buildPainterClockInSummaries } from '../lib/projectClockInSummary';
 import { buildProjectClockInDays } from '../lib/timeTracking';
 import ProjectLabourTasksPanel from '../components/ProjectLabourTasksPanel';
+import ProjectCameraScreen from '../components/ProjectCameraScreen';
 import OverBudgetReasonSheet from '../components/OverBudgetReasonSheet';
 import { useProjectLabourTasks } from '../lib/useProjectLabourTasks';
+import { getProjectId } from '../lib/projectRepository';
+import {
+  deleteProjectMedia,
+  listProjectMedia,
+} from '../lib/projectMedia';
+import { useProjectMediaUploadQueue } from '../lib/useProjectMediaUploadQueue';
 import {
   evaluateJobOverBudget,
   hasAnsweredJobOverBudgetReason,
@@ -124,22 +131,9 @@ function getInitials(title) {
   return words.map((w) => w[0]).join('').toUpperCase() || 'P';
 }
 
-function getCompanyCamProjectId(project) {
-  return firstValue(
-    [
-      project?.companycam_id,
-      project?.companycamId,
-      project?.company_cam_id,
-      project?.companycam_project_id,
-      project?.project_id,
-    ],
-    null,
-  );
-}
-
-function isSameCompanyCamProject(a, b) {
-  const aId = getCompanyCamProjectId(a);
-  const bId = getCompanyCamProjectId(b);
+function isSameProject(a, b) {
+  const aId = getProjectId(a);
+  const bId = getProjectId(b);
   return Boolean(aId && bId && String(aId) === String(bId));
 }
 
@@ -160,7 +154,7 @@ function getEntryDurationMs(entry, nowMs = Date.now()) {
 }
 
 function getProjectEntryTotals(entries, project, user, nowMs = Date.now()) {
-  const projectId = getCompanyCamProjectId(project);
+  const projectId = getProjectId(project);
   const userId = user?.id || null;
   const userEmail = user?.email || null;
   const seen = new Set();
@@ -173,7 +167,7 @@ function getProjectEntryTotals(entries, project, user, nowMs = Date.now()) {
         seen.add(key);
       }
 
-      if (!projectId || String(getCompanyCamProjectId(entry?.project)) !== String(projectId)) {
+      if (!projectId || String(getProjectId(entry?.project)) !== String(projectId)) {
         return totals;
       }
 
@@ -193,15 +187,58 @@ function getProjectEntryTotals(entries, project, user, nowMs = Date.now()) {
   );
 }
 
-function formatPhotoDate(value) {
-  if (!value) return 'CompanyCam';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'CompanyCam';
+function getMediaCapturedAt(media) {
+  const value = media?.captured_at || media?.created_at;
+  const timestamp = new Date(value || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function formatMediaDayHeading(value) {
+  const date = new Date(value || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return 'Recently';
 
   return date.toLocaleDateString('en-CA', {
-    month: 'short',
+    weekday: 'long',
+    month: 'long',
     day: 'numeric',
+    year: 'numeric',
   });
+}
+
+function formatMediaTime(value) {
+  const date = new Date(value || 0);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return 'Recently';
+
+  return date.toLocaleTimeString('en-CA', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function buildProjectMediaSections(media) {
+  const orderedMedia = [...(media || [])].sort(
+    (left, right) => getMediaCapturedAt(right) - getMediaCapturedAt(left),
+  );
+  const sectionsByDay = new Map();
+
+  orderedMedia.forEach((item, index) => {
+    const timestamp = getMediaCapturedAt(item);
+    const date = timestamp ? new Date(timestamp) : null;
+    const key = date
+      ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      : 'recent';
+
+    if (!sectionsByDay.has(key)) {
+      sectionsByDay.set(key, {
+        key,
+        title: formatMediaDayHeading(timestamp),
+        items: [],
+      });
+    }
+    sectionsByDay.get(key).items.push({ item, index });
+  });
+
+  return { orderedMedia, sections: [...sectionsByDay.values()] };
 }
 
 function PinGlyph({ color = BRAND }) {
@@ -752,7 +789,7 @@ function EditTimeScreen({ title, address, entry, projects = [], onSave, onDelete
             />
             {projectOptions.map((projectOption) => (
               <TouchableOpacity
-                key={getCompanyCamProjectId(projectOption)}
+                key={getProjectId(projectOption)}
                 style={styles.editProjectPickerOption}
                 activeOpacity={0.82}
                 onPress={() => {
@@ -927,13 +964,16 @@ export default function ProjectDetailScreen({
 }) {
   const insets = useSafeAreaInsets();
   const isLead = project?.is_lead === true;
-  const [activeTab, setActiveTab] = useState('clock');
+  const projectKind = isLead ? 'lead' : 'job';
+  const [activeTab, setActiveTab] = useState(() => (isLead ? 'photos' : 'clock'));
   const [selectedPainterId, setSelectedPainterId] = useState(null);
   const [selectedTimeEntry, setSelectedTimeEntry] = useState(null);
-  const [photos, setPhotos] = useState([]);
-  const [photosLoading, setPhotosLoading] = useState(false);
-  const [photosLoaded, setPhotosLoaded] = useState(false);
-  const [photosError, setPhotosError] = useState('');
+  const [projectMedia, setProjectMedia] = useState([]);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [mediaDeletePending, setMediaDeletePending] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [clockActionPending, setClockActionPending] = useState(false);
   const [jobReasonPrompt, setJobReasonPrompt] = useState(null);
   const [clockActionError, setClockActionError] = useState('');
@@ -962,9 +1002,10 @@ export default function ProjectDetailScreen({
       : painterSummaries.find((painter) => painter.id === selectedPainterId) ?? null;
 
   const title = getProjectTitle(project);
-  const companyCamProjectId = getCompanyCamProjectId(project);
-  const labourTasks = useProjectLabourTasks(companyCamProjectId, {
-    enabled: Boolean(companyCamProjectId) && !isLead,
+  const jobId = getProjectId(project);
+  const linkedLeadId = isLead ? null : project?.lead_id || null;
+  const labourTasks = useProjectLabourTasks(jobId, {
+    enabled: Boolean(jobId) && !isLead,
     userId: user?.id,
   });
   const budgetProjects = useMemo(() => (project ? [project] : []), [project]);
@@ -974,7 +1015,7 @@ export default function ProjectDetailScreen({
     refresh: refreshBudgetProgress,
   } = useProjectBudgetProgress(budgetProjects, { enabled: !isLead });
   const budgetProgress =
-    progressByProjectId[String(companyCamProjectId || '')] ||
+    progressByProjectId[String(jobId || '')] ||
     (budgetProgressError ? { status: 'unavailable' } : null);
   const budgetPresentation = getBudgetProgressPresentation(budgetProgress);
   const address = getProjectAddress(project);
@@ -996,13 +1037,12 @@ export default function ProjectDetailScreen({
   const visibleHoursLabel = canViewTeamTime ? 'Team total' : 'Entries shown';
   const recentTitle = canViewTeamTime ? 'Hours by Painter' : 'Your Clock-ins';
   const recentCount = canViewTeamTime ? `${painterSummaries.length} crew` : `${clockInDays.length} day${clockInDays.length === 1 ? '' : 's'}`;
-  const isActiveProject = isSameCompanyCamProject(activeShift?.project, project) && !clockOutPending;
+  const isActiveProject = isSameProject(activeShift?.project, project) && !clockOutPending;
   const activeStartLabel =
     isActiveProject && activeShift?.startedAt ? formatEditTime(new Date(activeShift.startedAt)) : null;
   const activeElapsedLabel = isActiveProject ? formatElapsedClock(activeElapsedMs) : null;
   const primaryClockLabel = isActiveProject ? 'Clock Out' : activeShift ? 'Switch Job' : 'Clock In';
   const primaryClockIcon = isActiveProject ? 'stop-circle-outline' : activeShift ? 'swap-horizontal' : 'play';
-  const floatingClockLabel = isActiveProject ? 'Clock Out' : activeShift ? 'Switch Job' : 'Clock In';
   const handlePrimaryClockAction = async () => {
     if (clockActionPending) return;
     setClockActionPending(true);
@@ -1045,71 +1085,135 @@ export default function ProjectDetailScreen({
   };
   const clockFeedback = trackingNotice?.message || clockActionError;
 
+  const mediaUploads = useProjectMediaUploadQueue({
+    projectId: jobId,
+    projectKind,
+    onUploaded: (created, upload) => {
+      if (
+        String(upload?.projectId || '') !== String(jobId || '') ||
+        upload?.projectKind !== projectKind
+      ) return;
+      setProjectMedia((current) => [
+        created,
+        ...current.filter((item) => item.id !== created.id),
+      ]);
+      setMediaError('');
+      setMediaLoaded(true);
+    },
+  });
+  const currentMediaUploadItems = useMemo(
+    () => mediaUploads.items.filter((item) =>
+      String(item.projectId || '') === String(jobId || '') &&
+      item.projectKind === projectKind),
+    [jobId, mediaUploads.items, projectKind],
+  );
+  const currentPendingMediaUploadItems = useMemo(
+    () => currentMediaUploadItems.filter((item) => item.status !== 'uploaded'),
+    [currentMediaUploadItems],
+  );
+  const currentMediaUploadCounts = useMemo(() => ({
+    queued: currentMediaUploadItems.filter((item) => item.status === 'queued').length,
+    uploading: currentMediaUploadItems.filter((item) => item.status === 'uploading').length,
+    failed: currentMediaUploadItems.filter((item) => item.status === 'failed').length,
+    total: currentMediaUploadItems.filter((item) => item.status !== 'uploaded').length,
+  }), [currentMediaUploadItems]);
+
   const maybePromptJobOverBudget = async () => {
     try {
-      if (!companyCamProjectId || !user?.id) return;
-      if (await hasAnsweredJobOverBudgetReason(user.id, companyCamProjectId)) return;
-      const { over, hoursOver } = await evaluateJobOverBudget(companyCamProjectId);
+      if (!jobId || !user?.id) return;
+      if (await hasAnsweredJobOverBudgetReason(user.id, jobId)) return;
+      const { over, hoursOver } = await evaluateJobOverBudget(jobId);
       if (over) setJobReasonPrompt({ hoursOver });
     } catch (_error) {
       // The reason prompt is best effort; clock-out already succeeded.
     }
   };
 
-  useEffect(() => {
-    if (isLead || activeTab !== 'photos' || photosLoaded) return;
-
-    let cancelled = false;
-
-    async function loadPhotos() {
-      if (!companyCamProjectId) {
-        setPhotosError('This project is not linked to CompanyCam.');
-        setPhotosLoaded(true);
-        return;
-      }
-
-      setPhotosLoading(true);
-      setPhotosError('');
-
-      const { data, error } = await supabase.functions.invoke('companycam-project-photos', {
-        body: {
-          projectId: companyCamProjectId,
-          perPage: 30,
-        },
-      });
-
-      if (cancelled) return;
-
-      if (error) {
-        setPhotosError(error.message || 'Unable to load CompanyCam photos.');
-        setPhotos([]);
-      } else {
-        setPhotos(Array.isArray(data?.photos) ? data.photos : []);
-      }
-
-      setPhotosLoaded(true);
-      setPhotosLoading(false);
+  const refreshProjectMedia = useCallback(async () => {
+    if (!jobId) {
+      setMediaError('This job is missing its project id.');
+      setMediaLoaded(true);
+      return;
     }
 
-    loadPhotos();
+    setMediaLoading(true);
+    setMediaError('');
+    try {
+      const result = await listProjectMedia(jobId, { projectKind, linkedLeadId });
+      if (result.error) {
+        setProjectMedia([]);
+        setMediaError(result.error.message || 'Unable to load project media.');
+      } else {
+        setProjectMedia(result.media);
+      }
+    } catch (error) {
+      setProjectMedia([]);
+      setMediaError(error?.message || 'Unable to load project media.');
+    } finally {
+      setMediaLoaded(true);
+      setMediaLoading(false);
+    }
+  }, [jobId, linkedLeadId, projectKind]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, companyCamProjectId, isLead, photosLoaded]);
+  useEffect(() => {
+    setProjectMedia([]);
+    setMediaError('');
+    setMediaLoaded(false);
+    setActiveTab(isLead ? 'photos' : 'clock');
+  }, [isLead, jobId]);
 
-  if (isLead) {
-    return (
-      <LeadDetailScreen
-        project={project}
-        title={title}
-        address={address}
-        addedDate={addedDate}
-        insets={insets}
-        onBack={onBack}
-      />
+  useEffect(() => {
+    if (activeTab !== 'photos' || mediaLoaded) return;
+    refreshProjectMedia();
+  }, [activeTab, mediaLoaded, refreshProjectMedia]);
+
+  const handleCaptureProjectPhoto = async () => {
+    if (!jobId || mediaDeletePending) return;
+    setMediaError('');
+    setActiveTab('photos');
+    if (Platform.OS === 'web') {
+      try {
+        const asset = await selectProjectMediaAsset({ source: 'camera', mediaKind: null });
+        if (asset) mediaUploads.enqueue(asset);
+      } catch (error) {
+        Alert.alert('Camera', error?.message || 'Unable to open the camera.');
+      }
+      return;
+    }
+    mediaUploads.clearCompleted();
+    setCameraOpen(true);
+  };
+
+  const handleDeleteProjectMedia = (media) => new Promise((resolve) => {
+    Alert.alert(
+      media?.media_type === 'video' ? 'Delete video?' : 'Delete photo?',
+      'This permanently removes it from the project.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setMediaDeletePending(true);
+            setMediaError('');
+            try {
+              await deleteProjectMedia(media?.id);
+              setProjectMedia((current) => current.filter((item) => item.id !== media?.id));
+              resolve(true);
+            } catch (error) {
+              const message = error?.message || 'Unable to delete this media.';
+              setMediaError(message);
+              Alert.alert('Delete failed', message);
+              resolve(false);
+            } finally {
+              setMediaDeletePending(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
     );
-  }
+  });
 
   if (selectedTimeEntry) {
     return (
@@ -1156,30 +1260,35 @@ export default function ProjectDetailScreen({
       </View>
 
       <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'clock' && styles.activeTab]}
-          activeOpacity={0.85}
-          accessibilityRole="tab"
-          accessibilityLabel="Clock Ins"
-          accessibilityState={{ selected: activeTab === 'clock' }}
-          onPress={() => setActiveTab('clock')}
-        >
-          <ClockGlyph color={activeTab === 'clock' ? '#fff' : BRAND} size={14} />
-          <Text style={[styles.tabText, activeTab === 'clock' && styles.activeTabText]}>
-            Clock Ins
-          </Text>
-        </TouchableOpacity>
+        {!isLead ? (
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'clock' && styles.activeTab]}
+            activeOpacity={0.85}
+            accessibilityRole="tab"
+            accessibilityLabel="Clock Ins"
+            accessibilityState={{ selected: activeTab === 'clock' }}
+            onPress={() => setActiveTab('clock')}
+          >
+            <ClockGlyph color={activeTab === 'clock' ? '#fff' : BRAND} size={14} />
+            <Text style={[styles.tabText, activeTab === 'clock' && styles.activeTabText]}>
+              Clock Ins
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={[styles.tab, activeTab === 'photos' && styles.activeTab]}
           activeOpacity={0.85}
           accessibilityRole="tab"
-          accessibilityLabel="Photos"
+          accessibilityLabel="Photos and videos"
           accessibilityState={{ selected: activeTab === 'photos' }}
-          onPress={() => setActiveTab('photos')}
+          onPress={() => {
+            setActiveTab('photos');
+            setMediaLoaded(false);
+          }}
         >
           <CameraGlyph color={activeTab === 'photos' ? '#fff' : BRAND} />
           <Text style={[styles.tabText, activeTab === 'photos' && styles.activeTabText]}>
-            Photos
+            Media
           </Text>
         </TouchableOpacity>
       </View>
@@ -1192,7 +1301,7 @@ export default function ProjectDetailScreen({
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'clock' && !selectedPainter ? (
+        {!isLead && activeTab === 'clock' && !selectedPainter ? (
           <View style={styles.infoCard}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{getInitials(title)}</Text>
@@ -1212,7 +1321,7 @@ export default function ProjectDetailScreen({
           </View>
         ) : null}
 
-        {activeTab === 'clock' ? (
+        {!isLead && activeTab === 'clock' ? (
           selectedPainter ? (
             <PainterDetailView
               painter={selectedPainter}
@@ -1307,40 +1416,60 @@ export default function ProjectDetailScreen({
             </>
           )
         ) : (
-          <PhotosPanel
-            photos={photos}
-            loading={photosLoading}
-            error={photosError}
-            onRetry={() => {
-              setPhotosLoaded(false);
-              setPhotosError('');
-            }}
+          <ProjectMediaPanel
+            media={projectMedia}
+            pendingItems={currentPendingMediaUploadItems}
+            uploadCounts={currentMediaUploadCounts}
+            loading={mediaLoading}
+            error={mediaError}
+            onRetry={refreshProjectMedia}
+            onRetryUpload={mediaUploads.retry}
+            onRetryAllUploads={mediaUploads.retryAll}
+            onDiscardUpload={mediaUploads.discard}
+            onDelete={handleDeleteProjectMedia}
+            canDelete={(item) =>
+              Boolean(item?.uploaded_by === user?.id || canViewTeamTime)
+            }
           />
         )}
       </ScrollView>
 
-      {activeTab === 'clock' && !selectedPainter ? (
+      {!selectedPainter ? (
         <TouchableOpacity
           style={[
-            styles.addTimeButton,
+            styles.cameraFab,
             { bottom: insets.bottom + 22 },
-            clockActionPending && styles.clockButtonPending,
+            mediaDeletePending && styles.cameraFabDisabled,
           ]}
           activeOpacity={0.9}
-          disabled={clockActionPending}
+          disabled={mediaDeletePending}
           accessibilityRole="button"
-          accessibilityLabel={floatingClockLabel}
-          onPress={handlePrimaryClockAction}
+          accessibilityLabel="Take project photo"
+          onPress={handleCaptureProjectPhoto}
         >
-          <Text style={styles.addTimeText}>{clockActionPending ? 'Working…' : floatingClockLabel}</Text>
-          <View style={styles.addDivider} />
-          {clockActionPending ? (
+          {mediaDeletePending ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons name={primaryClockIcon === 'play' ? 'time-outline' : primaryClockIcon} size={27} color="#fff" />
+            <Ionicons name="camera" size={28} color="#fff" />
           )}
         </TouchableOpacity>
       ) : null}
+
+      <ProjectCameraScreen
+        visible={cameraOpen}
+        projectName={title}
+        queueItems={currentMediaUploadItems}
+        onRetryUpload={mediaUploads.retry}
+        onCapture={(asset) => {
+          mediaUploads.enqueue(asset);
+          setMediaLoaded(true);
+          setActiveTab('photos');
+        }}
+        onClose={() => {
+          setCameraOpen(false);
+          setActiveTab('photos');
+        }}
+      />
 
       {jobReasonPrompt ? (
         <OverBudgetReasonSheet
@@ -1348,17 +1477,17 @@ export default function ProjectDetailScreen({
           hoursOver={jobReasonPrompt.hoursOver}
           onSubmit={async ({ reason, note }) => {
             await submitJobOverBudgetReason({
-              projectId: companyCamProjectId,
+              projectId: jobId,
               userId: user?.id,
               reason,
               note,
               hoursOver: jobReasonPrompt.hoursOver,
             });
-            await markJobOverBudgetReasonAnswered(user?.id, companyCamProjectId);
+            await markJobOverBudgetReasonAnswered(user?.id, jobId);
             setJobReasonPrompt(null);
           }}
           onSkip={async () => {
-            await markJobOverBudgetReasonAnswered(user?.id, companyCamProjectId);
+            await markJobOverBudgetReasonAnswered(user?.id, jobId);
             setJobReasonPrompt(null);
           }}
         />
@@ -1367,239 +1496,364 @@ export default function ProjectDetailScreen({
   );
 }
 
-function LeadDetailScreen({ project, title, address, addedDate, insets, onBack }) {
-  const details = [
-    ['Status', formatLeadValue(project?.lead_stage || project?.status)],
-    ['Source', formatLeadValue(project?.source)],
-    ['Email', project?.contact_email || 'Not provided'],
-    ['Phone', project?.contact_phone || 'Not provided'],
-  ];
+async function selectProjectMediaAsset({ source, mediaKind }) {
+  const useCamera = source === 'camera' && Platform.OS !== 'web';
 
-  return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={onBack}
-          activeOpacity={0.7}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="chevron-back" size={34} color={INK} />
-        </TouchableOpacity>
-        <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
-          <Text style={styles.subtitle} numberOfLines={1}>{addedDate}</Text>
-        </View>
-      </View>
+  if (useCamera) {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (permission.status !== 'granted') {
+      throw new Error(
+        permission.canAskAgain === false
+          ? 'Camera access is blocked. Enable it for ServiceFlow in device Settings.'
+          : 'Camera access is required to capture project photos and videos.',
+      );
+    }
+  } else if (Platform.OS === 'ios') {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      throw new Error(
+        permission.canAskAgain === false
+          ? 'Photo library access is blocked. Enable it for ServiceFlow in device Settings.'
+          : 'Photo library access is required to attach existing project media.',
+      );
+    }
+  }
 
-      <View style={styles.tabs}>
-        <View style={[styles.tab, styles.activeTab]}>
-          <Ionicons name="person-outline" size={16} color="#fff" />
-          <Text style={[styles.tabText, styles.activeTabText]}>Overview</Text>
-        </View>
-      </View>
+  const mediaTypes = mediaKind === 'image'
+    ? ['images']
+    : mediaKind === 'video'
+      ? ['videos']
+      : ['images', 'videos'];
+  const options = {
+    mediaTypes,
+    allowsEditing: false,
+    allowsMultipleSelection: false,
+    quality: 0.85,
+    videoMaxDuration: 60,
+    videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+    selectionLimit: 1,
+  };
+  const result = useCamera
+    ? await ImagePicker.launchCameraAsync(options)
+    : await ImagePicker.launchImageLibraryAsync(options);
 
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={[styles.contentInner, { paddingBottom: insets.bottom + 36 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.infoCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials(title)}</Text>
-          </View>
-          <View style={styles.infoTextWrap}>
-            <Text style={styles.infoLabel}>LEAD</Text>
-            <Text style={styles.infoTitle} numberOfLines={1}>{title}</Text>
-            <View style={styles.addressRow}>
-              <PinGlyph />
-              <Text style={styles.addressText} numberOfLines={2}>{address}</Text>
-            </View>
-          </View>
-        </View>
+  if (result.canceled) return null;
+  return result.assets?.[0] || null;
+}
 
-        <View style={styles.leadOverviewCard}>
-          {details.map(([label, value], index) => (
-            <View key={label} style={[styles.leadOverviewRow, index > 0 && styles.leadOverviewRowBorder]}>
-              <Text style={styles.leadOverviewLabel}>{label}</Text>
-              <Text style={styles.leadOverviewValue} numberOfLines={2}>{value}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.leadReadOnlyNotice}>
-          <Ionicons name="information-circle-outline" size={19} color={BRAND} />
-          <Text style={styles.leadReadOnlyText}>
-            This lead becomes operational after an accepted quote creates a job.
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+function ProjectMediaPanel({
+  media,
+  pendingItems = [],
+  uploadCounts,
+  loading,
+  error,
+  onRetry,
+  onRetryUpload,
+  onRetryAllUploads,
+  onDiscardUpload,
+  onDelete,
+  canDelete,
+}) {
+  const [selectedMediaId, setSelectedMediaId] = useState(null);
+  const orderedMedia = useMemo(
+    () => [...(media || [])].sort(
+      (left, right) => getMediaCapturedAt(right) - getMediaCapturedAt(left),
+    ),
+    [media],
   );
-}
+  const selectedMediaIndex = useMemo(() => {
+    if (selectedMediaId === null) return null;
+    const index = orderedMedia.findIndex((item) => item.id === selectedMediaId);
+    return index >= 0 ? index : null;
+  }, [orderedMedia, selectedMediaId]);
+  const pendingMedia = useMemo(
+    () => pendingItems.map((item) => ({
+      id: item.localId,
+      local_id: item.localId,
+      local_uri: item.asset?.uri,
+      media_type: item.kind === 'video' ? 'video' : 'image',
+      captured_at: item.capturedAt,
+      created_at: item.capturedAt,
+      upload_status: item.status,
+      upload_error: item.error,
+      is_pending_upload: true,
+    })),
+    [pendingItems],
+  );
+  const { sections } = useMemo(
+    () => buildProjectMediaSections([...pendingMedia, ...(media || [])]),
+    [media, pendingMedia],
+  );
 
-function formatLeadValue(value) {
-  const normalized = String(value || '').trim();
-  if (!normalized) return 'Not provided';
-  return normalized
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function PhotosPanel({ photos, loading, error, onRetry }) {
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(null);
-
-  if (loading) {
-    return (
-      <View style={styles.photosLoading}>
-        <ActivityIndicator color={BRAND} />
-        <Text style={styles.photosLoadingText}>Loading CompanyCam photos</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.photosNotice}>
-        <View style={styles.emptyArt}>
-          <View style={styles.artCircle} />
-          <CameraGlyph color={BRAND} />
-        </View>
-        <Text style={styles.emptyTitle}>Photos unavailable</Text>
-        <Text style={styles.emptyHint}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} activeOpacity={0.85} onPress={onRetry}>
-          <Text style={styles.retryText}>Try again</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (!photos.length) {
-    return (
-      <View style={styles.photosNotice}>
-        <View style={styles.emptyArt}>
-          <View style={styles.artCircle} />
-          <CameraGlyph color={BRAND} />
-        </View>
-        <Text style={styles.emptyTitle}>No photos yet</Text>
-        <Text style={styles.emptyHint}>
-          Photos from the linked CompanyCam project will appear here.
-        </Text>
-      </View>
-    );
-  }
+  useEffect(() => {
+    if (selectedMediaId !== null && selectedMediaIndex === null) setSelectedMediaId(null);
+  }, [selectedMediaId, selectedMediaIndex]);
 
   return (
     <View style={styles.photosSection}>
-      <View style={styles.photosHeader}>
-        <Text style={styles.photosTitle}>CompanyCam Photos</Text>
-        <Text style={styles.photosCount}>{photos.length}</Text>
-      </View>
-      <View style={styles.photoGrid}>
-        {photos.map((photo, index) => (
-          <TouchableOpacity
-            key={photo.id || photo.thumbnailUrl || photo.url}
-            style={styles.photoCard}
-            activeOpacity={0.9}
-            onPress={() => setSelectedPhotoIndex(index)}
-          >
-            <Image
-              source={{ uri: photo.thumbnailUrl || photo.url }}
-              style={styles.photoImage}
-              resizeMode="cover"
-            />
+      {uploadCounts?.total ? (
+        <View style={[
+          styles.mediaUploadStatus,
+          uploadCounts.failed > 0 && styles.mediaUploadStatusFailed,
+        ]}>
+          {uploadCounts.failed > 0 ? (
+            <Ionicons name="alert-circle" size={18} color="#a6402d" />
+          ) : (
+            <ActivityIndicator size="small" color={BRAND} />
+          )}
+          <View style={styles.mediaUploadStatusCopy}>
+            <Text style={styles.mediaUploadStatusText}>
+              {uploadCounts.failed > 0
+                ? `${uploadCounts.failed} upload${uploadCounts.failed === 1 ? '' : 's'} need attention`
+                : `Uploading ${uploadCounts.total} item${uploadCounts.total === 1 ? '' : 's'}`}
+            </Text>
+            <Text style={styles.mediaUploadStatusHint}>
+              Uploads continue after you close the camera.
+            </Text>
+          </View>
+          {uploadCounts.failed > 0 ? (
+            <TouchableOpacity activeOpacity={0.8} onPress={onRetryAllUploads}>
+              <Text style={styles.retryText}>Retry all</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      {error ? (
+        <View style={styles.mediaInlineError}>
+          <Ionicons name="alert-circle-outline" size={20} color="#a6402d" />
+          <Text style={styles.mediaInlineErrorText}>{error}</Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={onRetry}>
+            <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
-        ))}
-      </View>
-      <PhotoLightbox
-        photos={photos}
-        selectedIndex={selectedPhotoIndex}
-        onClose={() => setSelectedPhotoIndex(null)}
-      />
+        </View>
+      ) : null}
+
+      {loading && !media.length ? (
+        <View style={styles.photosLoading}>
+          <ActivityIndicator color={BRAND} />
+          <Text style={styles.photosLoadingText}>Loading project media</Text>
+        </View>
+      ) : null}
+
+      {!loading && !media.length && !pendingItems.length ? (
+        <View style={styles.photosNotice}>
+          <View style={styles.emptyArt}>
+            <View style={styles.artCircle} />
+            <CameraGlyph color={BRAND} />
+          </View>
+          <Text style={styles.emptyTitle}>No photos or videos yet</Text>
+          <Text style={styles.emptyHint}>
+            Capture the site before, during, and after the work to build the project record.
+          </Text>
+        </View>
+      ) : null}
+
+      {media.length || pendingItems.length ? (
+        <>
+          <View style={styles.photosHeader}>
+            <View>
+              <Text style={styles.photosEyebrow}>PROJECT RECORD</Text>
+              <Text style={styles.photosTitle}>Photos & Videos</Text>
+            </View>
+            <View style={styles.photosCountPill}>
+              <Text style={styles.photosCount}>{media.length + pendingItems.length}</Text>
+            </View>
+          </View>
+          {sections.map((section) => (
+            <View key={section.key} style={styles.mediaDaySection}>
+              <View style={styles.mediaDayHeader}>
+                <Text style={styles.mediaDayTitle}>{section.title}</Text>
+                <Text style={styles.mediaDayCount}>{section.items.length}</Text>
+              </View>
+              <View style={styles.photoGrid}>
+                {section.items.map(({ item }) => {
+                  const pending = item.is_pending_upload === true;
+                  const remoteIndex = pending
+                    ? -1
+                    : orderedMedia.findIndex((mediaItem) => mediaItem.id === item.id);
+                  return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.photoCard, pending && styles.photoCardPending]}
+                    activeOpacity={0.9}
+                    accessibilityRole="button"
+                    accessibilityLabel={pending
+                      ? `${item.media_type === 'video' ? 'Video' : 'Photo'} ${item.upload_status}`
+                      : `Open ${item.media_type === 'video' ? 'video' : 'photo'}`}
+                    onPress={() => {
+                      if (pending) {
+                        if (item.upload_status === 'failed') onRetryUpload?.(item.local_id);
+                        return;
+                      }
+                      if (remoteIndex >= 0) setSelectedMediaId(item.id);
+                    }}
+                    onLongPress={() => {
+                      if (!pending) return;
+                      Alert.alert(
+                        'Remove pending upload?',
+                        'This removes the local capture from the upload queue.',
+                        [
+                          { text: 'Keep', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => onDiscardUpload?.(item.local_id) },
+                        ],
+                      );
+                    }}
+                  >
+                    {item.media_type === 'video' ? (
+                      <View style={[styles.photoImage, styles.videoGridTile]}>
+                        <View style={styles.videoPlayCircle}>
+                          <Ionicons name="play" size={24} color="#fff" />
+                        </View>
+                        <Text style={styles.videoGridLabel}>VIDEO</Text>
+                      </View>
+                    ) : (
+                      pending ? (
+                        <Image source={{ uri: item.local_uri }} style={styles.photoImage} resizeMode="cover" />
+                      ) : (
+                        <PrivateMediaImage media={item} style={styles.photoImage} resizeMode="cover" />
+                      )
+                    )}
+                    {pending ? (
+                      <View style={[
+                        styles.pendingMediaOverlay,
+                        item.upload_status === 'failed' && styles.pendingMediaOverlayFailed,
+                      ]}>
+                        {item.upload_status === 'failed' ? (
+                          <Ionicons name="refresh" size={20} color="#fff" />
+                        ) : (
+                          <ActivityIndicator size="small" color="#fff" />
+                        )}
+                        <Text style={styles.pendingMediaText}>
+                          {item.upload_status === 'failed' ? 'Tap to retry' : 'Uploading'}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.mediaCardMeta}>
+                      <Ionicons
+                        name={item.media_type === 'video' ? 'videocam-outline' : 'camera-outline'}
+                        size={13}
+                        color={MUTED}
+                      />
+                      <Text style={styles.mediaCardMetaText} numberOfLines={1}>
+                        {pending
+                          ? item.upload_status === 'failed' ? 'Upload failed' : 'Just captured'
+                          : formatMediaTime(item.captured_at || item.created_at)}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+          <MediaLightbox
+            media={orderedMedia}
+            selectedIndex={selectedMediaIndex}
+            onClose={() => setSelectedMediaId(null)}
+            onDelete={onDelete}
+            canDelete={canDelete}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
 
-function PhotoLightbox({ photos, selectedIndex, onClose }) {
-  const scrollRef = useRef(null);
-  const translateY = useRef(new Animated.Value(0)).current;
-  const onCloseRef = useRef(onClose);
+function usePrivateMediaUri(media) {
+  const [webUri, setWebUri] = useState(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !media?.url) return undefined;
+
+    const controller = new AbortController();
+    let objectUrl = null;
+    fetch(media.url, { headers: media.headers, signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Media request failed (${response.status})`);
+        return response.blob();
+      })
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setWebUri(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setWebUri(null);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [media?.headers?.Authorization, media?.id, media?.url]);
+
+  return Platform.OS === 'web' ? webUri : media?.url;
+}
+
+function PrivateMediaImage({ media, style, resizeMode = 'contain' }) {
+  const uri = usePrivateMediaUri(media);
+  if (!uri) {
+    return (
+      <View style={[style, styles.privateMediaLoading]}>
+        <ActivityIndicator color={BRAND} />
+      </View>
+    );
+  }
+
+  const source = Platform.OS === 'web'
+    ? { uri }
+    : { uri, headers: media?.headers };
+  return <Image source={source} style={style} resizeMode={resizeMode} />;
+}
+
+function PrivateMediaVideo({ media, style }) {
+  const uri = usePrivateMediaUri(media);
+  const source = useMemo(() => {
+    if (!uri) return null;
+    return Platform.OS === 'web' ? uri : { uri, headers: media?.headers };
+  }, [media?.headers, uri]);
+  const player = useVideoPlayer(source, (nextPlayer) => {
+    nextPlayer.loop = false;
+  });
+
+  if (!uri) {
+    return (
+      <View style={[style, styles.privateMediaLoading]}>
+        <ActivityIndicator color="#fff" />
+      </View>
+    );
+  }
+
+  return (
+    <VideoView
+      style={style}
+      player={player}
+      nativeControls
+      contentFit="contain"
+      playsInline
+      allowsFullscreen
+    />
+  );
+}
+
+function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(selectedIndex ?? 0);
+  const [deleting, setDeleting] = useState(false);
   const visible = selectedIndex !== null;
   const viewerTopInset = Math.max(insets.top, 16) + 10;
-  const viewerPageHeight = Math.max(0, height - viewerTopInset - insets.bottom - 54);
-  onCloseRef.current = onClose;
-
-  const heightRef = useRef(height);
-  heightRef.current = height;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-        gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
-      onMoveShouldSetPanResponder: (_event, gesture) =>
-        gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
-      onPanResponderGrant: () => translateY.stopAnimation(),
-      onPanResponderMove: (_event, gesture) => {
-        translateY.setValue(Math.max(0, gesture.dy));
-      },
-      onPanResponderRelease: (_event, gesture) => {
-        const screenHeight = heightRef.current;
-        const shouldDismiss =
-          gesture.dy > Math.min(140, screenHeight * 0.18) ||
-          (gesture.dy > 24 && gesture.vy > 0.8);
-
-        if (shouldDismiss) {
-          Animated.timing(translateY, {
-            toValue: screenHeight,
-            duration: 180,
-            useNativeDriver: true,
-          }).start(() => {
-            translateY.setValue(0);
-            onCloseRef.current?.();
-          });
-          return;
-        }
-
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-        }).start();
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          bounciness: 0,
-        }).start();
-      },
-    }),
-  ).current;
-
-  const closeViewer = () => {
-    translateY.stopAnimation();
-    translateY.setValue(0);
-    onClose();
-  };
+  const viewerPageHeight = Math.max(0, height - viewerTopInset - insets.bottom - 84);
+  const closeViewer = onClose;
 
   useEffect(() => {
-    if (!visible) return undefined;
-
-    const nextIndex = selectedIndex ?? 0;
-    setCurrentIndex(nextIndex);
-    translateY.setValue(0);
-
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollTo({ x: nextIndex * width, animated: false });
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, [selectedIndex, translateY, visible, width]);
+    if (visible) setCurrentIndex(selectedIndex ?? 0);
+  }, [selectedIndex, visible]);
 
   if (!visible) return null;
+  const currentMedia = media[currentIndex] || null;
+  const canDeleteCurrent = Boolean(currentMedia && canDelete?.(currentMedia));
 
   return (
     <Modal
@@ -1612,25 +1866,23 @@ function PhotoLightbox({ photos, selectedIndex, onClose }) {
     >
       <View style={styles.viewerBackdrop}>
         <StatusBar style="light" backgroundColor="#050607" />
-        <Animated.View
+        <View
           style={[
             styles.viewer,
             {
               paddingTop: viewerTopInset,
               paddingBottom: insets.bottom,
-              transform: [{ translateY }],
             },
           ]}
           accessibilityViewIsModal
           onAccessibilityEscape={closeViewer}
-          {...panResponder.panHandlers}
         >
           <View style={styles.viewerTopBar}>
             <TouchableOpacity
               style={styles.viewerCloseButton}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Close picture viewer"
+              accessibilityLabel="Close media viewer"
               hitSlop={8}
               onPress={closeViewer}
             >
@@ -1638,36 +1890,79 @@ function PhotoLightbox({ photos, selectedIndex, onClose }) {
               <Text style={styles.viewerCloseText}>Close</Text>
             </TouchableOpacity>
             <Text style={styles.viewerCounter}>
-              Picture {currentIndex + 1} / {photos.length}
+              {currentMedia?.media_type === 'video' ? 'Video' : 'Photo'} {currentIndex + 1} / {media.length}
             </Text>
-            <View style={styles.viewerTopSpacer} />
+            {canDeleteCurrent ? (
+              <TouchableOpacity
+                style={styles.viewerDeleteButton}
+                activeOpacity={0.8}
+                disabled={deleting}
+                accessibilityRole="button"
+                accessibilityLabel="Delete media"
+                onPress={async () => {
+                  setDeleting(true);
+                  const deleted = await onDelete?.(currentMedia);
+                  setDeleting(false);
+                  if (deleted) closeViewer();
+                }}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="trash-outline" size={21} color="#fff" />
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.viewerTopSpacer} />
+            )}
           </View>
 
-          <ScrollView
-            ref={scrollRef}
+          <FlatList
+            key={`${selectedIndex}-${width}`}
             style={styles.viewerPages}
+            data={media}
             horizontal
             pagingEnabled
+            initialScrollIndex={Math.max(0, selectedIndex ?? 0)}
+            getItemLayout={(_data, index) => ({ length: width, offset: width * index, index })}
+            keyExtractor={(item) => item.id}
+            windowSize={3}
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={(event) => {
               const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-              setCurrentIndex(Math.max(0, Math.min(photos.length - 1, nextIndex)));
+              setCurrentIndex(Math.max(0, Math.min(media.length - 1, nextIndex)));
             }}
-          >
-            {photos.map((photo) => (
+            renderItem={({ item, index }) => (
               <View
-                key={photo.id || photo.thumbnailUrl || photo.url}
                 style={[styles.viewerSlide, { width, height: viewerPageHeight }]}
               >
-                <Image
-                  source={{ uri: photo.url || photo.thumbnailUrl }}
-                  style={styles.viewerImage}
-                  resizeMode="contain"
-                />
+                {item.media_type === 'video' ? (
+                  index === currentIndex ? (
+                    <PrivateMediaVideo media={item} style={styles.viewerImage} />
+                  ) : (
+                    <View style={[styles.viewerImage, styles.videoViewerPlaceholder]}>
+                      <Ionicons name="videocam" size={42} color="#fff" />
+                    </View>
+                  )
+                ) : (
+                  <PrivateMediaImage media={item} style={styles.viewerImage} />
+                )}
               </View>
-            ))}
-          </ScrollView>
-        </Animated.View>
+            )}
+          />
+          <View style={styles.viewerCaptionBar}>
+            <Ionicons
+              name={currentMedia?.media_type === 'video' ? 'videocam-outline' : 'camera-outline'}
+              size={15}
+              color="rgba(255,255,255,0.7)"
+            />
+            <Text style={styles.viewerCaptionText}>
+              {formatMediaDayHeading(currentMedia?.captured_at || currentMedia?.created_at)} · {formatMediaTime(currentMedia?.captured_at || currentMedia?.created_at)}
+            </Text>
+          </View>
+        </View>
       </View>
     </Modal>
   );
@@ -2208,18 +2503,104 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingBottom: 42,
   },
+  mediaUploadStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderRadius: 14,
+    backgroundColor: '#eaf4f6',
+  },
+  mediaUploadStatusFailed: {
+    backgroundColor: '#fbecea',
+  },
+  mediaUploadStatusCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  mediaUploadStatusText: {
+    color: BRAND,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mediaUploadStatusHint: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  mediaInlineError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#fbecea',
+  },
+  mediaInlineErrorText: {
+    flex: 1,
+    color: '#873523',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
   photosHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 18,
+  },
+  photosEyebrow: {
+    color: BRAND,
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
   photosTitle: {
+    marginTop: 2,
     color: INK,
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  photosCountPill: {
+    minWidth: 34,
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#edf4f5',
   },
   photosCount: {
+    color: BRAND,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  mediaDaySection: {
+    marginBottom: 24,
+  },
+  mediaDayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 9,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#dfe5e8',
+  },
+  mediaDayTitle: {
+    flex: 1,
+    color: NAVY,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  mediaDayCount: {
+    marginLeft: 12,
     color: MUTED,
     fontSize: 12,
     fontWeight: '700',
@@ -2227,20 +2608,83 @@ const styles = StyleSheet.create({
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 7,
   },
   photoCard: {
-    width: '48.5%',
+    width: '31.5%',
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 14,
+    borderRadius: 11,
     backgroundColor: '#fff',
     overflow: 'hidden',
+  },
+  photoCardPending: {
+    borderColor: '#b9d9df',
   },
   photoImage: {
     width: '100%',
     aspectRatio: 1,
     backgroundColor: SOFT,
+  },
+  privateMediaLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoGridTile: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: NAVY,
+  },
+  videoPlayCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 3,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  videoGridLabel: {
+    position: 'absolute',
+    left: 10,
+    bottom: 9,
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  mediaCardMeta: {
+    minHeight: 29,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 6,
+    backgroundColor: '#fff',
+  },
+  mediaCardMetaText: {
+    flex: 1,
+    color: MUTED,
+    fontSize: 8.5,
+    fontWeight: '700',
+  },
+  pendingMediaOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(19,45,51,0.5)',
+  },
+  pendingMediaOverlayFailed: {
+    backgroundColor: 'rgba(137,49,36,0.72)',
+  },
+  pendingMediaText: {
+    color: '#fff',
+    fontSize: 8.5,
+    fontWeight: '900',
   },
   viewerBackdrop: {
     flex: 1,
@@ -2279,6 +2723,12 @@ const styles = StyleSheet.create({
   viewerTopSpacer: {
     width: 68,
   },
+  viewerDeleteButton: {
+    width: 68,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   viewerPages: {
     flex: 1,
   },
@@ -2290,6 +2740,25 @@ const styles = StyleSheet.create({
   viewerImage: {
     width: '100%',
     height: '100%',
+  },
+  videoViewerPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#101820',
+  },
+  viewerCaptionBar: {
+    height: 30,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: '#050607',
+  },
+  viewerCaptionText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   recentHeader: {
@@ -2340,7 +2809,7 @@ const styles = StyleSheet.create({
   dayDate: {
     color: MUTED,
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '650',
   },
   dayTotal: {
     color: NAVY,
@@ -3005,43 +3474,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  addTimeButton: {
+  cameraFab: {
     position: 'absolute',
     right: 16,
     bottom: 22,
-    height: 50,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    flexDirection: 'row',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: NAVY,
+    backgroundColor: BRAND,
     ...Platform.select({
-      web: { boxShadow: '0 6px 14px rgba(0,0,0,0.18)' },
+      web: { boxShadow: '0 6px 14px rgba(0,0,0,0.2)' },
       default: {
         shadowColor: '#000',
-        shadowOpacity: 0.18,
+        shadowOpacity: 0.2,
         shadowRadius: 14,
         shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
       },
     }),
   },
-  addTimeText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  addDivider: {
-    width: 1,
-    height: 18,
-    marginHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.45)',
-  },
-  addTimeIcon: {
-    color: '#fff',
-    fontSize: 20,
-    lineHeight: 22,
-    fontWeight: '500',
+  cameraFabDisabled: {
+    opacity: 0.65,
   },
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { normalizeProject } from "./trackingModel";
+import { ensureClockInProject } from "./projectRepository";
 import { activeEntry, applyEntryTimeUpdate, entryIdentityKeys, shiftToEntry } from "./timeEntryModel";
 import { getProjectLatestActivity, getProjectTimeTotals } from "./timeEntryPresenters";
 import {
@@ -541,15 +542,18 @@ export function useTimeTracking(projects = [], user) {
 
   const clockIn = useCallback(
     async (project) => {
-      const baseProject = normalizeProject(project);
-      if (!baseProject) return null;
-
       const permissions = await requestTrackingPermissions();
       setTrackingPermissions(permissions);
       if (!permissionsAllowTracking(permissions)) {
         setTrackingNotice(buildPermissionNotice(permissions));
         return null;
       }
+
+      const resolved = await ensureClockInProject(project);
+      if (resolved.error) throw resolved.error;
+      const operationalProject = resolved.project;
+      const baseProject = normalizeProject(operationalProject);
+      if (!baseProject) return null;
 
       const shift = createShift(baseProject, user, null);
       const started = await startStoredShift(shift, { lastNotice: null });
@@ -579,7 +583,7 @@ export function useTimeTracking(projects = [], user) {
       Promise.resolve()
         .then(async () => {
           const [normalizedProject, point] = await Promise.all([
-            geocodeProject(project),
+            geocodeProject(operationalProject),
             getCurrentPoint(),
           ]);
           const current = activeRef.current;
@@ -719,7 +723,9 @@ export function useTimeTracking(projects = [], user) {
 
       // Resolve the next project first so we can bail (like clockIn) without
       // leaving the user clocked out of the current job with nothing active.
-      const nextProject = await geocodeProject(project);
+      const resolved = await ensureClockInProject(project);
+      if (resolved.error) throw resolved.error;
+      const nextProject = await geocodeProject(resolved.project);
       if (!nextProject) {
         setTrackingNotice(buildPermissionNotice(permissions, "Could not resolve the selected project."));
         return null;

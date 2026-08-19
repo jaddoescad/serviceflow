@@ -1,8 +1,7 @@
 import { supabase } from "./supabase";
 
-// Compatibility shape for screens that still call these records "projects".
-// The identifier is always the canonical jobs.id UUID; CompanyCam IDs are only metadata.
-export const COMPANYCAM_PROJECT_SELECT = "*";
+// Compatibility aliases on normalized records keep old persisted time entries
+// readable. New application behavior always uses the canonical jobs.id UUID.
 
 const DEFAULT_PROJECT_PAGE_SIZE = 1000;
 const SEARCH_FETCH_LIMIT = 1000;
@@ -187,7 +186,7 @@ async function searchVisibleJobsAndLeads(search, { page = 0, pageSize = 20 } = {
   };
 }
 
-export async function listActiveCompanyCamProjects({ pageSize = DEFAULT_PROJECT_PAGE_SIZE } = {}) {
+export async function listActiveProjects({ pageSize = DEFAULT_PROJECT_PAGE_SIZE } = {}) {
   const projects = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await activeJobQuery().order("updated_at", { ascending: false }).range(from, from + pageSize - 1);
@@ -198,27 +197,50 @@ export async function listActiveCompanyCamProjects({ pageSize = DEFAULT_PROJECT_
   return { projects, error: null };
 }
 
-export async function listMappedCompanyCamProjects(options = {}) {
-  const result = await listActiveCompanyCamProjects(options);
+export async function listMappedProjects(options = {}) {
+  const result = await listActiveProjects(options);
   return { ...result, projects: result.projects.filter((job) => job.latitude != null && job.longitude != null) };
 }
 
-export async function getLatestActiveCompanyCamProject() {
+export async function getLatestActiveProject() {
   const { data, error } = await activeJobQuery().order("updated_at", { ascending: false }).limit(1);
   return { project: normalizeJob((data || [])[0]), error };
 }
 
 export async function searchJobsForClockIn(query, { limit = 50 } = {}) {
-  const match = getSearchMatch(query);
-  if (!match) return { projects: [], error: null };
-  const { data, error } = await visibleJobSearchQuery()
-    .or(`name.ilike.${match},formatted_address.ilike.${match},city.ilike.${match},province.ilike.${match},postal_code.ilike.${match}`)
-    .order("updated_at", { ascending: false })
-    .limit(limit);
-  return { projects: visible(data || []), error };
+  return searchVisibleJobsAndLeads(query, { page: 0, pageSize: limit });
 }
 
-export async function listActiveCompanyCamProjectPage({ page = 0, pageSize = 20, search = "", projectIds = null } = {}) {
+export async function ensureClockInProject(project) {
+  if (!project?.is_lead) return { project, error: null, createdFromLead: false };
+
+  const leadId = getProjectId(project);
+  if (!leadId) {
+    return {
+      project: null,
+      error: new Error("This lead is missing its project id."),
+      createdFromLead: false,
+    };
+  }
+
+  const { data, error } = await supabase.rpc("ensure_lead_clock_in_job", {
+    requested_lead_id: leadId,
+  });
+  if (error) return { project: null, error, createdFromLead: false };
+
+  const job = normalizeJob(Array.isArray(data) ? data[0] : data);
+  if (!job) {
+    return {
+      project: null,
+      error: new Error("The lead could not be prepared for clock in."),
+      createdFromLead: false,
+    };
+  }
+
+  return { project: job, error: null, createdFromLead: true };
+}
+
+export async function listActiveProjectPage({ page = 0, pageSize = 20, search = "", projectIds = null } = {}) {
   if (String(search || "").trim()) {
     return searchVisibleJobsAndLeads(search, { page, pageSize });
   }
@@ -230,11 +252,6 @@ export async function listActiveCompanyCamProjectPage({ page = 0, pageSize = 20,
   const from = page * pageSize;
   const { data, error, count } = await query.order("updated_at", { ascending: false }).range(from, from + pageSize - 1);
   return { projects: error ? [] : visible(data || []), count: count ?? null, error };
-}
-
-// CompanyCam no longer creates jobs. Existing CompanyCam IDs remain on jobs for photos only.
-export async function syncCompanyCamProjects() {
-  return { synced: 0, geocoded: 0, disabled: true, error: null, geocodeError: null };
 }
 
 export async function listActiveProjectAssignmentIds(userId) {
