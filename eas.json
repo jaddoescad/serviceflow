@@ -63,6 +63,12 @@
         "ascAppId": "6787451069"
       }
     },
+    "internal": {
+      "android": {
+        "track": "internal",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      }
+    },
     "pilot": {
       "ios": {
         "ascAppId": "6787451069"
