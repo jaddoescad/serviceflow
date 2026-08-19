@@ -1902,6 +1902,130 @@ function PrivateMediaVideo({ media, style }) {
   );
 }
 
+const MAX_VIEWER_ZOOM = 4;
+
+// Pinch-to-zoom without react-native-gesture-handler, which this project does
+// not carry. Two fingers scale around the pinch midpoint; one finger pans once
+// zoomed in. Releasing below 1x springs back and hands paging control back to
+// the pager.
+function ZoomableMedia({ children, onZoomChange, pageWidth, pageHeight }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  // Gesture bookkeeping is a ref, not state: it updates every frame and must
+  // not re-render the page while a pinch is in flight.
+  const g = useRef({
+    scale: 1,
+    lastScale: 1,
+    startDistance: 0,
+    tx: 0,
+    ty: 0,
+    lastTx: 0,
+    lastTy: 0,
+  }).current;
+
+  const reportZoom = useCallback(
+    (zoomed) => {
+      onZoomChange?.(zoomed);
+    },
+    [onZoomChange],
+  );
+
+  // Keep the image from being dragged off screen: at scale s the image
+  // overflows by (s-1)/2 of each edge.
+  const clampPan = useCallback(
+    (value, extent, currentScale) => {
+      const limit = Math.max(0, (extent * (currentScale - 1)) / 2);
+      return Math.min(limit, Math.max(-limit, value));
+    },
+    [],
+  );
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: (event) =>
+        event.nativeEvent.touches.length === 2 || g.scale > 1,
+      onMoveShouldSetPanResponder: (event) =>
+        event.nativeEvent.touches.length === 2 || g.scale > 1,
+      // Claim two-finger gestures before the pager or the dismiss handler can.
+      onMoveShouldSetPanResponderCapture: (event) =>
+        event.nativeEvent.touches.length === 2,
+      onPanResponderGrant: () => {
+        g.startDistance = 0;
+        g.lastScale = g.scale;
+        g.lastTx = g.tx;
+        g.lastTy = g.ty;
+      },
+      onPanResponderMove: (event, gesture) => {
+        const touches = event.nativeEvent.touches;
+
+        if (touches.length === 2) {
+          const [a, b] = touches;
+          const distance = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+          if (!g.startDistance) {
+            g.startDistance = distance;
+            return;
+          }
+          const next = Math.min(
+            MAX_VIEWER_ZOOM,
+            Math.max(1, g.lastScale * (distance / g.startDistance)),
+          );
+          g.scale = next;
+          scale.setValue(next);
+
+          // Re-clamp the pan as the image shrinks, or it can end up offset
+          // with empty space showing.
+          g.tx = clampPan(g.lastTx, pageWidth, next);
+          g.ty = clampPan(g.lastTy, pageHeight, next);
+          translateX.setValue(g.tx);
+          translateY.setValue(g.ty);
+          return;
+        }
+
+        if (g.scale > 1) {
+          g.tx = clampPan(g.lastTx + gesture.dx, pageWidth, g.scale);
+          g.ty = clampPan(g.lastTy + gesture.dy, pageHeight, g.scale);
+          translateX.setValue(g.tx);
+          translateY.setValue(g.ty);
+        }
+      },
+      onPanResponderRelease: () => {
+        g.startDistance = 0;
+        if (g.scale <= 1.01) {
+          g.scale = 1;
+          g.tx = 0;
+          g.ty = 0;
+          g.lastScale = 1;
+          g.lastTx = 0;
+          g.lastTy = 0;
+          Animated.parallel([
+            Animated.spring(scale, { toValue: 1, useNativeDriver: true, bounciness: 0 }),
+            Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }),
+            Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 0 }),
+          ]).start();
+          reportZoom(false);
+          return;
+        }
+        g.lastScale = g.scale;
+        g.lastTx = g.tx;
+        g.lastTy = g.ty;
+        reportZoom(true);
+      },
+      onPanResponderTerminationRequest: () => g.scale <= 1,
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      style={{ transform: [{ scale }, { translateX }, { translateY }] }}
+      {...responder.panHandlers}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -1922,6 +2046,15 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
   const closeViewerRef = useRef(closeViewer);
   closeViewerRef.current = closeViewer;
 
+  // While a photo is zoomed in, dragging pans the photo rather than paging to
+  // the next one or dismissing the viewer.
+  const [zoomed, setZoomed] = useState(false);
+  const zoomedRef = useRef(false);
+  const handleZoomChange = useCallback((isZoomed) => {
+    zoomedRef.current = isZoomed;
+    setZoomed(isZoomed);
+  }, []);
+
   useEffect(() => {
     if (visible) dismissY.setValue(0);
   }, [dismissY, visible]);
@@ -1930,8 +2063,12 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
     PanResponder.create({
       // Capture phase: the pages scroll horizontally, and the scroll view claims
       // the touch first otherwise, so a downward drag never reached us.
-      onMoveShouldSetPanResponderCapture: (_event, gesture) =>
-        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
+      onMoveShouldSetPanResponderCapture: (event, gesture) =>
+        // Never claim a pinch, and never fight a pan on a zoomed-in photo.
+        event.nativeEvent.touches.length === 1 &&
+        !zoomedRef.current &&
+        gesture.dy > 10 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
       onPanResponderMove: (_event, gesture) => {
         dismissY.setValue(Math.max(0, gesture.dy));
       },
@@ -2059,6 +2196,7 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
             initialNumToRender={1}
             maxToRenderPerBatch={2}
             showsHorizontalScrollIndicator={false}
+            scrollEnabled={!zoomed}
             onMomentumScrollEnd={(event) => {
               const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
               setCurrentIndex(Math.max(0, Math.min(media.length - 1, nextIndex)));
@@ -2076,7 +2214,13 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
                     </View>
                   )
                 ) : (
-                  <PrivateMediaImage media={item} style={styles.viewerImage} />
+                  <ZoomableMedia
+                    onZoomChange={index === currentIndex ? handleZoomChange : undefined}
+                    pageWidth={width}
+                    pageHeight={viewerPageHeight}
+                  >
+                    <PrivateMediaImage media={item} style={styles.viewerImage} />
+                  </ZoomableMedia>
                 )}
               </View>
             )}

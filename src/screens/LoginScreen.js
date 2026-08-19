@@ -26,18 +26,33 @@ export default function LoginScreen() {
   const [loading, setLoading] = React.useState(false);
   const passwordRef = React.useRef(null);
   const scrollRef = React.useRef(null);
+  const [keyboardHeight, setKeyboardHeight] = React.useState(0);
 
-  // iOS handles this natively via automaticallyAdjustKeyboardInsets on the
-  // ScrollView. Android has no equivalent, so scroll the form up by hand once
-  // the keyboard is actually on screen -- at onFocus time it still has no
-  // height, so scrolling there lands short.
+  // iOS handles this natively via automaticallyAdjustKeyboardInsets.
+  //
+  // Android does not, and since SDK 54 runs edge-to-edge the manifest's
+  // adjustResize no longer shrinks the window either -- the keyboard simply
+  // covers the content, so there is nothing to scroll. Reserve the keyboard's
+  // height as padding to create that room, then scroll into it.
   React.useEffect(() => {
     if (Platform.OS !== "android") return undefined;
-    const shown = Keyboard.addListener("keyboardDidShow", () => {
-      scrollRef.current?.scrollToEnd({ animated: true });
+    const shown = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event?.endCoordinates?.height ?? 0);
     });
-    return () => shown.remove();
+    const hidden = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
   }, []);
+
+  // Scroll only after the padding above has actually been laid out; scrolling
+  // in the listener itself runs before the content has grown.
+  const handleContentSizeChange = React.useCallback(() => {
+    if (keyboardHeight > 0) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [keyboardHeight]);
 
   // Auth session ownership lives in App.js (getSession + onAuthStateChange).
   // This screen only handles the sign-in form.
@@ -85,7 +100,11 @@ export default function LoginScreen() {
           // iOS insets the scroll view by the keyboard and scrolls the focused
           // field into view itself. Ignored on Android.
           automaticallyAdjustKeyboardInsets
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            keyboardHeight > 0 && { paddingBottom: keyboardHeight + 24 }
+          ]}
+          onContentSizeChange={handleContentSizeChange}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
