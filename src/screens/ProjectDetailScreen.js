@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  PanResponder,
   Alert,
   FlatList,
   Image,
@@ -1881,6 +1883,44 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
     if (visible) setCurrentIndex(selectedIndex ?? 0);
   }, [selectedIndex, visible]);
 
+  // Swipe down to dismiss, like the stock photo viewer. The pages scroll
+  // horizontally, so only a clearly vertical drag is claimed.
+  const dismissY = useRef(new Animated.Value(0)).current;
+  const closeViewerRef = useRef(closeViewer);
+  closeViewerRef.current = closeViewer;
+
+  useEffect(() => {
+    if (visible) dismissY.setValue(0);
+  }, [dismissY, visible]);
+
+  const dismissResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 2,
+      onPanResponderMove: (_event, gesture) => {
+        dismissY.setValue(Math.max(0, gesture.dy));
+      },
+      onPanResponderRelease: (_event, gesture) => {
+        if (gesture.dy > 140 || gesture.vy > 0.8) {
+          Animated.timing(dismissY, {
+            toValue: 900,
+            duration: 180,
+            useNativeDriver: true,
+          }).start(() => closeViewerRef.current?.());
+        } else {
+          Animated.spring(dismissY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(dismissY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    }),
+  ).current;
+
   if (!visible) return null;
   const currentMedia = media[currentIndex] || null;
   const canDeleteCurrent = Boolean(currentMedia && canDelete?.(currentMedia));
@@ -1894,7 +1934,10 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
       navigationBarTranslucent
       onRequestClose={closeViewer}
     >
-      <View style={styles.viewerBackdrop}>
+      <Animated.View
+        style={[styles.viewerBackdrop, { transform: [{ translateY: dismissY }] }]}
+        {...dismissResponder.panHandlers}
+      >
         <StatusBar style="light" backgroundColor="#050607" />
         <View
           style={[
@@ -1993,7 +2036,7 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
             </Text>
           </View>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

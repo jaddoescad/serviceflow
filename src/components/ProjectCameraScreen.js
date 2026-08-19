@@ -8,10 +8,12 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   AppState,
   Image,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -96,7 +98,7 @@ export default function ProjectCameraScreen({
   const [sessionCaptures, setSessionCaptures] = useState([]);
   const [error, setError] = useState("");
   const [viewerItem, setViewerItem] = useState(null);
-  const [zoomMultiple, setZoomMultiple] = useState(1);
+  const [currentZoom, setCurrentZoom] = useState(1);
 
   // Ask for the virtual multi-lens device so the ultra-wide is part of the same
   // session; the default back device is wide-angle only, whose minimum zoom is
@@ -208,13 +210,16 @@ export default function ProjectCameraScreen({
 
   // Zoom step buttons sit alongside the native pinch gesture; each press is a
   // single native call rather than a stream of them.
-  const selectZoom = (multiple) => {
+  const rawForDisplayZoom = (displayValue) => {
+    const { min, max, rawPerDisplay } = zoomBoundsRef.current;
+    return Math.min(Math.max(displayValue * rawPerDisplay, min), max);
+  };
+
+  const selectZoom = (displayValue) => {
     const controller = controllerRef.current;
     if (!controller) return;
-    const { min, max, neutral } = zoomBoundsRef.current;
-    const raw = Math.min(Math.max(neutral * multiple, min), max);
-    setZoomMultiple(multiple);
-    Promise.resolve(controller.setZoom(raw)).catch((zoomError) => {
+    setCurrentZoom(displayValue);
+    Promise.resolve(controller.setZoom(rawForDisplayZoom(displayValue))).catch((zoomError) => {
       console.warn("[project-camera] Could not set zoom", zoomError);
     });
   };
@@ -242,13 +247,17 @@ export default function ProjectCameraScreen({
     // that is raw 2.0, and raw 1.0 would be the 0.5x ultra-wide.
     const controller = cameraRef.current?.controller ?? null;
     controllerRef.current = controller;
-    const neutral = controller?.zoom ?? 1;
+    // Raw zoom is device-specific; displayableZoomFactor is what a person reads
+    // ("0.5x"). Their ratio converts between the two, so a labelled step means
+    // the same thing on any lens arrangement.
+    const rawZoom = controller?.zoom ?? 1;
+    const displayZoom = controller?.displayableZoomFactor ?? rawZoom;
     zoomBoundsRef.current = {
-      neutral,
-      min: controller?.minZoom ?? neutral,
-      max: controller?.maxZoom ?? neutral,
+      rawPerDisplay: displayZoom > 0 ? rawZoom / displayZoom : 1,
+      min: controller?.minZoom ?? rawZoom,
+      max: controller?.maxZoom ?? rawZoom,
     };
-    setZoomMultiple(1);
+    setCurrentZoom(displayZoom);
     setCameraReady(true);
   }, [device]);
 
@@ -273,6 +282,38 @@ export default function ProjectCameraScreen({
     console.error("[project-camera] Native camera error", cameraError);
     setError(cameraError?.message || "Camera preview unavailable.");
   }, []);
+
+  // The native pinch changes zoom without telling JS, and the controller has no
+  // zoom event, so poll it while the preview is up to keep the pills honest.
+  useEffect(() => {
+    if (!previewReady) return undefined;
+    const interval = setInterval(() => {
+      const displayable = controllerRef.current?.displayableZoomFactor;
+      if (typeof displayable !== "number") return;
+      setCurrentZoom((previous) =>
+        Math.abs(previous - displayable) > 0.02 ? displayable : previous,
+      );
+    }, 250);
+    return () => clearInterval(interval);
+  }, [previewReady]);
+
+  const availableZoomSteps = useMemo(() => {
+    const { min, max, rawPerDisplay } = zoomBoundsRef.current;
+    return ZOOM_STEPS.filter((step) => {
+      if (step === 1) return true;
+      const raw = step * rawPerDisplay;
+      return raw >= min && raw <= max;
+    });
+    // Bounds land in a ref when the session starts, which is also when
+    // previewReady flips, so recompute then.
+  }, [previewReady]);
+
+  const activeZoomStep = useMemo(() => {
+    if (!availableZoomSteps.length) return null;
+    return availableZoomSteps.reduce((closest, step) =>
+      Math.abs(step - currentZoom) < Math.abs(closest - currentZoom) ? step : closest,
+    );
+  }, [availableZoomSteps, currentZoom]);
 
   const retryPreview = () => {
     setError("");
@@ -706,33 +747,28 @@ export default function ProjectCameraScreen({
 
           {previewReady ? (
             <View style={styles.zoomRow}>
-              {ZOOM_STEPS.filter((step) => {
-                const { min, max, neutral } = zoomBoundsRef.current;
-                const raw = neutral * step;
-                return step === 1 || (raw >= min && raw <= max);
-              }).map((step) => (
-                <Pressable
-                  key={step}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Zoom ${step}x`}
-                  accessibilityState={{ selected: zoomMultiple === step }}
-                  hitSlop={8}
-                  onPress={() => selectZoom(step)}
-                  style={[
-                    styles.zoomStep,
-                    zoomMultiple === step && styles.zoomStepActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.zoomStepText,
-                      zoomMultiple === step && styles.zoomStepTextActive,
-                    ]}
+              {availableZoomSteps.map((step) => {
+                const active = step === activeZoomStep;
+                // The active pill reads out the live value while pinching, the
+                // way the stock camera does, and falls back to its own label
+                // when zoom is sitting exactly on the step.
+                const offStep = active && Math.abs(currentZoom - step) > 0.05;
+                return (
+                  <Pressable
+                    key={step}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Zoom ${step}x`}
+                    accessibilityState={{ selected: active }}
+                    hitSlop={8}
+                    onPress={() => selectZoom(step)}
+                    style={[styles.zoomStep, active && styles.zoomStepActive]}
                   >
-                    {step === 1 ? "1×" : `${step}×`}
-                  </Text>
-                </Pressable>
-              ))}
+                    <Text style={[styles.zoomStepText, active && styles.zoomStepTextActive]}>
+                      {offStep ? `${currentZoom.toFixed(1)}×` : `${step}×`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
           ) : null}
 
@@ -825,6 +861,28 @@ export default function ProjectCameraScreen({
 // down with the viewer rather than living for the whole camera session.
 function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
   const isVideo = item.kind === "video";
+  // Swipe down to dismiss, matching the project photo viewer.
+  const dismissY = useRef(new Animated.Value(0)).current;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const dismissResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 2,
+      onPanResponderMove: (_event, gesture) => dismissY.setValue(Math.max(0, gesture.dy)),
+      onPanResponderRelease: (_event, gesture) => {
+        if (gesture.dy > 140 || gesture.vy > 0.8) {
+          Animated.timing(dismissY, { toValue: 900, duration: 180, useNativeDriver: true }).start(
+            () => onCloseRef.current?.(),
+          );
+        } else {
+          Animated.spring(dismissY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+        }
+      },
+      onPanResponderTerminate: () =>
+        Animated.spring(dismissY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+    }),
+  ).current;
   const player = useVideoPlayer(isVideo ? item.uri : null, (instance) => {
     if (!instance) return;
     instance.loop = true;
@@ -832,7 +890,13 @@ function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
   });
 
   return (
-    <View style={[styles.viewerLayer, { paddingTop: Math.max(insets.top, 14) }]}>
+    <Animated.View
+      style={[
+        styles.viewerLayer,
+        { paddingTop: Math.max(insets.top, 14), transform: [{ translateY: dismissY }] },
+      ]}
+      {...dismissResponder.panHandlers}
+    >
       {isVideo ? (
         <VideoView
           player={player}
@@ -871,7 +935,7 @@ function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
           <Text style={styles.previewRetryButtonText}>Retry upload</Text>
         </Pressable>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
