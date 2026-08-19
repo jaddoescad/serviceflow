@@ -8,7 +8,6 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
-  Animated,
   AppState,
   Image,
   Linking,
@@ -41,7 +40,6 @@ const MAX_VIDEO_SECONDS = 60;
 // from the running controller, and the badge shows displayableZoomFactor.
 // Offered zoom steps, as multiples of the device's default (1x) lens.
 const ZOOM_STEPS = [0.5, 1, 2, 3];
-const FOCUS_INDICATOR_MS = 900;
 const PREVIEW_START_TIMEOUT_MS = 3000;
 const AUTOMATIC_PREVIEW_RETRIES = 1;
 // Widest side cluster is flash + flip (44 + 8 + 44) plus edge padding; the
@@ -75,8 +73,6 @@ export default function ProjectCameraScreen({
   const controllerRef = useRef(null);
   const deviceIdRef = useRef(null);
   const zoomBoundsRef = useRef({ min: 1, max: 1, neutral: 1 });
-  const focusOpacity = useRef(new Animated.Value(0)).current;
-  const focusScale = useRef(new Animated.Value(1)).current;
   const closeAfterRecordingRef = useRef(false);
   const automaticPermissionRequestRef = useRef(false);
   const cameraPermission = useCameraPermission();
@@ -95,7 +91,6 @@ export default function ProjectCameraScreen({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [sessionCaptures, setSessionCaptures] = useState([]);
   const [error, setError] = useState("");
-  const [focusPoint, setFocusPoint] = useState(null);
   const [viewerItem, setViewerItem] = useState(null);
   const [zoomMultiple, setZoomMultiple] = useState(1);
 
@@ -183,7 +178,6 @@ export default function ProjectCameraScreen({
     setMode("photo");
     setRecording(false);
     setSessionCaptures([]);
-    setFocusPoint(null);
     setViewerItem(null);
     pendingPosterRef.current = null;
     closeAfterRecordingRef.current = false;
@@ -199,9 +193,8 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
   }, [cameraActive]);
 
-  // Zoom is a discrete choice rather than a continuous gesture: VisionCamera v5
-  // ships no reference pinch implementation, and driving setZoom from JS per
-  // touch frame was never smooth. Each press is a single native call.
+  // Zoom step buttons sit alongside the native pinch gesture; each press is a
+  // single native call rather than a stream of them.
   const selectZoom = (multiple) => {
     const controller = controllerRef.current;
     if (!controller) return;
@@ -213,45 +206,6 @@ export default function ProjectCameraScreen({
     });
   };
 
-  const showFocusIndicator = (x, y) => {
-    setFocusPoint({ x, y });
-    focusOpacity.setValue(1);
-    focusScale.setValue(1.35);
-    Animated.parallel([
-      Animated.timing(focusScale, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(focusOpacity, {
-        toValue: 0,
-        delay: FOCUS_INDICATOR_MS,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) setFocusPoint(null);
-    });
-  };
-
-  // Focus options match VisionCamera's own example app.
-  const handlePreviewTouch = (event) => {
-    const { locationX, locationY } = event.nativeEvent;
-    showFocusIndicator(locationX, locationY);
-    // A focus request can fail while the session reconfigures; the indicator
-    // still gives the tap feedback the stock camera app provides.
-    cameraRef.current
-      ?.focusTo(
-        { x: locationX, y: locationY },
-        { adaptiveness: "continuous", autoResetAfter: 3, responsiveness: "snappy" },
-      )
-      .catch(() => {});
-  };
-
-  // Pinch-to-zoom and tap-to-focus are handled here rather than through
-  // VisionCamera's native gesture recognizers: the native ones attach to the
-  // preview view where React Native's touch handler swallows them, and they
-  // give no on-screen feedback.
   // Every <Camera> prop below is kept referentially stable. Inline arrows and
   // array literals made React.memo useless, so any state change on this screen
   // re-rendered the native camera view.
@@ -338,7 +292,6 @@ export default function ProjectCameraScreen({
     setPreviewReady(false);
     setPreviewFailed(false);
     setPreviewRetryCount(0);
-    setFocusPoint(null);
     // Zoom bounds and starting value come from the new device in onStarted.
     setFacing((current) => (current === "back" ? "front" : "back"));
   };
@@ -551,6 +504,7 @@ export default function ProjectCameraScreen({
             // native code, so no zoom update crosses the JS bridge. Cannot be
             // combined with a `zoom` prop; the step buttons call setZoom instead.
             enableNativeZoomGesture
+            enableNativeTapToFocusGesture
             outputs={outputs}
             resizeMode="cover"
             implementationMode={IMPLEMENTATION_MODE}
@@ -562,25 +516,6 @@ export default function ProjectCameraScreen({
             onPreviewStopped={handlePreviewStopped}
             onError={handleCameraError}
           />
-        ) : null}
-
-        {previewReady ? (
-          <View style={styles.gestureLayer} onTouchEnd={handlePreviewTouch}>
-            {focusPoint ? (
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.focusSquare,
-                  {
-                    left: focusPoint.x - 38,
-                    top: focusPoint.y - 38,
-                    opacity: focusOpacity,
-                    transform: [{ scale: focusScale }],
-                  },
-                ]}
-              />
-            ) : null}
-          </View>
         ) : null}
 
         {!permissionMissing && device && !previewReady ? (
@@ -921,16 +856,6 @@ function CaptureViewer({ item, insets, statusLabel, onRetryUpload, onClose }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#050708" },
   cameraPreview: { position: "absolute", top: 0, left: 0 },
-  gestureLayer: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
-  focusSquare: {
-    position: "absolute",
-    width: 76,
-    height: 76,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: "#ffd479",
-    backgroundColor: "transparent",
-  },
   zoomRow: {
     alignSelf: "center",
     flexDirection: "row",
