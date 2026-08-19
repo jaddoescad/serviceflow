@@ -23,6 +23,7 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Camera,
+  CommonResolutions,
   useCameraDevice,
   useCameraPermission,
   useMicrophonePermission,
@@ -33,7 +34,11 @@ import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const ACCENT = "#58c7d6";
-const MAX_VIDEO_SECONDS = 60;
+const MAX_VIDEO_SECONDS = 600;
+// Uploads are capped at 95 MB (a Cloudflare Worker request body limit), so a
+// ten-minute recording has to fit in that: 1.2 Mbit/s x 600 s is about 90 MB.
+// 720p keeps that bitrate looking reasonable; 1080p at this rate would not.
+const VIDEO_BIT_RATE = 1_200_000;
 // Raw zoom is a device-specific factor, not a display factor: on a triple-lens
 // iPhone raw 1.0 is the ultra-wide (shown as 0.5x). Bounds are therefore taken
 // from the running controller, and the badge shows displayableZoomFactor.
@@ -107,7 +112,11 @@ export default function ProjectCameraScreen({
   // Both outputs stay attached to the Camera at all times so toggling the
   // Photo/Video UI mode never reconfigures the native camera session.
   const photoOutput = usePhotoOutput({ containerFormat: "jpeg", quality: 0.85 });
-  const videoOutput = useVideoOutput({ enableAudio: microphonePermission.hasPermission });
+  const videoOutput = useVideoOutput({
+    enableAudio: microphonePermission.hasPermission,
+    targetResolution: CommonResolutions.HD_16_9,
+    targetBitRate: VIDEO_BIT_RATE,
+  });
   const outputs = useMemo(() => [photoOutput, videoOutput], [photoOutput, videoOutput]);
   const cameraActive = visible && appState === "active";
 
@@ -282,13 +291,14 @@ export default function ProjectCameraScreen({
   // the moment recording starts and use it as the filmstrip poster.
   const capturePosterFrame = async () => {
     try {
-      const snapshot = await cameraRef.current?.takeSnapshot();
-      if (!snapshot) return null;
-      // Let the image pick its own temporary path: building one from the cache
-      // directory relied on a writable location and a path format this API
-      // spells out differently (plain path, no file:// prefix).
-      const path = await snapshot.saveToTemporaryFileAsync("jpg", 70);
-      return path ? toFileUri(path) : null;
+      // Take a real photo rather than a preview snapshot: this is the same call
+      // that produces the photo thumbnails which already display correctly, so
+      // the file is known to exist and be readable by <Image>.
+      const photoFile = await photoOutput.capturePhotoToFile(
+        { flashMode: "off", enableShutterSound: false },
+        {},
+      );
+      return photoFile?.filePath ? toFileUri(photoFile.filePath) : null;
     } catch (posterError) {
       console.warn("[project-camera] Could not capture poster frame", posterError);
       return null;
