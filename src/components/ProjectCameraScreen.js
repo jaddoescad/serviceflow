@@ -71,6 +71,7 @@ export default function ProjectCameraScreen({
   const activeRecorderRef = useRef(null);
   // Poster frame grabbed when a recording starts, attached when it finishes.
   const pendingPosterRef = useRef(null);
+  const stopRequestedRef = useRef(false);
   const controllerRef = useRef(null);
   const deviceIdRef = useRef(null);
   const zoomBoundsRef = useRef({ min: 1, max: 1, neutral: 1 });
@@ -185,6 +186,7 @@ export default function ProjectCameraScreen({
     setError("");
     setMode("photo");
     setRecording(false);
+    stopRequestedRef.current = false;
     setSessionCaptures([]);
     setViewerItem(null);
     pendingPosterRef.current = null;
@@ -411,6 +413,7 @@ export default function ProjectCameraScreen({
 
   const finishRecording = () => {
     activeRecorderRef.current = null;
+    stopRequestedRef.current = false;
     setRecording(false);
     if (closeAfterRecordingRef.current) {
       closeAfterRecordingRef.current = false;
@@ -421,7 +424,13 @@ export default function ProjectCameraScreen({
   const toggleRecording = async () => {
     if (!cameraReady || !previewReady) return;
     if (recording) {
-      activeRecorderRef.current?.stopRecording().catch(() => {});
+      // Tapped stop while the recorder was still starting: remember it and stop
+      // as soon as it is running, rather than ignoring the tap.
+      if (!activeRecorderRef.current) {
+        stopRequestedRef.current = true;
+        return;
+      }
+      activeRecorderRef.current.stopRecording().catch(() => {});
       return;
     }
     if (captureBusyRef.current) return;
@@ -431,9 +440,13 @@ export default function ProjectCameraScreen({
     }
 
     captureBusyRef.current = true;
+    stopRequestedRef.current = false;
     setError("");
+    // Flip the button immediately. Creating and starting the recorder takes a
+    // moment, and a shutter that does not respond to the first tap invites a
+    // second one that lands as a stop.
+    setRecording(true);
     try {
-      pendingPosterRef.current = await capturePosterFrame();
       const recorder = await videoOutput.createRecorder({ maxDuration: MAX_VIDEO_SECONDS });
       const startedAt = Date.now();
       await recorder.startRecording(
@@ -457,7 +470,17 @@ export default function ProjectCameraScreen({
         },
       );
       activeRecorderRef.current = recorder;
-      setRecording(true);
+
+      // The poster frame is a nicety, so it never delays the start; uploaded
+      // videos also get a still frame generated server-side.
+      capturePosterFrame().then((posterUri) => {
+        pendingPosterRef.current = posterUri;
+      });
+
+      if (stopRequestedRef.current) {
+        stopRequestedRef.current = false;
+        recorder.stopRecording().catch(() => {});
+      }
     } catch (nextError) {
       setError(nextError?.message || "The video could not be recorded.");
       activeRecorderRef.current = null;
