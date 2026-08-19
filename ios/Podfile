@@ -53,8 +53,14 @@ target 'ServiceFlow' do
   )
 
   post_install do |installer|
-    # Xcode 26 Clang rejects RN 0.81's bundled fmt under C++20 consteval rules;
-    # fmt itself is fine as C++17.
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false,
+      :ccache_enabled => ccache_enabled?(podfile_properties),
+    )
+    # Xcode 26 Clang rejects RN 0.81's bundled fmt under C++20 consteval rules.
+    # Runs after react_native_post_install so nothing overrides it.
     installer.pods_project.targets.each do |target|
       if target.name == 'fmt'
         target.build_configurations.each do |config|
@@ -62,11 +68,5 @@ target 'ServiceFlow' do
         end
       end
     end
-    react_native_post_install(
-      installer,
-      config[:reactNativePath],
-      :mac_catalyst_enabled => false,
-      :ccache_enabled => ccache_enabled?(podfile_properties),
-    )
   end
 end
