@@ -31,6 +31,10 @@ const CORS_HEADERS = {
 };
 
 // A grid tile is small; 640x360 covers 3x displays without paying for more.
+// 8 MB parts: comfortably inside the request limit, few enough round trips.
+const MULTIPART_PART_SIZE = 8 * 1024 * 1024;
+const MAX_MULTIPART_VIDEO_BYTES = 1024 * 1024 * 1024;
+
 const THUMBNAIL_WIDTH = 640;
 const THUMBNAIL_HEIGHT = 360;
 // One second in, so we skip the black frame most recordings start on.
@@ -191,6 +195,41 @@ function mediaResponseHeaders(row, etag, size) {
   return headers;
 }
 
+// Authorization gate: can this JWT read the owning job/lead at all? RLS answers.
+// Returns an error Response when access is refused, otherwise null.
+async function assertProjectAccess(env, token, projectKind, projectId) {
+  const projectTable = projectKind === "lead" ? "leads" : "jobs";
+  const projectCheck = await supabaseRest(
+    env,
+    token,
+    `/${projectTable}?id=eq.${projectId}&select=id&limit=1`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (projectCheck.status === 401 || projectCheck.status === 403) {
+    return errorResponse(401, "Not authorized.");
+  }
+  if (!projectCheck.ok) return errorResponse(502, "Could not verify project access.");
+  const projectRows = await projectCheck.json().catch(() => null);
+  if (!Array.isArray(projectRows) || !projectRows.length) {
+    return errorResponse(404, "Project not found or not accessible.");
+  }
+  return null;
+}
+
+// Object keys are server-generated as "<jobs|leads>/<projectId>/<mediaId>.<ext>",
+// so a part upload can re-derive who owns it without trusting the client.
+function parseObjectKey(objectKey) {
+  const match = /^(jobs|leads)\/([0-9a-fA-F-]{36})\/([0-9a-fA-F-]{36})\.([a-z0-9]+)$/.exec(
+    String(objectKey || ""),
+  );
+  if (!match) return null;
+  return {
+    projectKind: match[1] === "leads" ? "lead" : "job",
+    projectId: match[2],
+    mediaId: match[3],
+  };
+}
+
 async function handleUpload(request, env, projectKind, projectId) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
@@ -223,19 +262,8 @@ async function handleUpload(request, env, projectKind, projectId) {
     return errorResponse(413, `File too large. Limit is ${Math.floor(maxBytes / (1024 * 1024))} MB for ${mediaInfo.kind}s.`);
   }
 
-  // Authorization gate: can this JWT read the owning job/lead at all? RLS answers.
-  const projectTable = projectKind === "lead" ? "leads" : "jobs";
-  const projectCheck = await supabaseRest(env, token, `/${projectTable}?id=eq.${projectId}&select=id&limit=1`, {
-    headers: { Accept: "application/json" },
-  });
-  if (projectCheck.status === 401 || projectCheck.status === 403) {
-    return errorResponse(401, "Not authorized.");
-  }
-  if (!projectCheck.ok) return errorResponse(502, "Could not verify project access.");
-  const projectRows = await projectCheck.json().catch(() => null);
-  if (!Array.isArray(projectRows) || !projectRows.length) {
-    return errorResponse(404, "Project not found or not accessible.");
-  }
+  const denied = await assertProjectAccess(env, token, projectKind, projectId);
+  if (denied) return denied;
 
   const mediaId = crypto.randomUUID();
   const objectPrefix = projectKind === "lead" ? "leads" : "jobs";
@@ -365,6 +393,187 @@ async function handleMediaFetch(request, env, mediaId, { headOnly }) {
 // Still frame from a stored video, produced by Cloudflare Media Transformations.
 // The binding takes the R2 body directly, so the bucket stays private: no public
 // URL and no presigned link is ever created. Same JWT + RLS check as the video.
+// --- Multipart uploads -------------------------------------------------------
+// A single Worker request body is capped at 100 MB, which is why whole-file
+// uploads were limited to 95 MB. Multipart sends the file in parts instead, so
+// long videos upload at full quality and a dropped connection only costs the
+// part in flight rather than the whole recording.
+
+async function handleMultipartStart(request, env, projectKind, projectId) {
+  const token = getBearerToken(request);
+  if (!token) return errorResponse(401, "Missing bearer token.");
+  if (!UUID_PATTERN.test(projectId)) return errorResponse(400, "Invalid project id.");
+
+  const uploadedBy = decodeJwtSubject(token);
+  if (!uploadedBy) return errorResponse(401, "Invalid bearer token.");
+
+  const contentType = (request.headers.get("x-media-content-type") || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  const mediaInfo = MEDIA_TYPES[contentType];
+  if (!mediaInfo) return errorResponse(415, "Unsupported content type.");
+  if (mediaInfo.kind !== "video") {
+    return errorResponse(400, "Multipart uploads are for videos; send photos in one request.");
+  }
+
+  const declaredSize = parsePositiveInteger(
+    request.headers.get("x-file-size"),
+    Number.MAX_SAFE_INTEGER,
+  );
+  if (!declaredSize) return errorResponse(411, "A valid x-file-size header is required.");
+  if (declaredSize > MAX_MULTIPART_VIDEO_BYTES) {
+    return errorResponse(
+      413,
+      `File too large. Limit is ${Math.floor(MAX_MULTIPART_VIDEO_BYTES / (1024 * 1024))} MB for videos.`,
+    );
+  }
+
+  const denied = await assertProjectAccess(env, token, projectKind, projectId);
+  if (denied) return denied;
+
+  const mediaId = crypto.randomUUID();
+  const objectPrefix = projectKind === "lead" ? "leads" : "jobs";
+  const objectKey = `${objectPrefix}/${projectId}/${mediaId}.${mediaInfo.extension}`;
+  const originalFilename = sanitizeFilename(request.headers.get("x-original-filename"));
+
+  let upload;
+  try {
+    upload = await env.MEDIA_BUCKET.createMultipartUpload(objectKey, {
+      httpMetadata: { contentType },
+      customMetadata: {
+        project_kind: projectKind,
+        project_id: projectId,
+        media_id: mediaId,
+        uploaded_by: uploadedBy,
+        ...(originalFilename ? { original_filename: originalFilename } : {}),
+      },
+    });
+  } catch (_error) {
+    return errorResponse(502, "Could not start the upload. Try again.");
+  }
+
+  return jsonResponse(200, {
+    mediaId,
+    objectKey,
+    uploadId: upload.uploadId,
+    partSize: MULTIPART_PART_SIZE,
+  });
+}
+
+// Re-checks access on every part: the key names its own project, so a stolen
+// upload id cannot be pointed at someone else's job.
+async function authorizeMultipart(request, env, objectKey) {
+  const token = getBearerToken(request);
+  if (!token) return { error: errorResponse(401, "Missing bearer token.") };
+  const parsed = parseObjectKey(objectKey);
+  if (!parsed) return { error: errorResponse(400, "Invalid object key.") };
+  const denied = await assertProjectAccess(env, token, parsed.projectKind, parsed.projectId);
+  if (denied) return { error: denied };
+  return { token, parsed };
+}
+
+async function handleMultipartPart(request, env, uploadId) {
+  const objectKey = request.headers.get("x-object-key") || "";
+  const { error } = await authorizeMultipart(request, env, objectKey);
+  if (error) return error;
+
+  const partNumber = parsePositiveInteger(request.headers.get("x-part-number"), 10000);
+  if (!partNumber) return errorResponse(400, "A valid x-part-number header is required.");
+  if (!request.body) return errorResponse(400, "Missing part body.");
+
+  try {
+    const upload = env.MEDIA_BUCKET.resumeMultipartUpload(objectKey, uploadId);
+    const part = await upload.uploadPart(partNumber, request.body);
+    return jsonResponse(200, { partNumber: part.partNumber, etag: part.etag });
+  } catch (_error) {
+    return errorResponse(502, "Storing that part failed. Try again.");
+  }
+}
+
+async function handleMultipartComplete(request, env, uploadId) {
+  const payload = await request.json().catch(() => null);
+  if (!payload || typeof payload !== "object") return errorResponse(400, "Invalid body.");
+
+  const { objectKey, parts } = payload;
+  const { token, error, parsed } = await authorizeMultipart(request, env, objectKey);
+  if (error) return error;
+  if (!Array.isArray(parts) || !parts.length) return errorResponse(400, "No parts to complete.");
+
+  const uploadedBy = decodeJwtSubject(token);
+  if (!uploadedBy) return errorResponse(401, "Invalid bearer token.");
+
+  let object;
+  try {
+    const upload = env.MEDIA_BUCKET.resumeMultipartUpload(objectKey, uploadId);
+    object = await upload.complete(
+      parts.map((part) => ({ partNumber: Number(part.partNumber), etag: String(part.etag) })),
+    );
+  } catch (_error) {
+    return errorResponse(502, "Assembling the upload failed. Try again.");
+  }
+
+  const contentType = (payload.mimeType || "").split(";")[0].trim().toLowerCase();
+  const mediaInfo = MEDIA_TYPES[contentType];
+  if (!mediaInfo) {
+    await env.MEDIA_BUCKET.delete(objectKey).catch(() => {});
+    return errorResponse(415, "Unsupported content type.");
+  }
+
+  const insertBody = {
+    id: parsed.mediaId,
+    ...(parsed.projectKind === "lead"
+      ? { lead_id: parsed.projectId }
+      : { job_id: parsed.projectId }),
+    object_key: objectKey,
+    media_type: mediaInfo.kind,
+    mime_type: contentType,
+    original_filename: sanitizeFilename(payload.originalFilename),
+    byte_size: object?.size ?? parsePositiveInteger(payload.byteSize, Number.MAX_SAFE_INTEGER),
+    width: parsePositiveInteger(payload.width, 100000),
+    height: parsePositiveInteger(payload.height, 100000),
+    duration_ms: parsePositiveInteger(payload.durationMs, 24 * 60 * 60 * 1000),
+    captured_at: parseCapturedAt(payload.capturedAt),
+    uploaded_by: uploadedBy,
+  };
+
+  const insert = await supabaseRest(env, token, "/job_media", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(insertBody),
+  });
+
+  if (!insert.ok) {
+    // Keep storage consistent with metadata: no orphaned R2 objects.
+    await env.MEDIA_BUCKET.delete(objectKey).catch(() => {});
+    if (insert.status === 401 || insert.status === 403) {
+      return errorResponse(403, "Not allowed to add media to this project.");
+    }
+    if (insert.status === 409) return errorResponse(409, "Duplicate media upload.");
+    return errorResponse(502, "Saving media details failed. Try again.");
+  }
+
+  const rows = await insert.json().catch(() => null);
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  return jsonResponse(201, { media: row });
+}
+
+async function handleMultipartAbort(request, env, uploadId) {
+  const objectKey = request.headers.get("x-object-key") || "";
+  const { error } = await authorizeMultipart(request, env, objectKey);
+  if (error) return error;
+  try {
+    await env.MEDIA_BUCKET.resumeMultipartUpload(objectKey, uploadId).abort();
+  } catch (_error) {
+    // An already-aborted or unknown upload is fine to report as done.
+  }
+  return jsonResponse(200, { aborted: true });
+}
+
 async function handleMediaThumbnail(request, env, mediaId) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
@@ -463,6 +672,31 @@ export default {
 
     if (!hasValidConfiguration(env)) {
       return errorResponse(503, "Media service is not configured.");
+    }
+
+    const multipartStart = pathname.match(/^\/v1\/(jobs|leads)\/([^/]+)\/media\/multipart$/);
+    if (multipartStart) {
+      if (method !== "POST") return errorResponse(405, "Method not allowed.");
+      const projectKind = multipartStart[1] === "leads" ? "lead" : "job";
+      return handleMultipartStart(request, env, projectKind, decodeURIComponent(multipartStart[2]));
+    }
+
+    const multipartPart = pathname.match(/^\/v1\/media-uploads\/([^/]+)\/parts$/);
+    if (multipartPart) {
+      if (method !== "PUT") return errorResponse(405, "Method not allowed.");
+      return handleMultipartPart(request, env, decodeURIComponent(multipartPart[1]));
+    }
+
+    const multipartComplete = pathname.match(/^\/v1\/media-uploads\/([^/]+)\/complete$/);
+    if (multipartComplete) {
+      if (method !== "POST") return errorResponse(405, "Method not allowed.");
+      return handleMultipartComplete(request, env, decodeURIComponent(multipartComplete[1]));
+    }
+
+    const multipartAbort = pathname.match(/^\/v1\/media-uploads\/([^/]+)$/);
+    if (multipartAbort) {
+      if (method !== "DELETE") return errorResponse(405, "Method not allowed.");
+      return handleMultipartAbort(request, env, decodeURIComponent(multipartAbort[1]));
     }
 
     const uploadMatch = pathname.match(/^\/v1\/(jobs|leads)\/([^/]+)\/media$/);

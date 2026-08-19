@@ -1,5 +1,8 @@
 export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 95 * 1024 * 1024;
+// Videos above MULTIPART_THRESHOLD_BYTES upload in parts, which lifts the
+// single-request ceiling. Keep in step with the Worker's own limit.
+export const MAX_MULTIPART_VIDEO_BYTES = 1024 * 1024 * 1024;
 
 export const IMAGE_MIME_TYPES = [
   "image/jpeg",

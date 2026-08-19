@@ -14,6 +14,8 @@ function fakeJwt(sub = USER_ID) {
 }
 
 class FakeBucket {
+  multipart = new Map();
+
   constructor() {
     this.objects = new Map();
   }
@@ -41,6 +43,44 @@ class FakeBucket {
 
   async delete(key) {
     this.objects.delete(key);
+  }
+
+  async createMultipartUpload(key, options = {}) {
+    const uploadId = `upload+id/${this.multipart.size + 1}`;
+    this.multipart.set(uploadId, { key, options, parts: new Map() });
+    return { uploadId, key };
+  }
+
+  resumeMultipartUpload(key, uploadId) {
+    const bucket = this;
+    return {
+      async uploadPart(partNumber, body) {
+        const record = bucket.multipart.get(uploadId);
+        if (!record || record.key !== key) throw new Error("unknown upload");
+        const bytes = new Uint8Array(await new Response(body).arrayBuffer());
+        record.parts.set(partNumber, bytes);
+        return { partNumber, etag: `etag-${partNumber}` };
+      },
+      async complete(parts) {
+        const record = bucket.multipart.get(uploadId);
+        if (!record) throw new Error("unknown upload");
+        const ordered = [...parts].sort((a, b) => a.partNumber - b.partNumber);
+        const chunks = ordered.map((part) => record.parts.get(part.partNumber) ?? new Uint8Array());
+        const size = chunks.reduce((total, chunk) => total + chunk.length, 0);
+        const merged = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        bucket.objects.set(record.key, { body: merged, httpMetadata: record.options.httpMetadata });
+        bucket.multipart.delete(uploadId);
+        return { size };
+      },
+      async abort() {
+        bucket.multipart.delete(uploadId);
+      },
+    };
   }
 }
 
@@ -402,6 +442,112 @@ test("media HEAD returns headers with no body", async () => {
   assert.equal(response.headers.get("Content-Length"), String(bytes.length));
   assert.equal(response.headers.get("Content-Type"), "image/jpeg");
   assert.equal((await response.arrayBuffer()).byteLength, 0);
+});
+
+test("multipart upload assembles parts and records metadata once", async () => {
+  const projectId = crypto.randomUUID();
+  queueSupabase(200, [{ id: projectId }]);
+
+  const start = await worker.fetch(
+    new Request(`${BASE}/v1/jobs/${projectId}/media/multipart`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${fakeJwt()}`,
+        "x-media-content-type": "video/mp4",
+        "x-file-size": "12",
+      },
+    }),
+    env,
+  );
+  assert.equal(start.status, 200);
+  const { objectKey, uploadId } = await start.json();
+  assert.match(objectKey, new RegExp(`^jobs/${projectId}/`));
+
+  for (const [index, chunk] of [[1, "aaaa"], [2, "bbbb"], [3, "cccc"]]) {
+    queueSupabase(200, [{ id: projectId }]);
+    const part = await worker.fetch(
+      new Request(`${BASE}/v1/media-uploads/${encodeURIComponent(uploadId)}/parts`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${fakeJwt()}`,
+          "x-object-key": objectKey,
+          "x-part-number": String(index),
+        },
+        body: chunk,
+      }),
+      env,
+    );
+    assert.equal(part.status, 200);
+  }
+
+  queueSupabase(200, [{ id: projectId }]);
+  queueSupabase(201, [{ id: "created" }]);
+  const complete = await worker.fetch(
+    new Request(`${BASE}/v1/media-uploads/${encodeURIComponent(uploadId)}/complete`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${fakeJwt()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objectKey,
+        mimeType: "video/mp4",
+        parts: [
+          { partNumber: 1, etag: "etag-1" },
+          { partNumber: 2, etag: "etag-2" },
+          { partNumber: 3, etag: "etag-3" },
+        ],
+      }),
+    }),
+    env,
+  );
+  assert.equal(complete.status, 201);
+  const stored = bucket.objects.get(objectKey);
+  assert.equal(new TextDecoder().decode(stored.body), "aaaabbbbcccc");
+});
+
+test("multipart part upload refuses a key the caller cannot reach", async () => {
+  const projectId = crypto.randomUUID();
+  queueSupabase(200, []);
+  const response = await worker.fetch(
+    new Request(`${BASE}/v1/media-uploads/some-upload/parts`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${fakeJwt()}`,
+        "x-object-key": `jobs/${projectId}/${crypto.randomUUID()}.mp4`,
+        "x-part-number": "1",
+      },
+      body: "data",
+    }),
+    env,
+  );
+  assert.equal(response.status, 404);
+});
+
+test("multipart start rejects photos and oversized videos", async () => {
+  const projectId = crypto.randomUUID();
+  const photo = await worker.fetch(
+    new Request(`${BASE}/v1/jobs/${projectId}/media/multipart`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${fakeJwt()}`,
+        "x-media-content-type": "image/jpeg",
+        "x-file-size": "1024",
+      },
+    }),
+    env,
+  );
+  assert.equal(photo.status, 400);
+
+  const huge = await worker.fetch(
+    new Request(`${BASE}/v1/jobs/${projectId}/media/multipart`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${fakeJwt()}`,
+        "x-media-content-type": "video/mp4",
+        "x-file-size": String(2 * 1024 * 1024 * 1024),
+      },
+    }),
+    env,
+  );
+  assert.equal(huge.status, 413);
 });
 
 test("thumbnail extracts a frame from a video without exposing the bucket", async () => {

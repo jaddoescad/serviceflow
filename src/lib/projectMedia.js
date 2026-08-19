@@ -4,6 +4,7 @@ import { File } from "expo-file-system";
 import { supabase } from "./supabase";
 import {
   MAX_IMAGE_BYTES,
+  MAX_MULTIPART_VIDEO_BYTES,
   MAX_VIDEO_BYTES,
   buildProjectMediaUploadPath,
   buildUploadHeaders,
@@ -118,6 +119,112 @@ export async function listProjectMedia(
   };
 }
 
+// Anything past this goes out in parts. Below it a single request is fewer
+// round trips and the retry cost is small.
+const MULTIPART_THRESHOLD_BYTES = 16 * 1024 * 1024;
+const MULTIPART_PART_RETRIES = 3;
+
+async function uploadPartWithRetry(url, token, objectKey, partNumber, chunk) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= MULTIPART_PART_RETRIES; attempt += 1) {
+    try {
+      const response = await expoFetch(url, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/octet-stream",
+          "x-object-key": objectKey,
+          "x-part-number": String(partNumber),
+        },
+        body: chunk,
+      });
+      if (response.ok) return response.json();
+      // A refused part will not succeed on retry; a server or network fault might.
+      if (response.status < 500) throw await readWorkerError(response, "Upload failed");
+      lastError = await readWorkerError(response, "Upload failed");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error("Upload failed");
+}
+
+async function uploadVideoInParts({
+  baseUrl,
+  token,
+  projectId,
+  projectKind,
+  asset,
+  body,
+  byteSize,
+  mimeType,
+}) {
+  const startPath = `${buildProjectMediaUploadPath(projectId, projectKind)}/multipart`;
+  const startResponse = await expoFetch(`${baseUrl}${startPath}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-media-content-type": mimeType,
+      "x-file-size": String(byteSize),
+      ...(asset?.fileName ? { "x-original-filename": String(asset.fileName) } : {}),
+    },
+  });
+  if (!startResponse.ok) throw await readWorkerError(startResponse, "Upload failed");
+
+  const { objectKey, uploadId, partSize } = await startResponse.json();
+  const chunkSize = Number(partSize) > 0 ? Number(partSize) : 8 * 1024 * 1024;
+  const partsUrl = `${baseUrl}/v1/media-uploads/${encodeURIComponent(uploadId)}/parts`;
+
+  const parts = [];
+  try {
+    let offset = 0;
+    let partNumber = 1;
+    while (offset < byteSize) {
+      const end = Math.min(offset + chunkSize, byteSize);
+      const part = await uploadPartWithRetry(
+        partsUrl,
+        token,
+        objectKey,
+        partNumber,
+        body.slice(offset, end),
+      );
+      parts.push({ partNumber: part.partNumber, etag: part.etag });
+      offset = end;
+      partNumber += 1;
+    }
+  } catch (error) {
+    // Leave no half-finished upload occupying storage.
+    await expoFetch(`${baseUrl}/v1/media-uploads/${encodeURIComponent(uploadId)}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}`, "x-object-key": objectKey },
+    }).catch(() => {});
+    throw error;
+  }
+
+  const completeResponse = await expoFetch(
+    `${baseUrl}/v1/media-uploads/${encodeURIComponent(uploadId)}/complete`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objectKey,
+        parts,
+        mimeType,
+        byteSize,
+        originalFilename: asset?.fileName ?? null,
+        width: asset?.width ?? null,
+        height: asset?.height ?? null,
+        durationMs: asset?.duration ?? null,
+        capturedAt: asset?.creationTime ?? null,
+      }),
+    },
+  );
+  if (!completeResponse.ok) throw await readWorkerError(completeResponse, "Upload failed");
+
+  const { media } = await completeResponse.json();
+  return attachMediaAccess(media, baseUrl, token);
+}
+
 export async function uploadProjectMedia(projectId, asset, { projectKind = "job" } = {}) {
   const baseUrl = requireProjectMediaApiUrl();
   if (!projectId) throw new Error("Missing project id.");
@@ -129,7 +236,9 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
     throw new Error("Unsupported file type. Use JPEG, PNG, WebP, HEIC photos or MP4/MOV videos.");
   }
 
-  const maxBytes = mediaKind === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  // Videos go through multipart, which has a far higher ceiling and survives a
+  // dropped connection; photos are small enough to stay on the single request.
+  const maxBytes = mediaKind === "video" ? MAX_MULTIPART_VIDEO_BYTES : MAX_IMAGE_BYTES;
   const pickerSize = Number(asset?.fileSize);
   if (Number.isFinite(pickerSize) && pickerSize > maxBytes) {
     const maxMb = Math.floor(maxBytes / (1024 * 1024));
@@ -147,6 +256,19 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
   }
 
   const token = await requireAccessToken();
+
+  if (mediaKind === "video" && byteSize > MULTIPART_THRESHOLD_BYTES) {
+    return uploadVideoInParts({
+      baseUrl,
+      token,
+      projectId,
+      projectKind,
+      asset,
+      body,
+      byteSize,
+      mimeType,
+    });
+  }
 
   // expo/fetch understands expo-file-system File as a Blob and streams it from
   // native storage while supplying a real Content-Length for the R2 Worker.

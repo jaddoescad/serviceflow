@@ -25,7 +25,6 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Camera,
-  CommonResolutions,
   useCameraDevice,
   useCameraPermission,
   useMicrophonePermission,
@@ -37,10 +36,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const ACCENT = "#58c7d6";
 const MAX_VIDEO_SECONDS = 600;
-// Uploads are capped at 95 MB (a Cloudflare Worker request body limit), so a
-// ten-minute recording has to fit in that: 1.2 Mbit/s x 600 s is about 90 MB.
-// 720p keeps that bitrate looking reasonable; 1080p at this rate would not.
-const VIDEO_BIT_RATE = 1_200_000;
 // Raw zoom is a device-specific factor, not a display factor: on a triple-lens
 // iPhone raw 1.0 is the ultra-wide (shown as 0.5x). Bounds are therefore taken
 // from the running controller, and the badge shows displayableZoomFactor.
@@ -114,11 +109,9 @@ export default function ProjectCameraScreen({
   // Both outputs stay attached to the Camera at all times so toggling the
   // Photo/Video UI mode never reconfigures the native camera session.
   const photoOutput = usePhotoOutput({ containerFormat: "jpeg", quality: 0.85 });
-  const videoOutput = useVideoOutput({
-    enableAudio: microphonePermission.hasPermission,
-    targetResolution: CommonResolutions.HD_16_9,
-    targetBitRate: VIDEO_BIT_RATE,
-  });
+  // Full quality: long recordings upload in parts, so file size is no longer
+  // constrained by a single request.
+  const videoOutput = useVideoOutput({ enableAudio: microphonePermission.hasPermission });
   const outputs = useMemo(() => [photoOutput, videoOutput], [photoOutput, videoOutput]);
   const cameraActive = visible && appState === "active";
 
