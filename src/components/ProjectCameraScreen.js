@@ -19,7 +19,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { Paths } from "expo-file-system";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -285,10 +284,11 @@ export default function ProjectCameraScreen({
     try {
       const snapshot = await cameraRef.current?.takeSnapshot();
       if (!snapshot) return null;
-      const directory = Paths.cache.uri.replace(/^file:\/\//, "").replace(/\/?$/, "/");
-      const path = `${directory}poster-${Date.now()}.jpg`;
-      await snapshot.saveToFileAsync(path, "jpg", 70);
-      return toFileUri(path);
+      // Let the image pick its own temporary path: building one from the cache
+      // directory relied on a writable location and a path format this API
+      // spells out differently (plain path, no file:// prefix).
+      const path = await snapshot.saveToTemporaryFileAsync("jpg", 70);
+      return path ? toFileUri(path) : null;
     } catch (posterError) {
       console.warn("[project-camera] Could not capture poster frame", posterError);
       return null;
@@ -381,6 +381,7 @@ export default function ProjectCameraScreen({
     captureBusyRef.current = true;
     setError("");
     try {
+      pendingPosterRef.current = await capturePosterFrame();
       const recorder = await videoOutput.createRecorder({ maxDuration: MAX_VIDEO_SECONDS });
       const startedAt = Date.now();
       await recorder.startRecording(
@@ -405,9 +406,6 @@ export default function ProjectCameraScreen({
       );
       activeRecorderRef.current = recorder;
       setRecording(true);
-      capturePosterFrame().then((posterUri) => {
-        pendingPosterRef.current = posterUri;
-      });
     } catch (nextError) {
       setError(nextError?.message || "The video could not be recorded.");
       activeRecorderRef.current = null;
@@ -652,7 +650,9 @@ export default function ProjectCameraScreen({
                       {item.posterUri ? (
                         <Image source={{ uri: item.posterUri }} style={styles.sessionThumb} />
                       ) : (
-                        <View style={[styles.sessionThumb, styles.videoThumb]} />
+                        <View style={[styles.sessionThumb, styles.videoThumb]}>
+                          <Ionicons name="videocam" size={20} color="#fff" />
+                        </View>
                       )}
                       <View style={styles.videoBadge}>
                         <Ionicons name="play" size={11} color="#fff" />
