@@ -14,7 +14,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme";
 
-const logo = require("../../assets/serviceflow-logo.png");
+// Trimmed copy of the logo: the original has ~15% white margin above and below
+// the artwork baked in, which rendered as dead space under the logo.
+const logo = require("../../assets/serviceflow-logo-trimmed.png");
 
 export default function LoginScreen() {
   const [email, setEmail] = React.useState("");
@@ -164,13 +166,13 @@ const styles = StyleSheet.create({
   },
   logo: {
     alignSelf: "center",
-    // An explicit height, not aspectRatio: aspectRatio produced a box far taller
-    // than the artwork, and "contain" then centred the logo in all that dead
-    // space. maxWidth keeps it from overflowing a narrow screen.
+    // Explicit height, not aspectRatio: aspectRatio produced a box taller than
+    // the artwork, and "contain" then centred the logo in the dead space.
+    // 230x147 matches the trimmed asset's 1.564 ratio, so nothing is letterboxed.
     width: "100%",
-    maxWidth: 320,
-    height: 180,
-    marginBottom: 34
+    maxWidth: 230,
+    height: 147,
+    marginBottom: 28
   },
   form: {
     width: "100%",
