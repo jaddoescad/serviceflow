@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/contacts", label: "Contacts" },
   { href: "/leads", label: "Leads & Estimates" },
   { href: "/jobs", label: "Jobs & Budgets" },
+  { href: "/photos", label: "Photos" },
   { href: "/financials", label: "Financials" },
   { href: "/marketing", label: "Marketing" },
   { href: "/invoices", label: "Labour invoices" },

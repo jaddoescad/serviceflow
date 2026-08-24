@@ -17,6 +17,14 @@
 - Surface external-access blockers immediately. Do not silently expand a quick test deployment into a broader security or architecture project.
 - Use the dedicated `Hermes QA` employee, `Hermes Clock-In QA` job, and `hermes-clock-in-qa-fixture` time entry for Hermes clock-in tests. Never test write behavior against a real employee's entry unless the user explicitly names and authorizes that entry.
 
+## Production deployment
+
+- The canonical production URL is `https://ottawa-painters-dashboard.vercel.app`.
+- GitHub repository `jaddoescad/ottawa-painters-admin` is the deployment source of truth. Vercel is linked to its `main` branch.
+- Deploy by committing only the intended files and pushing `main` to `origin`. The GitHub integration must perform the Vercel production deployment.
+- Do not run `vercel deploy`, create preview deployments, promote previews, or create/link another Vercel project unless the user explicitly asks for that exact action.
+- Before pushing, inspect the staged diff and exclude unrelated dirty-worktree changes. After pushing, wait for the linked Vercel deployment to become Ready and verify the canonical production URL.
+
 ## Historical job accounting lock
 
 - Treat June 1, 2026 as the accounting cutoff. Do not create, update, reverse, or delete job-linked receipts, invoice allocations, direct transaction allocations, or budgets for a job whose verified `started_on` date is before `2026-06-01`.
