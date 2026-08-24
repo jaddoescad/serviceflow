@@ -218,6 +218,13 @@ function formatMediaTime(value) {
   });
 }
 
+function getMediaSourceName(media) {
+  return String(
+    media?.source_name || media?.source_metadata?.creator_name ||
+      (media?.source_provider === 'companycam' ? 'CompanyCam' : 'Team member'),
+  ).trim();
+}
+
 function buildProjectMediaSections(media) {
   const orderedMedia = [...(media || [])].sort(
     (left, right) => getMediaCapturedAt(right) - getMediaCapturedAt(left),
@@ -958,6 +965,7 @@ export default function ProjectDetailScreen({
   trackingNotice,
   projects = [],
   user,
+  painterName = 'Team member',
   canViewTeamTime = false,
   onClockIn,
   onClockOut,
@@ -1447,9 +1455,8 @@ export default function ProjectDetailScreen({
             onRetryAllUploads={mediaUploads.retryAll}
             onDiscardUpload={mediaUploads.discard}
             onDelete={handleDeleteProjectMedia}
-            canDelete={(item) =>
-              Boolean(item?.uploaded_by === user?.id || canViewTeamTime)
-            }
+            pendingSourceName={painterName}
+            canDelete={(item) => Boolean(item?.uploaded_by === user?.id)}
           />
         )}
       </ScrollView>
@@ -1573,6 +1580,7 @@ function ProjectMediaPanel({
   onDiscardUpload,
   onDelete,
   canDelete,
+  pendingSourceName,
 }) {
   const [selectedMediaId, setSelectedMediaId] = useState(null);
   const orderedMedia = useMemo(
@@ -1597,8 +1605,9 @@ function ProjectMediaPanel({
       upload_status: item.status,
       upload_error: item.error,
       is_pending_upload: true,
+      source_name: pendingSourceName,
     })),
-    [pendingItems],
+    [pendingItems, pendingSourceName],
   );
   const { sections } = useMemo(
     () => buildProjectMediaSections([...pendingMedia, ...(media || [])]),
@@ -1759,15 +1768,20 @@ function ProjectMediaPanel({
                     ) : null}
                     <View style={styles.mediaCardMeta}>
                       <Ionicons
-                        name={item.media_type === 'video' ? 'videocam-outline' : 'camera-outline'}
+                        name="person-outline"
                         size={13}
                         color={MUTED}
                       />
-                      <Text style={styles.mediaCardMetaText} numberOfLines={1}>
-                        {pending
-                          ? item.upload_status === 'failed' ? 'Upload failed' : 'Just captured'
-                          : formatMediaTime(item.captured_at || item.created_at)}
-                      </Text>
+                      <View style={styles.mediaCardMetaCopy}>
+                        <Text style={styles.mediaCardSourceText} numberOfLines={1}>
+                          {getMediaSourceName(item)}
+                        </Text>
+                        <Text style={styles.mediaCardMetaText} numberOfLines={1}>
+                          {pending
+                            ? item.upload_status === 'failed' ? 'Upload failed' : 'Just captured'
+                            : formatMediaTime(item.captured_at || item.created_at)}
+                        </Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
                   );
@@ -2155,9 +2169,14 @@ function MediaLightbox({ media, selectedIndex, onClose, onDelete, canDelete }) {
               <Ionicons name="close" size={24} color="#ffffff" />
               <Text style={styles.viewerCloseText}>Close</Text>
             </TouchableOpacity>
-            <Text style={styles.viewerCounter}>
-              {currentMedia?.media_type === 'video' ? 'Video' : 'Photo'} {currentIndex + 1} / {media.length}
-            </Text>
+            <View style={styles.viewerTitleCopy}>
+              <Text style={styles.viewerCounter}>
+                {currentMedia?.media_type === 'video' ? 'Video' : 'Photo'} {currentIndex + 1} / {media.length}
+              </Text>
+              <Text style={styles.viewerSource} numberOfLines={1}>
+                Taken by {getMediaSourceName(currentMedia)}
+              </Text>
+            </View>
             {canDeleteCurrent ? (
               <TouchableOpacity
                 style={styles.viewerDeleteButton}
@@ -2918,17 +2937,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
   mediaCardMeta: {
-    minHeight: 29,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     paddingHorizontal: 6,
     backgroundColor: '#fff',
   },
-  mediaCardMetaText: {
+  mediaCardMetaCopy: {
     flex: 1,
-    color: MUTED,
+  },
+  mediaCardSourceText: {
+    color: INK,
     fontSize: 8.5,
+    fontWeight: '800',
+  },
+  mediaCardMetaText: {
+    color: MUTED,
+    fontSize: 8,
     fontWeight: '700',
   },
   pendingMediaOverlay: {
@@ -2981,8 +3007,21 @@ const styles = StyleSheet.create({
   },
   viewerCounter: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
+    textAlign: 'center',
+  },
+  viewerTitleCopy: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  viewerSource: {
+    marginTop: 2,
+    maxWidth: '100%',
+    color: '#b7c0c5',
+    fontSize: 10.5,
+    fontWeight: '600',
   },
   viewerTopSpacer: {
     width: 68,

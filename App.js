@@ -277,6 +277,7 @@ function AppRoot() {
                   trackingNotice={tracking.trackingNotice}
                   projects={trackingProjects}
                   user={session.user}
+                  painterName={painterName}
                   canViewTeamTime={canManageProjects}
                   onClockIn={tracking.clockIn}
                   onClockOut={clockOutWithPending}

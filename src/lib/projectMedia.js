@@ -87,6 +87,20 @@ function attachMediaAccess(row, baseUrl, token) {
   };
 }
 
+function getEmployeeSourceName(employee) {
+  const fullName = String(employee?.full_name || "").trim();
+  if (fullName) return fullName;
+  const emailName = String(employee?.email || "").split("@")[0].trim();
+  return emailName || "Team member";
+}
+
+function getMediaSourceName(row, employeesById) {
+  const importedCreator = String(row?.source_metadata?.creator_name || "").trim();
+  if (importedCreator) return importedCreator;
+  if (row?.source_provider === "companycam") return "CompanyCam";
+  return getEmployeeSourceName(employeesById.get(row?.uploaded_by));
+}
+
 export async function listProjectMedia(
   projectId,
   { projectKind = "job", linkedLeadId = null } = {},
@@ -113,8 +127,22 @@ export async function listProjectMedia(
     .order("created_at", { ascending: false });
 
   if (error) return { media: [], error };
+  const uploaderIds = [
+    ...new Set((data || []).map((row) => row.uploaded_by).filter(Boolean)),
+  ];
+  let employeesById = new Map();
+  if (uploaderIds.length) {
+    const { data: employees } = await supabase
+      .from("employees")
+      .select("id,email,full_name")
+      .in("id", uploaderIds);
+    employeesById = new Map((employees || []).map((employee) => [employee.id, employee]));
+  }
   return {
-    media: (data || []).map((row) => attachMediaAccess(row, baseUrl, token)),
+    media: (data || []).map((row) => attachMediaAccess({
+      ...row,
+      source_name: getMediaSourceName(row, employeesById),
+    }, baseUrl, token)),
     error: null,
   };
 }

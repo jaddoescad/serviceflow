@@ -73,6 +73,9 @@ assert.match(screenSource, /PanResponder/);
 assert.match(screenSource, /styles\.zoomableMedia/);
 assert.match(screenSource, /zoomableMedia:\s*\{[\s\S]*?width: '100%'[\s\S]*?height: '100%'/);
 assert.match(screenSource, /projectKind = isLead \? 'lead' : 'job'/);
+assert.match(screenSource, /Taken by \{getMediaSourceName\(currentMedia\)\}/);
+assert.match(screenSource, /item\?\.uploaded_by === user\?\.id/);
+assert.doesNotMatch(screenSource, /item\?\.uploaded_by === user\?\.id \|\| canViewTeamTime/);
 assert.doesNotMatch(screenSource, /This lead becomes operational after an accepted quote creates a job/);
 assert.doesNotMatch(screenSource, /companycam-project-photos/);
 assert.doesNotMatch(screenSource, /CompanyCam Photos/);
@@ -98,6 +101,10 @@ assert.match(queueSource, /RETRY_DELAYS_MS/);
 assert.match(queueSource, /clearCompleted/);
 assert.match(queueSource, /uploadProjectMedia/);
 assert.match(queueSource, /onUploadedRef\.current\?\./);
+
+const mediaSource = await readFile(new URL("../src/lib/projectMedia.js", import.meta.url), "utf8");
+assert.match(mediaSource, /\.from\("employees"\)/);
+assert.match(mediaSource, /source_name: getMediaSourceName/);
 
 const configSource = await readFile(new URL("../app.config.js", import.meta.url), "utf8");
 assert.match(configSource, /projectMediaApiUrl/);
