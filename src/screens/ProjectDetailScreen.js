@@ -2018,7 +2018,7 @@ function ZoomableMedia({ children, onZoomChange, pageWidth, pageHeight }) {
 
   return (
     <Animated.View
-      style={{ transform: [{ scale }, { translateX }, { translateY }] }}
+      style={[styles.zoomableMedia, { transform: [{ scale }, { translateX }, { translateY }] }]}
       {...responder.panHandlers}
     >
       {children}
@@ -3002,6 +3002,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   viewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  zoomableMedia: {
     width: '100%',
     height: '100%',
   },

@@ -69,7 +69,9 @@ assert.match(screenSource, /launchImageLibraryAsync/);
 assert.match(screenSource, /Photos and videos/);
 assert.match(screenSource, /<ProjectCameraScreen/);
 assert.match(screenSource, /<FlatList/);
-assert.doesNotMatch(screenSource, /PanResponder/);
+assert.match(screenSource, /PanResponder/);
+assert.match(screenSource, /styles\.zoomableMedia/);
+assert.match(screenSource, /zoomableMedia:\s*\{[\s\S]*?width: '100%'[\s\S]*?height: '100%'/);
 assert.match(screenSource, /projectKind = isLead \? 'lead' : 'job'/);
 assert.doesNotMatch(screenSource, /This lead becomes operational after an accepted quote creates a job/);
 assert.doesNotMatch(screenSource, /companycam-project-photos/);
@@ -83,6 +85,9 @@ assert.match(cameraSource, /createRecorder/);
 assert.match(cameraSource, /stopRecording/);
 assert.match(cameraSource, /onCapture\?\./);
 assert.match(cameraSource, /outputs=\{outputs\}/);
+assert.match(cameraSource, /enableAudio: mode === "video" && microphonePermission\.hasPermission/);
+assert.match(cameraSource, /onInterruptionStarted=\{handleCameraInterruptionStarted\}/);
+assert.match(cameraSource, /Show more/);
 assert.match(cameraSource, /enableNativeZoomGesture/);
 assert.match(cameraSource, /sessionStatusUploaded/);
 
@@ -99,6 +104,6 @@ assert.match(configSource, /projectMediaApiUrl/);
 assert.match(configSource, /NSCameraUsageDescription/);
 assert.match(configSource, /NSMicrophoneUsageDescription/);
 assert.doesNotMatch(configSource, /"expo-camera"/);
-assert.match(configSource, /runtimeVersion: "1\.4\.0"/);
+assert.match(configSource, /runtimeVersion: "1\.5\.0"/);
 
 console.log("Project media mobile QA passed.");

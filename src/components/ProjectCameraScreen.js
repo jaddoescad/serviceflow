@@ -52,6 +52,42 @@ const toFileUri = (path) => (String(path).startsWith("file://") ? path : `file:/
 
 const IMPLEMENTATION_MODE = Platform.OS === "android" ? "compatible" : undefined;
 
+const interruptionNotice = (reason) => {
+  if (reason === "audio-device-in-use-by-another-client") {
+    return {
+      message: "Your phone call is using the microphone. Photo mode is still available.",
+      details: `iPhone camera interruption: ${reason}`,
+    };
+  }
+  if (
+    reason === "video-device-in-use-by-another-client" ||
+    reason === "video-device-not-available-with-multiple-foreground-apps"
+  ) {
+    return {
+      message: "Your iPhone is using the camera in another app or call.",
+      details: `iPhone camera interruption: ${reason}`,
+    };
+  }
+  return {
+    message: "The camera was temporarily interrupted by your iPhone.",
+    details: reason ? `iPhone camera interruption: ${reason}` : "",
+  };
+};
+
+const nativeCameraErrorNotice = (cameraError) => {
+  const details = String(cameraError?.message || cameraError || "").trim();
+  if (/audio-device-in-use-by-another-client|audio.*(?:busy|in use|another client)/i.test(details)) {
+    return {
+      message: "Your phone call is using the microphone. Photo mode is still available.",
+      details,
+    };
+  }
+  if (/video-device-in-use-by-another-client|camera.*(?:busy|in use|another client)/i.test(details)) {
+    return { message: "Your iPhone is using the camera in another app or call.", details };
+  }
+  return { message: "The camera could not start.", details };
+};
+
 const formatClock = (totalSeconds) => {
   const clamped = Math.max(0, Math.min(totalSeconds, MAX_VIDEO_SECONDS));
   return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
@@ -92,11 +128,24 @@ export default function ProjectCameraScreen({
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [sessionCaptures, setSessionCaptures] = useState([]);
-  const [error, setError] = useState("");
+  const [error, setErrorState] = useState(null);
   const [viewerItem, setViewerItem] = useState(null);
   // True between tapping stop and the recorded file landing.
   const [finalizing, setFinalizing] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(1);
+
+  const setError = useCallback((message, details = "") => {
+    const nextMessage = String(message || "").trim();
+    if (!nextMessage) {
+      setErrorState(null);
+      return;
+    }
+    const nextDetails = String(details || "").trim();
+    setErrorState({
+      message: nextMessage,
+      details: nextDetails && nextDetails !== nextMessage ? nextDetails : "",
+    });
+  }, []);
 
   // Ask for the virtual multi-lens device so the ultra-wide is part of the same
   // session; the default back device is wide-angle only, whose minimum zoom is
@@ -109,8 +158,9 @@ export default function ProjectCameraScreen({
   const canFlip = Boolean(backDevice && frontDevice);
   const canUseFlash = mode === "video" ? Boolean(device?.hasTorch) : Boolean(device?.hasFlash);
 
-  // Both outputs stay attached to the Camera at all times so toggling the
-  // Photo/Video UI mode never reconfigures the native camera session.
+  // Keep the video output connected, but only attach its microphone while the
+  // user is in Video mode. A phone call owns iPhone's audio input; attaching it
+  // in Photo mode interrupted the whole camera even though photos need no mic.
   const photoOutput = usePhotoOutput({ containerFormat: "jpeg", quality: 0.85 });
   // Full quality: long recordings upload in parts, so file size is no longer
   // constrained by a single request.
@@ -118,7 +168,7 @@ export default function ProjectCameraScreen({
   // (which also default to HEVC) frequently fail to play on Android, so a video
   // shot on an iPhone was unwatchable for a painter on Android.
   const videoOutput = useVideoOutput({
-    enableAudio: microphonePermission.hasPermission,
+    enableAudio: mode === "video" && microphonePermission.hasPermission,
     fileType: "mp4",
   });
   const outputs = useMemo(() => [photoOutput, videoOutput], [photoOutput, videoOutput]);
@@ -301,8 +351,22 @@ export default function ProjectCameraScreen({
       return;
     }
     console.error("[project-camera] Native camera error", cameraError);
-    setError(message || "Camera preview unavailable.");
-  }, []);
+    const notice = nativeCameraErrorNotice(cameraError);
+    setError(notice.message, notice.details);
+  }, [setError]);
+
+  const handleCameraInterruptionStarted = useCallback((reason) => {
+    console.warn("[project-camera] Camera interrupted", reason);
+    const notice = interruptionNotice(reason);
+    // Removing the microphone lets an audio phone call and Photo mode coexist.
+    if (reason === "audio-device-in-use-by-another-client") setMode("photo");
+    setError(notice.message, notice.details);
+  }, [setError]);
+
+  const handleCameraInterruptionEnded = useCallback(() => {
+    console.info("[project-camera] Camera interruption ended");
+    setError("");
+  }, [setError]);
 
   // The native pinch changes zoom without telling JS, and the controller has no
   // zoom event, so poll it while the preview is up to keep the pills honest.
@@ -431,7 +495,7 @@ export default function ProjectCameraScreen({
         creationTime: capturedAt,
       });
     } catch (nextError) {
-      setError(nextError?.message || "The photo could not be captured.");
+      setError("The photo could not be captured.", nextError?.message);
     } finally {
       captureBusyRef.current = false;
     }
@@ -502,7 +566,7 @@ export default function ProjectCameraScreen({
           finishRecording();
         },
         (recordError) => {
-          setError(recordError?.message || "The video could not be recorded.");
+          setError("The video could not be recorded.", recordError?.message);
           finishRecording();
         },
       );
@@ -519,7 +583,7 @@ export default function ProjectCameraScreen({
         recorder.stopRecording().catch(() => {});
       }
     } catch (nextError) {
-      setError(nextError?.message || "The video could not be recorded.");
+      setError("The video could not be recorded.", nextError?.message);
       activeRecorderRef.current = null;
       setRecording(false);
     } finally {
@@ -634,6 +698,8 @@ export default function ProjectCameraScreen({
             onPreviewStarted={handlePreviewStarted}
             onPreviewStopped={handlePreviewStopped}
             onError={handleCameraError}
+            onInterruptionStarted={handleCameraInterruptionStarted}
+            onInterruptionEnded={handleCameraInterruptionEnded}
           />
         ) : null}
 
@@ -736,10 +802,7 @@ export default function ProjectCameraScreen({
 
         <View style={[styles.controls, { paddingBottom: Math.max(insets.bottom, 16) + 10 }]}>
           {error ? (
-            <View style={styles.errorPill}>
-              <Ionicons name="alert-circle" size={16} color="#fff" />
-              <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
-            </View>
+            <CameraErrorNotice notice={error} />
           ) : null}
 
           {filmstripItems.length ? (
@@ -922,6 +985,37 @@ export default function ProjectCameraScreen({
         ) : null}
       </View>
     </Modal>
+  );
+}
+
+function CameraErrorNotice({ notice }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = Boolean(notice?.details) || String(notice?.message || "").length > 80;
+
+  useEffect(() => setExpanded(false), [notice?.details, notice?.message]);
+
+  return (
+    <View style={styles.errorPill}>
+      <Ionicons name="alert-circle" size={15} color="#fff" />
+      <View style={styles.errorCopy}>
+        <Text style={styles.errorText} numberOfLines={expanded ? undefined : 1}>
+          {notice?.message}
+        </Text>
+        {expanded && notice?.details ? (
+          <Text selectable style={styles.errorDetails}>{notice.details}</Text>
+        ) : null}
+      </View>
+      {canExpand ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? "Show less error detail" : "Show more error detail"}
+          hitSlop={8}
+          onPress={() => setExpanded((current) => !current)}
+        >
+          <Text style={styles.errorMore}>{expanded ? "Show less" : "Show more"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -1265,8 +1359,11 @@ const styles = StyleSheet.create({
   },
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
   recordingTime: { color: "#fff", fontSize: 15, fontWeight: "900", fontVariant: ["tabular-nums"] },
-  errorPill: { marginHorizontal: 14, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(160,48,36,0.9)" },
-  errorText: { flex: 1, color: "#fff", fontSize: 12, fontWeight: "700" },
+  errorPill: { marginHorizontal: 14, marginBottom: 12, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, flexDirection: "row", alignItems: "flex-start", gap: 7, backgroundColor: "rgba(160,48,36,0.9)" },
+  errorCopy: { flex: 1, minWidth: 0 },
+  errorText: { color: "#fff", fontSize: 11, lineHeight: 14, fontWeight: "700" },
+  errorDetails: { marginTop: 4, color: "rgba(255,255,255,0.76)", fontSize: 9.5, lineHeight: 12 },
+  errorMore: { color: "#fff", fontSize: 10, lineHeight: 14, fontWeight: "900" },
   permissionCard: { ...StyleSheet.absoluteFillObject, zIndex: 3, alignItems: "center", justifyContent: "center", paddingHorizontal: 34, backgroundColor: "#10181c" },
   permissionTitle: { marginTop: 16, color: "#fff", fontSize: 21, fontWeight: "900" },
   permissionText: { marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 14, lineHeight: 20, textAlign: "center", fontWeight: "600" },
