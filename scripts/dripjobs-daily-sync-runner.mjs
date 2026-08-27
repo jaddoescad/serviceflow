@@ -21,13 +21,16 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { validateDripJobsJobsExports } from "./lib/dripjobs-jobs-list.mjs";
+import { validateDripJobsSalesExports } from "./lib/dripjobs-sales-list.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_ROOT = "/opt/data/state/dripjobs-sync";
 const DEFAULT_PROFILE = "/opt/data/profiles/dripjobs-sync/browser-profile";
 const DEFAULT_IMPORTER = "/opt/data/bin/import-invoice-list-job-amounts.mjs";
+const DEFAULT_SALES_IMPORTER = "/opt/data/bin/import-dripjobs-sales-list.mjs";
 const DEFAULT_ENV_FILE = "/opt/data/hermes-job-amounts.env";
 const DRIPJOBS_JOBS_URL = "https://app.dripjobs.com/jobs/list";
+const DRIPJOBS_SALES_URL = "https://app.dripjobs.com/saleslist";
 const SESSION_NAME = "ottawa-dripjobs-daily";
 const MAX_COMMAND_OUTPUT = 2 * 1024 * 1024;
 
@@ -47,9 +50,11 @@ function pathsFor(env) {
     downloads: path.join(root, "downloads"),
     health: path.resolve(env.HERMES_DRIPJOBS_SYNC_HEALTH || path.join(root, "health.json")),
     manifest: path.resolve(env.HERMES_DRIPJOBS_SYNC_MANIFEST || path.join(root, "accepted-manifest.json")),
+    salesManifest: path.resolve(env.HERMES_DRIPJOBS_SALES_MANIFEST || path.join(root, "accepted-sales-manifest.json")),
     lease: path.join(root, "run.lock"),
     browserProfile: path.resolve(env.HERMES_DRIPJOBS_BROWSER_PROFILE || DEFAULT_PROFILE),
     importer: path.resolve(env.HERMES_DRIPJOBS_IMPORTER || DEFAULT_IMPORTER),
+    salesImporter: path.resolve(env.HERMES_DRIPJOBS_SALES_IMPORTER || DEFAULT_SALES_IMPORTER),
     envFile: path.resolve(env.HERMES_DRIPJOBS_SUPABASE_ENV || DEFAULT_ENV_FILE),
     agentBrowser: env.HERMES_AGENT_BROWSER_BIN || "agent-browser",
   };
@@ -261,22 +266,180 @@ async function exportJobsLists(runDirectory, paths, dependencies) {
     await rename(downloaded, destination);
     exported[view] = destination;
   }
-  return exported;
+  await command(paths.agentBrowser, [...common, "open", DRIPJOBS_SALES_URL], browserDependencies, 60_000);
+  await command(paths.agentBrowser, [...common, "wait", "--load", "networkidle"], browserDependencies, 30_000)
+    .catch(() => command(paths.agentBrowser, [...common, "wait", "3000"], browserDependencies, 10_000));
+  const salesUrl = String((await command(paths.agentBrowser, [...common, "get", "url"], browserDependencies, 10_000)).stdout || "").trim();
+  const salesTitle = String((await command(paths.agentBrowser, [...common, "get", "title"], browserDependencies, 10_000)).stdout || "").trim();
+  if (!/^https:\/\/app\.dripjobs\.com\/saleslist(?:[/?#]|$)/i.test(salesUrl) || !/Sales (?:List|Pipeline)/i.test(salesTitle)) {
+    throw new Error(`DripJobs Sales List controls were not ready (title: ${salesTitle.replace(/\s+/g, " ").slice(0, 100) || "untitled"})`);
+  }
+
+  const sales = {};
+  for (const view of ["active", "archived"]) {
+    const shouldShowArchived = view === "archived";
+    const toggleResult = await command(paths.agentBrowser, [
+      ...common,
+      "eval",
+      `(() => {
+        const toggle = document.querySelector('#show-archived-toggle');
+        if (!toggle) return 'missing';
+        if (toggle.checked !== ${shouldShowArchived}) toggle.click();
+        return 'toggled';
+      })()`,
+    ], browserDependencies, 30_000);
+    if (!/toggled/.test(String(toggleResult.stdout || ""))) throw new Error(`DripJobs ${view} Sales List archive toggle was not available`);
+
+    let filtersReady = false;
+    for (let attempt = 0; attempt < 12 && !filtersReady; attempt += 1) {
+      await pause(1_000);
+      const controls = await command(paths.agentBrowser, [
+        ...common,
+        "eval",
+        `(() => {
+          const toggle = document.querySelector('#show-archived-toggle');
+          const created = document.querySelector('#created-date-dropdown');
+          const changed = document.querySelector('#changed-date-dropdown');
+          if (!toggle || !created || !changed || toggle.checked !== ${shouldShowArchived}) return 'waiting';
+          created.value = 'anytime';
+          created.dispatchEvent(new Event('change', { bubbles: true }));
+          changed.value = 'last_7_days';
+          changed.dispatchEvent(new Event('change', { bubbles: true }));
+          const go = document.querySelector('#filter-submit') ||
+            [...document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]')]
+              .find((element) => String(element.textContent || element.value || '').trim() === 'Go' && !element.disabled && element.offsetParent !== null);
+          if (!go) return 'waiting';
+          go.click();
+          return 'submitted';
+        })()`,
+      ], browserDependencies, 30_000);
+      filtersReady = /submitted/.test(String(controls.stdout || ""));
+    }
+    if (!filtersReady) throw new Error(`DripJobs ${view} Sales List Anytime filters could not be submitted with Go`);
+
+    let allReady = false;
+    for (let attempt = 0; attempt < 12 && !allReady; attempt += 1) {
+      await pause(1_000);
+      const controls = await command(paths.agentBrowser, [
+        ...common,
+        "eval",
+        `(() => {
+          const toggle = document.querySelector('#show-archived-toggle');
+          const created = document.querySelector('#created-date-dropdown');
+          const changed = document.querySelector('#changed-date-dropdown');
+          const length = document.querySelector("select[name='sortable-list-table_length']");
+          if (!toggle || !created || !changed || !length || toggle.checked !== ${shouldShowArchived}) return 'waiting';
+          if (created.value !== 'anytime' || changed.value !== 'last_7_days') return 'waiting';
+          const body = document.body.innerText || '';
+          const totalText = (body.match(/Total Deals:\\s*([\\d,]+)/) || [])[1] || '';
+          const total = Number(totalText.replace(/,/g, ''));
+          if (!totalText || !Number.isInteger(total) || total < 0) return 'waiting';
+          length.value = '-1';
+          length.dispatchEvent(new Event('change', { bubbles: true }));
+          return 'all';
+        })()`,
+      ], browserDependencies, 30_000);
+      allReady = /all/.test(String(controls.stdout || ""));
+    }
+    if (!allReady) throw new Error(`DripJobs ${view} Sales List All control was not available after applying Anytime filters`);
+
+    let snapshotValue = null;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await pause(1_000);
+      const captured = await command(paths.agentBrowser, [
+        ...common,
+        "eval",
+        `(() => {
+        const table = document.querySelector('#sortable-list-table');
+        const toggle = document.querySelector('#show-archived-toggle');
+        if (!table || !toggle) return { error: 'Sales List table missing' };
+        const length = document.querySelector("select[name='sortable-list-table_length']");
+        if (!length) return { error: 'Sales List All control missing' };
+        if (length.value !== '-1') {
+          length.value = '-1';
+          length.dispatchEvent(new Event('change', { bubbles: true }));
+          return { error: 'waiting for Sales List All rows' };
+        }
+        const headers = [...table.querySelectorAll('thead th')].slice(1).map((th) => (th.textContent || '').trim().replace(/\\s+/g, ' '));
+        const rows = [...table.querySelectorAll('tbody tr')].map((tr) => {
+          const cells = [...tr.children].slice(1).map((td) => (td.textContent || '').trim().replace(/\\s+/g, ' '));
+          const checkboxId = tr.querySelector('input[type=checkbox]')?.id || '';
+          const dealHref = tr.querySelector('a[href*="/deals/_view/"]')?.getAttribute('href') || '';
+          const dealIdFromHref = (dealHref.match(/\\/deals\\/_view\\/([^?]+)/) || [])[1] || '';
+          const contactHref = tr.querySelector('a[href*="/contacts/edit/"]')?.getAttribute('href') || '';
+          const contactId = (contactHref.match(/\\/contacts\\/edit\\/([^?]+)/) || [])[1] || null;
+          return { deal_id: checkboxId || dealIdFromHref, deal_id_from_href: dealIdFromHref, contact_id: contactId, ...Object.fromEntries(headers.map((header, column) => [header, cells[column] || ''])) };
+        }).filter((row) => row.deal_id && row.deal_id_from_href).map((row, index) => ({ row_number: index + 1, ...row }));
+        const body = document.body.innerText || '';
+        const totalText = (body.match(/Total Deals:\\s*([\\d,]+)/) || [])[1] || '';
+        const infoText = document.querySelector('#sortable-list-table_info')?.textContent || '';
+        const datatableTotalText = (infoText.match(/of\\s+([\\d,]+)\\s+entries/i) || [])[1] || '';
+        const total = Number(totalText.replace(/,/g, ''));
+        const datatableTotal = Number(datatableTotalText.replace(/,/g, ''));
+        return {
+          schema_version: 3,
+          source_type: 'dripjobs_sales_list_changed_rows_dom_v3',
+          captured_at: new Date().toISOString(),
+          view: toggle.checked ? 'archived' : 'active',
+          filters: {
+            created: document.querySelector('#created-date-dropdown')?.value,
+            changed: document.querySelector('#changed-date-dropdown')?.value,
+            page_length: document.querySelector(\"select[name='sortable-list-table_length']\")?.value,
+            applied: true,
+          },
+          headers,
+          total,
+          datatable_total: datatableTotal,
+          rows,
+        };
+        })()`,
+      ], browserDependencies, 60_000);
+      snapshotValue = parseEvalObject(captured.stdout);
+      const minimumRows = 0;
+      if (
+        !snapshotValue.error &&
+        snapshotValue.view === view &&
+        snapshotValue.total >= minimumRows &&
+        snapshotValue.datatable_total === snapshotValue.total &&
+        snapshotValue.rows?.length === snapshotValue.total &&
+        snapshotValue.filters?.created === "anytime" &&
+        snapshotValue.filters?.changed === "last_7_days" &&
+        snapshotValue.filters?.page_length === "-1" &&
+        snapshotValue.filters?.applied === true
+      ) break;
+    }
+    const minimumRows = 0;
+    if (
+      snapshotValue?.error ||
+      snapshotValue.view !== view ||
+      snapshotValue.total < minimumRows ||
+      snapshotValue.datatable_total !== snapshotValue.total ||
+      snapshotValue.rows?.length !== snapshotValue.total ||
+      snapshotValue.filters?.created !== "anytime" ||
+      snapshotValue.filters?.changed !== "last_7_days" ||
+      snapshotValue.filters?.page_length !== "-1" ||
+      snapshotValue.filters?.applied !== true
+    ) throw new Error(`DripJobs ${view} Sales List was not fully captured (${snapshotValue.rows?.length || 0}/${snapshotValue.total || 0})`);
+    const destination = path.join(runDirectory, `Sales_List_${view}.json`);
+    await writeFile(destination, `${JSON.stringify(snapshotValue, null, 2)}\n`, { mode: 0o600 });
+    sales[view] = destination;
+  }
+  return { jobs: exported, sales };
 }
 
 function errorAlert(error, { liveImporterStarted = true } = {}) {
   const detail = String(error?.message || error || "unknown error").replace(/\s+/g, " ").trim().slice(0, 400);
   const writeStatus = liveImporterStarted
     ? "The live importer may have partially applied idempotent updates; verification is required before retry."
-    : "No job amounts or production months were changed.";
-  return `🚨 DripJobs job authority sync failed — ${detail}. ${writeStatus}`;
+    : "No validated DripJobs data was changed.";
+  return `🚨 DripJobs operations sync failed — ${detail}. ${writeStatus}`;
 }
 
 async function recordFailure(paths, previous, error, now, mode) {
   const health = {
     ...(previous || {}),
-    schema_version: 2,
-    service: "dripjobs_job_authority_sync",
+    schema_version: 5,
+    service: "dripjobs_operations_sync",
     mode,
     status: "error",
     validation_status: "failed",
@@ -289,28 +452,42 @@ async function recordFailure(paths, previous, error, now, mode) {
   return health;
 }
 
-async function recordSuccess(paths, previous, validation, importerResult, now, mode) {
+async function recordSuccess(paths, previous, jobValidation, salesValidation, jobImporterResult, salesImporterResult, now, mode) {
   const health = {
-    schema_version: 2,
-    service: "dripjobs_job_authority_sync",
+    schema_version: 5,
+    service: "dripjobs_operations_sync",
     mode,
     status: "ok",
     validation_status: "accepted",
     last_attempt_at: now.toISOString(),
     last_successful_sync_at: mode === "live" ? now.toISOString() : previous?.last_successful_sync_at ?? null,
     last_successful_validation_at: now.toISOString(),
-    last_source_sha256: validation.manifest.source_sha256,
-    last_row_count: validation.manifest.row_count,
-    last_active_row_count: validation.manifest.active_row_count,
-    last_archived_row_count: validation.manifest.archived_row_count,
-    last_distinct_proposals: validation.manifest.distinct_proposals,
-    last_gross_total_cents: validation.manifest.gross_total_cents,
-    last_qualifying_production_rows: validation.manifest.qualifying_production_rows,
-    last_applied_jobs: Number(importerResult?.applied_jobs || 0),
-    last_applied_amount_changes: Number(importerResult?.applied_amount_changes || 0),
-    last_applied_production_month_changes: Number(importerResult?.applied_production_month_changes || 0),
-    historical_locked_unchanged: Number(importerResult?.historical_locked_unchanged || 0),
-    unresolved_unchanged: Number(importerResult?.unresolved_unchanged || 0),
+    last_source_sha256: jobValidation.manifest.source_sha256,
+    last_row_count: jobValidation.manifest.row_count,
+    last_active_row_count: jobValidation.manifest.active_row_count,
+    last_archived_row_count: jobValidation.manifest.archived_row_count,
+    last_distinct_proposals: jobValidation.manifest.distinct_proposals,
+    last_gross_total_cents: jobValidation.manifest.gross_total_cents,
+    last_qualifying_production_rows: jobValidation.manifest.qualifying_production_rows,
+    last_parsed_schedule_rows: jobValidation.manifest.parsed_schedule_rows,
+    last_schedule_parse_errors: jobValidation.manifest.schedule_parse_errors,
+    last_sales_source_sha256: salesValidation.manifest.source_sha256,
+    last_sales_row_count: salesValidation.manifest.row_count,
+    last_active_sales_row_count: salesValidation.manifest.active_row_count,
+    last_archived_sales_row_count: salesValidation.manifest.archived_row_count,
+    last_distinct_deals: salesValidation.manifest.distinct_deals,
+    last_applied_jobs: Number(jobImporterResult?.applied_jobs || 0),
+    last_applied_amount_changes: Number(jobImporterResult?.applied_amount_changes || 0),
+    last_applied_production_month_changes: Number(jobImporterResult?.applied_production_month_changes || 0),
+    last_applied_operational_value_changes: Number(jobImporterResult?.applied_operational_value_changes || 0),
+    last_applied_leads: Number(salesImporterResult?.applied_leads || 0),
+    last_applied_lead_value_changes: Number(salesImporterResult?.applied_value_changes || 0),
+    last_persisted_sales_deals: Number(salesImporterResult?.persisted_deals || 0),
+    last_canonical_sales_deals: Number(salesImporterResult?.canonical_deal_count || 0),
+    last_unlinked_sales_deals: Number(salesImporterResult?.unlinked_deals || 0),
+    historical_locked_unchanged: Number(jobImporterResult?.historical_locked_unchanged || 0),
+    unresolved_unchanged: Number(jobImporterResult?.unresolved_unchanged || 0),
+    missing_archived_leads_unchanged: Number(salesImporterResult?.missing_archived_unchanged || 0),
     consecutive_errors: 0,
     last_error: null,
   };
@@ -337,14 +514,34 @@ export async function runDailySync({ argv = process.argv.slice(2), env = process
   let liveImporterStarted = false;
   try {
     await access(paths.importer, constants.R_OK);
+    await access(paths.salesImporter, constants.R_OK);
     await access(paths.envFile, constants.R_OK);
-    const csvFiles = await exportJobsLists(runDirectory, paths, execution);
-    const [activeBytes, archivedBytes] = await Promise.all([readFile(csvFiles.active), readFile(csvFiles.archived)]);
-    const validation = validateDripJobsJobsExports({ active: activeBytes, archived: archivedBytes }, { previousManifest, now });
+    const exported = await exportJobsLists(runDirectory, paths, execution);
+    const [activeBytes, archivedBytes, activeSalesBytes, archivedSalesBytes] = await Promise.all([
+      readFile(exported.jobs.active),
+      readFile(exported.jobs.archived),
+      readFile(exported.sales.active),
+      readFile(exported.sales.archived),
+    ]);
+    const jobValidation = validateDripJobsJobsExports({ active: activeBytes, archived: archivedBytes }, { previousManifest, now });
+    const salesValidation = validateDripJobsSalesExports(
+      { active: activeSalesBytes, archived: archivedSalesBytes },
+      { scope: "changed_delta" },
+    );
     const importerArgs = [
       paths.importer,
-      `--active-csv=${csvFiles.active}`,
-      `--archived-csv=${csvFiles.archived}`,
+      `--active-csv=${exported.jobs.active}`,
+      `--archived-csv=${exported.jobs.archived}`,
+      `--env=${paths.envFile}`,
+      "--summary",
+      "--json",
+      ...(options.confirmed ? ["--apply"] : []),
+    ];
+    const salesImporterArgs = [
+      paths.salesImporter,
+      `--active-json=${exported.sales.active}`,
+      `--archived-json=${exported.sales.archived}`,
+      "--scope=changed-delta",
       `--env=${paths.envFile}`,
       "--summary",
       "--json",
@@ -352,21 +549,29 @@ export async function runDailySync({ argv = process.argv.slice(2), env = process
     ];
     liveImporterStarted = options.confirmed;
     const imported = await command(process.execPath, importerArgs, execution, 5 * 60_000);
-    const importerResult = JSON.parse(String(imported.stdout || "{}").trim() || "{}");
-    if (options.confirmed && importerResult.status !== "verified") throw new Error("job authority importer did not return verified status");
-    if (options.confirmed) await writeJsonAtomic(paths.manifest, validation.manifest);
+    const jobImporterResult = JSON.parse(String(imported.stdout || "{}").trim() || "{}");
+    if (options.confirmed && jobImporterResult.status !== "verified") throw new Error("job authority importer did not return verified status");
+    const salesImported = await command(process.execPath, salesImporterArgs, execution, 5 * 60_000);
+    const salesImporterResult = JSON.parse(String(salesImported.stdout || "{}").trim() || "{}");
+    if (options.confirmed && salesImporterResult.status !== "verified") throw new Error("Sales List importer did not return verified status");
+    if (options.confirmed) {
+      await writeJsonAtomic(paths.manifest, jobValidation.manifest);
+      await writeJsonAtomic(paths.salesManifest, salesValidation.manifest);
+    }
     const mode = options.confirmed ? "live" : "dry-run";
-    const health = await recordSuccess(paths, previousHealth, validation, importerResult, now, mode);
+    const health = await recordSuccess(paths, previousHealth, jobValidation, salesValidation, jobImporterResult, salesImporterResult, now, mode);
     return {
       exitCode: 0,
       output: options.dryRun
-        ? JSON.stringify({ status: "dry_run_ok", validation: validation.manifest, importer: importerResult })
+        ? JSON.stringify({ status: "dry_run_ok", jobs: { validation: jobValidation.manifest, importer: jobImporterResult }, sales: { validation: salesValidation.manifest, importer: salesImporterResult } })
         : Number(previousHealth?.consecutive_errors || 0) > 0
-          ? `✅ DripJobs job authority sync recovered — ${health.last_row_count} jobs validated; ${health.last_applied_jobs} job record(s) updated.`
+          ? `✅ DripJobs operations sync recovered — ${health.last_row_count} jobs, ${health.last_sales_row_count} recently changed deals, and ${health.last_canonical_sales_deals} canonical deals verified.`
           : "",
       health,
-      validation,
-      importerResult,
+      jobValidation,
+      salesValidation,
+      jobImporterResult,
+      salesImporterResult,
     };
   } catch (error) {
     await recordFailure(paths, previousHealth, error, now, options.confirmed ? "live" : "dry-run");

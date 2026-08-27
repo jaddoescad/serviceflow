@@ -7,34 +7,34 @@ import { createClient } from "@supabase/supabase-js";
 
 const APPLY = process.argv.includes("--apply");
 const PROJECT_REF = "bwbckdkouqghdadpkjvn";
-const CAPTURED_AT = "2026-08-16T23:55:00.000Z";
-const OBSERVED_ON = "2026-08-16";
+const CAPTURED_AT = "2026-08-20T16:40:00.000Z";
+const OBSERVED_ON = "2026-08-20";
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
 const sources = [
   {
     accountSlug: "td-chequing-6970",
-    filePath: "/Users/jadslim/Downloads/accountactivity.csv",
-    evidenceFilename: "TD EasyWeb Chequing 6970 downloaded 2026-08-16.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity (3).csv",
+    evidenceFilename: "TD EasyWeb Chequing 6970 downloaded 2026-08-20.csv",
   },
   {
     accountSlug: "td-visa-6650",
-    filePath: "/Users/jadslim/Downloads/accountactivity (1).csv",
-    evidenceFilename: "TD EasyWeb Visa 6650 downloaded 2026-08-16.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity (4).csv",
+    evidenceFilename: "TD EasyWeb Visa 6650 downloaded 2026-08-20.csv",
   },
   {
     accountSlug: "td-visa-3660",
-    filePath: "/Users/jadslim/Downloads/accountactivity (2).csv",
-    evidenceFilename: "TD EasyWeb Visa 3660 downloaded 2026-08-16.csv",
+    filePath: "/Users/jadslim/Downloads/accountactivity (5).csv",
+    evidenceFilename: "TD EasyWeb Visa 3660 downloaded 2026-08-20.csv",
   },
 ];
 
 const accountSnapshots = {
   "td-chequing-6970": {
-    current_balance_cents: 6_033_893,
-    available_balance_cents: 6_033_893,
+    current_balance_cents: 4_570_713,
+    available_balance_cents: 4_570_713,
     pending_cents: null,
-    note: "EasyWeb balance observed August 16; the CSV is current through the close of the previous business day, and four August 17 bank-dated deposits are preserved from visible posted activity.",
+    note: "EasyWeb balance observed August 20 after three supplier e-Transfers, their fees, and a transfer to the business credit card; the CSV remains current only through the close of the previous business day, so today's posted rows are preserved from visible account activity.",
   },
   "td-investor-7861": {
     current_balance_cents: 0,
@@ -43,10 +43,10 @@ const accountSnapshots = {
     note: "EasyWeb shows no transactions and a zero balance.",
   },
   "td-visa-6650": {
-    current_balance_cents: 126_500,
-    available_balance_cents: 614_300,
-    pending_cents: 9_170,
-    note: "EasyWeb shows a $91.70 pending Home Depot charge; pending activity is excluded. The August 14 payment is preserved from visible posted activity because EasyWeb warns that recent payments may be absent from CSV downloads.",
+    current_balance_cents: 391_632,
+    available_balance_cents: 231_800,
+    pending_cents: 126_500,
+    note: "EasyWeb shows a $1,265.00 pending Facebook charge; pending activity is excluded. Posted activity is imported from the current statement-period CSV.",
   },
   "td-visa-3660": {
     current_balance_cents: 0,
@@ -57,6 +57,120 @@ const accountSnapshots = {
 };
 
 const visiblePostedRows = [
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR FEE",
+    amount_cents: -150,
+    running_balance_cents: 4_570_713,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: "2026-08-20",
+      related_transfer_confirmation_masked: "C1AaPn***RMY",
+      related_recipient: "curb appeal softwash",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR *RMY SUPP",
+    amount_cents: -15_000,
+    running_balance_cents: 4_570_863,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: "2026-08-20",
+      status: "Autodeposited",
+      recipient: "curb appeal softwash",
+      recipient_registered_name: "MATTHEW L ARRIVEE",
+      recipient_destination: "payments@curbappealprowash.ca",
+      confirmation_masked: "C1AaPn***RMY",
+      method: "Email/Mobile",
+      message: "Curb Appeal invoice 1404",
+      purpose: "SUPP - Supplier Payment",
+      sent_by: "OTTAWA PAINTERS",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR FEE",
+    amount_cents: -150,
+    running_balance_cents: 4_585_863,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: "2026-08-20",
+      related_transfer_confirmation_masked: "C1Ay7p***HyZ",
+      related_recipient: "Bilal akkacha",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR *HyZ SUPP",
+    amount_cents: -168_750,
+    running_balance_cents: 4_586_013,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: "2026-08-20",
+      status: "Autodeposited",
+      recipient: "Bilal akkacha",
+      recipient_registered_name: "bilalak",
+      recipient_destination: "bilal.akkacha2@outlook.com",
+      confirmation_masked: "C1Ay7p***HyZ",
+      method: "Email/Mobile",
+      message: "Fennec invoices 6, 7, 8",
+      purpose: "SUPP - Supplier Payment",
+      sent_by: "OTTAWA PAINTERS",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "IJ295 TFR-TO C/C",
+    amount_cents: -391_632,
+    running_balance_cents: 4_754_763,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and account overview",
+      observed_on: "2026-08-20",
+      destination: "Ottawa Painters business credit card",
+      destination_account_last_four: "6650",
+      reason: "The withdrawal exactly matches the visible $3,916.32 balance of the business card ending 6650.",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR FEE",
+    amount_cents: -150,
+    running_balance_cents: 5_146_395,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: "2026-08-20",
+      related_transfer_confirmation_masked: "CA***4Wd",
+      related_recipient: "Michael Matambo",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "SEND E-TFR *4Wd SUPP",
+    amount_cents: -433_920,
+    running_balance_cents: 5_146_545,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: "2026-08-20",
+      status: "Deposited",
+      recipient: "Michael Matambo",
+      recipient_destination: "xdesign.ottawa@gmail.com",
+      confirmation_masked: "CA***4Wd",
+      method: "Email",
+      message: "XDesign invoices 8611-8615",
+      purpose: "SUPP - Supplier Payment",
+      sent_by: "OTTAWA PAINTERS",
+      deposited_on: "2026-08-20",
+      cancellable_when_observed: false,
+    },
+  },
   {
     accountSlug: "td-visa-6650",
     posted_on: "2026-08-05",
@@ -311,6 +425,59 @@ const visiblePostedRows = [
     },
   },
   {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "SEND E-TFR *QaV SUPP",
+    amount_cents: -95_352,
+    running_balance_cents: 5_938_541,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: OBSERVED_ON,
+      status: "Autodeposited",
+      date_sent: "2026-08-17",
+      recipient: "Scott Madden",
+      recipient_destination: "scott@caledonianpainting.ca",
+      message: "Caledonian invoice 239609 balance",
+      confirmation_masked: "C1AjG8***QaV",
+      purpose: "SUPP - Supplier Payment",
+      method: "Email",
+      sent_by: "OTTAWA PAINTERS",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-17",
+    description: "SEND E-TFR *WkE SUPP",
+    amount_cents: -541_691,
+    running_balance_cents: 5_396_700,
+    evidence: {
+      source: "TD EasyWeb visible posted activity and transfer detail",
+      observed_on: OBSERVED_ON,
+      status: "Deposited",
+      date_sent: "2026-08-17",
+      deposited_on: "2026-08-18",
+      recipient: "grutenco",
+      recipient_destination: "hello@grutenco.ca",
+      message: "GT-INV-202608-01 + GT-INV-202608-02",
+      confirmation_masked: "CA***WkE",
+      purpose: "SUPP - Supplier Payment",
+      method: "Email",
+      sent_by: "OTTAWA PAINTERS",
+    },
+  },
+  {
+    accountSlug: "td-chequing-6970",
+    posted_on: "2026-08-20",
+    description: "E-TRANSFER ***uwW",
+    amount_cents: 150_862,
+    running_balance_cents: 5_580_465,
+    evidence: {
+      source: "TD EasyWeb visible posted activity",
+      observed_on: OBSERVED_ON,
+      reason: "Bank-dated August 20 deposit visible in EasyWeb but not yet included in the previous-business-day CSV download.",
+    },
+  },
+  {
     accountSlug: "td-visa-6650",
     posted_on: "2026-08-14",
     description: "PAYMENT - THANK YOU",
@@ -423,9 +590,20 @@ function normalizedDescription(value) {
   return String(value).replace(/\s+/g, " ").trim();
 }
 
-function classify(description, amountCents, accountType) {
+function classify(description, amountCents, accountType, evidence = {}) {
   const upper = description.toLocaleUpperCase("en-CA");
   const lower = description.toLocaleLowerCase("en-CA");
+  const destination = `${evidence.recipient ?? ""} ${evidence.recipient_destination ?? ""}`
+    .toLocaleLowerCase("en-CA");
+  if (amountCents < 0 && (lower.includes("shakepay") || destination.includes("shakepay"))) {
+    return {
+      transaction_type: "expense",
+      category: "Virtual assistant salaries",
+      is_transfer: false,
+      review_status: "reconciled",
+      notes: "Ottawa Painters confirmed that payments to a Shakepay funding destination are virtual-assistant payments; no HST ITC is claimed.",
+    };
+  }
   if (accountType === "credit_card") {
     if (upper.includes("PAYMENT - THANK YOU")) {
       return {
@@ -454,6 +632,8 @@ function classify(description, amountCents, accountType) {
       ["linkedin", ["linkedin"], "Professional subscriptions"],
       ["zapier", ["zapier"], "Software & subscriptions"],
       ["perspective software", ["perspective software"], "Software & subscriptions"],
+      ["slack", ["slack"], "Software & subscriptions"],
+      ["imperial pfs", ["imperial pfs"], "Insurance"],
     ];
     const recurring = recurringRules.find(([, terms]) =>
       terms.some((term) => lower.includes(term)),
@@ -471,7 +651,8 @@ function classify(description, amountCents, accountType) {
       lower.includes("sherwin") ||
       lower.includes("paint") ||
       lower.includes("home depot") ||
-      lower.includes("rona")
+      lower.includes("rona") ||
+      lower.includes("randalls")
     ) {
       return {
         transaction_type: amountCents > 0 ? "credit" : "expense",
@@ -740,7 +921,6 @@ for (const row of parsedRows) {
       continue;
     }
   }
-  const classification = classify(row.description, row.amount_cents, row.account.account_type);
   const observedEvidence = visiblePostedRows.find(
     (visible) =>
       visible.accountSlug === row.source.accountSlug &&
@@ -748,6 +928,12 @@ for (const row of parsedRows) {
       visible.description === row.description &&
       visible.amount_cents === row.amount_cents,
   )?.evidence;
+  const classification = classify(
+    row.description,
+    row.amount_cents,
+    row.account.account_type,
+    observedEvidence,
+  );
   candidates.push({
     id: stableUuid(`transaction:${row.account.id}:${row.source_key}`),
     account_id: row.account.id,
@@ -779,28 +965,43 @@ for (const row of parsedRows) {
   });
 }
 
+const remainingVisibleMatches = new Map();
+for (const transaction of [...existingTransactions, ...candidates]) {
+  const key = exactTransactionKey(
+    transaction.account_id,
+    transaction.posted_on,
+    transaction.description,
+    transaction.amount_cents,
+  );
+  remainingVisibleMatches.set(key, (remainingVisibleMatches.get(key) ?? 0) + 1);
+}
 for (const row of visiblePostedRows) {
   const account = accountBySlug.get(row.accountSlug);
   const sourceKey = sha256(
     `td-easyweb-visible:${row.accountSlug}:${row.posted_on}:${row.description}:${row.amount_cents}:${row.running_balance_cents}`,
   );
-  if (existingSourceKeys.has(sourceKey)) continue;
-  const exactExisting = existingTransactions.find(
-    (transaction) =>
-      transaction.account_id === account.id &&
-      transaction.posted_on === row.posted_on &&
-      normalizedDescription(transaction.description) === row.description &&
-      Number(transaction.amount_cents) === row.amount_cents,
+  const exactKey = exactTransactionKey(
+    account.id,
+    row.posted_on,
+    row.description,
+    row.amount_cents,
   );
-  const exactCandidate = candidates.find(
-    (candidate) =>
-      candidate.account_id === account.id &&
-      candidate.posted_on === row.posted_on &&
-      normalizedDescription(candidate.description) === row.description &&
-      Number(candidate.amount_cents) === row.amount_cents,
+  if (existingSourceKeys.has(sourceKey)) {
+    const existingCount = remainingVisibleMatches.get(exactKey) ?? 0;
+    if (existingCount > 0) remainingVisibleMatches.set(exactKey, existingCount - 1);
+    continue;
+  }
+  const remainingMatchCount = remainingVisibleMatches.get(exactKey) ?? 0;
+  if (remainingMatchCount > 0) {
+    remainingVisibleMatches.set(exactKey, remainingMatchCount - 1);
+    continue;
+  }
+  const classification = classify(
+    row.description,
+    row.amount_cents,
+    account.account_type,
+    row.evidence,
   );
-  if (exactExisting || exactCandidate) continue;
-  const classification = classify(row.description, row.amount_cents, account.account_type);
   candidates.push({
     id: stableUuid(`transaction:${account.id}:${sourceKey}`),
     account_id: account.id,

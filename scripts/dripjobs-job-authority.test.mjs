@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   amountAuthorityEquivalent,
   jobAccountingLockReason,
+  operationalAuthorityEquivalent,
   productionMonthDecision,
 } from "./lib/dripjobs-job-authority.mjs";
 
@@ -20,6 +21,46 @@ test("production month advances on later qualifying transitions but never moves 
     reason: "never_move_backward",
   });
   assert.equal(productionMonthDecision("2026-08-01", null).effectiveMonth, "2026-08-01");
+});
+
+test("Jobs List operational authority tracks schedules, actual dates, and invoice balance", () => {
+  const row = {
+    proposalId: "3000001",
+    status: "SCHEDULED",
+    dealStage: "Project Scheduled",
+    invoiceStatus: "Partially Paid",
+    paidCents: 25000,
+    balanceCents: 88000,
+    proposalSignedDateIso: "2026-08-01",
+    jobScheduledDateRaw: "Mon. Aug 24 - Fri. Aug 28",
+    scheduledStartDateIso: "2026-08-24",
+    scheduledEndDateIso: "2026-08-28",
+    jobStartDateIso: null,
+    jobCompletionDateIso: null,
+    salesperson: "Scott Madden",
+    projectManager: "Scott Madden",
+    crew: "Crew 1",
+  };
+  const authority = {
+    source_type: "dripjobs_jobs_list_all_views_csv",
+    proposal_id: "3000001",
+    job_status: "SCHEDULED",
+    deal_stage: "Project Scheduled",
+    invoice_status: "Partially Paid",
+    paid_cents: 25000,
+    balance_cents: 88000,
+    proposal_signed_on: "2026-08-01",
+    job_schedule_raw: "Mon. Aug 24 - Fri. Aug 28",
+    scheduled_on: "2026-08-24",
+    scheduled_end_on: "2026-08-28",
+    started_on: null,
+    completed_on: null,
+    salesperson: "Scott Madden",
+    project_manager: "Scott Madden",
+    crew: "Crew 1",
+  };
+  assert.equal(operationalAuthorityEquivalent(authority, row), true);
+  assert.equal(operationalAuthorityEquivalent({ ...authority, balance_cents: 87000 }, row), false);
 });
 
 test("historical jobs remain locked", () => {

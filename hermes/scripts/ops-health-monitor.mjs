@@ -13,11 +13,16 @@ const execFileAsync = promisify(execFile);
 const META_JOB_ID = "1b1f8b6c31f9";
 const REMINDER_MS = 6 * 60 * 60 * 1000;
 const MAX_REPORT_AGE_MS = 26 * 60 * 60 * 1000;
+const MAX_META_BACKEND_SYNC_AGE_MS = 30 * 60 * 60 * 1000;
 const MAX_EMAIL_POLL_AGE_MS = 20 * 60 * 1000;
 const MAX_CONTRACTOR_INVOICE_POLL_AGE_MS = 20 * 60 * 1000;
 const MAX_DRIPJOBS_SYNC_AGE_MS = 30 * 60 * 60 * 1000;
 const DEFAULT_ALERT_EMAIL = "info@paintersottawa.com";
-const ENV_FILES = ["/opt/data/.env", "/opt/data/hermes-meta-ads.env"];
+const ENV_FILES = [
+  "/opt/data/.env",
+  "/opt/data/hermes-meta-ads.env",
+  "/opt/data/hermes-job-amounts.env",
+];
 
 function parseEnv(text) {
   const result = {};
@@ -110,6 +115,65 @@ async function checkMeta() {
   } catch (error) {
     return result("Meta Ads", false, error?.name === "AbortError" ? "connection timed out" : error.message);
   }
+}
+
+async function checkMetaBackendSync() {
+  try {
+    const { jobs } = await readJobs();
+    const configuredId = String(process.env.HERMES_META_BACKEND_SYNC_JOB_ID || "").trim();
+    const job = jobs.find((candidate) => (
+      configuredId
+        ? jobId(candidate) === configuredId
+        : String(candidate.name || "").toLowerCase().startsWith("daily meta ads backend sync")
+    ));
+    if (!job || job.enabled === false || job.state === "paused") {
+      return result("Meta backend", false, "daily Meta backend sync job is missing or paused");
+    }
+    const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
+    const backendKey = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+    if (!supabaseUrl || !backendKey) return result("Meta backend", false, "server-side Supabase credentials are not configured");
+    const url = new URL("/rest/v1/marketing_performance", supabaseUrl);
+    url.searchParams.set("select", "period_end,captured_at");
+    url.searchParams.set("platform", "eq.meta");
+    url.searchParams.set("grain", "eq.daily");
+    url.searchParams.set("entity_level", "eq.campaign");
+    url.searchParams.set("order", "period_end.desc,captured_at.desc");
+    url.searchParams.set("limit", "1");
+    const { response, body } = await fetchJson(url, {
+      headers: {
+        apikey: backendKey,
+        Authorization: `Bearer ${backendKey}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return result("Meta backend", false, body.message || `Supabase HTTP ${response.status}`);
+    const latest = Array.isArray(body) ? body[0] : null;
+    if (!latest) return result("Meta backend", false, "no daily Meta campaign rows are stored");
+    const capturedAt = Date.parse(latest.captured_at || "");
+    if (!Number.isFinite(capturedAt) || Date.now() - capturedAt > MAX_META_BACKEND_SYNC_AGE_MS) {
+      return result("Meta backend", false, "daily Meta backend data is more than 30 hours old");
+    }
+    const expectedDate = dateInToronto(-1);
+    if (String(latest.period_end || "") < expectedDate) {
+      return result("Meta backend", false, `latest Meta reporting date is ${latest.period_end || "missing"}; expected at least ${expectedDate}`);
+    }
+    return result("Meta backend", true, `campaign data current through ${latest.period_end}`);
+  } catch (error) {
+    return result("Meta backend", false, error?.name === "AbortError" ? "connection timed out" : error.message);
+  }
+}
+
+function dateInToronto(offsetDays = 0) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const date = new Date(`${values.year}-${values.month}-${values.day}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+  return date.toISOString().slice(0, 10);
 }
 
 function hermesHomeCandidates() {
@@ -247,7 +311,7 @@ async function checkContractorInvoiceSync() {
   }
 }
 
-async function checkDripJobsJobAmountSync() {
+async function checkDripJobsOperationsSync() {
   try {
     const { jobs } = await readJobs();
     const configuredId = String(process.env.HERMES_DRIPJOBS_SYNC_JOB_ID || "").trim();
@@ -259,24 +323,29 @@ async function checkDripJobsJobAmountSync() {
         ))
     ));
     if (!job || job.enabled === false || job.state === "paused") {
-      return result("DripJobs job authority", false, "daily Jobs List sync job is missing or paused");
+      return result("DripJobs operations", false, "daily Jobs/Sales List sync job is missing or paused");
     }
     const healthFile = process.env.HERMES_DRIPJOBS_SYNC_HEALTH || "/opt/data/state/dripjobs-sync/health.json";
     const health = JSON.parse(await readFile(healthFile, "utf8"));
     const lastSuccess = Date.parse(health.last_successful_sync_at || "");
     if (!Number.isFinite(lastSuccess) || Date.now() - lastSuccess > MAX_DRIPJOBS_SYNC_AGE_MS) {
-      return result("DripJobs job authority", false, "no successful live Jobs List sync in the last 30 hours");
+      return result("DripJobs operations", false, "no successful live Jobs/Sales List sync in the last 30 hours");
     }
     if (health.validation_status !== "accepted") {
-      return result("DripJobs job authority", false, health.last_error || "last Jobs List validation was not accepted");
+      return result("DripJobs operations", false, health.last_error || "last DripJobs validation was not accepted");
     }
     const rows = Number(health.last_row_count || 0);
-    if (rows < 100) return result("DripJobs job authority", false, `last accepted combined Jobs List had only ${rows} rows`);
+    if (rows < 100) return result("DripJobs operations", false, `last accepted combined Jobs List had only ${rows} rows`);
+    const salesRows = Number(health.last_sales_row_count || 0);
+    const persistedDeals = Number(health.last_persisted_sales_deals || 0);
+    if (persistedDeals !== salesRows) return result("DripJobs operations", false, `only ${persistedDeals} of ${salesRows} validated deals were persisted`);
+    const canonicalDeals = Number(health.last_canonical_sales_deals || 0);
+    if (canonicalDeals < 1_200) return result("DripJobs operations", false, `canonical all-time Sales List has only ${canonicalDeals} deals`);
     const errors = Number(health.consecutive_errors || 0);
-    if (errors > 0) return result("DripJobs job authority", false, `${errors} consecutive sync error(s): ${health.last_error || "unknown error"}`);
-    return result("DripJobs job authority", true, `${rows} jobs accepted; last sync current`);
+    if (errors > 0) return result("DripJobs operations", false, `${errors} consecutive sync error(s): ${health.last_error || "unknown error"}`);
+    return result("DripJobs operations", true, `${rows} jobs and ${canonicalDeals} canonical deals current; ${salesRows} recently changed deals processed`);
   } catch (error) {
-    return result("DripJobs job authority", false, error.code === "ENOENT" ? "DripJobs sync health record is missing" : error.message);
+    return result("DripJobs operations", false, error.code === "ENOENT" ? "DripJobs sync health record is missing" : error.message);
   }
 }
 
@@ -350,7 +419,7 @@ async function sendEmailFallback(message) {
 }
 
 function simulatedChecks(service) {
-  const names = { meta: "Meta Ads", slack: "Slack", gmail: "Gmail", cron: "Scheduled jobs", email: "Email tagging", invoice: "Contractor invoices", dripjobs: "DripJobs job authority" };
+  const names = { meta: "Meta Ads", meta_backend: "Meta backend", slack: "Slack", gmail: "Gmail", cron: "Scheduled jobs", email: "Email tagging", invoice: "Contractor invoices", dripjobs: "DripJobs operations" };
   return Object.entries(names).map(([key, name]) => result(name, key !== service, key === service ? "simulated failure" : "healthy"));
 }
 
@@ -359,13 +428,13 @@ async function main() {
   const simulateIndex = process.argv.indexOf("--simulate");
   const simulated = simulateIndex >= 0 ? process.argv[simulateIndex + 1] : null;
   if (process.argv.includes("--self-test")) {
-    process.stdout.write(`${JSON.stringify({ status: "ok", services: ["Meta Ads", "Slack", "Gmail", "Scheduled jobs", "Email tagging", "Contractor invoices", "DripJobs job authority"] })}\n`);
+    process.stdout.write(`${JSON.stringify({ status: "ok", services: ["Meta Ads", "Meta backend", "Slack", "Gmail", "Scheduled jobs", "Email tagging", "Contractor invoices", "DripJobs operations"] })}\n`);
     return;
   }
 
   const checks = simulated
     ? simulatedChecks(simulated)
-    : await Promise.all([checkMeta(), checkSlack(), checkGmail(), checkCron(), checkEmailIntake(), checkContractorInvoiceSync(), checkDripJobsJobAmountSync()]);
+    : await Promise.all([checkMeta(), checkMetaBackendSync(), checkSlack(), checkGmail(), checkCron(), checkEmailIntake(), checkContractorInvoiceSync(), checkDripJobsOperationsSync()]);
   const problems = checks.filter((item) => !item.ok);
   if (simulated) {
     process.stdout.write(`${alertText(problems)}\n`);

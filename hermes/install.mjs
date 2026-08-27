@@ -61,13 +61,19 @@ export async function install(argv) {
     path.join(bin, "ottawa-gmail-label"),
     path.join(bin, "ottawa-email-intake"),
     path.join(bin, "ottawa-contractor-invoice"),
+    path.join(bin, "ottawa-invoice-vision.py"),
     path.join(bin, "dripjobs-daily-sync-runner.mjs"),
     path.join(bin, "import-invoice-list-job-amounts.mjs"),
+    path.join(bin, "import-dripjobs-sales-list.mjs"),
+    path.join(bin, "meta-marketing-daily-sync.mjs"),
     path.join(bin, "lib", "dripjobs-invoice-list.mjs"),
     path.join(bin, "lib", "dripjobs-jobs-list.mjs"),
+    path.join(bin, "lib", "dripjobs-sales-list.mjs"),
     path.join(bin, "lib", "dripjobs-job-authority.mjs"),
+    path.join(bin, "lib", "meta-marketing-sync.mjs"),
     pdfJsVendor,
     path.join(cronScripts, "meta-ads-daily-report.sh"),
+    path.join(cronScripts, "meta-ads-backend-sync.sh"),
     path.join(cronScripts, "email-intake-precheck.sh"),
     path.join(emailProfileScripts, "email-intake-precheck.sh"),
     path.join(cronScripts, "contractor-invoice-precheck.sh"),
@@ -117,9 +123,14 @@ export async function install(argv) {
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-gmail-label"), path.join(bin, "ottawa-gmail-label"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-email-intake"), path.join(bin, "ottawa-email-intake"));
   await copyFile(path.join(repositoryRoot, "hermes/bin/ottawa-contractor-invoice"), path.join(bin, "ottawa-contractor-invoice"));
+  await copyFile(path.join(repositoryRoot, "scripts/ottawa-invoice-vision.py"), path.join(bin, "ottawa-invoice-vision.py"));
   await copyFile(
     path.join(repositoryRoot, "hermes/scripts/meta-ads-daily-report.sh"),
     path.join(cronScripts, "meta-ads-daily-report.sh"),
+  );
+  await copyFile(
+    path.join(repositoryRoot, "hermes/scripts/meta-ads-backend-sync.sh"),
+    path.join(cronScripts, "meta-ads-backend-sync.sh"),
   );
   await copyFile(
     path.join(repositoryRoot, "hermes/scripts/email-intake-precheck.sh"),
@@ -170,7 +181,10 @@ export async function install(argv) {
   await copyFile(path.join(repositoryRoot, "scripts/ottawa-contractor-invoice-cli.mjs"), path.join(bin, "ottawa-contractor-invoice-cli.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/dripjobs-daily-sync-runner.mjs"), path.join(bin, "dripjobs-daily-sync-runner.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/import-invoice-list-job-amounts.mjs"), path.join(bin, "import-invoice-list-job-amounts.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/import-dripjobs-sales-list.mjs"), path.join(bin, "import-dripjobs-sales-list.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/meta-marketing-daily-sync.mjs"), path.join(bin, "meta-marketing-daily-sync.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-report-contract.mjs"), path.join(bin, "lib/ottawa-report-contract.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/lib/meta-marketing-sync.mjs"), path.join(bin, "lib/meta-marketing-sync.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-read-sources.mjs"), path.join(bin, "lib/ottawa-read-sources.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-customer-rag.mjs"), path.join(bin, "lib/ottawa-customer-rag.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-gmail-read.mjs"), path.join(bin, "lib/ottawa-gmail-read.mjs"));
@@ -179,6 +193,7 @@ export async function install(argv) {
   await copyFile(path.join(repositoryRoot, "scripts/lib/ottawa-contractor-invoice.mjs"), path.join(bin, "lib/ottawa-contractor-invoice.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/dripjobs-invoice-list.mjs"), path.join(bin, "lib/dripjobs-invoice-list.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/dripjobs-jobs-list.mjs"), path.join(bin, "lib/dripjobs-jobs-list.mjs"));
+  await copyFile(path.join(repositoryRoot, "scripts/lib/dripjobs-sales-list.mjs"), path.join(bin, "lib/dripjobs-sales-list.mjs"));
   await copyFile(path.join(repositoryRoot, "scripts/lib/dripjobs-job-authority.mjs"), path.join(bin, "lib/dripjobs-job-authority.mjs"));
   await copyFile(path.join(repositoryRoot, "node_modules/pdfjs-dist/legacy/build/pdf.mjs"), path.join(pdfJsVendor, "pdf.mjs"));
   await copyFile(path.join(repositoryRoot, "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"), path.join(pdfJsVendor, "pdf.worker.mjs"));
@@ -198,6 +213,7 @@ export async function install(argv) {
   await chmod(path.join(bin, "ottawa-gmail-label"), 0o755);
   await chmod(path.join(bin, "ottawa-email-intake"), 0o755);
   await chmod(path.join(bin, "ottawa-contractor-invoice"), 0o755);
+  await chmod(path.join(bin, "ottawa-invoice-vision.py"), 0o755);
   await chmod(path.join(cronScripts, "meta-ads-daily-report.sh"), 0o755);
   await chmod(path.join(cronScripts, "email-intake-precheck.sh"), 0o755);
   await chmod(path.join(emailProfileScripts, "email-intake-precheck.sh"), 0o755);
@@ -205,6 +221,7 @@ export async function install(argv) {
   await chmod(path.join(cronScripts, "dripjobs-daily-sync.sh"), 0o755);
   await chmod(path.join(bin, "dripjobs-daily-sync-runner.mjs"), 0o755);
   await chmod(path.join(bin, "import-invoice-list-job-amounts.mjs"), 0o755);
+  await chmod(path.join(bin, "import-dripjobs-sales-list.mjs"), 0o755);
   await chmod(path.join(emailProfileScripts, "contractor-invoice-precheck.sh"), 0o755);
   await chmod(path.join(cronScripts, "ops-health-monitor.mjs"), 0o755);
   await chmod(path.join(hermesScripts, "ops-health-monitor.sh"), 0o755);

@@ -113,7 +113,7 @@ def valid_contractor_invoice(argv: list[str]) -> bool:
     if len(argv) <= command_index:
         return False
     command, rest = argv[command_index], argv[command_index + 1:]
-    if command == "status":
+    if command in {"status", "vision-self-test"}:
         return rest in ([], ["--json"])
     if command == "poll":
         options = parse_pairs(rest, {"--limit"}, {"--dry-run", "--yes", "--json"})

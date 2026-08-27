@@ -10,6 +10,7 @@ import { initials } from "@/lib/format";
 
 const LINKS = [
   { href: "/", label: "Overview" },
+  { href: "/metrics", label: "Metrics" },
   { href: "/contacts", label: "Contacts" },
   { href: "/leads", label: "Leads & Estimates" },
   { href: "/jobs", label: "Jobs & Budgets" },

@@ -367,8 +367,20 @@ function verifyInvoiceDecision(input: Record<string, unknown>) {
 }
 
 function extractMoneyCents(value: unknown) {
-  const matches = String(value || "").match(/(?:CAD\s*|CA\$\s*|\$\s*)?\d{1,3}(?:[ ,.\u00a0]\d{3})*(?:[.,]\d{2})|(?:CAD\s*|CA\$\s*|\$\s*)?\d+[.,]\d{2}/gi) || [];
-  return new Set(matches.map(parseAmount).filter((amount): amount is number => amount !== null));
+  const source = String(value || "");
+  const matches = source.match(/(?:CAD\s*|CA\$\s*|\$\s*)?\d{1,3}(?:[ ,.\u00a0]\d{3})*(?:[.,]\d{2})|(?:CAD\s*|CA\$\s*|\$\s*)?\d+[.,]\d{2}/gi) || [];
+  const amounts = new Set(matches.map(parseAmount).filter((amount): amount is number => amount !== null));
+  for (const line of source.split(/\r?\n/)) {
+    if (!line.includes("|")) continue;
+    const integers = line.match(/(?<![\d.,])\d+(?![\d.,])/g) || [];
+    const counts = new Map<string, number>();
+    for (const token of integers) counts.set(token, (counts.get(token) || 0) + 1);
+    for (const [token, count] of counts) {
+      const whole = Number(token);
+      if (count >= 2 && Number.isSafeInteger(whole) && whole >= 1) amounts.add(whole * 100);
+    }
+  }
+  return amounts;
 }
 
 function parseAmount(value: string) {
@@ -395,7 +407,10 @@ function dateVariants(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   const monthLong = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][month - 1];
   const monthShort = monthLong.slice(0, 3);
-  return [date, `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`, `${month}/${day}/${year}`,
+  return [date, `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`,
+    `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}.${year}`,
+    `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`,
+    `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`, `${month}/${day}/${year}`,
     `${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}/${year}`, `${monthLong} ${day}, ${year}`, `${monthShort} ${day}, ${year}`,
     `${day} ${monthLong} ${year}`, `${day} ${monthShort} ${year}`];
 }

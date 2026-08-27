@@ -1,6 +1,6 @@
 # Hermes hardening checklist
 
-Last updated: 2026-08-16 (America/Toronto)
+Last updated: 2026-08-20 (America/Toronto)
 
 | Priority | Work item | Status | Completion evidence |
 | ---: | --- | --- | --- |
@@ -10,11 +10,12 @@ Last updated: 2026-08-16 (America/Toronto)
 | 4 | Separate Hermes profiles | **In progress** | The isolated email profile is complete; dedicated operations, deployment, and marketing profiles remain. |
 | 5 | Isolated email-triage profile and automatic tagging | **Live deployed and healthy** | Live add-only tagging is enabled every five minutes. The August 14 Gmail 404 retry loop was patched and the catch-up queue was drained: 32 Hermes classifications are complete, backlog/errors/incomplete records are zero, no multiple-primary-label condition occurred, and two subsequent empty polls woke no model. The separate five-minute contractor-invoice intake is live; its August invoices are itemized and assigned only from exact printed job evidence. |
 | 6 | Remove unnecessary skills and terminal access | **Completed** | The Slack daily profile is limited to five toolsets and 7 of 80 installed skills. A fail-closed pre-tool hook restricts terminal commands to approved Ottawa operations and read-only diagnostics; a real Slack `pwd` test was blocked without producing output. |
-| 7 | Monitoring and failure alerts | **Completed** | Script-only job `0f2318f9f1bb` checks Meta Ads, Slack, Gmail, scheduled-job health, Meta-report freshness, Gmail intake health, and the daily DripJobs Jobs List authority sync. Failure, one-time recovery, and subsequent silent-healthy paths were exercised after deployment. |
+| 7 | Monitoring and failure alerts | **Completed** | Script-only job `0f2318f9f1bb` checks Meta API access, Meta backend freshness, Slack, Gmail, scheduled-job health, Meta-report freshness, Gmail intake health, and the daily DripJobs Jobs + Sales operations sync. Failure, one-time recovery, and silent-healthy paths were exercised after deployment. |
 | 8 | Ottawa Painters operating playbook | Not started | Document policies, approvals, and systems of record. |
 | 9 | Confirmations for sensitive writes | Not started | Require confirmation for high-impact employee, payroll, and customer changes. |
 | 10 | Stronger model for selected tasks | Not started | Route sensitive or complex analysis to an appropriate model. |
-| 11 | Daily DripJobs Jobs List authority sync | **Completed — live and verified** | Job `c26e43bc139b` runs daily at 6:00 AM Toronto. Hermes exports both Jobs List `All` views and updates before-HST job amounts plus advance-only production months. The accepted baseline has 199 unique proposals; 68 eligible jobs are verified with zero amount/budget/month mismatches, 125 historical jobs remain locked, 6 unmatched proposals remain untouched, and the idempotent live rerun applied zero changes. |
+| 11 | Daily DripJobs operations sync | **Live deployed and healthy** | The database holds all 1,469 exact Sales Deal IDs (70 active, 1,399 archived). Job `c26e43bc139b` runs daily at 6:00 AM Toronto with an overlapping seven-day Changed Date delta instead of re-reading all historical deals. |
+| 12 | Meta Ads backend sync | **Live deployed and current** | Campaign/day facts are backfilled through August 20, 2026. Hermes refreshes a rolling 14-day window every four hours with stable upserts, raw action provenance, and dashboard-safe daily spend, lead, CPL-input, impression, click, link-click, and landing-page-view fields. |
 
 ## Current work
 
@@ -41,6 +42,13 @@ Last updated: 2026-08-16 (America/Toronto)
 - [x] Replace the Invoice List workflow with a strict two-view DripJobs Jobs List validator, exact-proposal importer, isolated browser profile, and daily 6:00 AM Toronto job (`c26e43bc139b`).
 - [x] Prove the DripJobs guardrail rejects wrong pages, incomplete views, duplicate proposals, bad arithmetic, and failed downloads before the importer runs, and delivers a concise Slack failure.
 - [x] Switch `HERMES_DRIPJOBS_SYNC_MODE` from `dry-run` to `live`; verify the combined amount/production-month import, database invariants, an idempotent second run, monitor recovery, and a subsequent silent healthy monitor run.
+- [x] Extend the same guarded run to capture active and archived Sales List `All` views, exact Deal/Contact IDs, sources, stages, sales status, deal amounts, and salespeople.
+- [x] Refresh job schedules, actual dates, invoice paid/balance fields, salespeople, project managers, and crews from the authoritative Jobs List rows without changing locked historical accounting.
+- [x] Backfill all 1,469 active and archived Sales Deals into a lossless one-row-per-Deal-ID table; retain 516 unmatched historical deals without guessing a lead link.
+- [x] Replace the daily all-time Sales List design with a seven-day Changed Date delta that catches active, archived, cancelled, and stage-changed deals through exact Deal-ID upserts.
+- [x] Run the uploaded Hermes delta deployment, verify the schema-v5 live Jobs/Sales sync, and leave the permanent 6:00 AM job scheduled.
+- [x] Backfill Meta campaign/day performance into the backend through today and deploy the four-hour rolling refresh.
+- [x] Correct the Meta summary grain so campaign, ad-set, and ad rows cannot triple-count spend or leads.
 - [ ] Receive a human confirmation that Nous deployed the patched image.
 - [ ] Rerun the security audit and health checks after the managed image is patched.
 - [x] Rewrite this table with completed work, the current blocker, and remaining priorities.
@@ -69,7 +77,7 @@ Support escalation sent to `support@nousresearch.com` on August 12, 2026 with su
 - Job: `Hermes failure monitor — every 30 minutes` (`0f2318f9f1bb`).
 - Schedule: `*/30 * * * *`; the next verified run after deployment was 10:30 AM America/Toronto.
 - Mode: no-agent/script-only, so healthy runs use no model and send nothing.
-- Checks: Meta Marketing API connectivity, Slack authentication, Gmail label API, scheduler state, scheduled-job errors, Meta report delivery errors, a 26-hour Meta report freshness threshold, Gmail intake health, and DripJobs Jobs List live-sync freshness/validation/errors.
+- Checks: Meta Marketing API connectivity, Meta backend campaign-date/capture freshness, Slack authentication, Gmail label API, scheduler state, scheduled-job errors, Meta report delivery errors, a 26-hour Meta report freshness threshold, Gmail intake health, and DripJobs Jobs List live-sync freshness/validation/errors.
 - Alert behavior: changed failures post to the Hermes Slack home DM; unchanged failures repeat after six hours. Recovery posts once when all checks return healthy. If Slack is down while Gmail is healthy, a fallback email is sent to `info@paintersottawa.com`.
 - Verification: live self-test returned all monitored services; simulated failure output was concise; automatic in-process scheduler runs correctly suppressed Slack delivery. After live email rollout, a manual monitor run at 3:18:18 PM returned empty healthy output and sent no Slack message.
 - DripJobs recovery verification: after the Jobs List rollout, the monitor sent one recovery at 2:52:50 PM on August 16; its immediate 2:53:49 PM rerun produced empty stdout and skipped Slack delivery, proving normal healthy operation is silent.
@@ -121,16 +129,25 @@ Support escalation sent to `support@nousresearch.com` on August 12, 2026 with su
 - Preserved: 119 historical jobs remain unchanged under the June 1, 2026 accounting lock. Eleven proposal groups remain unchanged because no canonical job matched or duplicate CSV rows were unresolved: Erin Lee, Shezara Ali, Christine Leclair, Ian Rothwell, two Jad Slim proposals, Saroeun Cole, Blocked Don't Book, Nick Therien, Claire Colbert, and Shiho mshoshii.
 - Representative verified amounts: Carina Stark $6,146.07 gross → $5,439.00 before HST; Irene Roberts $2,211.42 gross → $1,957.01 before HST; Sherrie Egan $4,678.20 gross → $4,140.00 before HST.
 
-## Daily DripJobs Jobs List amount + production-month sync
+## Daily DripJobs operations sync
 
-- Schedule: `Daily DripJobs Jobs List amounts + production month — 6am Toronto` (`c26e43bc139b`) runs daily at 6:00 AM America/Toronto on the active Hermes gateway. It is `no_agent`/script-only, uses `agent-browser` 0.33.1 with a persistent authenticated DripJobs profile, and requires no inference model.
-- Source and validation: Hermes opens Jobs List, selects `Show entries = All`, exports the active view and the archived/cancelled view separately, and requires the combined set to be disjoint and proposal-unique. The accepted August 16 baseline contains 86 active plus 113 archived rows, 199 unique proposals, 165 qualifying production-stage rows, gross total 71,211,732 cents, and combined SHA-256 `26dc305e78bd2c534aa7cee1a82c6067dd717802b30e4d3d1fff2685431c715f`. Wrong pages, missing controls/columns, partial selection, unexpected view contents, duplicate proposals, bad amount arithmetic, implausible counts, failed authentication, and failed downloads stop before the importer.
+- Schedule: `Daily DripJobs Jobs List amounts + production month — 6am Toronto` (`c26e43bc139b`) runs daily at 6:00 AM America/Toronto on the active Hermes gateway. It is `no_agent`/script-only, uses `agent-browser` 0.33.1 with a persistent authenticated DripJobs profile, and requires no inference model. The legacy job name is retained so the existing health monitor continues to recognize it.
+- Source and validation: Hermes exports active and archived/cancelled Jobs List `All` views. Sales Deals were backfilled once with Created Date = Anytime, Changed Date = Anytime, and All rows: 70 active plus 1,399 archived (1,469 unique Deal IDs). The daily Sales run now uses Created Date = Anytime plus an overlapping Changed Date = Last 7 Days window on both views; the verified August 20 sample was 40 active plus 61 archived rows. Hermes must submit `Go`, select `All`, and prove DripJobs' displayed total and DataTable total both equal the captured row count. Wrong pages, missing controls/columns, partial tables, duplicate IDs, bad amount arithmetic, failed authentication, and failed downloads stop before either live importer.
 - Amount rule: match exactly one canonical job by DripJobs proposal ID and store `round(Amount cents / 1.13)` on `jobs.contract_amount_cents` and a versioned current budget. Gross amount, HST, proposal/invoice IDs, both source hashes/documents, and source rows are retained as audit evidence. The rollout corrected Ian Rothwell to 103,857 cents, Christine Leclair to 136,000 cents, and Shezara Ali to 85,500 cents before HST.
 - Production-month rule: only Work Finished/Work Complete, Review Request, and Project Complete/Job Completed qualify. Hermes uses the qualifying `Deal Stage Date` month, synchronizes `jobs.production_month` and all associated `job_budgets.production_month`, advances on a later qualifying transition, and never clears or moves a month backward.
-- Safety and verification: 68 eligible jobs carry the accepted Jobs List authority; database checks found zero job-amount mismatches, zero current-budget mismatches, zero job-month mismatches, and zero budget-month mismatches. There are 68 verification events, two private source documents, and 136 job-evidence links. The June 1 lock preserved 125 historical jobs; six proposals with no canonical job match remain untouched.
-- Live/idempotency evidence: the initial live write created the intended 68 authority records. A verifier projection omitted `source`, `version`, and `updated_at`, so the job reported a false post-write failure; the database itself already had zero mismatches. The projection was corrected and redeployed. The 2:50:48 PM live rerun accepted the same 199-row source, applied zero jobs, zero amount changes, and zero production-month changes, then saved health as `live`, `ok`, `accepted`, with zero consecutive errors.
-- Monitoring: the failure monitor recognizes both the replacement and legacy cron names during migration. It sent one recovery notice at 2:52:50 PM, and the immediate 2:53:49 PM check was silent healthy. Live success runs normally emit no Slack message; failures and recovery transitions do.
+- Operational rule: current, exactly matched Jobs List rows also refresh scheduled start/end, actual start/completion, invoice paid/balance, salesperson, project manager, and crew. These operational updates use the same historical cutoff and concurrency checks as amounts and production months.
+- Lead rule: every Sales List row is stored by its exact Deal ID whether or not a lead can be linked. A lead link is accepted only from the true Sales Deal ID, the exact event Deal ID, or a legacy Contact ID that has exactly one lifetime deal. No fuzzy customer matching is used. The first backfill exposed 139 multi-deal contacts that had been linked by legacy Contact ID; those lead values and links were restored from their recorded pre-backfill audit values.
+- Safety and verification: the canonical Sales Deal table contains 1,469 rows, with 953 exact lead links and 516 intact unlinked historical deals. The daily 101-row delta applied 89 authority refreshes, zero lead value changes, persisted all 101 rows, and left the canonical count at 1,469; an immediate repeat dry run reported zero pending changes. The June 1 historical job accounting lock remains unchanged.
+- Hosted rollout state: the schema-v5 package installed successfully at 4:01 PM on August 20. The live health record reports accepted Jobs and Sales exports, 1,469 canonical deals, and the small seven-day delta scope. The permanent 6:00 AM job and monitor IDs remain `c26e43bc139b` and `0f2318f9f1bb`.
 - Credential isolation: the Supabase backend credential remains only in `/opt/data/hermes-job-amounts.env`, outside global Hermes Keys/provider configuration and browser/client code.
+
+## Meta Ads backend sync
+
+- Source: the existing read-only Meta Marketing API connection on Hermes. No token is stored in the repository, browser code, logs, or database.
+- Storage: `marketing_performance` now has stable daily campaign identity on account/date/campaign, raw Meta action arrays and API provenance in metadata, and explicit spend, leads, impressions, clicks, link clicks, landing-page views, and capture timestamps. The existing 2026 history was retained and refreshed; current rows now extend through August 20 instead of stopping on August 1.
+- Summary safety: `marketing_summary` now aggregates campaign rows only, preventing the previous campaign + ad-set + ad triple count. `marketing_daily_summary` exposes raw daily numerators and denominators plus derived CPL input; `campaign_reach_sum` is named explicitly because reach is not deduplicated across campaigns.
+- Schedule: `Daily Meta Ads backend sync — every 4 hours` is a no-agent/script-only Hermes job. Each run re-reads only the latest 14 days, so late Meta attribution changes are corrected without re-fetching all history.
+- Live verification: the permanent job completed at 4:15 PM on August 20. Supabase held 335 daily campaign rows through August 20 with a fresh 4:15 PM capture; August 1 summary spend exactly matched the campaign rows, proving the duplicate-grain correction.
 
 ## Hermes Desktop inference repair
 

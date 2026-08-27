@@ -7,6 +7,10 @@ const migrationUrl = new URL(
   "../supabase/migrations/20260805202244_automate_default_job_budget_hours.sql",
   import.meta.url,
 );
+const rateMigrationUrl = new URL(
+  "../supabase/migrations/20260818235302_set_labour_planning_rate_to_30.sql",
+  import.meta.url,
+);
 
 async function database() {
   const db = new PGlite();
@@ -328,6 +332,120 @@ test("recalculates formula budgets but preserves calculator hours", async () => 
       ["10000000-0000-0000-0000-000000000010"],
     ),
     "explicit",
+  );
+
+  await db.close();
+});
+
+test("uses a $30 planning rate for open formula budgets and future jobs", async () => {
+  const db = await database();
+
+  await db.exec(`
+    insert into public.jobs (
+      id, name, status, contract_amount_cents, started_on, completed_on, source
+    ) values
+      (
+        '10000000-0000-0000-0000-000000000020',
+        'Open formula budget',
+        'active',
+        265000,
+        null,
+        null,
+        'dripjobs'
+      ),
+      (
+        '10000000-0000-0000-0000-000000000021',
+        'Historical formula budget',
+        'completed',
+        265000,
+        '2026-05-01',
+        '2026-05-02',
+        'dripjobs'
+      );
+  `);
+
+  await db.exec(await readFile(migrationUrl, "utf8"));
+  assert.equal(
+    await scalar(
+      db,
+      "select budget_minutes from public.job_feed where id = $1",
+      ["10000000-0000-0000-0000-000000000020"],
+    ),
+    1681,
+  );
+
+  await db.exec(await readFile(rateMigrationUrl, "utf8"));
+
+  assert.equal(
+    await scalar(
+      db,
+      "select (settings #>> '{labour_budget,planning_hourly_rate_cents}')::int from public.app_config where id = 'default'",
+    ),
+    3000,
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select budget_minutes from public.job_feed where id = $1",
+      ["10000000-0000-0000-0000-000000000020"],
+    ),
+    1961,
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select hourly_rate_cents from public.job_budgets where job_id = $1 and status = 'active'",
+      ["10000000-0000-0000-0000-000000000020"],
+    ),
+    3000,
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select budget_minutes from public.job_feed where id = $1",
+      ["10000000-0000-0000-0000-000000000021"],
+    ),
+    1681,
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select hourly_rate_cents from public.job_budgets where job_id = $1 and status = 'closed'",
+      ["10000000-0000-0000-0000-000000000021"],
+    ),
+    3500,
+  );
+
+  await db.exec(`
+    insert into public.jobs (
+      id, name, status, contract_amount_cents, source
+    ) values (
+      '10000000-0000-0000-0000-000000000022',
+      'Future formula budget',
+      'active',
+      300000,
+      'dripjobs'
+    );
+  `);
+  await db.query(
+    "select private.ensure_default_job_budget($1, null)",
+    ["10000000-0000-0000-0000-000000000022"],
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select budget_minutes from public.job_feed where id = $1",
+      ["10000000-0000-0000-0000-000000000022"],
+    ),
+    2220,
+  );
+  assert.equal(
+    await scalar(
+      db,
+      "select hourly_rate_cents from public.job_budgets where job_id = $1 and status = 'active'",
+      ["10000000-0000-0000-0000-000000000022"],
+    ),
+    3000,
   );
 
   await db.close();

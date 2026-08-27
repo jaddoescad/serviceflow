@@ -11,6 +11,7 @@ import {
   isCanonicalAuthorityJob,
   jobAccountingLockReason,
   normalizedAuthorityValue,
+  operationalAuthorityEquivalent,
   productionMonthDecision,
 } from "./lib/dripjobs-job-authority.mjs";
 import { validateDripJobsJobsExports } from "./lib/dripjobs-jobs-list.mjs";
@@ -167,6 +168,13 @@ for (const row of csvRows) {
   );
   const amountValueChanged = currentJobAmountCents !== row.beforeHstCents || currentBudgetAmountCents !== row.beforeHstCents;
   const amountAuthorityRefresh = !amountAuthorityEquivalent(job.metadata?.job_amount_authority, row) || !amountAuthorityEquivalent(currentBudget?.metadata?.job_amount_authority, row);
+  const operationalAuthorityRefresh = !operationalAuthorityEquivalent(job.metadata?.dripjobs_operational_authority, row);
+  const operationalValueChanged = Boolean(
+    (row.scheduledStartDateIso && String(job.scheduled_on ?? "").slice(0, 10) !== row.scheduledStartDateIso) ||
+    (row.scheduledEndDateIso && String(job.scheduled_end_on ?? "").slice(0, 10) !== row.scheduledEndDateIso) ||
+    (row.jobStartDateIso && String(job.started_on ?? "").slice(0, 10) !== row.jobStartDateIso) ||
+    (row.jobCompletionDateIso && String(job.completed_on ?? "").slice(0, 10) !== row.jobCompletionDateIso)
+  );
   const item = {
     ...row,
     job,
@@ -176,16 +184,28 @@ for (const row of csvRows) {
     currentBudgetAmountCents,
     amountValueChanged,
     amountAuthorityRefresh,
+    operationalAuthorityRefresh,
+    operationalValueChanged,
     monthDecision,
     effectiveProductionMonth,
     productionNeedsApply: monthDecision.apply || budgetProductionMismatch,
   };
-  const reason = jobAccountingLockReason(job);
+  const reason = jobAccountingLockReason({
+    ...job,
+    started_on: job.started_on ?? row.jobStartDateIso,
+    completed_on: job.completed_on ?? row.jobCompletionDateIso,
+  });
   if (reason) locked.push({ ...item, lockReason: reason });
   else eligible.push(item);
 }
 
-const changed = eligible.filter((item) => item.amountValueChanged || item.amountAuthorityRefresh || item.productionNeedsApply);
+const changed = eligible.filter((item) =>
+  item.amountValueChanged ||
+  item.amountAuthorityRefresh ||
+  item.productionNeedsApply ||
+  item.operationalAuthorityRefresh ||
+  item.operationalValueChanged
+);
 const sources = {
   active: sourceDescriptor(ACTIVE_CSV_PATH, validation.active, "active"),
   archived: sourceDescriptor(ARCHIVED_CSV_PATH, validation.archived, "archived"),
@@ -194,6 +214,7 @@ const sources = {
   gross_amount_semantics: "includes 13% HST",
   stored_job_amount_formula: "round(Amount cents / 1.13)",
   production_month_rule: "month of the current qualifying Deal Stage Date; advance only, never clear or move backward",
+  operational_date_rule: "sync non-empty planned and actual DripJobs dates for current unlocked jobs; never infer application status",
 };
 const preview = {
   mode: APPLY ? "apply" : "dry-run",
@@ -207,6 +228,9 @@ const preview = {
     amount_authority_refreshes: changed.filter((item) => item.amountAuthorityRefresh).length,
     production_month_changes: changed.filter((item) => item.monthDecision.apply).length,
     budget_production_backfills: changed.filter((item) => item.productionNeedsApply && !item.monthDecision.apply).length,
+    operational_value_changes: changed.filter((item) => item.operationalValueChanged).length,
+    operational_authority_refreshes: changed.filter((item) => item.operationalAuthorityRefresh).length,
+    schedule_parse_errors: csvRows.filter((item) => item.scheduleParseError).length,
     already_applied: eligible.length - changed.length,
     historical_locked: locked.length,
     unresolved: unresolved.length,
@@ -232,6 +256,17 @@ const preview = {
     effective_production_month: item.effectiveProductionMonth,
     production_month_decision: item.monthDecision.reason,
     production_needs_apply: item.productionNeedsApply,
+    old_scheduled_on: item.job.scheduled_on ?? null,
+    candidate_scheduled_on: item.scheduledStartDateIso,
+    old_scheduled_end_on: item.job.scheduled_end_on ?? null,
+    candidate_scheduled_end_on: item.scheduledEndDateIso,
+    old_started_on: item.job.started_on ?? null,
+    candidate_started_on: item.jobStartDateIso,
+    old_completed_on: item.job.completed_on ?? null,
+    candidate_completed_on: item.jobCompletionDateIso,
+    schedule_parse_error: item.scheduleParseError,
+    operational_value_changed: item.operationalValueChanged,
+    operational_authority_refresh: item.operationalAuthorityRefresh,
   })),
   historical_locked: locked.map((item) => ({
     csv_view: item.view,
@@ -299,6 +334,8 @@ if (changed.length === 0) {
     applied_amount_changes: 0,
     applied_production_month_changes: 0,
     applied_authority_refreshes: 0,
+    applied_operational_value_changes: 0,
+    applied_operational_authority_refreshes: 0,
     historical_locked_unchanged: locked.length,
     unresolved_unchanged: unresolved.length,
   }, null, JSON_ONLY ? 0 : 2));
@@ -359,6 +396,35 @@ for (const item of changed) {
     rule: "advance from a qualifying workflow transition date; never clear or move backward",
     imported_at: importedAt,
   } : null;
+  const operationalAuthority = {
+    source_type: "dripjobs_jobs_list_all_views_csv",
+    source_view: item.view,
+    source_filename: sourceDocument.filename,
+    source_sha256: sourceDocument.sha256,
+    combined_source_sha256: validation.manifest.source_sha256,
+    source_document_id: sourceDocument.id,
+    csv_row: item.rowNumber,
+    proposal_id: item.proposalId,
+    job_status: item.status,
+    label: item.label,
+    deal_stage: item.dealStage,
+    deal_stage_date: item.dealStageDateIso,
+    invoice_id: item.invoiceId,
+    invoice_status: item.invoiceStatus,
+    paid_cents: item.paidCents,
+    balance_cents: item.balanceCents,
+    proposal_signed_on: item.proposalSignedDateIso,
+    job_schedule_raw: item.jobScheduledDateRaw,
+    scheduled_on: item.scheduledStartDateIso,
+    scheduled_end_on: item.scheduledEndDateIso,
+    schedule_parse_error: item.scheduleParseError,
+    started_on: item.jobStartDateIso,
+    completed_on: item.jobCompletionDateIso,
+    salesperson: item.salesperson,
+    project_manager: item.projectManager,
+    crew: item.crew,
+    imported_at: importedAt,
+  };
 
   let budgetId = previousBudget?.id ?? null;
   if (item.amountValueChanged) {
@@ -438,10 +504,15 @@ for (const item of changed) {
       ...(freshJob.metadata ?? {}),
       job_amount_authority: amountAuthority,
       ...(productionAuthority ? { production_month_authority: productionAuthority } : {}),
+      dripjobs_operational_authority: operationalAuthority,
     },
     updated_at: importedAt,
   };
   if (effectiveProductionMonth) jobUpdate.production_month = effectiveProductionMonth;
+  if (item.scheduledStartDateIso) jobUpdate.scheduled_on = item.scheduledStartDateIso;
+  if (item.scheduledEndDateIso) jobUpdate.scheduled_end_on = item.scheduledEndDateIso;
+  if (item.jobStartDateIso) jobUpdate.started_on = item.jobStartDateIso;
+  if (item.jobCompletionDateIso) jobUpdate.completed_on = item.jobCompletionDateIso;
   resultData(`update job ${item.job.id}`, await db.from("jobs").update(jobUpdate).eq("id", item.job.id).eq("updated_at", freshJob.updated_at));
 
   for (const document of sourceDocuments) {
@@ -466,21 +537,29 @@ for (const item of changed) {
       budget_id: previousBudget?.id ?? null,
       budget_amount_cents: item.currentBudgetAmountCents,
       production_month: item.job.production_month ?? null,
+      scheduled_on: item.job.scheduled_on ?? null,
+      scheduled_end_on: item.job.scheduled_end_on ?? null,
+      started_on: item.job.started_on ?? null,
+      completed_on: item.job.completed_on ?? null,
     },
     new_values: {
       contract_amount_cents: item.beforeHstCents,
       budget_id: budgetId,
       budget_amount_cents: item.beforeHstCents,
       production_month: effectiveProductionMonth,
+      scheduled_on: item.scheduledStartDateIso ?? item.job.scheduled_on ?? null,
+      scheduled_end_on: item.scheduledEndDateIso ?? item.job.scheduled_end_on ?? null,
+      started_on: item.jobStartDateIso ?? item.job.started_on ?? null,
+      completed_on: item.jobCompletionDateIso ?? item.job.completed_on ?? null,
     },
-    evidence: { amount: amountAuthority, production_month: productionAuthority, source_documents: sourceDocuments.map((document) => document.id) },
+    evidence: { amount: amountAuthority, production_month: productionAuthority, operational: operationalAuthority, source_documents: sourceDocuments.map((document) => document.id) },
     occurred_at: importedAt,
   }, { onConflict: "id" }));
   applied.push({ ...item, budgetId, effectiveProductionMonth });
 }
 
 const appliedJobIds = applied.map((item) => item.job.id);
-const verificationJobs = resultData("updated jobs verification", await db.from("jobs").select("id,contract_amount_cents,production_month,metadata").in("id", appliedJobIds)) ?? [];
+const verificationJobs = resultData("updated jobs verification", await db.from("jobs").select("id,contract_amount_cents,production_month,scheduled_on,scheduled_end_on,started_on,completed_on,metadata").in("id", appliedJobIds)) ?? [];
 const verificationBudgets = resultData("updated budgets verification", await db.from("job_budgets").select("id,job_id,version,source,status,production_month,amount_including_tax_cents,metadata,updated_at").in("job_id", appliedJobIds)) ?? [];
 const verifiedJobById = new Map(verificationJobs.map((job) => [job.id, job]));
 const verifiedBudgetsByJob = new Map();
@@ -493,6 +572,11 @@ for (const item of applied) {
   const job = verifiedJobById.get(item.job.id);
   assert(Number(job?.contract_amount_cents) === item.beforeHstCents, `Job ${item.job.id} amount verification failed.`);
   assert(amountAuthorityEquivalent(job?.metadata?.job_amount_authority, item), `Job ${item.job.id} authority verification failed.`);
+  assert(operationalAuthorityEquivalent(job?.metadata?.dripjobs_operational_authority, item), `Job ${item.job.id} operational authority verification failed.`);
+  if (item.scheduledStartDateIso) assert(String(job?.scheduled_on).slice(0, 10) === item.scheduledStartDateIso, `Job ${item.job.id} scheduled start verification failed.`);
+  if (item.scheduledEndDateIso) assert(String(job?.scheduled_end_on).slice(0, 10) === item.scheduledEndDateIso, `Job ${item.job.id} scheduled end verification failed.`);
+  if (item.jobStartDateIso) assert(String(job?.started_on).slice(0, 10) === item.jobStartDateIso, `Job ${item.job.id} actual start verification failed.`);
+  if (item.jobCompletionDateIso) assert(String(job?.completed_on).slice(0, 10) === item.jobCompletionDateIso, `Job ${item.job.id} actual completion verification failed.`);
   if (item.effectiveProductionMonth) {
     assert(String(job?.production_month).slice(0, 10) === item.effectiveProductionMonth, `Job ${item.job.id} production month verification failed.`);
     for (const budget of verifiedBudgetsByJob.get(item.job.id) ?? []) {
@@ -511,6 +595,8 @@ console.log(JSON.stringify({
   applied_amount_changes: applied.filter((item) => item.amountValueChanged).length,
   applied_production_month_changes: applied.filter((item) => item.monthDecision.apply).length,
   applied_authority_refreshes: applied.filter((item) => item.amountAuthorityRefresh).length,
+  applied_operational_value_changes: applied.filter((item) => item.operationalValueChanged).length,
+  applied_operational_authority_refreshes: applied.filter((item) => item.operationalAuthorityRefresh).length,
   historical_locked_unchanged: locked.length,
   unresolved_unchanged: unresolved.length,
   updated: SUMMARY_ONLY ? undefined : applied.map((item) => ({
@@ -520,6 +606,10 @@ console.log(JSON.stringify({
     invoice_id: item.invoiceId,
     before_hst_cents: item.beforeHstCents,
     production_month: item.effectiveProductionMonth,
+    scheduled_on: item.scheduledStartDateIso,
+    scheduled_end_on: item.scheduledEndDateIso,
+    started_on: item.jobStartDateIso,
+    completed_on: item.jobCompletionDateIso,
     budget_id: item.budgetId,
   })),
 }, null, JSON_ONLY ? 0 : 2));

@@ -94,7 +94,8 @@ function cardCategory(transaction) {
     text.includes("home depot") ||
     text.includes("rona") ||
     text.includes("home hardware") ||
-    text.includes("canadian tire")
+    text.includes("canadian tire") ||
+    text.includes("randalls")
   ) {
     return "Paint & materials";
   }
@@ -194,6 +195,20 @@ function recurringOverheadRule(transaction) {
 
 function classifyTransaction(transaction, accountType) {
   const description = transaction.description.toLocaleUpperCase("en-CA");
+  const searchable = [
+    transaction.description,
+    transaction.originalDescription,
+    transaction.merchantName,
+  ].filter(Boolean).join(" ").toLocaleLowerCase("en-CA");
+
+  if (transaction.amount < 0 && searchable.includes("shakepay")) {
+    return {
+      transaction_type: "expense",
+      category: "Virtual assistant salaries",
+      is_transfer: false,
+      review_status: "reconciled",
+    };
+  }
 
   if (accountType === "credit_card") {
     if (description.includes("PAYMENT - THANK YOU")) {

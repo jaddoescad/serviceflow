@@ -7,11 +7,14 @@ import test from "node:test";
 import { contractorInvoiceEnvironment, parseArgs } from "./ottawa-contractor-invoice-cli.mjs";
 import {
   contractorInvoiceStatus,
+  contractorInvoiceVisionSelfTest,
   deferContractorInvoice,
+  extractMoneyCents,
   importContractorInvoice,
   exactCurrentJobForItem,
   parseContractorInvoiceItems,
   pollContractorInvoices,
+  prepareContractorInvoice,
   resolveContractorIdentity,
   senderIdentity,
   stageContractorInvoice,
@@ -47,7 +50,7 @@ endobj
 %%EOF`, "latin1");
 }
 
-function gmailMessage(pdf = invoicePdf()) {
+function gmailMessage(document = invoicePdf(), { mimeType = "application/pdf", filename = "Invoice_8_2026-08-28.pdf", attachmentId = "pdf-bilal-8" } = {}) {
   return {
     id: "19ffd63af982bf0e",
     threadId: "thread-bilal",
@@ -62,15 +65,14 @@ function gmailMessage(pdf = invoicePdf()) {
       ],
       parts: [
         { mimeType: "text/plain", filename: "", body: { data: encoded("Please see attached.") } },
-        { mimeType: "application/pdf", filename: "Invoice_8_2026-08-28.pdf", body: { attachmentId: "pdf-bilal-8", size: pdf.length } },
+        { mimeType, filename, body: { attachmentId, size: document.length } },
       ],
     },
   };
 }
 
-function fakeServices() {
-  const pdf = invoicePdf();
-  const message = gmailMessage(pdf);
+function fakeServices({ document = invoicePdf(), mimeType = "application/pdf", filename = "Invoice_8_2026-08-28.pdf", attachmentId = "pdf-bilal-8" } = {}) {
+  const message = gmailMessage(document, { mimeType, filename, attachmentId });
   const writes = [];
   const apiImports = [];
   const calls = [];
@@ -81,7 +83,7 @@ function fakeServices() {
     if (url.hostname === "gmail.googleapis.com") {
       if (url.pathname.endsWith("/labels")) return response(200, { labels: [{ id: "Label_42", name: "Finance/Contractor invoices", type: "user" }] });
       if (url.pathname.endsWith("/messages")) return response(200, { messages: [{ id: message.id }] });
-      if (url.pathname.includes("/attachments/pdf-bilal-8")) return response(200, { size: pdf.length, data: pdf.toString("base64url") });
+      if (url.pathname.includes(`/attachments/${attachmentId}`)) return response(200, { size: document.length, data: document.toString("base64url") });
       if (url.pathname.includes(`/messages/${message.id}`)) return response(200, message);
     }
     if (url.hostname === "bwbckdkouqghdadpkjvn.supabase.co") {
@@ -121,12 +123,39 @@ function fakeServices() {
 test("contractor-invoice CLI exposes only bounded workflow commands", () => {
   assert.equal(parseArgs(["poll", "--limit", "10", "--yes", "--json"]).command, "poll");
   assert.equal(parseArgs(["prepare", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--json"]).attachmentIndex, 1);
+  assert.equal(parseArgs(["vision-self-test", "--json"]).command, "vision-self-test");
   assert.equal(parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--yes", "--json"]).totalCents, 113000);
   assert.throws(() => parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--json"]), /requires --yes/);
   assert.throws(() => parseArgs(["delete", "--yes", "--json"]), /Command must/);
 });
 
+test("OpenAI vision self-test is bounded, read-only, and does not return transcription text", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "contractor-invoice-vision-self-test-"));
+  try {
+    let call;
+    const result = await contractorInvoiceVisionSelfTest({
+      imageTextExtractor: async (input) => {
+        call = input;
+        return { status: "transcribed_openai", model: "openai/gpt-5.6-luna", text: "[unreadable]" };
+      },
+    }, { HERMES_CONTRACTOR_INVOICE_DB: path.join(directory, "state.sqlite") });
+    assert.equal(result.status, "ok");
+    assert.equal(result.model, "openai/gpt-5.6-luna");
+    assert.equal(Object.hasOwn(result, "text"), false);
+    assert.equal(call.mimeType, "image/png");
+    assert.equal(call.bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(call.visionDirectory, path.join(directory, "contractor-invoice-vision"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("invoice items require exact printed evidence, balanced subtotals, and unique eligible jobs", () => {
+  const handwrittenAmounts = extractMoneyCents("1 | 9922 Hummingbird Crescent 123 PK's | 500 | | 500-\n1 | popcorn removal + painting putty | 26 | | 26");
+  assert.equal(handwrittenAmounts.has(50000), true);
+  assert.equal(handwrittenAmounts.has(2600), true);
+  assert.equal(handwrittenAmounts.has(992200), false);
+  assert.equal(handwrittenAmounts.has(12300), false);
   const items = parseContractorInvoiceItems("name::Irene Roberts::Irene Roberts painting services::100000::-::-");
   const verified = verifyContractorInvoiceItems({ items, evidence: "Irene Roberts painting services $1,000.00", invoice: { subtotalCents: 100000, taxCents: 13000 } });
   assert.deepEqual([verified[0].tax_cents, verified[0].total_cents], [13000, 113000]);
@@ -166,6 +195,9 @@ test("invoice evidence validation requires exact number, date, labelled totals, 
 
   const waveEvidence = "INVOICE 8613\nInvoice Date: August 12, 2026\nSubtotal: $540.00\nON 13%: $70.20\nTotal: $610.20";
   assert.equal(verifyInvoiceDecision({ evidence: waveEvidence, filename: "Invoice_8613_2026-08-12.pdf", invoiceNumber: "8613", issuedOn: "2026-08-12", subtotalCents: 54000, taxCents: 7020, totalCents: 61020 }).taxCents, 7020);
+
+  const dayDotMonthEvidence = "INVOICE 156364\nDATE: 21.08.2026\nSUBTOTAL: $900.73\n13% HST: $117.09\nTOTAL: $1,017.82";
+  assert.equal(verifyInvoiceDecision({ evidence: dayDotMonthEvidence, filename: "IMG_6891.jpeg", invoiceNumber: "156364", issuedOn: "2026-08-21", subtotalCents: 90073, taxCents: 11709, totalCents: 101782 }).issuedOn, "2026-08-21");
 
   const zeroTaxEvidence = "INVOICE 8\nInvoice Date: August 13, 2026\nTotal: $367.50\nAmount Due: $367.50";
   assert.equal(verifyInvoiceDecision({ evidence: zeroTaxEvidence, filename: "Invoice_8_2026-08-28.pdf", invoiceNumber: "8", issuedOn: "2026-08-13", subtotalCents: 36750, taxCents: 0, totalCents: 36750 }).subtotalCents, 36750);
@@ -251,6 +283,60 @@ test("raw attachment access remains bounded and GET-only", async () => {
   assert.equal(result.filename, "Invoice_8_2026-08-28.pdf");
   assert.equal(result.bytes.subarray(0, 5).toString("ascii"), "%PDF-");
   assert.deepEqual(services.calls.map((call) => call.method), ["GET", "GET"]);
+});
+
+test("image invoices use fresh bounded OpenAI transcriptions for prepare and import validation", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "contractor-invoice-image-"));
+  try {
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    const services = fakeServices({ document: png, mimeType: "image/png", filename: "Invoice_8_2026-08-28.png", attachmentId: "png-bilal-8" });
+    const env = {
+      HERMES_CONTRACTOR_INVOICE_DB: path.join(directory, "state.sqlite"),
+      HERMES_CONTRACTOR_INVOICE_HEALTH: path.join(directory, "health.json"),
+      HERMES_CONTRACTOR_INVOICE_LABEL_ID: "Label_42",
+      SUPABASE_URL: "https://bwbckdkouqghdadpkjvn.supabase.co",
+      HERMES_TIME_ENTRY_TOKEN: "bounded-token",
+    };
+    let transcriptionCount = 0;
+    const imageTextExtractor = async ({ bytes, mimeType, visionDirectory }) => {
+      transcriptionCount += 1;
+      assert.deepEqual(bytes, png);
+      assert.equal(mimeType, "image/png");
+      assert.equal(visionDirectory, path.join(directory, "contractor-invoice-vision"));
+      return {
+        status: "transcribed_openai",
+        text: "INVOICE 8\nInvoice Date: August 28, 2026\nIrene Roberts painting services $1,000.00\nSubtotal: $1,000.00\nHST: $130.00\nTotal: $1,130.00",
+      };
+    };
+
+    await stageContractorInvoice({ messageId: services.message.id, confirmed: true }, env, services.fetchImpl, "token");
+    const prepared = await prepareContractorInvoice(
+      { messageId: services.message.id, attachmentIndex: 1 },
+      env,
+      services.fetchImpl,
+      "token",
+      imageTextExtractor,
+    );
+    assert.equal(prepared.content_status, "transcribed_openai");
+    assert.match(prepared.attachment_text, /Total: \$1,130\.00/);
+
+    const imported = await importContractorInvoice({
+      messageId: services.message.id,
+      attachmentIndex: 1,
+      invoiceNumber: "8",
+      issuedOn: "2026-08-28",
+      subtotalCents: 100000,
+      taxCents: 13000,
+      totalCents: 113000,
+      items: "name::Irene Roberts::Irene Roberts painting services::100000::-::-",
+      confirmed: true,
+    }, env, services.fetchImpl, "token", imageTextExtractor);
+    assert.equal(imported.status, "imported");
+    assert.equal(transcriptionCount, 2);
+    assert.equal(services.apiImports[0].body.attachment_text.includes("HST: $130.00"), true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("first live poll baselines old labelled mail instead of backfilling it", async () => {

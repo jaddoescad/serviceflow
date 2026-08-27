@@ -16,7 +16,7 @@ case "${mode:-dry-run}" in
     exec node /opt/data/bin/dripjobs-daily-sync-runner.mjs --dry-run
     ;;
   *)
-    echo "🚨 DripJobs job authority sync failed — HERMES_DRIPJOBS_SYNC_MODE must be dry-run or live. No job amounts or production months were changed."
+    echo "🚨 DripJobs operations sync failed — HERMES_DRIPJOBS_SYNC_MODE must be dry-run or live. No validated DripJobs data was changed."
     exit 1
     ;;
 esac

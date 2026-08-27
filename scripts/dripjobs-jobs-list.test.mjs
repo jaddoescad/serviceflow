@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  parseDripJobsScheduleRange,
   productionMonthForStage,
   validateDripJobsJobsExports,
   validateDripJobsJobsList,
@@ -10,8 +11,8 @@ import {
 
 const headers = "Status,Label,Job,Customer Name,Email,Phone Number,Salesperson,Project Manager,Crew,Proposal ID,Invoice ID,Invoice Status,Amount,Paid,Balance,Deal Stage,Deal Stage Date,Proposal Signed Date,Job Scheduled Date,Job Start Date,Job Completion Date";
 
-function row({ status = "COMPLETED", proposal = "3000001", invoice = "#500001", stage = "Project Complete", date = "Saturday, August 15, 2026", amount = "$1,130.00" } = {}) {
-  return `${status},,Customer ${proposal},Customer ${proposal},customer@example.com,6135551212,Scott Madden,Scott Madden,No crew,${proposal},${invoice},Paid,"${amount}","${amount}",$0.00,${stage},"${date}",8/1/2026 1:00:00 PM,,08/01/2026,08/15/2026`;
+function row({ status = "COMPLETED", proposal = "3000001", invoice = "#500001", stage = "Project Complete", date = "Saturday, August 15, 2026", amount = "$1,130.00", signed = "8/1/2026 1:00:00 PM", schedule = "", started = "08/01/2026", completed = "08/15/2026" } = {}) {
+  return `${status},,Customer ${proposal},Customer ${proposal},customer@example.com,6135551212,Scott Madden,Scott Madden,No crew,${proposal},${invoice},Paid,"${amount}","${amount}",$0.00,${stage},"${date}",${signed},${schedule},${started},${completed}`;
 }
 
 function csv(rows) {
@@ -47,6 +48,39 @@ test("combined validator requires disjoint active and archived All views", () =>
   assert.equal(result.manifest.archived_row_count, 2);
   assert.equal(result.manifest.distinct_proposals, 4);
   assert.equal(validateJobsManifestContinuity({ ...result.manifest }, result.manifest), true);
+});
+
+test("Jobs List validator derives schedule start and end years from exact anchors", () => {
+  const result = validateDripJobsJobsList(csv([
+    row({
+      proposal: "3000001",
+      schedule: "Mon. Aug 24 - Fri. Aug 28",
+      signed: "8/1/2026 1:00:00 PM",
+      started: "",
+      completed: "",
+    }),
+    row({
+      proposal: "3000002",
+      invoice: "#500002",
+      schedule: "Wed. Jan 28 - Wed. Feb 4",
+      signed: "8/15/2026 1:00:00 PM",
+      started: "",
+      completed: "",
+    }),
+  ]), { view: "active", minimumBytes: 1, minimumRows: 2, now: new Date("2026-08-20T12:00:00Z") });
+  assert.equal(result.rows[0].scheduledStartDateIso, "2026-08-24");
+  assert.equal(result.rows[0].scheduledEndDateIso, "2026-08-28");
+  assert.equal(result.rows[1].scheduledStartDateIso, "2027-01-28");
+  assert.equal(result.rows[1].scheduledEndDateIso, "2027-02-04");
+  assert.equal(result.rows[1].scheduleParseError, null);
+  assert.deepEqual(parseDripJobsScheduleRange("Mon. Dec 1 - Thu. Nov 27", "schedule", {
+    proposalSignedDateIso: "2025-10-01",
+  }), {
+    raw: "Mon. Dec 1 - Thu. Nov 27",
+    startDateIso: null,
+    endDateIso: null,
+    parseError: "schedule range spans 361 days",
+  });
 });
 
 test("validator fails closed on wrong views, duplicates, arithmetic, and continuity", () => {

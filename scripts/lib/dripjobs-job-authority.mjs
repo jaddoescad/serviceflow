@@ -62,3 +62,24 @@ export function amountAuthorityEquivalent(authority, row) {
     Number(authority?.before_hst_cents ?? -1) === row.beforeHstCents
   );
 }
+
+export function operationalAuthorityEquivalent(authority, row) {
+  return (
+    String(authority?.source_type ?? "") === "dripjobs_jobs_list_all_views_csv" &&
+    String(authority?.proposal_id ?? "") === row.proposalId &&
+    String(authority?.job_status ?? "") === row.status &&
+    String(authority?.deal_stage ?? "") === row.dealStage &&
+    String(authority?.invoice_status ?? "") === String(row.invoiceStatus ?? "") &&
+    Number(authority?.paid_cents ?? -1) === Number(row.paidCents ?? -1) &&
+    Number(authority?.balance_cents ?? -1) === Number(row.balanceCents ?? -1) &&
+    String(authority?.proposal_signed_on ?? "") === String(row.proposalSignedDateIso ?? "") &&
+    String(authority?.job_schedule_raw ?? "") === String(row.jobScheduledDateRaw ?? "") &&
+    String(authority?.scheduled_on ?? "") === String(row.scheduledStartDateIso ?? "") &&
+    String(authority?.scheduled_end_on ?? "") === String(row.scheduledEndDateIso ?? "") &&
+    String(authority?.started_on ?? "") === String(row.jobStartDateIso ?? "") &&
+    String(authority?.completed_on ?? "") === String(row.jobCompletionDateIso ?? "") &&
+    String(authority?.salesperson ?? "") === String(row.salesperson ?? "") &&
+    String(authority?.project_manager ?? "") === String(row.projectManager ?? "") &&
+    String(authority?.crew ?? "") === String(row.crew ?? "")
+  );
+}

@@ -275,7 +275,7 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
           : null;
     return {
       leadId: row.id,
-      dealId: row.dripjobs_deal_id ?? row.id,
+      dealId: row.dripjobs_sales_deal_id ?? row.dripjobs_deal_id ?? row.id,
       operationalProjectId: row.id,
       createdOn: String(row.created_at).slice(0, 10),
       createdAtLocal: row.created_at,

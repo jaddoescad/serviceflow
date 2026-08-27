@@ -65,7 +65,7 @@ export function normalizeProductionStage(value) {
 
 export function parseDripJobsDate(value, label, { optional = false } = {}) {
   const text = String(value ?? "").trim();
-  if (!text || /^N\/?A$/i.test(text)) {
+  if (!text || /^N\/?A$/i.test(text) || (optional && /^Accepted without signature$/i.test(text))) {
     if (optional) return null;
     throw new Error(`${label} is empty`);
   }
@@ -102,6 +102,72 @@ export function parseDripJobsDate(value, label, { optional = false } = {}) {
     year > new Date().getUTCFullYear() + 1
   ) throw new Error(`${label}: invalid date`);
   return date.toISOString().slice(0, 10);
+}
+
+function dateIso(year, month, day, label) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) throw new Error(`${label}: invalid date`);
+  return date.toISOString().slice(0, 10);
+}
+
+function scheduleMonthDay(monthName, dayText, label) {
+  const normalizedMonth = String(monthName).toLocaleLowerCase("en-CA");
+  const month = MONTH_NUMBER.get(normalizedMonth) ?? [...MONTH_NUMBER.entries()].find(([name]) => name.startsWith(normalizedMonth))?.[1];
+  const day = Number(dayText);
+  if (!month || !Number.isInteger(day) || day < 1 || day > 31) {
+    throw new Error(`${label}: invalid month or day`);
+  }
+  return { month, day };
+}
+
+function daysApart(leftIso, rightIso) {
+  return Math.round((Date.parse(`${rightIso}T00:00:00Z`) - Date.parse(`${leftIso}T00:00:00Z`)) / 86_400_000);
+}
+
+export function parseDripJobsScheduleRange(value, label, {
+  proposalSignedDateIso = null,
+  jobStartDateIso = null,
+  now = new Date(),
+} = {}) {
+  const raw = String(value ?? "").trim();
+  if (!raw || /^N\/?A$/i.test(raw)) {
+    return { raw: raw || null, startDateIso: null, endDateIso: null, parseError: null };
+  }
+  const match = raw.match(/^[A-Za-z]{3,9}\.?\s+([A-Za-z]+)\s+(\d{1,2})\s+-\s+[A-Za-z]{3,9}\.?\s+([A-Za-z]+)\s+(\d{1,2})$/);
+  if (!match) return { raw, startDateIso: null, endDateIso: null, parseError: "unexpected schedule range format" };
+
+  try {
+    const start = scheduleMonthDay(match[1], match[2], label);
+    const end = scheduleMonthDay(match[3], match[4], label);
+    const anchorIso = jobStartDateIso || proposalSignedDateIso || now.toISOString().slice(0, 10);
+    const anchorYear = Number(anchorIso.slice(0, 4));
+    const candidates = [];
+    for (let year = anchorYear - 1; year <= anchorYear + 2; year += 1) {
+      const candidate = dateIso(year, start.month, start.day, label);
+      const distance = daysApart(anchorIso, candidate);
+      let score;
+      if (jobStartDateIso) score = Math.abs(distance);
+      else if (proposalSignedDateIso) score = distance >= -7 ? distance : 10_000 + Math.abs(distance);
+      else score = distance >= -183 && distance <= 550 ? Math.abs(distance) : 10_000 + Math.abs(distance);
+      candidates.push({ candidate, year, score });
+    }
+    candidates.sort((left, right) => left.score - right.score || left.candidate.localeCompare(right.candidate));
+    const selected = candidates[0];
+    let endYear = selected.year;
+    if (end.month < start.month || (end.month === start.month && end.day < start.day)) endYear += 1;
+    const endDateIso = dateIso(endYear, end.month, end.day, label);
+    const durationDays = daysApart(selected.candidate, endDateIso);
+    if (durationDays < 0 || durationDays > 45) {
+      return { raw, startDateIso: null, endDateIso: null, parseError: `schedule range spans ${durationDays} days` };
+    }
+    return { raw, startDateIso: selected.candidate, endDateIso, parseError: null };
+  } catch (error) {
+    return { raw, startDateIso: null, endDateIso: null, parseError: String(error?.message || error) };
+  }
 }
 
 export function productionMonthForStage(stage, stageDate, label = "Deal Stage Date") {
@@ -176,12 +242,23 @@ export function validateDripJobsJobsList(input, {
     const dealStageDate = boundedText(source["Deal Stage Date"], `${view} CSV row ${rowNumber} Deal Stage Date`, 100);
     const production = productionMonthForStage(dealStage, dealStageDate, `${view} CSV row ${rowNumber} Deal Stage Date`);
     const dealStageDateIso = production.stageDateIso ?? parseDripJobsDate(dealStageDate, `${view} CSV row ${rowNumber} Deal Stage Date`);
+    const proposalSignedDateIso = parseDripJobsDate(source["Proposal Signed Date"], `${view} CSV row ${rowNumber} Proposal Signed Date`, { optional: true });
+    const jobStartDateIso = parseDripJobsDate(source["Job Start Date"], `${view} CSV row ${rowNumber} Job Start Date`, { optional: true });
+    const schedule = parseDripJobsScheduleRange(source["Job Scheduled Date"], `${view} CSV row ${rowNumber} Job Scheduled Date`, {
+      proposalSignedDateIso,
+      jobStartDateIso,
+      now,
+    });
     const parsedRow = {
       view,
       rowNumber,
       status,
+      label: boundedText(source.Label, `${view} CSV row ${rowNumber} Label`, 160, { allowEmpty: true }) || null,
       jobName: boundedText(source.Job, `${view} CSV row ${rowNumber} Job`, 300),
       customer: boundedText(source["Customer Name"], `${view} CSV row ${rowNumber} Customer Name`, 300),
+      salesperson: boundedText(source.Salesperson, `${view} CSV row ${rowNumber} Salesperson`, 160, { allowEmpty: true }) || null,
+      projectManager: boundedText(source["Project Manager"], `${view} CSV row ${rowNumber} Project Manager`, 160, { allowEmpty: true }) || null,
+      crew: boundedText(source.Crew, `${view} CSV row ${rowNumber} Crew`, 300, { allowEmpty: true }) || null,
       proposalId,
       invoiceId,
       invoiceStatus: boundedText(source["Invoice Status"], `${view} CSV row ${rowNumber} Invoice Status`, 80, { allowEmpty: true }) || null,
@@ -195,7 +272,12 @@ export function validateDripJobsJobsList(input, {
       dealStageDateIso,
       normalizedProductionStage: production.normalizedStage,
       productionMonth: production.productionMonth,
-      jobStartDateIso: parseDripJobsDate(source["Job Start Date"], `${view} CSV row ${rowNumber} Job Start Date`, { optional: true }),
+      proposalSignedDateIso,
+      jobScheduledDateRaw: schedule.raw,
+      scheduledStartDateIso: schedule.startDateIso,
+      scheduledEndDateIso: schedule.endDateIso,
+      scheduleParseError: schedule.parseError,
+      jobStartDateIso,
       jobCompletionDateIso: parseDripJobsDate(source["Job Completion Date"], `${view} CSV row ${rowNumber} Job Completion Date`, { optional: true }),
     };
     assertInvoiceArithmetic(parsedRow, `${view} CSV row ${rowNumber}`);
@@ -236,6 +318,9 @@ export function validateDripJobsJobsExports({ active, archived }, {
     distinct_proposals: proposalIds.size,
     gross_total_cents: rows.reduce((sum, row) => sum + row.grossCents, 0),
     qualifying_production_rows: rows.filter((row) => row.productionMonth).length,
+    scheduled_rows: rows.filter((row) => row.jobScheduledDateRaw).length,
+    parsed_schedule_rows: rows.filter((row) => row.scheduledStartDateIso).length,
+    schedule_parse_errors: rows.filter((row) => row.scheduleParseError).length,
     proposal_ids: [...proposalIds].sort(),
   };
   if (previousManifest) validateJobsManifestContinuity(manifest, previousManifest);

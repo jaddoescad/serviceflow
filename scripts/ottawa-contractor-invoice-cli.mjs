@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   contractorInvoiceStatus,
+  contractorInvoiceVisionSelfTest,
   defaultContractorInvoicePaths,
   deferContractorInvoice,
   importContractorInvoice,
@@ -24,6 +25,7 @@ Usage:
   ottawa-contractor-invoice prepare --message-id ID --attachment-index N --json
   ottawa-contractor-invoice import --message-id ID --attachment-index N --invoice-number NUMBER --issued-on YYYY-MM-DD --subtotal-cents N --tax-cents N --total-cents N --items "MATCH::EVIDENCE::DESCRIPTION::SUBTOTAL_CENTS::START_OR_-::END_OR_-~~..." --yes --json
   ottawa-contractor-invoice defer --message-id ID --attachment-index N --reason REASON --yes --json
+  ottawa-contractor-invoice vision-self-test --json
   ottawa-contractor-invoice status --json
 
 The importer creates an unpaid labour payable, itemized lines, and exact-evidence
@@ -119,14 +121,14 @@ export function parseArgs(argv) {
   options.command = positionals.shift() ?? null;
   if (positionals.length) throw new Error(`Unexpected argument: ${positionals[0]}`);
   if (options.help) return options;
-  if (!["poll", "stage", "prepare", "import", "defer", "status"].includes(options.command)) throw new Error("Command must be poll, stage, prepare, import, defer, or status");
+  if (!["poll", "stage", "prepare", "import", "defer", "vision-self-test", "status"].includes(options.command)) throw new Error("Command must be poll, stage, prepare, import, defer, vision-self-test, or status");
 
   if (options.limit !== 10) options.limit = boundedInteger(options.limit, "--limit", 1, 25);
   if (options.attachmentIndex !== null) options.attachmentIndex = boundedInteger(options.attachmentIndex, "--attachment-index", 1, 5);
   for (const key of ["subtotalCents", "taxCents", "totalCents"]) if (options[key] !== null) options[key] = boundedInteger(options[key], `--${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}`, 0, 100_000_000_000);
 
   if (["poll", "stage"].includes(options.command) && options.dryRun === options.yes) throw new Error(`${options.command} requires exactly one of --dry-run or --yes`);
-  if (["prepare", "status"].includes(options.command) && (options.dryRun || options.yes)) throw new Error(`${options.command} is read-only and does not accept --dry-run or --yes`);
+  if (["prepare", "vision-self-test", "status"].includes(options.command) && (options.dryRun || options.yes)) throw new Error(`${options.command} is read-only and does not accept --dry-run or --yes`);
   if (["import", "defer"].includes(options.command) && (!options.yes || options.dryRun)) throw new Error(`${options.command} requires --yes`);
   if (["stage", "prepare", "import", "defer"].includes(options.command) && !options.messageId) throw new Error(`${options.command} requires --message-id`);
   if (["prepare", "import", "defer"].includes(options.command) && options.attachmentIndex === null) throw new Error(`${options.command} requires --attachment-index`);
@@ -145,6 +147,7 @@ export function parseArgs(argv) {
     prepare: ["messageId", "attachmentIndex", "json"],
     import: ["messageId", "attachmentIndex", "invoiceNumber", "issuedOn", "subtotalCents", "taxCents", "totalCents", "items", "yes", "json"],
     defer: ["messageId", "attachmentIndex", "reason", "yes", "json"],
+    "vision-self-test": ["json"],
     status: ["json"],
   }[options.command];
   const defaults = { limit: 10, messageId: null, attachmentIndex: null, invoiceNumber: null, issuedOn: null, subtotalCents: null, taxCents: null, totalCents: null, items: null, reason: null, dryRun: false, yes: false, json: false };
@@ -180,6 +183,7 @@ export async function run(argv, env = process.env, fetchImpl = fetch) {
       confirmed: true,
     }, env, fetchImpl);
     else if (options.command === "defer") result = await deferContractorInvoice({ messageId: options.messageId, attachmentIndex: options.attachmentIndex, reason: options.reason, confirmed: true }, env);
+    else if (options.command === "vision-self-test") result = await contractorInvoiceVisionSelfTest({}, env);
     else result = await contractorInvoiceStatus({}, env);
     write(result);
     return 0;
