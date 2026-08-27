@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 const hermesTokenSha256 = "c08f7622874a39026eddde86a38ab505cbbcbb16be0118dab6f61392329bb388";
 const sourceSystem = "gmail_contractor_invoice";
+const labourInvoiceLabel = "Finance/Contractor invoices";
 const storageBucket = "labour-invoices";
 const maximumDocumentBytes = 5_000_000;
 const historicalCutoff = "2026-06-01";
@@ -51,6 +52,12 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
   const bytes = decodeDocument(body.document_base64);
   if (!validMagicBytes(bytes, mimeType)) throw httpError("Attachment signature does not match its approved type", 400);
   const attachmentText = boundedEvidence(body.attachment_text, "attachment_text", 10_000);
+  const sourceLabelName = boundedText(body.source_label_name, "source_label_name", 160);
+  const sourceLabelId = boundedText(body.source_label_id, "source_label_id", 225, /^[A-Za-z0-9_-]{1,225}$/);
+  if (body.source_label_verified !== true || sourceLabelName !== labourInvoiceLabel) {
+    throw httpError(`Import requires the exact ${labourInvoiceLabel} Gmail label`, 422);
+  }
+  const supplierName = verifySupplierName(body.supplier_name, attachmentText);
   const invoice = verifyInvoiceDecision({
     evidence: attachmentText,
     filename,
@@ -66,6 +73,7 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
   const invoiceId = await stableUuid(`invoice:${sourceSystem}:sha256:${contentSha256}`);
   const evidenceId = await stableUuid(`evidence-link:${documentId}:invoice:${invoiceId}`);
   const verificationId = await stableUuid(`verification:${sourceSystem}:${invoiceId}:imported`);
+  const nowIso = new Date().toISOString();
 
   const { data: existing, error: existingError } = await supabase
     .from("invoices")
@@ -84,8 +92,30 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
     subject: optionalBoundedText(body.subject, 500),
     authenticationResults: optionalBoundedText(body.authentication_results, 4_000),
   };
-  const contractorMatch = await resolveContractorIdentity(supabase, message, attachmentText);
-  if (!contractorMatch) throw httpError("Contractor could not be independently matched from the authenticated sender and attachment evidence", 422);
+  const contractorMatch = await resolveOrCreateContractorIdentity(supabase, message, attachmentText, {
+    supplierName,
+    sourceLabelName,
+    sourceLabelId,
+    messageId,
+    attachmentIndex,
+    contentSha256,
+    invoiceNumber: invoice.invoiceNumber,
+    nowIso,
+  });
+  if (contractorMatch.contactCreated) {
+    await upsert(supabase, "verification_events", {
+      id: await stableUuid(`verification:${sourceSystem}:contact:${contractorMatch.contractor.id}:created`),
+      entity_type: "contact",
+      entity_id: contractorMatch.contractor.id,
+      action: "contractor_contact_created_from_labelled_labour_invoice",
+      reason: `The exact ${labourInvoiceLabel} Gmail label and printed supplier name authorized contractor contact creation`,
+      old_values: null,
+      new_values: { kind: "contractor", name: contractorMatch.contractor.name, email: contractorMatch.contractor.email },
+      evidence: { gmail_message_id: messageId, attachment_index: attachmentIndex, document_sha256: contentSha256, invoice_number: invoice.invoiceNumber, source_label_name: sourceLabelName, source_label_id: sourceLabelId },
+      performed_by: null,
+      occurred_at: nowIso,
+    });
+  }
   const jobsResult = await supabase.from("jobs").select("id,name,formatted_address,status,started_on,completed_on,archived_at,metadata").limit(5000);
   if (jobsResult.error) throw httpError(jobsResult.error.message, 500);
   const itemPlans = await Promise.all(items.map(async (item, index) => {
@@ -99,7 +129,6 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
   const storagePath = `gmail-contractor-invoices/${invoice.issuedOn}/${contentSha256.slice(0, 16)}-${safeFilename(filename)}`;
   const upload = await supabase.storage.from(storageBucket).upload(storagePath, bytes, { contentType: mimeType, upsert: true });
   if (upload.error) throw httpError(upload.error.message, 500);
-  const nowIso = new Date().toISOString();
   const receivedAt = optionalIso(body.received_at) || nowIso;
 
   await upsert(supabase, "documents", {
@@ -119,6 +148,8 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
       attachment_index: attachmentIndex,
       sender_email: contractorMatch.senderEmail,
       supplier_match_method: contractorMatch.matchMethod,
+      source_label_name: sourceLabelName,
+      source_label_id: sourceLabelId,
     },
   });
   await upsert(supabase, "invoices", {
@@ -145,6 +176,9 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
       supplier_sender_email: contractorMatch.senderEmail,
       supplier_reply_to_email: senderIdentity(message.replyTo).email,
       supplier_match_method: contractorMatch.matchMethod,
+      supplier_contact_created: contractorMatch.contactCreated,
+      source_label_name: sourceLabelName,
+      source_label_id: sourceLabelId,
       source_document_id: documentId,
       source_document_sha256: contentSha256,
       source_gmail_message_id: messageId,
@@ -221,6 +255,7 @@ async function importContractorInvoice(supabase: ServiceClient, body: Record<str
     invoice_id: invoiceId,
     document_id: documentId,
     contractor: { id: contractorMatch.contractor.id, name: contractorMatch.contractor.name, match_method: contractorMatch.matchMethod },
+    contact_created: contractorMatch.contactCreated,
     line_count: itemPlans.length,
     job_allocation_count: assignedCount,
     unassigned_line_count: unassignedCount,
@@ -320,6 +355,76 @@ async function resolveContractorIdentity(supabase: ServiceClient, message: Recor
   return { contractor, matchMethod: "authenticated_invoice_platform", senderEmail: identity.email };
 }
 
+function automaticContractorEmail(message: Record<string, string | null>, supplierName: string, attachmentText: string) {
+  const identity = senderIdentity(message.from);
+  if (!identity.email) return null;
+  const platformDomains = trustedInvoicePlatforms.get(identity.email);
+  if (!platformDomains) return identity.email;
+  if (!authenticatedSenderDomain(message.authenticationResults, platformDomains)) return null;
+  const assertedName = platformSupplierName(message.subject, identity.email);
+  if (!assertedName || normalizedEvidence(assertedName) !== normalizedEvidence(supplierName)) return null;
+  if (!normalizedEvidence(attachmentText).includes(normalizedEvidence(assertedName))) return null;
+  return senderIdentity(message.replyTo).email;
+}
+
+async function resolveOrCreateContractorIdentity(
+  supabase: ServiceClient,
+  message: Record<string, string | null>,
+  attachmentText: string,
+  source: {
+    supplierName: string;
+    sourceLabelName: string;
+    sourceLabelId: string;
+    messageId: string;
+    attachmentIndex: number;
+    contentSha256: string;
+    invoiceNumber: string;
+    nowIso: string;
+  },
+) {
+  const existing = await resolveContractorIdentity(supabase, message, attachmentText);
+  if (existing) return { ...existing, contactCreated: false };
+
+  const named = await exactContractorName(supabase, source.supplierName);
+  if (named) {
+    return {
+      contractor: named,
+      matchMethod: "labelled_labour_invoice_exact_supplier_name",
+      senderEmail: senderIdentity(message.from).email,
+      contactCreated: false,
+    };
+  }
+
+  const contactEmail = automaticContractorEmail(message, source.supplierName, attachmentText);
+  if (!contactEmail) throw httpError("Labelled labour invoice does not provide a verified contractor email for contact creation", 422);
+  const contactId = await stableUuid(`contact:${sourceSystem}:email:${contactEmail}`);
+  const contractor = { id: contactId, kind: "contractor", name: source.supplierName, email: contactEmail };
+  await upsert(supabase, "contacts", {
+    ...contractor,
+    normalized_email: contactEmail,
+    metadata: {
+      source_system: sourceSystem,
+      automatic_contact_creation: true,
+      verification_method: "labelled_labour_invoice_and_attachment",
+      source_label_name: source.sourceLabelName,
+      source_label_id: source.sourceLabelId,
+      source_gmail_message_id: source.messageId,
+      source_gmail_attachment_index: source.attachmentIndex,
+      source_document_sha256: source.contentSha256,
+      source_invoice_number: source.invoiceNumber,
+      source_sender_email: senderIdentity(message.from).email,
+      printed_supplier_name: source.supplierName,
+    },
+    updated_at: source.nowIso,
+  });
+  return {
+    contractor,
+    matchMethod: "labelled_labour_invoice_contact_created",
+    senderEmail: senderIdentity(message.from).email,
+    contactCreated: true,
+  };
+}
+
 async function exactContractorEmail(supabase: ServiceClient, email: string | null) {
   if (!email) return null;
   for (const field of ["normalized_email", "email"]) {
@@ -332,10 +437,19 @@ async function exactContractorEmail(supabase: ServiceClient, email: string | nul
 }
 
 async function exactContractorName(supabase: ServiceClient, name: string) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9 '&.,()/-]{0,159}$/.test(name)) return null;
+  boundedText(name, "contractor_name", 160);
   const result = await supabase.from("contacts").select("id,name,email,kind").eq("name", name).eq("kind", "contractor").limit(2);
   if (result.error) throw httpError(result.error.message, 500);
   return result.data?.length === 1 ? result.data[0] : null;
+}
+
+function verifySupplierName(value: unknown, attachmentText: string) {
+  const name = boundedText(value, "supplier_name", 160);
+  const normalizedName = normalizedEvidence(name);
+  if (normalizedName.length < 3 || !normalizedEvidence(attachmentText).includes(normalizedName)) {
+    throw httpError("Supplier name is not supported by attachment evidence", 422);
+  }
+  return name;
 }
 
 function verifyInvoiceDecision(input: Record<string, unknown>) {

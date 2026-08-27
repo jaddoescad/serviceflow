@@ -44,6 +44,7 @@ SHELL_CONTROL = re.compile(r"(?:\r|\n|\x00|`|\$\(|\|\||&&|[;|<>])")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MESSAGE_ID = re.compile(r"^[A-Za-z0-9_-]{5,225}$")
 INVOICE_NUMBER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,79}$")
+SUPPLIER_NAME = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
 
 
 def respond(value: dict[str, str] | None = None) -> None:
@@ -148,7 +149,7 @@ def valid_contractor_invoice(argv: list[str]) -> bool:
         index = str(options.get("--attachment-index", "")) if options else ""
         return bool(options and MESSAGE_ID.fullmatch(str(options.get("--message-id", ""))) and index.isdigit() and 1 <= int(index) <= 5)
     if command == "import":
-        options = parse_pairs(rest, {"--message-id", "--attachment-index", "--invoice-number", "--issued-on", "--subtotal-cents", "--tax-cents", "--total-cents", "--items"}, {"--yes", "--json"})
+        options = parse_pairs(rest, {"--message-id", "--attachment-index", "--supplier-name", "--invoice-number", "--issued-on", "--subtotal-cents", "--tax-cents", "--total-cents", "--items"}, {"--yes", "--json"})
         if not options or not options.get("--yes"):
             return False
         index = str(options.get("--attachment-index", ""))
@@ -157,6 +158,7 @@ def valid_contractor_invoice(argv: list[str]) -> bool:
         return bool(
             MESSAGE_ID.fullmatch(str(options.get("--message-id", "")))
             and index.isdigit() and 1 <= int(index) <= 5
+            and SUPPLIER_NAME.fullmatch(str(options.get("--supplier-name", "")))
             and INVOICE_NUMBER.fullmatch(str(options.get("--invoice-number", "")))
             and DATE.fullmatch(str(options.get("--issued-on", "")))
             and all(value.isdigit() and int(value) <= 100_000_000_000 for value in cents)

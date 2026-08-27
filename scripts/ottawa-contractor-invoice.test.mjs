@@ -44,7 +44,7 @@ endobj
 4 0 obj
 << /Length 300 >>
 stream
-BT /F1 12 Tf 72 720 Td (INVOICE 8) Tj 0 -20 Td (Invoice Date: August 28, 2026) Tj 0 -20 Td (Irene Roberts painting services $1,000.00) Tj 0 -20 Td (Subtotal: $1,000.00) Tj 0 -20 Td (HST: $130.00) Tj 0 -20 Td (Total: $1,130.00) Tj ET
+BT /F1 12 Tf 72 720 Td (Fennec Contracting) Tj 0 -20 Td (INVOICE 8) Tj 0 -20 Td (Invoice Date: August 28, 2026) Tj 0 -20 Td (Irene Roberts painting services $1,000.00) Tj 0 -20 Td (Subtotal: $1,000.00) Tj 0 -20 Td (HST: $130.00) Tj 0 -20 Td (Total: $1,130.00) Tj ET
 endstream
 endobj
 %%EOF`, "latin1");
@@ -71,7 +71,13 @@ function gmailMessage(document = invoicePdf(), { mimeType = "application/pdf", f
   };
 }
 
-function fakeServices({ document = invoicePdf(), mimeType = "application/pdf", filename = "Invoice_8_2026-08-28.pdf", attachmentId = "pdf-bilal-8" } = {}) {
+function fakeServices({
+  document = invoicePdf(),
+  mimeType = "application/pdf",
+  filename = "Invoice_8_2026-08-28.pdf",
+  attachmentId = "pdf-bilal-8",
+  contacts = [{ id: "e2500be8-15c2-5e95-8b37-7104814d14be", name: "Fennec Contracting", email: "fennecps@outlook.com", kind: "contractor" }],
+} = {}) {
   const message = gmailMessage(document, { mimeType, filename, attachmentId });
   const writes = [];
   const apiImports = [];
@@ -102,7 +108,7 @@ function fakeServices({ document = invoicePdf(), mimeType = "application/pdf", f
       }
       if (url.pathname === "/rest/v1/evidence_links" && method === "GET") return response(200, []);
       if (url.pathname === "/rest/v1/contacts" && method === "GET") {
-        return response(200, [{ id: "e2500be8-15c2-5e95-8b37-7104814d14be", name: "Fennec Contracting", email: "fennecps@outlook.com", kind: "contractor" }]);
+        return response(200, contacts);
       }
       if (url.pathname === "/rest/v1/jobs" && method === "GET") {
         return response(200, [{ id: "job-irene", name: "Irene Roberts - current", formatted_address: "147 Wharhol Private, Ottawa, ON", status: "scheduled", started_on: null, completed_on: null, archived_at: null, metadata: { source_payload: { Job: "Irene Roberts" } } }]);
@@ -124,8 +130,9 @@ test("contractor-invoice CLI exposes only bounded workflow commands", () => {
   assert.equal(parseArgs(["poll", "--limit", "10", "--yes", "--json"]).command, "poll");
   assert.equal(parseArgs(["prepare", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--json"]).attachmentIndex, 1);
   assert.equal(parseArgs(["vision-self-test", "--json"]).command, "vision-self-test");
-  assert.equal(parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--yes", "--json"]).totalCents, 113000);
-  assert.throws(() => parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--json"]), /requires --yes/);
+  assert.equal(parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--supplier-name", "Fennec Contracting", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--yes", "--json"]).totalCents, 113000);
+  assert.throws(() => parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--supplier-name", "Fennec Contracting", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--json"]), /requires --yes/);
+  assert.throws(() => parseArgs(["import", "--message-id", "19ffd63af982bf0e", "--attachment-index", "1", "--invoice-number", "8", "--issued-on", "2026-08-28", "--subtotal-cents", "100000", "--tax-cents", "13000", "--total-cents", "113000", "--items", "name::Irene Roberts::Irene Roberts painting services::100000::-::-", "--yes", "--json"]), /requires --supplier-name/);
   assert.throws(() => parseArgs(["delete", "--yes", "--json"]), /Command must/);
 });
 
@@ -305,7 +312,7 @@ test("image invoices use fresh bounded OpenAI transcriptions for prepare and imp
       assert.equal(visionDirectory, path.join(directory, "contractor-invoice-vision"));
       return {
         status: "transcribed_openai",
-        text: "INVOICE 8\nInvoice Date: August 28, 2026\nIrene Roberts painting services $1,000.00\nSubtotal: $1,000.00\nHST: $130.00\nTotal: $1,130.00",
+        text: "Fennec Contracting\nINVOICE 8\nInvoice Date: August 28, 2026\nIrene Roberts painting services $1,000.00\nSubtotal: $1,000.00\nHST: $130.00\nTotal: $1,130.00",
       };
     };
 
@@ -323,6 +330,7 @@ test("image invoices use fresh bounded OpenAI transcriptions for prepare and imp
     const imported = await importContractorInvoice({
       messageId: services.message.id,
       attachmentIndex: 1,
+      supplierName: "Fennec Contracting",
       invoiceNumber: "8",
       issuedOn: "2026-08-28",
       subtotalCents: 100000,
@@ -404,6 +412,7 @@ test("verified import creates only an unpaid v2 labour payable with archived evi
     const result = await importContractorInvoice({
       messageId: services.message.id,
       attachmentIndex: 1,
+      supplierName: "Fennec Contracting",
       invoiceNumber: "8",
       issuedOn: "2026-08-28",
       subtotalCents: 100000,
@@ -432,6 +441,97 @@ test("verified import creates only an unpaid v2 labour payable with archived evi
   }
 });
 
+test("a verified labour-invoice label creates a missing contractor contact with audit provenance", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "contractor-invoice-contact-"));
+  try {
+    const services = fakeServices({ contacts: [] });
+    const env = {
+      HERMES_CONTRACTOR_INVOICE_DB: path.join(directory, "state.sqlite"),
+      HERMES_CONTRACTOR_INVOICE_HEALTH: path.join(directory, "health.json"),
+      HERMES_CONTRACTOR_INVOICE_LABEL_ID: "Label_42",
+      SUPABASE_URL: "https://bwbckdkouqghdadpkjvn.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "test-server-only-key",
+    };
+    await stageContractorInvoice({ messageId: services.message.id, confirmed: true }, env, services.fetchImpl, "token");
+    const result = await importContractorInvoice({
+      messageId: services.message.id,
+      attachmentIndex: 1,
+      supplierName: "Fennec Contracting",
+      invoiceNumber: "8",
+      issuedOn: "2026-08-28",
+      subtotalCents: 100000,
+      taxCents: 13000,
+      totalCents: 113000,
+      items: "name::Irene Roberts::Irene Roberts painting services::100000::-::-",
+      confirmed: true,
+      now: new Date("2026-08-28T13:00:00Z"),
+    }, env, services.fetchImpl, "token");
+
+    assert.equal(result.contact_created, true);
+    assert.equal(result.contractor.name, "Fennec Contracting");
+    assert.equal(result.contractor.match_method, "labelled_labour_invoice_contact_created");
+    const contact = services.writes.find((item) => item.table === "contacts")?.body;
+    assert.equal(contact.kind, "contractor");
+    assert.equal(contact.name, "Fennec Contracting");
+    assert.equal(contact.email, "fennecps@outlook.com");
+    assert.equal(contact.metadata.source_label_name, "Finance/Contractor invoices");
+    assert.equal(contact.metadata.source_label_id, "Label_42");
+    assert.equal(contact.metadata.printed_supplier_name, "Fennec Contracting");
+    const event = services.writes.find((item) => item.table === "verification_events" && item.body.action === "contractor_contact_created_from_labelled_labour_invoice")?.body;
+    assert.equal(event.entity_id, contact.id);
+    assert.equal(event.evidence.document_sha256.length, 64);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("contact creation fails closed when the source label or printed supplier evidence is missing", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "contractor-invoice-contact-guard-"));
+  try {
+    const services = fakeServices({ contacts: [] });
+    const env = {
+      HERMES_CONTRACTOR_INVOICE_DB: path.join(directory, "state.sqlite"),
+      HERMES_CONTRACTOR_INVOICE_HEALTH: path.join(directory, "health.json"),
+      HERMES_CONTRACTOR_INVOICE_LABEL_ID: "Label_42",
+      SUPABASE_URL: "https://bwbckdkouqghdadpkjvn.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "test-server-only-key",
+    };
+    await stageContractorInvoice({ messageId: services.message.id, confirmed: true }, env, services.fetchImpl, "token");
+    services.message.labelIds = ["INBOX"];
+    await assert.rejects(() => importContractorInvoice({
+      messageId: services.message.id,
+      attachmentIndex: 1,
+      supplierName: "Fennec Contracting",
+      invoiceNumber: "8",
+      issuedOn: "2026-08-28",
+      subtotalCents: 100000,
+      taxCents: 13000,
+      totalCents: 113000,
+      items: "name::Irene Roberts::Irene Roberts painting services::100000::-::-",
+      confirmed: true,
+    }, env, services.fetchImpl, "token"), /no longer carries the required label/);
+    assert.equal(services.writes.some((item) => item.table === "contacts"), false);
+
+    services.message.labelIds = ["INBOX", "Label_42"];
+    await stageContractorInvoice({ messageId: services.message.id, confirmed: true }, env, services.fetchImpl, "token");
+    await assert.rejects(() => importContractorInvoice({
+      messageId: services.message.id,
+      attachmentIndex: 1,
+      supplierName: "Different Supplier",
+      invoiceNumber: "8",
+      issuedOn: "2026-08-28",
+      subtotalCents: 100000,
+      taxCents: 13000,
+      totalCents: 113000,
+      items: "name::Irene Roberts::Irene Roberts painting services::100000::-::-",
+      confirmed: true,
+    }, env, services.fetchImpl, "token"), /Supplier name is not supported/);
+    assert.equal(services.writes.some((item) => item.table === "contacts"), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("Hermes token imports through the narrow contractor-invoice API without a service-role key", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "contractor-invoice-api-"));
   try {
@@ -447,6 +547,7 @@ test("Hermes token imports through the narrow contractor-invoice API without a s
     const result = await importContractorInvoice({
       messageId: services.message.id,
       attachmentIndex: 1,
+      supplierName: "Fennec Contracting",
       invoiceNumber: "8",
       issuedOn: "2026-08-28",
       subtotalCents: 100000,
@@ -459,6 +560,9 @@ test("Hermes token imports through the narrow contractor-invoice API without a s
     assert.equal(services.apiImports.length, 1);
     assert.equal(services.apiImports[0].headers["x-hermes-time-entry-token"], "bounded-token");
     assert.equal(services.apiImports[0].body.action, "importContractorInvoice");
+    assert.equal(services.apiImports[0].body.supplier_name, "Fennec Contracting");
+    assert.equal(services.apiImports[0].body.source_label_name, "Finance/Contractor invoices");
+    assert.equal(services.apiImports[0].body.source_label_verified, true);
     assert.equal(services.apiImports[0].body.total_cents, 113000);
     assert.equal(services.apiImports[0].body.items[0].match_value, "Irene Roberts");
     assert.match(services.apiImports[0].body.document_base64, /^[A-Za-z0-9+/]+=*$/);

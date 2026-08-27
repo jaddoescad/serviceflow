@@ -23,13 +23,15 @@ Usage:
   ottawa-contractor-invoice poll --limit 10 --dry-run|--yes --json
   ottawa-contractor-invoice stage --message-id ID --dry-run|--yes --json
   ottawa-contractor-invoice prepare --message-id ID --attachment-index N --json
-  ottawa-contractor-invoice import --message-id ID --attachment-index N --invoice-number NUMBER --issued-on YYYY-MM-DD --subtotal-cents N --tax-cents N --total-cents N --items "MATCH::EVIDENCE::DESCRIPTION::SUBTOTAL_CENTS::START_OR_-::END_OR_-~~..." --yes --json
+  ottawa-contractor-invoice import --message-id ID --attachment-index N --supplier-name NAME --invoice-number NUMBER --issued-on YYYY-MM-DD --subtotal-cents N --tax-cents N --total-cents N --items "MATCH::EVIDENCE::DESCRIPTION::SUBTOTAL_CENTS::START_OR_-::END_OR_-~~..." --yes --json
   ottawa-contractor-invoice defer --message-id ID --attachment-index N --reason REASON --yes --json
   ottawa-contractor-invoice vision-self-test --json
   ottawa-contractor-invoice status --json
 
-The importer creates an unpaid labour payable, itemized lines, and exact-evidence
-job assignments. Use match type name, address, proposal, company, or unassigned. It never
+The importer verifies the exact Finance/Contractor invoices Gmail label and printed supplier
+name, creating a contractor contact when necessary. It creates an unpaid labour payable,
+itemized lines, and exact-evidence job assignments. Use match type name, address, proposal,
+company, or unassigned. It never
 guesses a job and cannot mark invoices paid, create bank allocations, send
 payments, or modify Gmail.`;
 
@@ -80,6 +82,7 @@ export function parseArgs(argv) {
     limit: 10,
     messageId: null,
     attachmentIndex: null,
+    supplierName: null,
     invoiceNumber: null,
     issuedOn: null,
     subtotalCents: null,
@@ -97,6 +100,7 @@ export function parseArgs(argv) {
     ["--limit", "limit"],
     ["--message-id", "messageId"],
     ["--attachment-index", "attachmentIndex"],
+    ["--supplier-name", "supplierName"],
     ["--invoice-number", "invoiceNumber"],
     ["--issued-on", "issuedOn"],
     ["--subtotal-cents", "subtotalCents"],
@@ -133,7 +137,7 @@ export function parseArgs(argv) {
   if (["stage", "prepare", "import", "defer"].includes(options.command) && !options.messageId) throw new Error(`${options.command} requires --message-id`);
   if (["prepare", "import", "defer"].includes(options.command) && options.attachmentIndex === null) throw new Error(`${options.command} requires --attachment-index`);
   if (options.command === "import") {
-    for (const [key, flag] of [["invoiceNumber", "--invoice-number"], ["issuedOn", "--issued-on"], ["subtotalCents", "--subtotal-cents"], ["taxCents", "--tax-cents"], ["totalCents", "--total-cents"]]) {
+    for (const [key, flag] of [["supplierName", "--supplier-name"], ["invoiceNumber", "--invoice-number"], ["issuedOn", "--issued-on"], ["subtotalCents", "--subtotal-cents"], ["taxCents", "--tax-cents"], ["totalCents", "--total-cents"]]) {
       if (options[key] === null) throw new Error(`import requires ${flag}`);
     }
     if (!options.items) throw new Error("import requires --items");
@@ -145,12 +149,12 @@ export function parseArgs(argv) {
     poll: ["limit", "dryRun", "yes", "json"],
     stage: ["messageId", "dryRun", "yes", "json"],
     prepare: ["messageId", "attachmentIndex", "json"],
-    import: ["messageId", "attachmentIndex", "invoiceNumber", "issuedOn", "subtotalCents", "taxCents", "totalCents", "items", "yes", "json"],
+    import: ["messageId", "attachmentIndex", "supplierName", "invoiceNumber", "issuedOn", "subtotalCents", "taxCents", "totalCents", "items", "yes", "json"],
     defer: ["messageId", "attachmentIndex", "reason", "yes", "json"],
     "vision-self-test": ["json"],
     status: ["json"],
   }[options.command];
-  const defaults = { limit: 10, messageId: null, attachmentIndex: null, invoiceNumber: null, issuedOn: null, subtotalCents: null, taxCents: null, totalCents: null, items: null, reason: null, dryRun: false, yes: false, json: false };
+  const defaults = { limit: 10, messageId: null, attachmentIndex: null, supplierName: null, invoiceNumber: null, issuedOn: null, subtotalCents: null, taxCents: null, totalCents: null, items: null, reason: null, dryRun: false, yes: false, json: false };
   for (const [key, defaultValue] of Object.entries(defaults)) if (!allowedByCommand.includes(key) && options[key] !== defaultValue) throw new Error(`${options.command} does not accept ${key}`);
   return options;
 }
@@ -174,6 +178,7 @@ export async function run(argv, env = process.env, fetchImpl = fetch) {
     else if (options.command === "import") result = await importContractorInvoice({
       messageId: options.messageId,
       attachmentIndex: options.attachmentIndex,
+      supplierName: options.supplierName,
       invoiceNumber: options.invoiceNumber,
       issuedOn: options.issuedOn,
       subtotalCents: options.subtotalCents,
