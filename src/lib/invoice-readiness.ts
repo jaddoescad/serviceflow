@@ -1,10 +1,11 @@
 export type InvoiceReadinessState =
   | "needs_review"
   | "ready_to_pay"
+  | "payment_sent"
   | "paid"
   | "void";
 
-export type InvoicePaymentState = "unpaid" | "paid" | "void";
+export type InvoicePaymentState = "unpaid" | "sent_pending" | "paid" | "void";
 
 export type InvoiceReviewState = "not_required" | "complete" | "needs_review";
 
@@ -188,6 +189,37 @@ function userConfirmedPayment(
   };
 }
 
+function sentPendingPayment(
+  invoice: InvoiceReadinessInput,
+): {
+  confirmationMasked: string | null;
+  bankStatus: string | null;
+  dispatchedOn: string | null;
+} | null {
+  const dispatch = invoice.metadata?.payment_dispatch;
+  if (!dispatch || typeof dispatch !== "object" || Array.isArray(dispatch)) {
+    return null;
+  }
+  const values = dispatch as Record<string, unknown>;
+  if (
+    !["sent_pending_bank_deposit", "sent_pending_bank_sync"].includes(
+      normalizeStatus(values.status),
+    )
+  ) {
+    return null;
+  }
+  return {
+    confirmationMasked:
+      typeof values.confirmation_masked === "string"
+        ? values.confirmation_masked
+        : null,
+    bankStatus:
+      typeof values.bank_status === "string" ? values.bank_status : null,
+    dispatchedOn:
+      typeof values.dispatched_on === "string" ? values.dispatched_on : null,
+  };
+}
+
 function booleanMetadata(
   metadata: Record<string, unknown> | null | undefined,
   key: string,
@@ -267,6 +299,7 @@ export function invoiceReadinessLabel(state: InvoiceReadinessState): string {
   return {
     needs_review: "Needs review",
     ready_to_pay: "Ready to pay",
+    payment_sent: "Payment sent",
     paid: "Paid",
     void: "Void",
   }[state];
@@ -278,6 +311,7 @@ export function invoiceReadinessTone(
   return {
     needs_review: "warn",
     ready_to_pay: "brand",
+    payment_sent: "neutral",
     paid: "good",
     void: "neutral",
   }[state] as "neutral" | "good" | "warn" | "brand";
@@ -286,6 +320,7 @@ export function invoiceReadinessTone(
 export function invoicePaymentLabel(state: InvoicePaymentState): string {
   return {
     unpaid: "Unpaid",
+    sent_pending: "Sent",
     paid: "Paid",
     void: "Void",
   }[state];
@@ -296,6 +331,7 @@ export function invoicePaymentTone(
 ): "neutral" | "good" | "warn" {
   return {
     unpaid: "warn",
+    sent_pending: "neutral",
     paid: "good",
     void: "neutral",
   }[state] as "neutral" | "good" | "warn";
@@ -337,6 +373,7 @@ export function deriveInvoiceReadiness(
     (payment) => !payment.reversed_at,
   );
   const confirmedPayment = userConfirmedPayment(invoice);
+  const pendingPayment = sentPendingPayment(invoice);
 
   const allocationTarget = jobAllocationTarget(invoice, lines, subtotalCents);
   const allocationRequired = allocationTarget.required;
@@ -504,6 +541,13 @@ export function deriveInvoiceReadiness(
       status: "fail",
       detail: "A matched bank payment needs review",
     };
+  } else if (pendingPayment) {
+    paymentCheck = {
+      key: "payment",
+      label: "Bank payment",
+      status: "pending",
+      detail: `${pendingPayment.confirmationMasked ? `Transfer ${pendingPayment.confirmationMasked}` : "Transfer"} sent${pendingPayment.dispatchedOn ? ` on ${dateLabel(pendingPayment.dispatchedOn)}` : ""} · awaiting recipient deposit`,
+    };
   } else if (matchedPaidCents < 0) {
     paymentCheck = {
       key: "payment",
@@ -555,7 +599,9 @@ export function deriveInvoiceReadiness(
     ? "void"
     : confirmedPayment || (totalCents > 0 && matchedPaidCents >= totalCents)
       ? "paid"
-      : "unpaid";
+      : pendingPayment
+        ? "sent_pending"
+        : "unpaid";
   const paymentReason = isVoid
     ? voidReason
       ? `Void · ${voidReason}`
@@ -570,9 +616,11 @@ export function deriveInvoiceReadiness(
         : paidOn
           ? `Cleared by matched bank payment on ${dateLabel(paidOn)}`
           : "Cleared by matched bank payment"
-      : matchedPaidCents > 0
-        ? `${money(matchedPaidCents, currency)} matched · ${money(remainingBalanceCents, currency)} remaining`
-        : `${money(remainingBalanceCents, currency)} outstanding`;
+      : paymentState === "sent_pending"
+        ? `${pendingPayment?.confirmationMasked ? `Transfer ${pendingPayment.confirmationMasked}` : "Transfer"} sent${pendingPayment?.dispatchedOn ? ` on ${dateLabel(pendingPayment.dispatchedOn)}` : ""} · awaiting recipient deposit`
+        : matchedPaidCents > 0
+          ? `${money(matchedPaidCents, currency)} matched · ${money(remainingBalanceCents, currency)} remaining`
+          : `${money(remainingBalanceCents, currency)} outstanding`;
   const reviewState: InvoiceReviewState = paymentState !== "paid"
     ? "not_required"
     : failedCheck
@@ -584,7 +632,9 @@ export function deriveInvoiceReadiness(
       ? "No other invoice issues"
       : paymentState === "void"
         ? "Void invoices do not require review"
-        : "Review begins after payment";
+        : paymentState === "sent_pending"
+          ? "Review begins after the transfer is deposited"
+          : "Review begins after payment";
 
   let state: InvoiceReadinessState;
   let reason: string;
@@ -594,6 +644,9 @@ export function deriveInvoiceReadiness(
   } else if (failedCheck) {
     state = "needs_review";
     reason = failedCheck.detail;
+  } else if (pendingPayment) {
+    state = "payment_sent";
+    reason = `${pendingPayment.confirmationMasked ? `Transfer ${pendingPayment.confirmationMasked}` : "Transfer"} sent · awaiting recipient deposit`;
   } else if (paymentCheck.status === "pass") {
     state = "paid";
     reason = confirmedPayment

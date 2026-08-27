@@ -17,6 +17,27 @@ const SENT_PENDING_BANK_SYNC = new Map([
   }],
 ]);
 
+function sentPendingPayment(invoice) {
+  const dispatch = invoice.metadata?.payment_dispatch;
+  if (
+    dispatch &&
+    typeof dispatch === "object" &&
+    ["sent_pending_bank_deposit", "sent_pending_bank_sync"].includes(dispatch.status)
+  ) {
+    return {
+      note: [
+        `EasyWeb transfer ${dispatch.confirmation_masked ?? "confirmation unavailable"} was already sent`,
+        dispatch.bank_status ? `and is currently ${dispatch.bank_status}.` : null,
+        "Awaiting final deposit evidence before invoice settlement.",
+      ].filter(Boolean).join(" "),
+      transfer_transaction_id: dispatch.transaction_id ?? null,
+      confirmation_masked: dispatch.confirmation_masked ?? null,
+      bank_status: dispatch.bank_status ?? null,
+    };
+  }
+  return SENT_PENDING_BANK_SYNC.get(invoice.id) ?? null;
+}
+
 function parseEnvFile(filePath) {
   if (!existsSync(filePath)) return {};
   const values = {};
@@ -130,13 +151,14 @@ for (const invoice of invoices) {
   const withEvidence = { ...invoice, evidence: evidenceByInvoice.get(invoice.id) ?? [] };
   if (isHistoricalLabourInvoice(withEvidence)) continue;
   const readiness = deriveInvoiceReadiness(withEvidence);
-  if (readiness.paymentState !== "unpaid") continue;
+  if (!["unpaid", "sent_pending"].includes(readiness.paymentState)) continue;
 
-  const pending = SENT_PENDING_BANK_SYNC.get(invoice.id);
+  const pending = sentPendingPayment(invoice);
   if (pending) {
     sentPendingBankSync.push(invoiceSummary(invoice, readiness, pending));
     continue;
   }
+  if (readiness.paymentState !== "unpaid") continue;
 
   const missingProductionMonth = readiness.allocationRequired &&
     (invoice.allocations.length === 0 || invoice.allocations.some((allocation) => !one(allocation.job)?.production_month));

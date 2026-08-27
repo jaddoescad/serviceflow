@@ -65,6 +65,29 @@ test("a verified unpaid invoice is ready to pay", () => {
   assert.equal(readiness.passedCheckCount, 4);
 });
 
+test("a sent transfer is pending deposit and cannot re-enter the payable queue", () => {
+  const readiness = deriveInvoiceReadiness(
+    validInvoice({
+      metadata: {
+        payment_dispatch: {
+          status: "sent_pending_bank_deposit",
+          dispatched_on: "2026-08-27",
+          bank_status: "Sent",
+          confirmation_masked: "CA***PUw",
+        },
+      },
+    }),
+  );
+
+  assert.equal(readiness.state, "payment_sent");
+  assert.equal(readiness.paymentState, "sent_pending");
+  assert.equal(readiness.reviewState, "not_required");
+  assert.equal(readiness.matchedPaidCents, 0);
+  assert.equal(readiness.remainingBalanceCents, 11_300);
+  assert.match(readiness.paymentReason, /CA\*\*\*PUw/);
+  assert.match(readiness.paymentReason, /awaiting recipient deposit/);
+});
+
 test("a fully matched bank payment makes the invoice paid", () => {
   const readiness = deriveInvoiceReadiness(
     validInvoice({

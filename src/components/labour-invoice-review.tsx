@@ -20,10 +20,11 @@ import {
 
 type SummaryFilter = InvoicePaymentState | "needs_review";
 
-const SUMMARY_FILTERS: SummaryFilter[] = ["unpaid", "paid", "void", "needs_review"];
+const SUMMARY_FILTERS: SummaryFilter[] = ["unpaid", "sent_pending", "paid", "void", "needs_review"];
 
 const STATE_VALUE_TONE: Record<SummaryFilter, string> = {
   unpaid: "text-[var(--color-brand-strong)]",
+  sent_pending: "text-[var(--color-warn)]",
   paid: "text-[var(--color-good)]",
   void: "text-[var(--color-muted)]",
   needs_review: "text-[var(--color-warn)]",
@@ -290,6 +291,8 @@ function MatchedCell({ invoice, muted }: { invoice: any; muted: boolean }) {
     detail = <span className="text-[var(--color-muted)]">Excluded from payment</span>;
   } else if (readiness?.paymentState === "paid" && matched === 0) {
     detail = <span className="text-[var(--color-good)]">User confirmed paid</span>;
+  } else if (readiness?.paymentState === "sent_pending") {
+    detail = <span className="text-[var(--color-warn)]">Transfer sent · awaiting deposit</span>;
   } else if (matched > 0 && remaining === 0) {
     detail = <span className="text-[var(--color-good)]">Settled</span>;
   } else if (remaining < 0) {
@@ -460,7 +463,7 @@ export function LabourInvoiceReview({ invoices }: { invoices: any[] }) {
   );
 
   const counts = React.useMemo(() => {
-    const byState = { unpaid: 0, paid: 0, void: 0, needs_review: 0 } as Record<SummaryFilter, number>;
+    const byState = { unpaid: 0, sent_pending: 0, paid: 0, void: 0, needs_review: 0 } as Record<SummaryFilter, number>;
     for (const invoice of visibleInvoices) {
       const paymentState = (invoice.readiness?.paymentState ?? "unpaid") as InvoicePaymentState;
       const reviewState = (invoice.readiness?.reviewState ?? "not_required") as InvoiceReviewState;
@@ -508,6 +511,7 @@ export function LabourInvoiceReview({ invoices }: { invoices: any[] }) {
 
   const stateHints: Record<SummaryFilter, string> = {
     unpaid: "payment still outstanding",
+    sent_pending: "transfer sent, awaiting deposit",
     paid: "cleared by matched bank payment",
     void: "excluded from payment",
     needs_review: "paid invoice with another issue",
@@ -515,7 +519,7 @@ export function LabourInvoiceReview({ invoices }: { invoices: any[] }) {
 
   return (
     <>
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         {SUMMARY_FILTERS.map((filter) => (
           <SummaryCard
             key={filter}
@@ -558,7 +562,7 @@ export function LabourInvoiceReview({ invoices }: { invoices: any[] }) {
               className="min-w-36"
             >
               <option value="all">All payments</option>
-              {(["unpaid", "paid", "void"] as InvoicePaymentState[]).map((state) => (
+              {(["unpaid", "sent_pending", "paid", "void"] as InvoicePaymentState[]).map((state) => (
                 <option key={state} value={state}>
                   {invoicePaymentLabel(state)}
                 </option>
