@@ -212,6 +212,9 @@ function combineInvoiceSummaries(
       0,
     ),
     needsReview: rows.some((row) => row.labourInvoices.needsReview),
+    painterNames: [
+      ...new Set(rows.flatMap((row) => row.labourInvoices.painterNames)),
+    ].sort((left, right) => left.localeCompare(right)),
   };
 }
 

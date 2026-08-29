@@ -60,6 +60,7 @@ export type ProjectLabourInvoiceSummary = {
   hasUnallocatedSharedInvoices: boolean;
   unallocatedSharedInvoiceCount: number;
   needsReview: boolean;
+  painterNames: string[];
 };
 
 export type ProjectMaterialCostSummary = {
@@ -86,6 +87,7 @@ export function emptyProjectLabourInvoiceSummary(): ProjectLabourInvoiceSummary 
     hasUnallocatedSharedInvoices: false,
     unallocatedSharedInvoiceCount: 0,
     needsReview: false,
+    painterNames: [],
   };
 }
 
@@ -159,6 +161,10 @@ export function summarizeProjectInvoiceEntries(entries: InvoiceEntryRecord[]): P
       ? entry.invoice.invoice_date
       : result.latestInvoiceDate;
     result.needsReview ||= entry.needs_review;
+    const painterName = entry.invoice.supplier_name?.trim();
+    if (painterName && !result.painterNames.includes(painterName)) {
+      result.painterNames.push(painterName);
+    }
   }
   result.invoiceCount = invoiceIds.size;
   result.linkedFileCount = invoiceIds.size;
@@ -171,7 +177,7 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from("invoice_job_allocations")
-      .select("id,invoice_id,job_id,subtotal_cents,needs_review,metadata,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system,currency,issued_on,paid_cents,total_cents),invoice_line_id")
+      .select("id,invoice_id,job_id,subtotal_cents,needs_review,metadata,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system,currency,issued_on,paid_cents,total_cents,metadata,contact:contacts(name)),invoice_line_id")
       .eq("invoice.category", "labour")
       .order("id")
       .range(from, from + 999);
@@ -197,6 +203,11 @@ export async function getProjectLabourInvoiceSummaries(): Promise<Map<string, Pr
     seen.set(allocation.job_id, ids);
     summary.invoiceCount = ids.size;
     summary.linkedFileCount = ids.size;
+    const contact = Array.isArray(invoice.contact) ? invoice.contact[0] : invoice.contact;
+    const painterName = String(contact?.name ?? invoice.metadata?.supplier_name ?? "").trim();
+    if (painterName && !summary.painterNames.includes(painterName)) {
+      summary.painterNames.push(painterName);
+    }
     const paid = Number(invoice.paid_cents ?? 0);
     const total = Number(invoice.total_cents ?? 0);
     if (paid >= total) summary.confirmedPaidTotals[currency] += Number(allocation.subtotal_cents ?? 0) / 100;

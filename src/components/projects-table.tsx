@@ -22,6 +22,7 @@ import { AmountDialog } from "@/components/project-detail";
 type ProjectTableRow = ProjectRollup & {
   labourInvoices: ProjectLabourInvoiceSummary;
   materials: ProjectMaterialSummary;
+  painters: string[];
 };
 
 const UNSCHEDULED_MONTH = "unscheduled";
@@ -402,9 +403,10 @@ export function ProjectsTable({
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1360px] table-fixed text-[13px]">
+            <table className="w-full min-w-[1480px] table-fixed text-[13px]">
               <colgroup>
-                <col className="w-[12%]" />
+                <col className="w-[11%]" />
+                <col className="w-[9%]" />
                 <col className="w-[7%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
@@ -421,6 +423,7 @@ export function ProjectsTable({
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                   <th className="px-2.5 py-2.5 font-medium">Job</th>
+                  <th className="px-2.5 py-2.5 font-medium">Painters</th>
                   <th className="px-2.5 py-2.5 font-medium">Production month</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Painter budget (40%)</th>
@@ -474,6 +477,13 @@ export function ProjectsTable({
                           <div className="truncate text-xs text-[var(--color-muted)]">{r.address}</div>
                         ) : null}
                       </Link>
+                    </td>
+                    <td className="px-2.5 py-2.5 text-xs text-[var(--color-text)]">
+                      {r.painters.length ? (
+                        <span title={r.painters.join(", ")}>{r.painters.join(", ")}</span>
+                      ) : (
+                        <span className="text-[var(--color-muted)]">—</span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2.5 font-medium text-[var(--color-text)]">
                       {fmtMonthYear(r.productionMonth)}

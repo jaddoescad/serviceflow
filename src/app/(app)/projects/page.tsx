@@ -44,6 +44,16 @@ export default async function ProjectsPage() {
     getJobMaterialSummaries(),
   ]);
 
+  const clockInNamesByProject = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    if (!entry.companycam_project_id) continue;
+    const name = entry.user_name?.trim() || entry.user_email?.trim();
+    if (!name) continue;
+    const names = clockInNamesByProject.get(entry.companycam_project_id) ?? new Set<string>();
+    names.add(name);
+    clockInNamesByProject.set(entry.companycam_project_id, names);
+  }
+
   const rows = rollupProjects(
     entries,
     projects,
@@ -53,16 +63,23 @@ export default async function ProjectsPage() {
     labourExpenses,
     now,
     invoiceSummaries,
-  ).map((row) => ({
-    ...row,
-    labourInvoices:
-      invoiceSummaries.get(row.projectId) ??
-      emptyProjectLabourInvoiceSummary(),
-    materials: materialSummaries.get(row.projectId) ?? {
-      amountBeforeTax: 0,
-      lineCount: 0,
-    },
-  }));
+  ).map((row) => {
+    const labourInvoices =
+      invoiceSummaries.get(row.projectId) ?? emptyProjectLabourInvoiceSummary();
+    const clockInNames = [...(clockInNamesByProject.get(row.projectId) ?? [])];
+
+    return {
+      ...row,
+      labourInvoices,
+      painters: [...new Set([...clockInNames, ...labourInvoices.painterNames])].sort(
+        (left, right) => left.localeCompare(right),
+      ),
+      materials: materialSummaries.get(row.projectId) ?? {
+        amountBeforeTax: 0,
+        lineCount: 0,
+      },
+    };
+  });
 
   return (
     <>
