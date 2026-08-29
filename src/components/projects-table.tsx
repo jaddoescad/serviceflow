@@ -10,6 +10,7 @@ import {
   LABOUR_ALERT_PERCENT,
   LABOUR_MAX_PERCENT,
   LABOUR_MIN_PERCENT,
+  budgetStatus,
   readyToCloseLabour,
   summarizeLabour,
 } from "@/lib/metrics";
@@ -84,22 +85,20 @@ function BudgetLeft({
 function UsageBar({
   percent,
   status,
-  source,
+  label,
   amount,
 }: {
   percent: number | null;
   status: BudgetStatus;
-  source: ProjectRollup["labourCostSource"];
+  label: string;
   amount: number;
 }) {
-  const sourceLabel =
-    source === "invoices" ? "Invoices" : "Clocked hours";
   if (percent == null) {
     return amount > 0 ? (
       <div>
         <span className="text-xs text-[var(--color-muted)]">—</span>
         <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">
-          {sourceLabel} · {fmtMoney(amount)} chosen
+          {label} · {fmtMoney(amount)}
         </div>
       </div>
     ) : (
@@ -119,10 +118,16 @@ function UsageBar({
         <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">{percent.toFixed(1)}%</span>
       </div>
       <div className="mt-0.5 whitespace-nowrap text-[10px] text-[var(--color-muted)]">
-        {sourceLabel} · {fmtMoney(amount)} chosen
+        {label} · {fmtMoney(amount)}
       </div>
     </div>
   );
+}
+
+function labourShare(amountBeforeTax: number | null, cost: number): number | null {
+  return amountBeforeTax && amountBeforeTax > 0
+    ? (cost / amountBeforeTax) * 100
+    : null;
 }
 
 function MaterialShareBar({
@@ -403,11 +408,12 @@ export function ProjectsTable({
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1480px] table-fixed text-[13px]">
+            <table className="w-full min-w-[1580px] table-fixed text-[13px]">
               <colgroup>
                 <col className="w-[11%]" />
                 <col className="w-[9%]" />
                 <col className="w-[7%]" />
+                <col className="w-[8%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
                 <col className="w-[7%]" />
@@ -423,7 +429,12 @@ export function ProjectsTable({
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                   <th className="px-2.5 py-2.5 font-medium">Job</th>
-                  <th className="px-2.5 py-2.5 font-medium">Painters</th>
+                  <th
+                    className="px-2.5 py-2.5 font-medium"
+                    title="Painter or contractor named on linked labour invoices"
+                  >
+                    Invoice painter
+                  </th>
                   <th className="px-2.5 py-2.5 font-medium">Production month</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Painter budget (40%)</th>
@@ -437,7 +448,8 @@ export function ProjectsTable({
                     Labour invoices (pre-tax)
                   </th>
                   <th className="px-2.5 py-2.5 font-medium">Invoices</th>
-                  <th className="px-2.5 py-2.5 font-medium">Used by painters</th>
+                  <th className="px-2.5 py-2.5 font-medium">Hourly usage</th>
+                  <th className="px-2.5 py-2.5 font-medium">Invoice usage</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">
                     Materials (pre-tax)
                   </th>
@@ -566,10 +578,18 @@ export function ProjectsTable({
                     </td>
                     <td className="px-2.5 py-2.5">
                       <UsageBar
-                        percent={r.wageSharePercent}
-                        status={r.status}
-                        source={r.labourCostSource}
-                        amount={r.wageCost}
+                        percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost)}
+                        status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost))}
+                        label="Clocked hours"
+                        amount={r.clockedWageCost}
+                      />
+                    </td>
+                    <td className="px-2.5 py-2.5">
+                      <UsageBar
+                        percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.labourInvoices.totals.CAD)}
+                        status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.labourInvoices.totals.CAD))}
+                        label="Invoices"
+                        amount={r.labourInvoices.totals.CAD}
                       />
                     </td>
                     <td
