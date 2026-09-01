@@ -6,6 +6,8 @@ import {
   type BusinessPulseLeadRow,
   type BusinessPulseProposalRow,
   type BusinessPulseQuoteRow,
+  type BusinessPulseSalesReportRow,
+  type BusinessPulseSetRateReportRow,
   type BusinessPulseSpendRow,
   type BusinessPulseTransactionRow,
 } from "@/lib/business-pulse-metrics";
@@ -56,7 +58,16 @@ export async function getBusinessPulse(
   asOf = ottawaToday(),
 ): Promise<BusinessPulse> {
   const supabase = await createClient();
-  const [leads, proposals, spend, jobs, quotes, transactions] =
+  const [
+    leads,
+    proposals,
+    spend,
+    jobs,
+    quotes,
+    transactions,
+    salesReports,
+    setRateReports,
+  ] =
     await Promise.all([
       fetchAllRows<BusinessPulseLeadRow>(
         supabase,
@@ -94,6 +105,18 @@ export async function getBusinessPulse(
         "id,posted_on,description,counterparty,amount_cents,category,is_transfer,review_status,updated_at",
         "posted_on",
       ),
+      fetchAllRows<BusinessPulseSalesReportRow>(
+        supabase,
+        "dripjobs_sales_report_latest",
+        "period_start,period_end,sales_count,gross_sales_cents,captured_at",
+        "period_start",
+      ),
+      fetchAllRows<BusinessPulseSetRateReportRow>(
+        supabase,
+        "dripjobs_set_rate_latest",
+        "period_start,period_end,contacts_created_count,booked_contacts_count,captured_at",
+        "period_start",
+      ),
     ]);
 
   return buildBusinessPulse({
@@ -105,5 +128,7 @@ export async function getBusinessPulse(
     jobs,
     quotes,
     transactions,
+    salesReports,
+    setRateReports,
   });
 }

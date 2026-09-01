@@ -23,6 +23,9 @@ export type MetricsConceptPulse = Omit<
     | "proposals"
     | "acceptedJobs"
     | "bookedSalesCents"
+    | "salesCents"
+    | "setRateContacts"
+    | "setRateBookedContacts"
     | "paidSocialLeads"
     | "metaCostPerLeadCents"
   > & {
@@ -32,6 +35,9 @@ export type MetricsConceptPulse = Omit<
     proposals: CompleteComparison;
     acceptedJobs: CompleteComparison;
     bookedSalesCents: CompleteComparison;
+    salesCents: CompleteComparison;
+    setRateContacts: CompleteComparison;
+    setRateBookedContacts: CompleteComparison;
     paidSocialLeads: CompleteComparison;
     metaCostPerLeadCents: CompleteComparison;
   };
@@ -74,6 +80,9 @@ export function prepareMetricsConceptPulse(pulse: BusinessPulse): MetricsConcept
       proposals: complete(pulse.activity.proposals),
       acceptedJobs: complete(pulse.activity.acceptedJobs),
       bookedSalesCents: complete(pulse.activity.bookedSalesCents),
+      salesCents: complete(pulse.activity.salesCents),
+      setRateContacts: complete(pulse.activity.setRateContacts),
+      setRateBookedContacts: complete(pulse.activity.setRateBookedContacts),
       paidSocialLeads: complete(pulse.activity.paidSocialLeads),
       metaCostPerLeadCents: {
         current: costPerLead,

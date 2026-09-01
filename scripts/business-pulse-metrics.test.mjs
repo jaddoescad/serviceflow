@@ -149,6 +149,9 @@ test("buildBusinessPulse uses same-period spend and accepted jobs for monthly CA
   assert.equal(pulse.activity.bookedSalesCents.previous, 4_000_000);
   assert.equal(pulse.activity.metaCostPerLeadCents, 10_000);
   assert.deepEqual(pulse.activity.appointmentSetRate, { current: 0.5, previous: 0.5 });
+  assert.equal(pulse.activity.setRateBasis, "lead_report_contact_cohort");
+  assert.deepEqual(pulse.activity.setRateBookedContacts, pulse.activity.appointments);
+  assert.deepEqual(pulse.activity.setRateContacts, pulse.activity.leads);
   assert.deepEqual(pulse.activity.proposalRate, { current: 1, previous: 0.5 });
   assert.deepEqual(pulse.activity.acceptedProposalRate, { current: 1.5, previous: 3 });
 
@@ -190,6 +193,138 @@ test("month-to-date comparison clamps safely when the prior month is shorter", (
   });
 
   assert.deepEqual(pulse.previousPeriod, { start: "2026-02-01", end: "2026-02-28" });
+});
+
+test("exact DripJobs Sales snapshots replace the headline revenue comparison", () => {
+  const pulse = buildBusinessPulse({
+    asOf: "2026-09-01",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [],
+    proposals: [],
+    spend: [],
+    jobs: [],
+    quotes: [],
+    salesReports: [
+      { period_start: "2026-07-01", period_end: "2026-07-31", sales_count: 15, gross_sales_cents: 4_162_632, captured_at: capturedAt },
+      { period_start: "2026-08-01", period_end: "2026-08-31", sales_count: 18, gross_sales_cents: 6_351_084, captured_at: capturedAt },
+    ],
+  });
+
+  assert.equal(pulse.activity.salesBasis, "dripjobs_gross_sales");
+  assert.deepEqual(pulse.activity.salesCents, {
+    current: 6_351_084,
+    previous: 4_162_632,
+    change: 2_188_452,
+    percentChange: (2_188_452 / 4_162_632) * 100,
+  });
+  assert.deepEqual(pulse.activity.bookedSalesCents, {
+    current: 0,
+    previous: 0,
+    change: 0,
+    percentChange: 0,
+  });
+});
+
+test("headline revenue falls back consistently when either DripJobs period is missing", () => {
+  const pulse = buildBusinessPulse({
+    asOf: "2026-09-01",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [],
+    proposals: [],
+    spend: [],
+    jobs: [],
+    quotes: [],
+    salesReports: [
+      { period_start: "2026-08-01", period_end: "2026-08-31", sales_count: 18, gross_sales_cents: 6_351_084, captured_at: capturedAt },
+    ],
+  });
+
+  assert.equal(pulse.activity.salesBasis, "accepted_contracts_pre_hst");
+  assert.deepEqual(pulse.activity.salesCents, pulse.activity.bookedSalesCents);
+});
+
+test("exact DripJobs set-rate snapshots replace mixed-date appointment activity", () => {
+  const pulse = buildBusinessPulse({
+    asOf: "2026-09-01",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [
+      lead({ row: 40, id: "old-contact", created: "2026-07-15", appointment: "2026-08-10" }),
+    ],
+    proposals: [],
+    spend: [],
+    jobs: [],
+    quotes: [],
+    setRateReports: [
+      { period_start: "2026-07-01", period_end: "2026-07-31", contacts_created_count: 104, booked_contacts_count: 30, captured_at: capturedAt },
+      { period_start: "2026-08-01", period_end: "2026-08-31", contacts_created_count: 132, booked_contacts_count: 33, captured_at: capturedAt },
+    ],
+  });
+
+  assert.equal(pulse.activity.setRateBasis, "dripjobs_contact_cohort");
+  assert.deepEqual(pulse.activity.setRateContacts, {
+    current: 132,
+    previous: 104,
+    change: 28,
+    percentChange: (28 / 104) * 100,
+  });
+  assert.deepEqual(pulse.activity.setRateBookedContacts, {
+    current: 33,
+    previous: 30,
+    change: 3,
+    percentChange: 10,
+  });
+  assert.deepEqual(pulse.activity.appointmentSetRate, {
+    current: 0.25,
+    previous: 30 / 104,
+  });
+  assert.equal(pulse.activity.appointments.current, 1);
+  assert.equal(pulse.monthly.find((point) => point.month === "2026-08").setRate, 0.25);
+  assert.equal(
+    pulse.monthly.find((point) => point.month === "2026-08").setRateBasis,
+    "dripjobs_contact_cohort",
+  );
+});
+
+test("set rate falls back consistently when either DripJobs cohort is missing", () => {
+  const pulse = buildBusinessPulse({
+    asOf: "2026-09-01",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [
+      lead({ row: 41, id: "august-booked-later", created: "2026-08-05", appointment: "2026-09-06" }),
+      lead({ row: 42, id: "august-not-booked", created: "2026-08-07" }),
+      lead({ row: 43, id: "july-booked-in-august", created: "2026-07-05", appointment: "2026-08-08" }),
+    ],
+    proposals: [],
+    spend: [],
+    jobs: [],
+    quotes: [],
+    setRateReports: [
+      { period_start: "2026-08-01", period_end: "2026-08-31", contacts_created_count: 132, booked_contacts_count: 33, captured_at: capturedAt },
+    ],
+  });
+
+  assert.equal(pulse.activity.setRateBasis, "lead_report_contact_cohort");
+  assert.deepEqual(pulse.activity.setRateContacts, pulse.activity.leads);
+  assert.deepEqual(pulse.activity.setRateBookedContacts, {
+    current: 1,
+    previous: 1,
+    change: 0,
+    percentChange: 0,
+  });
+  assert.deepEqual(pulse.activity.appointmentSetRate, { current: 0.5, previous: 1 });
+  assert.equal(pulse.activity.appointments.current, 1);
 });
 
 test("an explicit selected period drives every current and comparison metric", () => {
@@ -250,6 +385,9 @@ test("an explicit selected period drives every current and comparison metric", (
       blendedCacCents: null,
       bookedRoas: 0,
       setRate: 1,
+      setRateContacts: 1,
+      setRateBookedContacts: 1,
+      setRateBasis: "lead_report_contact_cohort",
       proposalRate: 1,
       acceptedRate: 0,
     },
@@ -281,6 +419,9 @@ test("an explicit selected period drives every current and comparison metric", (
     blendedCacCents: null,
     bookedRoas: null,
     setRate: null,
+    setRateContacts: 0,
+    setRateBookedContacts: 0,
+    setRateBasis: "lead_report_contact_cohort",
     proposalRate: null,
     acceptedRate: null,
   });

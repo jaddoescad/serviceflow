@@ -214,6 +214,8 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
     pulse.freshness.proposals,
     pulse.freshness.meta,
     pulse.freshness.accounting,
+    pulse.freshness.sales,
+    pulse.freshness.setRate,
   ]
     .filter((value): value is string => Boolean(value))
     .sort()
@@ -230,9 +232,9 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
 
         <div className="grid gap-px bg-[var(--color-border)]">
           <OutcomeCell
-            label="Booked sales · MTD"
-            value={money(pulse.activity.bookedSalesCents.current)}
-            comparison={pulse.activity.bookedSalesCents}
+            label={pulse.activity.salesBasis === "dripjobs_gross_sales" ? "DripJobs sales · incl. HST" : "Booked sales · before HST"}
+            value={money(pulse.activity.salesCents.current)}
+            comparison={pulse.activity.salesCents}
             hint={null}
           />
         </div>
@@ -263,7 +265,12 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               label="Appointments"
               value={integer.format(pulse.activity.appointments.current)}
               comparison={pulse.activity.appointments}
-              hint={rateHint("Set rate", pulse.activity.appointmentSetRate)}
+              hint={`${rateHint(
+                pulse.activity.setRateBasis === "dripjobs_contact_cohort"
+                  ? "DripJobs set rate"
+                  : "Imported cohort set rate",
+                pulse.activity.appointmentSetRate,
+              )} · ${integer.format(pulse.activity.setRateBookedContacts.current)} booked / ${integer.format(pulse.activity.setRateContacts.current)} contacts`}
             />
             <ActivityCell
               label="Proposals sent"

@@ -55,6 +55,9 @@ type GrowthReturnChartPoint = {
   leads: number | null;
   appointments: number | null;
   setRatePct: number | null;
+  setRateContacts: number | null;
+  setRateBookedContacts: number | null;
+  setRateBasis: BusinessPulseMonthlyPoint["setRateBasis"] | null;
   proposalRatePct: number | null;
   winRatePct: number | null;
   bookedJobsInLeadBar: number | null;
@@ -169,8 +172,8 @@ function FunnelHealthTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow
-          label="Set rate"
-          value={`${rate(point.setRatePct)} · ${point.appointments ?? 0} / ${point.leads ?? 0}`}
+          label={point.setRateBasis === "dripjobs_contact_cohort" ? "Set rate · DripJobs cohort" : "Set rate · imported cohort"}
+          value={`${rate(point.setRatePct)} · ${point.setRateBookedContacts ?? 0} / ${point.setRateContacts ?? 0}`}
         />
         <MonthlyTooltipRow
           label="Proposal rate"
@@ -515,6 +518,9 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           leads: null,
           appointments: null,
           setRatePct: null,
+          setRateContacts: null,
+          setRateBookedContacts: null,
+          setRateBasis: null,
           proposalRatePct: null,
           winRatePct: null,
           bookedJobsInLeadBar: null,
@@ -549,6 +555,9 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         leads: point.leads,
         appointments: point.appointments,
         setRatePct: point.setRate == null ? null : asPercent(point.setRate),
+        setRateContacts: point.setRateContacts,
+        setRateBookedContacts: point.setRateBookedContacts,
+        setRateBasis: point.setRateBasis,
         proposalRatePct:
           point.proposalRate == null ? null : asPercent(point.proposalRate),
         winRatePct:
@@ -593,17 +602,17 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
       {/* Headline KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
-          label="Booked sales"
-          value={dollars(activity.bookedSalesCents.current)}
-          previousLabel={dollars(activity.bookedSalesCents.previous)}
-          comparison={activity.bookedSalesCents}
+          label={activity.salesBasis === "dripjobs_gross_sales" ? "DripJobs sales · incl. HST" : "Booked sales · before HST"}
+          value={dollars(activity.salesCents.current)}
+          previousLabel={dollars(activity.salesCents.previous)}
+          comparison={activity.salesCents}
         />
         <RateKpiCard
-          label="Set rate"
-          numerator={activity.appointments}
-          denominator={activity.leads}
-          numeratorLabel="appointments"
-          denominatorLabel="leads"
+          label={activity.setRateBasis === "dripjobs_contact_cohort" ? "Set rate · DripJobs cohort" : "Set rate · imported cohort"}
+          numerator={activity.setRateBookedContacts}
+          denominator={activity.setRateContacts}
+          numeratorLabel="booked"
+          denominatorLabel="contacts"
         />
         <RateKpiCard
           label="Proposal rate"
@@ -1060,9 +1069,10 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Set rate = appointments ÷ leads. Proposal rate = proposals ÷ leads. Proposal win rate =
-          jobs accepted ÷ proposals. Same-month activity, not lead-created cohorts. * current month
-          to date; future months are intentionally blank.
+          Set rate always uses a contact-created cohort: contacts who eventually booked ÷ contacts
+          created. Validated DripJobs snapshots are used when available; other periods use the latest
+          imported DripJobs lead report. Proposal rate and proposal win rate remain same-month
+          activity. * current month to date; future months are intentionally blank.
         </p>
       </div>
 
