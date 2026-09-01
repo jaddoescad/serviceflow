@@ -168,11 +168,8 @@ export function BusinessPulseBento({
   selection: MetricsPeriodSelection;
 }) {
   const conceptPulse = prepareMetricsConceptPulse(pulse);
-  const oldestRefresh = [
+  const dripJobsRefresh = [
     pulse.freshness.leads,
-    pulse.freshness.proposals,
-    pulse.freshness.meta,
-    pulse.freshness.accounting,
     pulse.freshness.sales,
     pulse.freshness.setRate,
     pulse.freshness.closing,
@@ -185,7 +182,7 @@ export function BusinessPulseBento({
       <PeriodControl selection={selection} asOf={pulse.asOf} />
       <p className="px-1 text-xs text-slate-500">
         {periodLabel(pulse.currentPeriod)} vs {periodLabel(pulse.previousPeriod)}
-        {oldestRefresh ? ` · data through ${fmtDateTime(oldestRefresh)}` : ""}
+        {dripJobsRefresh ? ` · DripJobs sources refreshed ${fmtDateTime(dripJobsRefresh)}` : ""}
       </p>
       <ClaudeConcept1 pulse={conceptPulse} />
     </section>
