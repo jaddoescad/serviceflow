@@ -1,113 +1,45 @@
 import type {
   AppointmentPeriodSegment,
   BusinessPulse,
-  MetricComparison,
 } from "@/lib/business-pulse-metrics";
 
-type CompleteComparison = Omit<MetricComparison, "percentChange"> & {
-  percentChange: number;
-};
-
 type ConceptAppointmentSegment = Omit<AppointmentPeriodSegment, "acceptanceRate"> & {
-  acceptanceRate: number;
+  acceptanceRate: number | null;
 };
 
-export type MetricsConceptPulse = Omit<
-  BusinessPulse,
-  "activity" | "economics" | "appointments"
-> & {
-  activity: Omit<BusinessPulse["activity"],
-    | "metaSpendCents"
-    | "leads"
-    | "appointments"
-    | "proposals"
-    | "acceptedProposals"
-    | "jobsWon"
-    | "acceptedJobs"
-    | "bookedSalesCents"
-    | "salesCents"
-    | "setRateContacts"
-    | "setRateBookedContacts"
-    | "paidSocialLeads"
-    | "metaCostPerLeadCents"
-  > & {
-    metaSpendCents: CompleteComparison;
-    leads: CompleteComparison;
-    appointments: CompleteComparison;
-    proposals: CompleteComparison;
-    acceptedProposals: CompleteComparison;
-    jobsWon: CompleteComparison;
-    acceptedJobs: CompleteComparison;
-    bookedSalesCents: CompleteComparison;
-    salesCents: CompleteComparison;
-    setRateContacts: CompleteComparison;
-    setRateBookedContacts: CompleteComparison;
-    paidSocialLeads: CompleteComparison;
-    metaCostPerLeadCents: CompleteComparison;
-  };
-  economics: Omit<BusinessPulse["economics"], "metaCacCents" | "blendedCacCents" | "bookedRoas"> & {
-    metaCacCents: number;
-    blendedCacCents: number;
-    bookedRoas: number;
-  };
+export type MetricsConceptPulse = Omit<BusinessPulse, "appointments"> & {
   appointments: {
     withAppointment: ConceptAppointmentSegment;
     withoutAppointment: ConceptAppointmentSegment;
-    appointmentLift: number;
-    acceptedWithoutAppointmentShare: number;
+    appointmentLift: number | null;
+    acceptedWithoutAppointmentShare: number | null;
+    basis: BusinessPulse["appointments"]["basis"];
   };
 };
-
-function complete(comparison: MetricComparison): CompleteComparison {
-  return { ...comparison, percentChange: comparison.percentChange ?? 0 };
-}
 
 function appointmentSegment(segment: AppointmentPeriodSegment): ConceptAppointmentSegment {
   return {
     ...segment,
-    acceptanceRate: (segment.acceptanceRate ?? 0) * 100,
+    acceptanceRate:
+      segment.acceptanceRate == null ? null : segment.acceptanceRate * 100,
   };
 }
 
 export function prepareMetricsConceptPulse(pulse: BusinessPulse): MetricsConceptPulse {
-  const costPerLead = pulse.activity.metaCostPerLeadCents ?? 0;
-  const withRate = pulse.appointments.withAppointment.acceptanceRate ?? 0;
-  const withoutRate = pulse.appointments.withoutAppointment.acceptanceRate ?? 0;
-
   return {
     ...pulse,
-    activity: {
-      ...pulse.activity,
-      metaSpendCents: complete(pulse.activity.metaSpendCents),
-      leads: complete(pulse.activity.leads),
-      appointments: complete(pulse.activity.appointments),
-      proposals: complete(pulse.activity.proposals),
-      acceptedProposals: complete(pulse.activity.acceptedProposals),
-      jobsWon: complete(pulse.activity.jobsWon),
-      acceptedJobs: complete(pulse.activity.acceptedJobs),
-      bookedSalesCents: complete(pulse.activity.bookedSalesCents),
-      salesCents: complete(pulse.activity.salesCents),
-      setRateContacts: complete(pulse.activity.setRateContacts),
-      setRateBookedContacts: complete(pulse.activity.setRateBookedContacts),
-      paidSocialLeads: complete(pulse.activity.paidSocialLeads),
-      metaCostPerLeadCents: {
-        current: costPerLead,
-        previous: costPerLead,
-        change: 0,
-        percentChange: 0,
-      },
-    },
-    economics: {
-      ...pulse.economics,
-      metaCacCents: pulse.economics.metaCacCents ?? 0,
-      blendedCacCents: pulse.economics.blendedCacCents ?? 0,
-      bookedRoas: pulse.economics.bookedRoas ?? 0,
-    },
     appointments: {
       withAppointment: appointmentSegment(pulse.appointments.withAppointment),
       withoutAppointment: appointmentSegment(pulse.appointments.withoutAppointment),
-      appointmentLift: (withRate - withoutRate) * 100,
-      acceptedWithoutAppointmentShare: pulse.appointments.acceptedWithoutAppointmentShare ?? 0,
+      appointmentLift:
+        pulse.appointments.appointmentLift == null
+          ? null
+          : pulse.appointments.appointmentLift * 100,
+      acceptedWithoutAppointmentShare:
+        pulse.appointments.acceptedWithoutAppointmentShare == null
+          ? null
+          : pulse.appointments.acceptedWithoutAppointmentShare * 100,
+      basis: pulse.appointments.basis,
     },
   };
 }

@@ -3,11 +3,13 @@ import {
   buildBusinessPulse,
   type BusinessPulse,
   type BusinessPulseClosingReportRow,
+  type BusinessPulseClosingRowMetricsRow,
   type BusinessPulseJobRow,
   type BusinessPulseLeadRow,
   type BusinessPulseProposalRow,
   type BusinessPulseQuoteRow,
   type BusinessPulseSalesReportRow,
+  type BusinessPulseSalesMetricsRow,
   type BusinessPulseSetRateReportRow,
   type BusinessPulseSpendRow,
   type BusinessPulseTransactionRow,
@@ -67,8 +69,10 @@ export async function getBusinessPulse(
     quotes,
     transactions,
     salesReports,
+    salesMetrics,
     setRateReports,
     closingReports,
+    closingRowMetrics,
   ] =
     await Promise.all([
       fetchAllRows<BusinessPulseLeadRow>(
@@ -113,6 +117,12 @@ export async function getBusinessPulse(
         "period_start,period_end,sales_count,gross_sales_cents,captured_at",
         "period_start",
       ),
+      fetchAllRows<BusinessPulseSalesMetricsRow>(
+        supabase,
+        "dripjobs_sales_report_metrics",
+        "period_start,period_end,sales_count,gross_sales_cents,pre_hst_sales_cents,paid_social_sales_count,paid_social_gross_sales_cents,paid_social_pre_hst_sales_cents,captured_at",
+        "period_start",
+      ),
       fetchAllRows<BusinessPulseSetRateReportRow>(
         supabase,
         "dripjobs_set_rate_latest",
@@ -123,6 +133,12 @@ export async function getBusinessPulse(
         supabase,
         "dripjobs_closing_ratio_latest",
         "period_start,period_end,qualified_proposals_count,accepted_proposals_count,jobs_won_count,captured_at",
+        "period_start",
+      ),
+      fetchAllRows<BusinessPulseClosingRowMetricsRow>(
+        supabase,
+        "dripjobs_closing_ratio_row_metrics",
+        "period_start,period_end,qualified_proposals_count,accepted_proposals_count,appointment_linked_proposals_count,appointment_linked_accepted_count,paid_social_proposals_count,paid_social_accepted_count,captured_at",
         "period_start",
       ),
     ]);
@@ -137,7 +153,9 @@ export async function getBusinessPulse(
     quotes,
     transactions,
     salesReports,
+    salesMetrics,
     setRateReports,
     closingReports,
+    closingRowMetrics,
   });
 }

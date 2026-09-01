@@ -15,9 +15,14 @@ const APPLY = process.argv.includes("--apply");
 const JSON_ONLY = process.argv.includes("--json");
 const fileArgument = process.argv.find((value) => value.startsWith("--file="));
 const envArgument = process.argv.find((value) => value.startsWith("--env="));
+const periodArgument = process.argv.find((value) => value.startsWith("--period="));
 if (!fileArgument) throw new Error("Provide --file=/absolute/path/to/Leads.csv");
 const filePath = path.resolve(fileArgument.slice("--file=".length));
 if (!existsSync(filePath)) throw new Error(`Lead report not found: ${filePath}`);
+const reportPeriod = periodArgument?.slice("--period=".length) ?? null;
+if (reportPeriod && !/^\d{4}-\d{2}$/.test(reportPeriod)) {
+  throw new Error("--period must be YYYY-MM");
+}
 
 function parseEnvFile(envPath) {
   if (!existsSync(envPath)) return {};
@@ -96,7 +101,17 @@ const db = createClient(supabaseUrl, backendKey, { auth: { persistSession: false
 
 const buffer = readFileSync(filePath);
 const capturedAt = statSync(filePath).mtime.toISOString();
-const validation = validateDripJobsLeadReport(buffer, { capturedAt });
+const validation = validateDripJobsLeadReport(buffer, {
+  capturedAt,
+  minimumRows: reportPeriod ? 1 : 100,
+});
+if (reportPeriod) {
+  assert(
+    validation.manifest.first_created_on.startsWith(`${reportPeriod}-`) &&
+      validation.manifest.last_created_on.startsWith(`${reportPeriod}-`),
+    `Lead report dates do not stay within ${reportPeriod}`,
+  );
+}
 const [contacts, leads, deals] = await Promise.all([
   allRows(db, "contacts", "id,name,normalized_email,normalized_phone,email,phone"),
   allRows(db, "leads", "*"),
@@ -235,7 +250,13 @@ data("Lead report document", await db.from("documents").upsert({
   storage_path: storagePath,
   source_url: "https://app.dripjobs.com/",
   captured_at: validation.capturedAt,
-  metadata: { ...validation.manifest, validation_status: "pending", imported_at: importedAt },
+  metadata: {
+    ...validation.manifest,
+    validation_status: "pending",
+    imported_at: importedAt,
+    report_scope: reportPeriod ? "calendar_month" : "all_time",
+    report_period: reportPeriod,
+  },
   created_at: importedAt,
 }, { onConflict: "id" }));
 
@@ -340,7 +361,14 @@ const scheduledRows = await db.from("dripjobs_lead_report_rows").select("source_
 if (scheduledRows.error) throw new Error(`Lead appointment verification: ${scheduledRows.error.message}`);
 assert(scheduledRows.count === validation.manifest.scheduled_count, `Persisted scheduled count ${scheduledRows.count ?? 0} does not match ${validation.manifest.scheduled_count}`);
 data("accept Lead report document", await db.from("documents").update({
-  metadata: { ...validation.manifest, validation_status: "accepted", imported_at: importedAt, match_counts: counts },
+  metadata: {
+    ...validation.manifest,
+    validation_status: "accepted",
+    imported_at: importedAt,
+    match_counts: counts,
+    report_scope: reportPeriod ? "calendar_month" : "all_time",
+    report_period: reportPeriod,
+  },
 }).eq("id", documentId));
 
 process.stdout.write(`${JSON.stringify({ status: "verified", project_ref: PROJECT_REF, source_document_id: documentId, source_filename: path.basename(filePath), ...counts }, null, JSON_ONLY ? 0 : 2)}\n`);

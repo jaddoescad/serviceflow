@@ -21,8 +21,8 @@ function roas(value: number | null): string {
   return value == null ? "—" : `${value.toFixed(2)}×`;
 }
 
-function multiplier(value: number | null): string {
-  return value == null ? "—" : `${value.toFixed(1)}×`;
+function percentagePoints(value: number | null): string {
+  return value == null ? "—" : `${(value * 100).toFixed(1)} pts`;
 }
 
 function rateHint(label: string, rate: RateComparison): string {
@@ -194,15 +194,13 @@ function AppointmentRow({
       <th scope="row" className="whitespace-nowrap px-3 py-2.5 text-left font-medium">
         <StatusText tone={tone}>{label}</StatusText>
       </th>
-      <td className="px-3 py-2.5 text-right tabular-nums">{integer.format(segment.leads)}</td>
       <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-[var(--color-heading)]">
         {integer.format(segment.proposals)}
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums">
-        {integer.format(segment.acceptedJobs)}
+        {integer.format(segment.acceptedProposals)}
       </td>
       <td className="px-3 py-2.5 text-right tabular-nums">{percent(segment.acceptanceRate)}</td>
-      <td className="px-3 py-2.5 text-right tabular-nums">{money(segment.bookedRevenueCents)}</td>
     </tr>
   );
 }
@@ -221,13 +219,22 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(0) ?? null;
+  const appointmentSnapshotAvailable = pulse.appointments.basis != null;
+  const appointmentProposalTotal =
+    pulse.appointments.withAppointment.proposals +
+    pulse.appointments.withoutAppointment.proposals;
+  const appointmentLinksMissing =
+    appointmentSnapshotAvailable &&
+    pulse.appointments.withAppointment.proposals === 0;
+  const economicsUsesDripJobsSales =
+    pulse.activity.salesBasis === "dripjobs_gross_sales";
 
   return (
     <section aria-labelledby="business-pulse-title">
       <Card className="overflow-hidden">
         <CardHeader
           title={<span id="business-pulse-title">Business Pulse</span>}
-          subtitle="Booked sales first, then this month's funnel and appointment conversion."
+          subtitle="DripJobs Sales first, then this month's exact funnel and proposal cohorts."
           right={<Badge tone="neutral">As of {fmtDate(pulse.asOf)}</Badge>}
         />
 
@@ -246,7 +253,7 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               This month&apos;s activity
             </h4>
             <p className="text-[11px] text-[var(--color-muted)]">
-              {periodLabel} · flow, not final results—most recent leads have not matured yet.
+              {periodLabel} · flow, not final results—most recent contacts have not matured yet.
             </p>
           </div>
           <div className="grid gap-px bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-6">
@@ -255,10 +262,14 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               value={money(pulse.activity.metaSpendCents.current)}
               comparison={pulse.activity.metaSpendCents}
               direction="neutral"
-              hint={`Current Meta CPL ${money(pulse.activity.metaCostPerLeadCents)}`}
+              hint={`Meta CPL from imported lead-source rows: ${money(pulse.activity.metaCostPerLeadCents)}`}
             />
             <ActivityCell
-              label="Contacts created"
+              label={
+                pulse.activity.setRateBasis === "dripjobs_contact_cohort"
+                  ? "Contacts created · DripJobs"
+                  : "Contacts created · imported"
+              }
               value={integer.format(pulse.activity.setRateContacts.current)}
               comparison={pulse.activity.setRateContacts}
             />
@@ -274,13 +285,21 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               )} · ${integer.format(pulse.activity.setRateBookedContacts.current)} booked / ${integer.format(pulse.activity.setRateContacts.current)} contacts`}
             />
             <ActivityCell
-              label="Qualified proposals"
+              label={
+                pulse.activity.closingBasis === "dripjobs_qualified_proposal_cohort"
+                  ? "Qualified proposals · DripJobs"
+                  : "Qualified proposals · imported"
+              }
               value={integer.format(pulse.activity.proposals.current)}
               comparison={pulse.activity.proposals}
               hint={`${rateHint("Qualified proposal rate", pulse.activity.proposalRate)} · ${integer.format(pulse.activity.proposals.current)} / ${integer.format(pulse.activity.setRateContacts.current)} contacts`}
             />
             <ActivityCell
-              label="Accepted proposals"
+              label={
+                pulse.activity.closingBasis === "dripjobs_qualified_proposal_cohort"
+                  ? "Accepted proposals · DripJobs"
+                  : "Accepted proposals · imported"
+              }
               value={integer.format(pulse.activity.acceptedProposals.current)}
               comparison={pulse.activity.acceptedProposals}
               hint={`${rateHint("Closing ratio", pulse.activity.acceptedProposalRate)} · ${integer.format(pulse.activity.acceptedProposals.current)} / ${integer.format(pulse.activity.proposals.current)} qualified`}
@@ -305,30 +324,48 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               </Badge>
             </div>
             <p className="text-[11px] text-[var(--color-muted)]">
-              Spend and accepted jobs use the same dates.
+              {economicsUsesDripJobsSales
+                ? "Spend and validated DripJobs Sales use the same dates."
+                : "Spend and operational accepted jobs use the same dates."}
             </p>
           </div>
           <div className="grid gap-px bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-4">
             <CohortCell
               label="Meta CAC"
               value={money(pulse.economics.metaCacCents)}
-              hint={`${money(pulse.economics.metaSpendCents)} Meta spend ÷ ${integer.format(pulse.economics.metaAcceptedJobs)} Meta-attributed jobs accepted this month`}
+              hint={
+                economicsUsesDripJobsSales
+                  ? `${money(pulse.economics.metaSpendCents)} Meta spend ÷ ${integer.format(pulse.economics.metaAcceptedJobs)} Meta Jobs Won in DripJobs Sales`
+                  : `${money(pulse.economics.metaSpendCents)} Meta spend ÷ ${integer.format(pulse.economics.metaAcceptedJobs)} Meta-attributed accepted jobs`
+              }
             />
             <CohortCell
               label="Blended CAC"
               value={money(pulse.economics.blendedCacCents)}
-              hint={`Recorded marketing spend ÷ ${integer.format(pulse.economics.acceptedJobs)} all-channel jobs accepted this month`}
+              hint={
+                economicsUsesDripJobsSales
+                  ? `Recorded marketing spend ÷ ${integer.format(pulse.economics.acceptedJobs)} all-channel Jobs Won in DripJobs Sales`
+                  : `Recorded marketing spend ÷ ${integer.format(pulse.economics.acceptedJobs)} operational accepted jobs`
+              }
             />
             <CohortCell
-              label="Booked ROAS"
+              label={economicsUsesDripJobsSales ? "DripJobs Sales ROAS" : "Operational booked ROAS"}
               value={roas(pulse.economics.bookedRoas)}
-              hint={`${money(pulse.economics.metaBookedRevenueCents)} from Meta-attributed jobs accepted this month ÷ Meta spend`}
+              hint={
+                economicsUsesDripJobsSales
+                  ? `${money(pulse.economics.metaBookedRevenueCents)} Meta-sourced DripJobs Sales before HST ÷ Meta spend`
+                  : `${money(pulse.economics.metaBookedRevenueCents)} Meta-attributed booked revenue ÷ Meta spend`
+              }
               warn={pulse.economics.bookedRoas != null && pulse.economics.bookedRoas < 1}
             />
             <CohortCell
-              label="Accepted jobs"
+              label={economicsUsesDripJobsSales ? "Jobs Won · DripJobs Sales" : "Operational accepted jobs"}
               value={integer.format(pulse.economics.acceptedJobs)}
-              hint="Non-cancelled jobs accepted in the displayed month-to-date period"
+              hint={
+                economicsUsesDripJobsSales
+                  ? "Validated Sales snapshot rows in the displayed period"
+                  : "Non-cancelled jobs accepted in the displayed period"
+              }
             />
           </div>
         </div>
@@ -337,55 +374,71 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-5 pb-2 pt-4">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-muted)]">
-                Does the appointment matter?
+                Does an appointment link correlate with accepted proposals?
               </h4>
               <Badge tone="neutral">
                 {compactPeriod(pulse.currentPeriod.start, pulse.currentPeriod.end)}
               </Badge>
             </div>
             <p className="text-[11px] text-[var(--color-muted)]">
-              Operational same-period activity split by appointment history.
+              {appointmentSnapshotAvailable
+                ? "Exact DripJobs qualified-proposal cohort split by its appointment-link flag."
+                : "No validated DripJobs proposal-cohort snapshot is available for this period."}
             </p>
           </div>
-          <div className="overflow-x-auto px-5 pb-1">
-            <table className="w-full min-w-[680px] text-xs">
-              <caption className="sr-only">
-                Month-to-date activity with and without a recorded appointment
-              </caption>
-              <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
-                <tr>
-                  <th scope="col" className="px-3 py-2 text-left font-medium">Path</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Leads</th>
-                  <th scope="col" className="px-3 py-2 text-right font-semibold text-[var(--color-heading)]">Proposals sent · operational</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Jobs accepted · operational</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Same-period ratio</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Booked revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                <AppointmentRow
-                  label="With appointment"
-                  tone="good"
-                  segment={pulse.appointments.withAppointment}
-                />
-                <AppointmentRow
-                  label="No recorded appointment"
-                  tone="neutral"
-                  segment={pulse.appointments.withoutAppointment}
-                />
-              </tbody>
-            </table>
-          </div>
+          {appointmentSnapshotAvailable ? (
+            <div className="overflow-x-auto px-5 pb-1">
+              <table className="w-full min-w-[520px] text-xs">
+                <caption className="sr-only">
+                  Qualified-proposal closing results by DripJobs appointment-link flag
+                </caption>
+                <thead className="bg-[var(--color-surface-2)] text-[var(--color-muted)]">
+                  <tr>
+                    <th scope="col" className="px-3 py-2 text-left font-medium">Path</th>
+                    <th scope="col" className="px-3 py-2 text-right font-semibold text-[var(--color-heading)]">Qualified proposals</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Accepted proposals</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Closing ratio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <AppointmentRow
+                    label="Appointment linked"
+                    tone={appointmentLinksMissing ? "neutral" : "good"}
+                    segment={pulse.appointments.withAppointment}
+                  />
+                  <AppointmentRow
+                    label="No appointment link"
+                    tone="neutral"
+                    segment={pulse.appointments.withoutAppointment}
+                  />
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <p className="px-5 pb-4 pt-2 text-[13px] text-[var(--color-text)]">
-            In this operational view, the with-appointment accepted-job ratio is{" "}
-            <span className="font-semibold text-[var(--color-heading)]">
-              {multiplier(pulse.appointments.appointmentLift)}
-            </span>{" "}
-            the no-appointment ratio ·{" "}
-            <span className="font-semibold text-[var(--color-heading)]">
-              {percent(pulse.appointments.acceptedWithoutAppointmentShare)}
-            </span>{" "}
-            of accepted jobs had no recorded appointment.
+            {!appointmentSnapshotAvailable ? (
+              "Appointment correlation is unavailable until an exact proposal-cohort snapshot is captured."
+            ) : appointmentLinksMissing ? (
+              <>
+                DripJobs marked 0 of {integer.format(appointmentProposalTotal)} qualified proposals{" "}
+                appointment-linked, so correlation is unavailable.
+              </>
+            ) : pulse.appointments.appointmentLift != null &&
+              pulse.appointments.acceptedWithoutAppointmentShare != null ? (
+              <>
+                In this DripJobs cohort, appointment-linked proposals had a{" "}
+                <span className="font-semibold text-[var(--color-heading)]">
+                  {percentagePoints(pulse.appointments.appointmentLift)}
+                </span>{" "}
+                closing-ratio lift ·{" "}
+                <span className="font-semibold text-[var(--color-heading)]">
+                  {percent(pulse.appointments.acceptedWithoutAppointmentShare)}
+                </span>{" "}
+                of accepted proposals had no appointment link.
+              </>
+            ) : (
+              "Appointment correlation is unavailable for this cohort."
+            )}
           </p>
         </div>
 
@@ -394,13 +447,12 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
           qualified proposals by those contacts. Closing ratio divides accepted proposals from the
           same qualified-proposal cohort by qualified proposals. Jobs Won is separate because it
           includes accepted proposals in the selected period regardless of when the proposal was sent.
-          Monthly CAC and ROAS use spend and accepted jobs from the same month-to-date period; they do
-          not assign later closes back to the lead-created month. The appointment split uses this
-          month-to-date period; proposals and accepted jobs are classified by whether DripJobs recorded
-          an appointment before that event and are not the official DripJobs closing cohort. Booked
-          revenue excludes HST. Blended CAC currently uses recorded Meta acquisition spend because it
-          is the connected paid-marketing spend. CAC denominators are accepted, non-cancelled jobs—not
-          leads.
+          Monthly CAC and ROAS use exact DripJobs Sales snapshots when available. The appointment split
+          uses the exact qualified-proposal cohort and DripJobs appointment-link flag; a missing linked
+          group is shown as unavailable rather than zero percent. DripJobs Sales revenue excludes HST.
+          Blended CAC uses recorded Meta acquisition spend because it is the connected paid-marketing
+          spend. Its denominator is validated DripJobs Sales rows when available; otherwise it is
+          operational accepted jobs—not leads.
           {freshest ? ` Oldest connected source refreshed ${fmtDateTime(freshest)}.` : ""}
         </div>
       </Card>

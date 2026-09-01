@@ -25,6 +25,9 @@ const dollars = (cents: number) =>
     maximumFractionDigits: 0,
   }).format(cents / 100);
 
+const dollarsOrDash = (cents: number | null) =>
+  cents == null ? "—" : dollars(cents);
+
 // Rates may arrive as fractions (0.529) or percents (52.9); normalize to percent.
 const asPercent = (value: number) =>
   Math.abs(value) <= 1 ? value * 100 : value;
@@ -61,8 +64,6 @@ type GrowthReturnChartPoint = {
   proposalRatePct: number | null;
   closingRatePct: number | null;
   closingBasis: BusinessPulseMonthlyPoint["closingBasis"] | null;
-  bookedJobsInLeadBar: number | null;
-  leadsNotBooked: number | null;
   bookedSalesCents: number | null;
   metaSpendCents: number | null;
   metaSpendSource: BusinessPulseMonthlyPoint["metaSpendSource"] | null;
@@ -94,11 +95,34 @@ function spendSourceLabel(
 }
 
 function closingRateLabel(
-  basis: BusinessPulseMonthlyPoint["closingBasis"] | null,
+  basis:
+    | BusinessPulseMonthlyPoint["closingBasis"]
+    | "imported_first_send_cohort"
+    | null,
 ): string {
-  return basis === "dripjobs_qualified_proposal_cohort"
-    ? "Closing ratio · DripJobs cohort"
-    : "Closing ratio · imported cohort";
+  if (basis === "dripjobs_qualified_proposal_cohort") {
+    return "Closing ratio · DripJobs cohort";
+  }
+  if (basis === "imported_first_send_cohort") {
+    return "Closing ratio · imported cohort";
+  }
+  return "Closing ratio · not captured";
+}
+
+function countOrDash(value: number | null): string {
+  return value == null ? "—" : value.toLocaleString("en-CA");
+}
+
+function metaShareLabel(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)}% Meta`
+    : "";
+}
+
+function roasLabel(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}x`
+    : "";
 }
 
 function MonthlyTooltipRow({ label, value }: { label: string; value: string }) {
@@ -135,34 +159,40 @@ function GrowthReturnTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow
-          label="Booked sales"
-          value={point.bookedSalesCents == null ? "—" : dollars(point.bookedSalesCents)}
+          label="DripJobs Sales · before HST"
+          value={dollarsOrDash(point.bookedSalesCents)}
         />
         <MonthlyTooltipRow
           label={`Meta spend${point.metaSpendSource ? ` (${spendSourceLabel(point.metaSpendSource)})` : ""}`}
           value={point.metaSpendCents == null ? "—" : dollars(point.metaSpendCents)}
         />
-        <MonthlyTooltipRow label="Leads" value={String(point.leads ?? 0)} />
         <MonthlyTooltipRow
-          label="Meta CPL"
+          label="Contacts created · DripJobs"
+          value={countOrDash(point.setRateContacts)}
+        />
+        <MonthlyTooltipRow
+          label="Meta CPL · imported lead rows"
           value={point.metaCostPerLeadCents == null ? "—" : dollars(point.metaCostPerLeadCents)}
         />
-        <MonthlyTooltipRow label="Qualified proposals" value={String(point.proposals ?? 0)} />
+        <MonthlyTooltipRow
+          label="Qualified proposals"
+          value={countOrDash(point.proposals)}
+        />
         <MonthlyTooltipRow
           label="Accepted proposals"
-          value={String(point.acceptedProposals ?? 0)}
+          value={countOrDash(point.acceptedProposals)}
         />
-        <MonthlyTooltipRow label="Jobs Won" value={String(point.jobsWon ?? 0)} />
+        <MonthlyTooltipRow label="Jobs Won · DripJobs" value={countOrDash(point.jobsWon)} />
         <MonthlyTooltipRow
-          label="Operational jobs accepted"
-          value={String(point.acceptedJobs ?? 0)}
+          label="Sales-list jobs"
+          value={countOrDash(point.acceptedJobs)}
         />
         <MonthlyTooltipRow
           label="Blended CAC"
           value={point.blendedCacCents == null ? "—" : dollars(point.blendedCacCents)}
         />
         <MonthlyTooltipRow
-          label="Meta booked ROAS"
+          label="DripJobs Sales ROAS"
           value={point.bookedRoas == null ? "—" : `${point.bookedRoas.toFixed(2)}x`}
         />
       </div>
@@ -194,19 +224,37 @@ function FunnelHealthTooltip({
           label={
             point.setRateBasis === "dripjobs_contact_cohort"
               ? "Set rate · DripJobs cohort"
-              : "Set rate · imported cohort"
+              : "Set rate · not captured"
           }
-          value={`${rate(point.setRatePct)} · ${point.setRateBookedContacts ?? 0} / ${point.setRateContacts ?? 0}`}
+          value={
+            point.setRatePct == null ||
+            point.setRateBookedContacts == null ||
+            point.setRateContacts == null
+              ? "—"
+              : `${rate(point.setRatePct)} · ${point.setRateBookedContacts} / ${point.setRateContacts}`
+          }
         />
         <MonthlyTooltipRow
           label="Qualified proposal rate"
-          value={`${rate(point.proposalRatePct)} · ${point.proposals ?? 0} / ${point.setRateContacts ?? 0}`}
+          value={
+            point.proposalRatePct == null ||
+            point.proposals == null ||
+            point.setRateContacts == null
+              ? "—"
+              : `${rate(point.proposalRatePct)} · ${point.proposals} / ${point.setRateContacts}`
+          }
         />
         <MonthlyTooltipRow
           label={closingRateLabel(point.closingBasis)}
-          value={`${rate(point.closingRatePct)} · ${point.acceptedProposals ?? 0} / ${point.proposals ?? 0}`}
+          value={
+            point.closingRatePct == null ||
+            point.acceptedProposals == null ||
+            point.proposals == null
+              ? "—"
+              : `${rate(point.closingRatePct)} · ${point.acceptedProposals} / ${point.proposals}`
+          }
         />
-        <MonthlyTooltipRow label="Jobs Won · separate" value={String(point.jobsWon ?? 0)} />
+        <MonthlyTooltipRow label="Jobs Won · separate" value={countOrDash(point.jobsWon)} />
       </div>
     </div>
   );
@@ -230,8 +278,8 @@ function SpendRevenueTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow
-          label="Booked revenue"
-          value={point.bookedSalesCents == null ? "—" : dollars(point.bookedSalesCents)}
+          label="DripJobs Sales · before HST"
+          value={dollarsOrDash(point.bookedSalesCents)}
         />
         <MonthlyTooltipRow
           label="Meta spend"
@@ -259,9 +307,9 @@ function MetaLeadMixTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow label="Meta spend" value={point.metaSpendCents == null ? "—" : dollars(point.metaSpendCents)} />
-        <MonthlyTooltipRow label="All leads" value={String(point.leads ?? 0)} />
-        <MonthlyTooltipRow label="Meta leads" value={String(point.metaLeads ?? 0)} />
-        <MonthlyTooltipRow label="Organic / other" value={String(point.organicOtherLeads ?? 0)} />
+        <MonthlyTooltipRow label="Imported lead rows" value={countOrDash(point.leads)} />
+        <MonthlyTooltipRow label="Meta lead rows" value={countOrDash(point.metaLeads)} />
+        <MonthlyTooltipRow label="Organic / other rows" value={countOrDash(point.organicOtherLeads)} />
         <MonthlyTooltipRow label="Meta share" value={point.metaLeadSharePct == null ? "—" : `${point.metaLeadSharePct.toFixed(1)}%`} />
         <MonthlyTooltipRow label="Meta CPL" value={point.metaCostPerLeadCents == null ? "—" : dollars(point.metaCostPerLeadCents)} />
       </div>
@@ -286,9 +334,9 @@ function AcceptedJobsTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow label="Meta spend" value={point.metaSpendCents == null ? "—" : dollars(point.metaSpendCents)} />
-        <MonthlyTooltipRow label="All jobs accepted" value={String(point.acceptedJobs ?? 0)} />
-        <MonthlyTooltipRow label="Meta jobs" value={String(point.metaAcceptedJobs ?? 0)} />
-        <MonthlyTooltipRow label="Organic / other" value={String(point.organicOtherAcceptedJobs ?? 0)} />
+        <MonthlyTooltipRow label="All Jobs Won" value={countOrDash(point.acceptedJobs)} />
+        <MonthlyTooltipRow label="Meta Jobs Won" value={countOrDash(point.metaAcceptedJobs)} />
+        <MonthlyTooltipRow label="Organic / other" value={countOrDash(point.organicOtherAcceptedJobs)} />
         <MonthlyTooltipRow label="Meta share" value={point.metaAcceptedSharePct == null ? "—" : `${point.metaAcceptedSharePct.toFixed(1)}%`} />
       </div>
     </div>
@@ -312,8 +360,8 @@ function BookedSalesMixTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow label="Meta spend" value={point.metaSpendCents == null ? "—" : dollars(point.metaSpendCents)} />
-        <MonthlyTooltipRow label="All booked sales" value={point.bookedSalesCents == null ? "—" : dollars(point.bookedSalesCents)} />
-        <MonthlyTooltipRow label="Meta booked sales" value={point.metaBookedRevenueCents == null ? "—" : dollars(point.metaBookedRevenueCents)} />
+        <MonthlyTooltipRow label="All DripJobs Sales" value={dollarsOrDash(point.bookedSalesCents)} />
+        <MonthlyTooltipRow label="Meta DripJobs Sales" value={dollarsOrDash(point.metaBookedRevenueCents)} />
         <MonthlyTooltipRow label="Organic / other" value={point.bookedSalesCents == null || point.metaBookedRevenueCents == null ? "—" : dollars(Math.max(point.bookedSalesCents - point.metaBookedRevenueCents, 0))} />
         <MonthlyTooltipRow label="Meta share" value={point.metaBookedSalesSharePct == null ? "—" : `${point.metaBookedSalesSharePct.toFixed(1)}%`} />
       </div>
@@ -338,8 +386,8 @@ function BookedRoasTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow label="Meta spend" value={point.metaSpendCents == null ? "—" : dollars(point.metaSpendCents)} />
-        <MonthlyTooltipRow label="Meta booked sales" value={point.metaBookedRevenueCents == null ? "—" : dollars(point.metaBookedRevenueCents)} />
-        <MonthlyTooltipRow label="Booked ROAS" value={point.bookedRoas == null ? "—" : `${point.bookedRoas.toFixed(2)}x`} />
+        <MonthlyTooltipRow label="Meta DripJobs Sales" value={dollarsOrDash(point.metaBookedRevenueCents)} />
+        <MonthlyTooltipRow label="DripJobs Sales ROAS" value={point.bookedRoas == null ? "—" : `${point.bookedRoas.toFixed(2)}x`} />
       </div>
     </div>
   );
@@ -349,7 +397,7 @@ type Comparison = {
   current: number;
   previous: number;
   change: number;
-  percentChange: number;
+  percentChange: number | null;
 };
 
 function DeltaChip({
@@ -359,6 +407,14 @@ function DeltaChip({
   comparison: Comparison;
   goodWhenDown?: boolean;
 }) {
+  if (comparison.percentChange == null) {
+    return (
+      <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+        New
+      </span>
+    );
+  }
+
   const up = comparison.change >= 0;
   const good = goodWhenDown ? !up : up;
   return (
@@ -459,33 +515,35 @@ function PathCard({
   title: string;
   accent: string;
   path: {
-    leads: number;
     proposals: number;
-    acceptedJobs: number;
-    acceptanceRate: number;
-    bookedRevenueCents: number;
+    acceptedProposals: number;
+    acceptanceRate: number | null;
   };
 }) {
-  const rate = asPercent(path.acceptanceRate);
+  const rate = path.acceptanceRate == null ? null : asPercent(path.acceptanceRate);
   return (
     <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-slate-700">{title}</p>
         <p className="text-sm font-semibold text-slate-900">
-          {dollars(path.bookedRevenueCents)}
+          {path.proposals === 0 ? "—" : `${path.proposals} proposals`}
         </p>
       </div>
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-200">
         <div
           className={`h-full rounded-full ${accent}`}
-          style={{ width: `${Math.min(rate, 100)}%` }}
+          style={{ width: `${rate == null ? 0 : Math.min(rate, 100)}%` }}
         />
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
         <span>
-          {path.acceptedJobs} accepted jobs / {path.proposals} proposals
+          {path.proposals === 0
+            ? "No linked proposals"
+            : `${path.acceptedProposals} accepted proposals / ${path.proposals} qualified proposals`}
         </span>
-        <span className="font-medium text-slate-700">{rate.toFixed(1)}% same-period ratio</span>
+        <span className="font-medium text-slate-700">
+          {rate == null ? "—" : `${rate.toFixed(1)}% closing ratio`}
+        </span>
       </div>
     </div>
   );
@@ -493,6 +551,8 @@ function PathCard({
 
 export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
   const { activity, economics, appointments } = pulse;
+  const economicsUsesDripJobsSales =
+    activity.salesBasis === "dripjobs_gross_sales";
 
   const funnelData = [
     {
@@ -524,9 +584,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
     { name: "Other sources", value: otherAcceptedJobs, fill: "#cbd5e1" },
   ];
 
-  const appointmentLiftPts =
-    asPercent(appointments.withAppointment.acceptanceRate) -
-    asPercent(appointments.withoutAppointment.acceptanceRate);
+  const appointmentProposalTotal =
+    appointments.withAppointment.proposals + appointments.withoutAppointment.proposals;
+  const appointmentSnapshotMissing = appointments.basis == null;
+  const appointmentLinksMissing =
+    !appointmentSnapshotMissing && appointments.withAppointment.proposals === 0;
   const monthlyYear = pulse.asOf.slice(0, 4);
   const monthlyPoints = new Map(pulse.monthly.map((point) => [point.month, point]));
   const monthlyData: GrowthReturnChartPoint[] = Array.from(
@@ -551,8 +613,6 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           proposalRatePct: null,
           closingRatePct: null,
           closingBasis: null,
-          bookedJobsInLeadBar: null,
-          leadsNotBooked: null,
           bookedSalesCents: null,
           metaSpendCents: null,
           metaSpendSource: null,
@@ -580,7 +640,8 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         label: point.isPartial ? `${monthName(month)}*` : monthName(month),
         isPartial: point.isPartial,
         isFuture: false,
-        bookedSalesDollars: point.bookedSalesCents / 100,
+        bookedSalesDollars:
+          point.bookedSalesCents == null ? null : point.bookedSalesCents / 100,
         metaSpendDollars: point.metaSpendCents / 100,
         leads: point.leads,
         appointments: point.appointments,
@@ -593,8 +654,6 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         closingRatePct:
           point.acceptedRate == null ? null : asPercent(point.acceptedRate),
         closingBasis: point.closingBasis,
-        bookedJobsInLeadBar: Math.min(point.acceptedJobs, point.leads),
-        leadsNotBooked: Math.max(point.leads - point.acceptedJobs, 0),
         bookedSalesCents: point.bookedSalesCents,
         metaSpendCents: point.metaSpendCents,
         metaSpendSource: point.metaSpendSource,
@@ -610,25 +669,44 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         metaLeadSharePct:
           point.leads > 0 ? (point.paidSocialLeads / point.leads) * 100 : null,
         metaAcceptedJobs: point.metaAcceptedJobs,
-        organicOtherAcceptedJobs: Math.max(
-          point.acceptedJobs - point.metaAcceptedJobs,
-          0,
-        ),
+        organicOtherAcceptedJobs:
+          point.acceptedJobs == null || point.metaAcceptedJobs == null
+            ? null
+            : Math.max(point.acceptedJobs - point.metaAcceptedJobs, 0),
         metaAcceptedSharePct:
+          point.acceptedJobs != null &&
+          point.metaAcceptedJobs != null &&
           point.acceptedJobs > 0
             ? (point.metaAcceptedJobs / point.acceptedJobs) * 100
             : null,
-        metaBookedSalesDollars: point.metaBookedRevenueCents / 100,
+        metaBookedSalesDollars:
+          point.metaBookedRevenueCents == null
+            ? null
+            : point.metaBookedRevenueCents / 100,
         organicOtherBookedSalesDollars:
-          Math.max(point.bookedSalesCents - point.metaBookedRevenueCents, 0) / 100,
+          point.bookedSalesCents == null || point.metaBookedRevenueCents == null
+            ? null
+            : Math.max(point.bookedSalesCents - point.metaBookedRevenueCents, 0) / 100,
         metaBookedRevenueCents: point.metaBookedRevenueCents,
         metaBookedSalesSharePct:
+          point.bookedSalesCents != null &&
+          point.metaBookedRevenueCents != null &&
           point.bookedSalesCents > 0
             ? (point.metaBookedRevenueCents / point.bookedSalesCents) * 100
             : null,
       };
     },
   );
+  const capturedSalesMonths = monthlyData
+    .filter((point) => point.bookedSalesCents != null)
+    .map((point) => point.label)
+    .join(", ");
+  const capturedFunnelMonths = monthlyData
+    .filter(
+      (point) => point.setRateBasis != null || point.closingBasis != null,
+    )
+    .map((point) => point.label)
+    .join(", ");
 
   return (
     <div className="space-y-4">
@@ -641,7 +719,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           comparison={activity.salesCents}
         />
         <KpiCard
-          label="Leads produced"
+          label={
+            activity.setRateBasis === "dripjobs_contact_cohort"
+              ? "Contacts created · DripJobs"
+              : "Contacts created · imported"
+          }
           value={activity.leads.current.toLocaleString("en-CA")}
           previousLabel={activity.leads.previous.toLocaleString("en-CA")}
           comparison={activity.leads}
@@ -762,13 +844,21 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <p className="text-xl font-semibold text-slate-900">
-                {economics.bookedRoas.toFixed(2)}x
+                {economics.bookedRoas == null
+                  ? "—"
+                  : `${economics.bookedRoas.toFixed(2)}x`}
               </p>
-              <p className="text-xs text-slate-400">booked ROAS</p>
+              <p className="text-xs text-slate-400">
+                {economicsUsesDripJobsSales
+                  ? "DripJobs Sales ROAS"
+                  : "operational booked ROAS"}
+              </p>
             </div>
           </div>
           <p className="mt-1 text-center text-xs text-slate-500">
-            {metaAcceptedJobs} of {economics.acceptedJobs} operational jobs accepted came from Meta ads
+            {economicsUsesDripJobsSales
+              ? `${metaAcceptedJobs} of ${economics.acceptedJobs} DripJobs Sales rows came from Meta ads`
+              : `${metaAcceptedJobs} of ${economics.acceptedJobs} operational accepted jobs came from Meta ads`}
           </p>
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
@@ -780,21 +870,23 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
               </dd>
             </div>
             <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
-              <dt className="text-slate-500">Booked</dt>
+              <dt className="text-slate-500">
+                {economicsUsesDripJobsSales ? "Meta Sales" : "Meta booked"}
+              </dt>
               <dd className="font-medium text-slate-900">
-                {dollars(economics.metaBookedRevenueCents)}
+                {dollarsOrDash(economics.metaBookedRevenueCents)}
               </dd>
             </div>
             <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
               <dt className="text-slate-500">Meta CAC</dt>
               <dd className="font-medium text-slate-900">
-                {dollars(economics.metaCacCents)}
+                {dollarsOrDash(economics.metaCacCents)}
               </dd>
             </div>
             <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
               <dt className="text-slate-500">Blended CAC</dt>
               <dd className="font-medium text-slate-900">
-                {dollars(economics.blendedCacCents)}
+                {dollarsOrDash(economics.blendedCacCents)}
               </dd>
             </div>
           </dl>
@@ -805,29 +897,50 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-900">
-            Do appointments correlate with accepted jobs?
+            Do linked appointments correlate with accepted proposals?
           </h3>
           <p className="text-xs text-slate-500">
-            Appointments lift the same-period accepted-job ratio by{" "}
-            <span className="font-semibold text-emerald-700">
-              {appointmentLiftPts.toFixed(1)} pts
-            </span>
-            ; {formatPercent(appointments.acceptedWithoutAppointmentShare)} of accepted jobs
-            had no recorded appointment
+            {appointmentSnapshotMissing ? (
+              "No validated DripJobs proposal cohort snapshot is available for this period."
+            ) : appointmentLinksMissing ? (
+              <>
+                DripJobs marked 0 of {appointmentProposalTotal} qualified proposals{" "}
+                appointment-linked, so correlation is unavailable.
+              </>
+            ) : appointments.appointmentLift != null &&
+              appointments.acceptedWithoutAppointmentShare != null ? (
+              <>
+                Appointment-linked proposals had a{" "}
+                <span className="font-semibold text-emerald-700">
+                  {appointments.appointmentLift.toFixed(1)} pt
+                </span>{" "}
+                closing-ratio lift;{" "}
+                {formatPercent(appointments.acceptedWithoutAppointmentShare)} of accepted proposals
+                had no appointment link.
+              </>
+            ) : (
+              "Correlation is unavailable for this period."
+            )}
           </p>
         </div>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <PathCard
-            title="With appointment"
-            accent="bg-emerald-500"
-            path={appointments.withAppointment}
-          />
-          <PathCard
-            title="No appointment"
-            accent="bg-amber-400"
-            path={appointments.withoutAppointment}
-          />
-        </div>
+        {appointmentSnapshotMissing ? (
+          <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">
+            Proposal split unavailable—no zero values have been inferred.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <PathCard
+              title="Appointment linked"
+              accent="bg-emerald-500"
+              path={appointments.withAppointment}
+            />
+            <PathCard
+              title="No appointment link"
+              accent="bg-amber-400"
+              path={appointments.withoutAppointment}
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -838,13 +951,13 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
               {monthlyYear} Growth &amp; Return
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              When we spend more, do we receive more leads and win more revenue?
+              How do Meta spend, DripJobs contacts, Jobs Won, and Sales move together?
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-sky-500" />
-              Booked sales · left $
+              DripJobs Sales · before HST
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-amber-500" />
@@ -852,11 +965,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-              Booked jobs
+              Jobs Won · DripJobs
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-indigo-200" />
-              Leads not booked
+              Contacts created · DripJobs
             </span>
           </div>
         </div>
@@ -888,38 +1001,36 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 tickFormatter={compactDollars}
               />
               <YAxis
-                yAxisId="leads"
+                yAxisId="volume"
                 hide
                 allowDecimals={false}
               />
               <Tooltip cursor={{ fill: "#f8fafc" }} content={<GrowthReturnTooltip />} />
               <Bar
-                yAxisId="leads"
-                dataKey="bookedJobsInLeadBar"
-                name="Booked jobs"
-                stackId="leadOutcome"
+                yAxisId="volume"
+                dataKey="jobsWon"
+                name="Jobs Won · DripJobs"
                 fill="#10b981"
                 maxBarSize={44}
               >
                 <LabelList
-                  dataKey="bookedJobsInLeadBar"
-                  position="insideTop"
-                  fill="#ffffff"
+                  dataKey="jobsWon"
+                  position="top"
+                  fill="#047857"
                   fontSize={11}
                   fontWeight={600}
                 />
               </Bar>
               <Bar
-                yAxisId="leads"
-                dataKey="leadsNotBooked"
-                name="Leads not booked"
-                stackId="leadOutcome"
+                yAxisId="volume"
+                dataKey="setRateContacts"
+                name="Contacts created · DripJobs"
                 fill="#c7d2fe"
                 radius={[4, 4, 0, 0]}
                 maxBarSize={44}
               >
                 <LabelList
-                  dataKey="leads"
+                  dataKey="setRateContacts"
                   position="top"
                   fill="#6366f1"
                   fontSize={11}
@@ -929,7 +1040,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 yAxisId="dollars"
                 type="monotone"
                 dataKey="bookedSalesDollars"
-                name="Booked sales"
+                name="DripJobs Sales · before HST"
                 stroke="#0ea5e9"
                 strokeWidth={3}
                 connectNulls={false}
@@ -951,9 +1062,10 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Booked sales and booked-job bars use jobs accepted that month; revenue excludes HST.
-          Lead bars compare same-month activity, not a lead-created cohort. * current month to date;
-          future months are intentionally blank.
+          Sales and Jobs Won come from validated DripJobs Sales snapshots; Sales excludes HST.
+          Contacts created come from exact DripJobs set-rate snapshots and are a separate cohort,
+          not “leads not booked.” Captured Sales months: {capturedSalesMonths || "none"}.
+          Uncaptured and future months stay blank; * means month to date.
         </p>
       </div>
 
@@ -961,7 +1073,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">
-              {monthlyYear} Meta Spend vs Booked Revenue
+              {monthlyYear} Meta Spend vs DripJobs Sales
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
               Two dollar scales make the smaller advertising trend visible.
@@ -970,7 +1082,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-sky-500" />
-              Booked revenue · left axis
+              DripJobs Sales · left axis
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-amber-400" />
@@ -1023,7 +1135,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 yAxisId="revenue"
                 type="monotone"
                 dataKey="bookedSalesDollars"
-                name="Booked revenue"
+                name="DripJobs Sales · before HST"
                 stroke="#0ea5e9"
                 strokeWidth={3}
                 connectNulls={false}
@@ -1034,9 +1146,10 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Left axis: booked revenue before HST. Right axis: Meta spend. Compare the direction and
-          month-to-month movement—not the lines’ vertical distance, because each uses a different
-          scale. * current month to date; future months are blank.
+          Left axis: validated DripJobs Sales before HST. Right axis: Meta spend. Sales appears
+          only for captured months ({capturedSalesMonths || "none"}); other months remain blank.
+          Compare direction, not vertical distance, because the lines use different scales. * means
+          month to date.
         </p>
       </div>
 
@@ -1124,9 +1237,9 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         <p className="mt-2 text-xs leading-5 text-slate-400">
           Set rate uses booked contacts ÷ contacts created. Qualified proposal rate uses qualified
           proposals ÷ contacts. Closing ratio uses accepted proposals from that exact
-          qualified-proposal cohort ÷ qualified proposals. Validated DripJobs snapshots are used when
-          available; imported reports fill other periods. Jobs Won remains separate and can include
-          proposals sent earlier. * current month to date; future months are intentionally blank.
+          qualified-proposal cohort ÷ qualified proposals. Only validated DripJobs snapshots are
+          plotted; uncaptured months remain gaps. Captured funnel months: {capturedFunnelMonths || "none"}.
+          Jobs Won remains separate and can include proposals sent earlier. * means month to date.
         </p>
       </div>
 
@@ -1134,15 +1247,15 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="lg:min-h-[92px]">
             <h3 className="text-sm font-semibold text-slate-900">
-              {monthlyYear} Meta spend and lead mix
+              {monthlyYear} Meta spend and imported lead-source mix
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              Does more ad spend increase Meta leads and their share of all leads?
+              How does the imported source breakdown move with Meta spend?
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-amber-400" />Meta spend</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta leads</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" />Organic / other</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta lead rows</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" />Organic / other rows</span>
             </div>
           </div>
           <div className="mt-5 h-64">
@@ -1153,30 +1266,31 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 <YAxis yAxisId="dollars" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={compactDollars} />
                 <YAxis yAxisId="count" orientation="right" tickLine={false} axisLine={false} width={32} allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <Tooltip cursor={{ fill: "#f8fafc" }} content={<MetaLeadMixTooltip />} />
-                <Bar yAxisId="count" dataKey="metaLeads" name="Meta leads" stackId="leads" fill="#0ea5e9" maxBarSize={64} />
-                <Bar yAxisId="count" dataKey="organicOtherLeads" name="Organic / other leads" stackId="leads" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
-                  <LabelList dataKey="metaLeadSharePct" position="top" fill="#64748b" fontSize={11} formatter={(value: number) => `${Math.round(value)}% Meta`} />
+                <Bar yAxisId="count" dataKey="metaLeads" name="Meta lead rows" stackId="leads" fill="#0ea5e9" maxBarSize={64} />
+                <Bar yAxisId="count" dataKey="organicOtherLeads" name="Organic / other lead rows" stackId="leads" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                  <LabelList dataKey="metaLeadSharePct" position="top" fill="#64748b" fontSize={11} formatter={metaShareLabel} />
                 </Bar>
                 <Line yAxisId="dollars" type="monotone" dataKey="metaSpendDollars" name="Meta spend" stroke="#f59e0b" strokeWidth={3} connectNulls={false} dot={{ r: 4, fill: "#f59e0b", strokeWidth: 0 }} activeDot={{ r: 6 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            Percent labels show Meta leads as a share of all leads. * current month to date.
+            This is the imported lead-source file, not DripJobs Contacts created. Use the headline
+            and Funnel Health for exact DripJobs contact counts. * means month to date.
           </p>
         </div>
 
         <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="lg:min-h-[92px]">
             <h3 className="text-sm font-semibold text-slate-900">
-              {monthlyYear} Meta spend and accepted job mix
+              {monthlyYear} Meta spend and Jobs Won mix
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              Does more ad spend change how many jobs are accepted and where they came from?
+              How many DripJobs Sales rows were won, and where did they come from?
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-amber-400" />Meta spend</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta jobs</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta Jobs Won</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" />Organic / other</span>
             </div>
           </div>
@@ -1188,30 +1302,32 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 <YAxis yAxisId="dollars" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={compactDollars} />
                 <YAxis yAxisId="accepted" orientation="right" tickLine={false} axisLine={false} width={36} allowDecimals={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <Tooltip cursor={{ fill: "#f8fafc" }} content={<AcceptedJobsTooltip />} />
-                <Bar yAxisId="accepted" dataKey="metaAcceptedJobs" name="Meta jobs accepted" stackId="accepted" fill="#0ea5e9" maxBarSize={64} />
-                <Bar yAxisId="accepted" dataKey="organicOtherAcceptedJobs" name="Organic / other jobs" stackId="accepted" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
-                  <LabelList dataKey="metaAcceptedSharePct" position="top" fill="#64748b" fontSize={11} formatter={(value: number) => `${Math.round(value)}% Meta`} />
+                <Bar yAxisId="accepted" dataKey="metaAcceptedJobs" name="Meta Jobs Won" stackId="accepted" fill="#0ea5e9" maxBarSize={64} />
+                <Bar yAxisId="accepted" dataKey="organicOtherAcceptedJobs" name="Organic / other Jobs Won" stackId="accepted" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                  <LabelList dataKey="metaAcceptedSharePct" position="top" fill="#64748b" fontSize={11} formatter={metaShareLabel} />
                 </Bar>
                 <Line yAxisId="dollars" type="monotone" dataKey="metaSpendDollars" name="Meta spend" stroke="#f59e0b" strokeWidth={3} connectNulls={false} dot={{ r: 4, fill: "#f59e0b", strokeWidth: 0 }} activeDot={{ r: 6 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            Jobs are grouped by acceptance month and split by lead source. * current month to date.
+            Jobs Won and source come from validated DripJobs Sales snapshot rows. Only captured
+            months ({capturedSalesMonths || "none"}) are shown; other months stay blank. * means
+            month to date.
           </p>
         </div>
 
         <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="lg:min-h-[92px]">
             <h3 className="text-sm font-semibold text-slate-900">
-              {monthlyYear} Meta spend and booked sales mix
+              {monthlyYear} Meta spend and DripJobs Sales mix
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              Does more ad spend change booked sales and the share produced by Meta?
+              How much validated DripJobs Sales came from Meta versus other sources?
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-amber-400" />Meta spend</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta sales</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-sky-500" />Meta DripJobs Sales</span>
               <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-slate-300" />Organic / other</span>
             </div>
           </div>
@@ -1223,30 +1339,31 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 <YAxis yAxisId="spend" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={compactDollars} />
                 <YAxis yAxisId="sales" orientation="right" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={compactDollars} />
                 <Tooltip cursor={{ fill: "#f8fafc" }} content={<BookedSalesMixTooltip />} />
-                <Bar yAxisId="sales" dataKey="metaBookedSalesDollars" name="Meta booked sales" stackId="sales" fill="#0ea5e9" maxBarSize={64} />
-                <Bar yAxisId="sales" dataKey="organicOtherBookedSalesDollars" name="Organic / other sales" stackId="sales" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
-                  <LabelList dataKey="metaBookedSalesSharePct" position="top" fill="#64748b" fontSize={11} formatter={(value: number) => `${Math.round(value)}% Meta`} />
+                <Bar yAxisId="sales" dataKey="metaBookedSalesDollars" name="Meta DripJobs Sales" stackId="sales" fill="#0ea5e9" maxBarSize={64} />
+                <Bar yAxisId="sales" dataKey="organicOtherBookedSalesDollars" name="Organic / other DripJobs Sales" stackId="sales" fill="#cbd5e1" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                  <LabelList dataKey="metaBookedSalesSharePct" position="top" fill="#64748b" fontSize={11} formatter={metaShareLabel} />
                 </Bar>
                 <Line yAxisId="spend" type="monotone" dataKey="metaSpendDollars" name="Meta spend" stroke="#f59e0b" strokeWidth={3} connectNulls={false} dot={{ r: 4, fill: "#f59e0b", strokeWidth: 0 }} activeDot={{ r: 6 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            Sales are grouped by acceptance month, exclude HST, and are split by lead source.
+            Sales and source come from validated DripJobs Sales snapshot rows and exclude HST.
+            Only captured months ({capturedSalesMonths || "none"}) are shown.
           </p>
         </div>
 
         <div className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="lg:min-h-[92px]">
             <h3 className="text-sm font-semibold text-slate-900">
-              {monthlyYear} Meta spend and booked ROAS
+              {monthlyYear} Meta spend and DripJobs Sales ROAS
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              How much Meta-sourced booked sales came back for every $1 spent?
+              How much Meta-sourced DripJobs Sales came back for every $1 spent?
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 bg-amber-400" />Meta spend</span>
-              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Booked ROAS</span>
+              <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Sales ROAS</span>
             </div>
           </div>
           <div className="mt-5 h-64">
@@ -1257,15 +1374,16 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                 <YAxis yAxisId="spend" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={compactDollars} />
                 <YAxis yAxisId="roas" orientation="right" tickLine={false} axisLine={false} width={36} tick={{ fontSize: 12, fill: "#94a3b8" }} tickFormatter={(value: number) => `${value}x`} />
                 <Tooltip cursor={{ fill: "#f8fafc" }} content={<BookedRoasTooltip />} />
-                <Bar yAxisId="roas" dataKey="bookedRoas" name="Booked ROAS" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={64}>
-                  <LabelList dataKey="bookedRoas" position="top" fill="#64748b" fontSize={11} formatter={(value: number) => `${value.toFixed(1)}x`} />
+                <Bar yAxisId="roas" dataKey="bookedRoas" name="DripJobs Sales ROAS" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={64}>
+                  <LabelList dataKey="bookedRoas" position="top" fill="#64748b" fontSize={11} formatter={roasLabel} />
                 </Bar>
                 <Line yAxisId="spend" type="monotone" dataKey="metaSpendDollars" name="Meta spend" stroke="#f59e0b" strokeWidth={3} connectNulls={false} dot={{ r: 4, fill: "#f59e0b", strokeWidth: 0 }} activeDot={{ r: 6 }} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-400">
-            ROAS uses Meta-sourced booked sales ÷ Meta spend. Revenue excludes HST; ROAS is not profit.
+            ROAS uses Meta-sourced DripJobs Sales before HST ÷ Meta spend. It is shown only for
+            captured Sales months ({capturedSalesMonths || "none"}) and is not profit.
           </p>
         </div>
       </div>

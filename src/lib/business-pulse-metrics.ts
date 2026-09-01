@@ -63,6 +63,18 @@ export type BusinessPulseSalesReportRow = {
   captured_at: string;
 };
 
+export type BusinessPulseSalesMetricsRow = {
+  period_start: string;
+  period_end: string;
+  sales_count: number | string;
+  gross_sales_cents: number | string;
+  pre_hst_sales_cents: number | string;
+  paid_social_sales_count: number | string;
+  paid_social_gross_sales_cents: number | string;
+  paid_social_pre_hst_sales_cents: number | string;
+  captured_at: string;
+};
+
 export type BusinessPulseSetRateReportRow = {
   period_start: string;
   period_end: string;
@@ -77,6 +89,18 @@ export type BusinessPulseClosingReportRow = {
   qualified_proposals_count: number | string;
   accepted_proposals_count: number | string;
   jobs_won_count: number | string;
+  captured_at: string;
+};
+
+export type BusinessPulseClosingRowMetricsRow = {
+  period_start: string;
+  period_end: string;
+  qualified_proposals_count: number | string;
+  accepted_proposals_count: number | string;
+  appointment_linked_proposals_count: number | string;
+  appointment_linked_accepted_count: number | string;
+  paid_social_proposals_count: number | string;
+  paid_social_accepted_count: number | string;
   captured_at: string;
 };
 
@@ -99,8 +123,10 @@ export type BusinessPulseInput = {
   quotes: BusinessPulseQuoteRow[];
   transactions?: BusinessPulseTransactionRow[];
   salesReports?: BusinessPulseSalesReportRow[];
+  salesMetrics?: BusinessPulseSalesMetricsRow[];
   setRateReports?: BusinessPulseSetRateReportRow[];
   closingReports?: BusinessPulseClosingReportRow[];
+  closingRowMetrics?: BusinessPulseClosingRowMetricsRow[];
 };
 
 export type MetricComparison = {
@@ -138,11 +164,9 @@ export type BusinessPulseActivity = {
 };
 
 export type AppointmentPeriodSegment = {
-  leads: number;
   proposals: number;
-  acceptedJobs: number;
+  acceptedProposals: number;
   acceptanceRate: number | null;
-  bookedRevenueCents: number;
 };
 
 export type BusinessPulseMonthlyPoint = {
@@ -152,21 +176,21 @@ export type BusinessPulseMonthlyPoint = {
   isPartial: boolean;
   leads: number;
   appointments: number;
-  proposals: number;
-  acceptedProposals: number;
-  jobsWon: number;
-  acceptedJobs: number;
+  proposals: number | null;
+  acceptedProposals: number | null;
+  jobsWon: number | null;
+  acceptedJobs: number | null;
   paidSocialLeads: number;
-  metaAcceptedJobs: number;
+  metaAcceptedJobs: number | null;
   metaCohortLeads: number;
   metaCohortAppointments: number;
   metaCohortProposals: number;
   metaCohortAcceptedJobs: number;
   metaCohortBookedRevenueCents: number;
   isMetaCohortMature: boolean;
-  bookedSalesCents: number;
+  bookedSalesCents: number | null;
   cashCollectedCents: number;
-  metaBookedRevenueCents: number;
+  metaBookedRevenueCents: number | null;
   metaSpendCents: number;
   metaSpendSource: "bank" | "bank_and_meta_api" | "meta_api";
   metaCostPerLeadCents: number | null;
@@ -174,12 +198,12 @@ export type BusinessPulseMonthlyPoint = {
   blendedCacCents: number | null;
   bookedRoas: number | null;
   setRate: number | null;
-  setRateContacts: number;
-  setRateBookedContacts: number;
-  setRateBasis: "dripjobs_contact_cohort" | "lead_report_contact_cohort";
+  setRateContacts: number | null;
+  setRateBookedContacts: number | null;
+  setRateBasis: "dripjobs_contact_cohort" | null;
   proposalRate: number | null;
   acceptedRate: number | null;
-  closingBasis: "dripjobs_qualified_proposal_cohort" | "imported_first_send_cohort";
+  closingBasis: "dripjobs_qualified_proposal_cohort" | null;
 };
 
 export type BusinessPulse = {
@@ -203,6 +227,7 @@ export type BusinessPulse = {
     withoutAppointment: AppointmentPeriodSegment;
     appointmentLift: number | null;
     acceptedWithoutAppointmentShare: number | null;
+    basis: "dripjobs_qualified_proposal_cohort" | null;
   };
   freshness: {
     leads: string | null;
@@ -484,6 +509,17 @@ function exactSalesReport(
     .at(-1) ?? null;
 }
 
+function exactSalesMetrics(
+  rows: BusinessPulseSalesMetricsRow[],
+  start: string,
+  end: string,
+): BusinessPulseSalesMetricsRow | null {
+  return rows
+    .filter((row) => row.period_start === start && row.period_end === end)
+    .sort((left, right) => left.captured_at.localeCompare(right.captured_at))
+    .at(-1) ?? null;
+}
+
 function exactSetRateReport(
   rows: BusinessPulseSetRateReportRow[],
   start: string,
@@ -506,12 +542,22 @@ function exactClosingReport(
     .at(-1) ?? null;
 }
 
+function exactClosingRowMetrics(
+  rows: BusinessPulseClosingRowMetricsRow[],
+  start: string,
+  end: string,
+): BusinessPulseClosingRowMetricsRow | null {
+  return rows
+    .filter((row) => row.period_start === start && row.period_end === end)
+    .sort((left, right) => left.captured_at.localeCompare(right.captured_at))
+    .at(-1) ?? null;
+}
+
 // The yearly series intentionally ignores the selected page period. It relies on
 // BusinessPulseInput containing the complete fact history through `asOf`.
 function monthlySeries(
   input: BusinessPulseInput,
   jobs: AcceptedJob[],
-  paidSocialLeadIds: Set<string>,
 ): BusinessPulseMonthlyPoint[] {
   const year = input.asOf.slice(0, 4);
   const asOfMonth = Number(input.asOf.slice(5, 7));
@@ -526,21 +572,34 @@ function monthlySeries(
     const setRateReport = exactSetRateReport(input.setRateReports ?? [], start, end);
     const setRateContacts = setRateReport
       ? cents(setRateReport.contacts_created_count)
-      : monthLeads.length;
+      : null;
     const setRateBookedContacts = setRateReport
       ? cents(setRateReport.booked_contacts_count)
-      : cohortBookedCount(input.leads, start, end);
+      : null;
+    const closingRowMetric = exactClosingRowMetrics(
+      input.closingRowMetrics ?? [],
+      start,
+      end,
+    );
     const closingReport = exactClosingReport(input.closingReports ?? [], start, end);
-    const proposals = closingReport
-      ? cents(closingReport.qualified_proposals_count)
-      : proposalCount(input.proposals, start, end);
-    const acceptedProposals = closingReport
-      ? cents(closingReport.accepted_proposals_count)
-      : acceptedProposalCount(input.proposals, start, end);
-    const accepted = acceptedPeriod(jobs, start, end);
-    const jobsWon = closingReport
-      ? cents(closingReport.jobs_won_count)
-      : accepted.count;
+    const exactClosing = closingRowMetric ?? closingReport;
+    const proposals = exactClosing
+      ? cents(exactClosing.qualified_proposals_count)
+      : null;
+    const acceptedProposals = exactClosing
+      ? cents(exactClosing.accepted_proposals_count)
+      : null;
+    const salesMetric = exactSalesMetrics(input.salesMetrics ?? [], start, end);
+    const salesCount = salesMetric ? cents(salesMetric.sales_count) : null;
+    const bookedSalesCents = salesMetric
+      ? cents(salesMetric.pre_hst_sales_cents)
+      : null;
+    const metaAcceptedJobs = salesMetric
+      ? cents(salesMetric.paid_social_sales_count)
+      : null;
+    const metaBookedRevenueCents = salesMetric
+      ? cents(salesMetric.paid_social_pre_hst_sales_cents)
+      : null;
     const spend = resolvedMetaSpend(input, start, end);
     const spendCents = spend.cents;
     const cashCollectedCents = customerCashCollected(input.transactions ?? [], start, end);
@@ -574,15 +633,6 @@ function monthlySeries(
     const metaCohortJobs = jobs.filter(
       (job) => Boolean(job.leadId && metaCohortLeadIds.has(job.leadId)),
     );
-    const metaJobs = jobs.filter(
-      (job) =>
-        within(job.acceptedOn, start, end) &&
-        Boolean(job.leadId && paidSocialLeadIds.has(job.leadId)),
-    );
-    const metaBookedRevenueCents = metaJobs.reduce(
-      (sum, job) => sum + job.revenueCents,
-      0,
-    );
 
     points.push({
       month: start.slice(0, 7),
@@ -593,10 +643,10 @@ function monthlySeries(
       appointments,
       proposals,
       acceptedProposals,
-      jobsWon,
-      acceptedJobs: accepted.count,
+      jobsWon: salesCount,
+      acceptedJobs: salesCount,
       paidSocialLeads: paidSocialLeads.length,
-      metaAcceptedJobs: metaJobs.length,
+      metaAcceptedJobs,
       metaCohortLeads: paidSocialLeads.length,
       metaCohortAppointments,
       metaCohortProposals,
@@ -606,7 +656,7 @@ function monthlySeries(
         0,
       ),
       isMetaCohortMature: end <= addDays(input.asOf, -30),
-      bookedSalesCents: accepted.revenueCents,
+      bookedSalesCents,
       cashCollectedCents,
       metaBookedRevenueCents,
       metaSpendCents: spendCents,
@@ -614,98 +664,73 @@ function monthlySeries(
       metaCostPerLeadCents:
         paidSocialLeads.length > 0 ? Math.round(spendCents / paidSocialLeads.length) : null,
       metaCacCents:
-        metaJobs.length > 0 ? Math.round(spendCents / metaJobs.length) : null,
+        metaAcceptedJobs != null && metaAcceptedJobs > 0
+          ? Math.round(spendCents / metaAcceptedJobs)
+          : null,
       blendedCacCents:
-        accepted.count > 0 ? Math.round(spendCents / accepted.count) : null,
-      bookedRoas: ratio(metaBookedRevenueCents, spendCents),
-      setRate: ratio(setRateBookedContacts, setRateContacts),
+        salesCount != null && salesCount > 0
+          ? Math.round(spendCents / salesCount)
+          : null,
+      bookedRoas:
+        metaBookedRevenueCents == null
+          ? null
+          : ratio(metaBookedRevenueCents, spendCents),
+      setRate:
+        setRateBookedContacts == null || setRateContacts == null
+          ? null
+          : ratio(setRateBookedContacts, setRateContacts),
       setRateContacts,
       setRateBookedContacts,
       setRateBasis: setRateReport
         ? "dripjobs_contact_cohort"
-        : "lead_report_contact_cohort",
-      proposalRate: ratio(proposals, setRateContacts),
-      acceptedRate: ratio(acceptedProposals, proposals),
-      closingBasis: closingReport
+        : null,
+      proposalRate:
+        proposals == null || setRateContacts == null
+          ? null
+          : ratio(proposals, setRateContacts),
+      acceptedRate:
+        acceptedProposals == null || proposals == null
+          ? null
+          : ratio(acceptedProposals, proposals),
+      closingBasis: exactClosing
         ? "dripjobs_qualified_proposal_cohort"
-        : "imported_first_send_cohort",
+        : null,
     });
   }
 
   return points;
 }
 
-function appointmentDatesByLead(rows: BusinessPulseLeadRow[]): Map<string, string[]> {
-  const dates = new Map<string, string[]>();
-  for (const row of rows) {
-    if (!row.marketing_eligible || !row.lead_id || !row.appointment_on) continue;
-    const existing = dates.get(row.lead_id) ?? [];
-    existing.push(row.appointment_on);
-    dates.set(row.lead_id, existing);
-  }
-  return dates;
-}
-
-function hasAppointmentBefore(
-  datesByLead: Map<string, string[]>,
-  leadId: string | null,
-  cutoff: string,
-): boolean {
-  return Boolean(leadId && (datesByLead.get(leadId) ?? []).some((date) => date <= cutoff));
-}
-
 function appointmentPeriodSegments(
-  leads: BusinessPulseLeadRow[],
-  proposals: BusinessPulseProposalRow[],
-  jobs: AcceptedJob[],
-  allLeadRows: BusinessPulseLeadRow[],
-  start: string,
-  end: string,
+  metric: BusinessPulseClosingRowMetricsRow | null,
 ): { withAppointment: AppointmentPeriodSegment; withoutAppointment: AppointmentPeriodSegment } {
-  const datesByLead = appointmentDatesByLead(allLeadRows);
-  const withAppointment = { leads: 0, proposals: 0, acceptedJobs: 0, bookedRevenueCents: 0 };
-  const withoutAppointment = { leads: 0, proposals: 0, acceptedJobs: 0, bookedRevenueCents: 0 };
-
-  for (const lead of leads) {
-    const hasAppointment = lead.lead_id
-      ? hasAppointmentBefore(datesByLead, lead.lead_id, end)
-      : Boolean(lead.appointment_on && lead.appointment_on <= end);
-    (hasAppointment ? withAppointment : withoutAppointment).leads += 1;
-  }
-
-  const proposalsByKey = new Map<string, BusinessPulseProposalRow>();
-  for (const proposal of proposals) {
-    if (!within(proposal.first_sent_on, start, end)) continue;
-    const existing = proposalsByKey.get(proposal.proposal_key);
-    if (!existing || proposal.first_sent_on < existing.first_sent_on) {
-      proposalsByKey.set(proposal.proposal_key, proposal);
-    }
-  }
-  for (const proposal of proposalsByKey.values()) {
-    const hasAppointment = hasAppointmentBefore(
-      datesByLead,
-      proposal.lead_id,
-      proposal.first_sent_on,
-    );
-    (hasAppointment ? withAppointment : withoutAppointment).proposals += 1;
-  }
-
-  for (const job of jobs) {
-    if (!within(job.acceptedOn, start, end)) continue;
-    const hasAppointment = hasAppointmentBefore(datesByLead, job.leadId, job.acceptedOn);
-    const segment = hasAppointment ? withAppointment : withoutAppointment;
-    segment.acceptedJobs += 1;
-    segment.bookedRevenueCents += job.revenueCents;
-  }
+  const totalProposals = metric ? cents(metric.qualified_proposals_count) : 0;
+  const totalAccepted = metric ? cents(metric.accepted_proposals_count) : 0;
+  const linkedProposals = metric ? cents(metric.appointment_linked_proposals_count) : 0;
+  const linkedAccepted = metric ? cents(metric.appointment_linked_accepted_count) : 0;
+  const withAppointment = {
+    proposals: linkedProposals,
+    acceptedProposals: linkedAccepted,
+  };
+  const withoutAppointment = {
+    proposals: Math.max(totalProposals - linkedProposals, 0),
+    acceptedProposals: Math.max(totalAccepted - linkedAccepted, 0),
+  };
 
   return {
     withAppointment: {
       ...withAppointment,
-      acceptanceRate: ratio(withAppointment.acceptedJobs, withAppointment.proposals),
+      acceptanceRate: ratio(
+        withAppointment.acceptedProposals,
+        withAppointment.proposals,
+      ),
     },
     withoutAppointment: {
       ...withoutAppointment,
-      acceptanceRate: ratio(withoutAppointment.acceptedJobs, withoutAppointment.proposals),
+      acceptanceRate: ratio(
+        withoutAppointment.acceptedProposals,
+        withoutAppointment.proposals,
+      ),
     },
   };
 }
@@ -738,7 +763,20 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     previousStart,
     previousEnd,
   );
-  const useDripJobsSales = Boolean(currentSalesReport && previousSalesReport);
+  const currentSalesMetric = exactSalesMetrics(
+    input.salesMetrics ?? [],
+    currentStart,
+    currentEnd,
+  );
+  const previousSalesMetric = exactSalesMetrics(
+    input.salesMetrics ?? [],
+    previousStart,
+    previousEnd,
+  );
+  const useDripJobsSalesMetrics = Boolean(currentSalesMetric && previousSalesMetric);
+  const useDripJobsSales = useDripJobsSalesMetrics || Boolean(
+    currentSalesReport && previousSalesReport,
+  );
   const currentSetRateReport = exactSetRateReport(
     input.setRateReports ?? [],
     currentStart,
@@ -761,6 +799,11 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     previousEnd,
   );
   const useDripJobsClosing = Boolean(currentClosingReport && previousClosingReport);
+  const currentClosingRowMetric = exactClosingRowMetrics(
+    input.closingRowMetrics ?? [],
+    currentStart,
+    currentEnd,
+  );
   const currentAppointmentCount = appointmentCount(input.leads, currentStart, currentEnd);
   const previousAppointmentCount = appointmentCount(input.leads, previousStart, previousEnd);
   const currentSetRateContacts = useDripJobsSetRate
@@ -819,30 +862,35 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     (total, job) => total + job.revenueCents,
     0,
   );
+  const exactCurrentSalesCount = currentSalesMetric
+    ? cents(currentSalesMetric.sales_count)
+    : currentAccepted.count;
+  const exactCurrentMetaSalesCount = currentSalesMetric
+    ? cents(currentSalesMetric.paid_social_sales_count)
+    : currentMetaAcceptedJobs.length;
+  const exactCurrentMetaSalesCents = currentSalesMetric
+    ? cents(currentSalesMetric.paid_social_pre_hst_sales_cents)
+    : currentMetaBookedRevenueCents;
 
   const { withAppointment, withoutAppointment } = appointmentPeriodSegments(
-    currentLeads,
-    input.proposals,
-    jobs,
-    input.leads,
-    currentStart,
-    currentEnd,
+    currentClosingRowMetric,
   );
-  const totalAcceptedJobs = withAppointment.acceptedJobs + withoutAppointment.acceptedJobs;
+  const totalAcceptedProposals =
+    withAppointment.acceptedProposals + withoutAppointment.acceptedProposals;
 
   const appointmentLift =
     withAppointment.acceptanceRate != null && withoutAppointment.acceptanceRate != null
-      ? ratio(withAppointment.acceptanceRate, withoutAppointment.acceptanceRate)
+      ? withAppointment.acceptanceRate - withoutAppointment.acceptanceRate
       : null;
 
   return {
     asOf: input.asOf,
     currentPeriod: { start: currentStart, end: currentEnd },
     previousPeriod: { start: previousStart, end: previousEnd },
-    monthly: monthlySeries(input, jobs, paidSocialLeadIds),
+    monthly: monthlySeries(input, jobs),
     activity: {
       metaSpendCents: comparison(currentSpend.cents, previousSpend.cents),
-      leads: comparison(currentLeads.length, previousLeads.length),
+      leads: comparison(currentSetRateContacts, previousSetRateContacts),
       appointments: comparison(currentAppointmentCount, previousAppointmentCount),
       proposals: comparison(currentProposalCount, previousProposalCount),
       acceptedProposals: comparison(
@@ -852,13 +900,21 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
       jobsWon: comparison(currentJobsWonCount, previousJobsWonCount),
       acceptedJobs: comparison(currentAccepted.count, previousAccepted.count),
       bookedSalesCents: comparison(
-        currentAccepted.revenueCents,
-        previousAccepted.revenueCents,
+        useDripJobsSalesMetrics
+          ? cents(currentSalesMetric?.pre_hst_sales_cents)
+          : currentAccepted.revenueCents,
+        useDripJobsSalesMetrics
+          ? cents(previousSalesMetric?.pre_hst_sales_cents)
+          : previousAccepted.revenueCents,
       ),
       salesCents: useDripJobsSales
         ? comparison(
-            cents(currentSalesReport?.gross_sales_cents),
-            cents(previousSalesReport?.gross_sales_cents),
+            useDripJobsSalesMetrics
+              ? cents(currentSalesMetric?.gross_sales_cents)
+              : cents(currentSalesReport?.gross_sales_cents),
+            useDripJobsSalesMetrics
+              ? cents(previousSalesMetric?.gross_sales_cents)
+              : cents(previousSalesReport?.gross_sales_cents),
           )
         : comparison(currentAccepted.revenueCents, previousAccepted.revenueCents),
       salesBasis: useDripJobsSales
@@ -896,27 +952,30 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     economics: {
       metaSpendCents: currentSpend.cents,
       metaSpendSource: currentSpend.source,
-      acceptedJobs: currentAccepted.count,
-      metaAcceptedJobs: currentMetaAcceptedJobs.length,
-      metaBookedRevenueCents: currentMetaBookedRevenueCents,
+      acceptedJobs: exactCurrentSalesCount,
+      metaAcceptedJobs: exactCurrentMetaSalesCount,
+      metaBookedRevenueCents: exactCurrentMetaSalesCents,
       metaCacCents:
-        currentMetaAcceptedJobs.length > 0
-          ? Math.round(currentSpend.cents / currentMetaAcceptedJobs.length)
+        exactCurrentMetaSalesCount > 0
+          ? Math.round(currentSpend.cents / exactCurrentMetaSalesCount)
           : null,
       blendedCacCents:
-        currentAccepted.count > 0
-          ? Math.round(currentSpend.cents / currentAccepted.count)
+        exactCurrentSalesCount > 0
+          ? Math.round(currentSpend.cents / exactCurrentSalesCount)
           : null,
-      bookedRoas: ratio(currentMetaBookedRevenueCents, currentSpend.cents),
+      bookedRoas: ratio(exactCurrentMetaSalesCents, currentSpend.cents),
     },
     appointments: {
       withAppointment,
       withoutAppointment,
       appointmentLift,
       acceptedWithoutAppointmentShare: ratio(
-        withoutAppointment.acceptedJobs,
-        totalAcceptedJobs,
+        withoutAppointment.acceptedProposals,
+        totalAcceptedProposals,
       ),
+      basis: currentClosingRowMetric
+        ? "dripjobs_qualified_proposal_cohort"
+        : null,
     },
     freshness: {
       leads: latest(input.leads.map((row) => row.captured_at)),
@@ -926,9 +985,15 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
         ...input.jobs.map((row) => row.updated_at),
         ...(input.transactions ?? []).map((row) => row.updated_at),
       ]),
-      sales: latest((input.salesReports ?? []).map((row) => row.captured_at)),
+      sales: latest([
+        ...(input.salesReports ?? []).map((row) => row.captured_at),
+        ...(input.salesMetrics ?? []).map((row) => row.captured_at),
+      ]),
       setRate: latest((input.setRateReports ?? []).map((row) => row.captured_at)),
-      closing: latest((input.closingReports ?? []).map((row) => row.captured_at)),
+      closing: latest([
+        ...(input.closingReports ?? []).map((row) => row.captured_at),
+        ...(input.closingRowMetrics ?? []).map((row) => row.captured_at),
+      ]),
     },
   };
 }
