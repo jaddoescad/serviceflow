@@ -633,12 +633,18 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
   return (
     <div className="space-y-4">
       {/* Headline KPIs */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <KpiCard
           label={activity.salesBasis === "dripjobs_gross_sales" ? "DripJobs sales · incl. HST" : "Booked sales · before HST"}
           value={dollars(activity.salesCents.current)}
           previousLabel={dollars(activity.salesCents.previous)}
           comparison={activity.salesCents}
+        />
+        <KpiCard
+          label="Leads produced"
+          value={activity.leads.current.toLocaleString("en-CA")}
+          previousLabel={activity.leads.previous.toLocaleString("en-CA")}
+          comparison={activity.leads}
         />
         <RateKpiCard
           label={
