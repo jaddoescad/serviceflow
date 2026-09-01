@@ -21,6 +21,8 @@ export type MetricsConceptPulse = Omit<
     | "leads"
     | "appointments"
     | "proposals"
+    | "acceptedProposals"
+    | "jobsWon"
     | "acceptedJobs"
     | "bookedSalesCents"
     | "salesCents"
@@ -33,6 +35,8 @@ export type MetricsConceptPulse = Omit<
     leads: CompleteComparison;
     appointments: CompleteComparison;
     proposals: CompleteComparison;
+    acceptedProposals: CompleteComparison;
+    jobsWon: CompleteComparison;
     acceptedJobs: CompleteComparison;
     bookedSalesCents: CompleteComparison;
     salesCents: CompleteComparison;
@@ -78,6 +82,8 @@ export function prepareMetricsConceptPulse(pulse: BusinessPulse): MetricsConcept
       leads: complete(pulse.activity.leads),
       appointments: complete(pulse.activity.appointments),
       proposals: complete(pulse.activity.proposals),
+      acceptedProposals: complete(pulse.activity.acceptedProposals),
+      jobsWon: complete(pulse.activity.jobsWon),
       acceptedJobs: complete(pulse.activity.acceptedJobs),
       bookedSalesCents: complete(pulse.activity.bookedSalesCents),
       salesCents: complete(pulse.activity.salesCents),

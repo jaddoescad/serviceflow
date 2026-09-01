@@ -24,13 +24,14 @@ function lead({
   };
 }
 
-function proposal(row, key, sent, leadId = null) {
+function proposal(row, key, sent, leadId = null, isAccepted = false) {
   return {
     source_document_id: "00000000-0000-0000-0000-000000000002",
     source_row_number: row,
     proposal_key: key,
     lead_id: leadId,
     first_sent_on: sent,
+    is_accepted: isAccepted,
     captured_at: capturedAt,
   };
 }
@@ -119,9 +120,9 @@ test("buildBusinessPulse uses same-period spend and accepted jobs for monthly CA
       lead({ row: 10, id: "cohort-4", created: "2026-06-21", channel: "organic_social" }),
     ],
     proposals: [
-      proposal(2, "current-1", "2026-08-06", "current-paid"),
+      proposal(2, "current-1", "2026-08-06", "current-paid", true),
       proposal(3, "current-2", "2026-08-12", "current-web"),
-      proposal(4, "prior-1", "2026-07-10", "prior-paid"),
+      proposal(4, "prior-1", "2026-07-10", "prior-paid", true),
     ],
     spend: [
       spend("spend-current", "2026-08-04", 10_000),
@@ -143,6 +144,14 @@ test("buildBusinessPulse uses same-period spend and accepted jobs for monthly CA
   assert.equal(pulse.activity.appointments.current, 1);
   assert.equal(pulse.activity.proposals.current, 2);
   assert.equal(pulse.activity.proposals.previous, 1);
+  assert.deepEqual(pulse.activity.acceptedProposals, {
+    current: 1,
+    previous: 1,
+    change: 0,
+    percentChange: 0,
+  });
+  assert.deepEqual(pulse.activity.jobsWon, pulse.activity.acceptedJobs);
+  assert.equal(pulse.activity.closingBasis, "imported_first_send_cohort");
   assert.equal(pulse.activity.acceptedJobs.current, 3);
   assert.equal(pulse.activity.acceptedJobs.previous, 3);
   assert.equal(pulse.activity.bookedSalesCents.current, 2_630_000);
@@ -153,7 +162,7 @@ test("buildBusinessPulse uses same-period spend and accepted jobs for monthly CA
   assert.deepEqual(pulse.activity.setRateBookedContacts, pulse.activity.appointments);
   assert.deepEqual(pulse.activity.setRateContacts, pulse.activity.leads);
   assert.deepEqual(pulse.activity.proposalRate, { current: 1, previous: 0.5 });
-  assert.deepEqual(pulse.activity.acceptedProposalRate, { current: 1.5, previous: 3 });
+  assert.deepEqual(pulse.activity.acceptedProposalRate, { current: 0.5, previous: 1 });
 
   assert.equal(pulse.economics.metaSpendCents, 10_000);
   assert.equal(pulse.economics.acceptedJobs, 3);
@@ -294,6 +303,75 @@ test("exact DripJobs set-rate snapshots replace mixed-date appointment activity"
   );
 });
 
+test("exact DripJobs closing snapshots keep qualified, accepted, and Jobs Won cohorts separate", () => {
+  const julyAccepted = acceptedJob("local-july", "july-lead", "local-july-quote", 500_000);
+  julyAccepted.quote.accepted_at = "2026-07-15T16:00:00Z";
+  const augustAccepted = acceptedJob("local-august", "august-lead", "local-august-quote", 700_000);
+  augustAccepted.quote.accepted_at = "2026-08-15T16:00:00Z";
+
+  const pulse = buildBusinessPulse({
+    asOf: "2026-09-01",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [],
+    proposals: [],
+    spend: [],
+    jobs: [julyAccepted.job, augustAccepted.job],
+    quotes: [julyAccepted.quote, augustAccepted.quote],
+    setRateReports: [
+      { period_start: "2026-07-01", period_end: "2026-07-31", contacts_created_count: 104, booked_contacts_count: 30, captured_at: capturedAt },
+      { period_start: "2026-08-01", period_end: "2026-08-31", contacts_created_count: 132, booked_contacts_count: 33, captured_at: capturedAt },
+    ],
+    closingReports: [
+      { period_start: "2026-07-01", period_end: "2026-07-31", qualified_proposals_count: 54, accepted_proposals_count: 12, jobs_won_count: 15, captured_at: capturedAt },
+      { period_start: "2026-08-01", period_end: "2026-08-31", qualified_proposals_count: 75, accepted_proposals_count: 13, jobs_won_count: 18, captured_at: capturedAt },
+    ],
+  });
+
+  assert.equal(pulse.activity.closingBasis, "dripjobs_qualified_proposal_cohort");
+  assert.deepEqual(pulse.activity.proposals, {
+    current: 75,
+    previous: 54,
+    change: 21,
+    percentChange: (21 / 54) * 100,
+  });
+  assert.deepEqual(pulse.activity.acceptedProposals, {
+    current: 13,
+    previous: 12,
+    change: 1,
+    percentChange: (1 / 12) * 100,
+  });
+  assert.deepEqual(pulse.activity.jobsWon, {
+    current: 18,
+    previous: 15,
+    change: 3,
+    percentChange: 20,
+  });
+  assert.deepEqual(pulse.activity.acceptedJobs, {
+    current: 1,
+    previous: 1,
+    change: 0,
+    percentChange: 0,
+  });
+  assert.deepEqual(pulse.activity.proposalRate, {
+    current: 75 / 132,
+    previous: 54 / 104,
+  });
+  assert.deepEqual(pulse.activity.acceptedProposalRate, {
+    current: 13 / 75,
+    previous: 12 / 54,
+  });
+  assert.equal(pulse.monthly.find((point) => point.month === "2026-08").acceptedProposals, 13);
+  assert.equal(pulse.monthly.find((point) => point.month === "2026-08").jobsWon, 18);
+  assert.equal(
+    pulse.monthly.find((point) => point.month === "2026-08").closingBasis,
+    "dripjobs_qualified_proposal_cohort",
+  );
+  assert.equal(pulse.freshness.closing, capturedAt);
+});
+
 test("set rate falls back consistently when either DripJobs cohort is missing", () => {
   const pulse = buildBusinessPulse({
     asOf: "2026-09-01",
@@ -366,6 +444,8 @@ test("an explicit selected period drives every current and comparison metric", (
       leads: 1,
       appointments: 1,
       proposals: 1,
+      acceptedProposals: 0,
+      jobsWon: 0,
       acceptedJobs: 0,
       paidSocialLeads: 0,
       metaAcceptedJobs: 0,
@@ -390,6 +470,7 @@ test("an explicit selected period drives every current and comparison metric", (
       setRateBasis: "lead_report_contact_cohort",
       proposalRate: 1,
       acceptedRate: 0,
+      closingBasis: "imported_first_send_cohort",
     },
   );
   assert.deepEqual(pulse.monthly.at(-1), {
@@ -400,6 +481,8 @@ test("an explicit selected period drives every current and comparison metric", (
     leads: 0,
     appointments: 0,
     proposals: 0,
+    acceptedProposals: 0,
+    jobsWon: 0,
     acceptedJobs: 0,
     paidSocialLeads: 0,
     metaAcceptedJobs: 0,
@@ -424,6 +507,7 @@ test("an explicit selected period drives every current and comparison metric", (
     setRateBasis: "lead_report_contact_cohort",
     proposalRate: null,
     acceptedRate: null,
+    closingBasis: "imported_first_send_cohort",
   });
 });
 

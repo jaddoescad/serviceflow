@@ -18,6 +18,7 @@ export type BusinessPulseProposalRow = {
   proposal_key: string;
   lead_id: string | null;
   first_sent_on: string;
+  is_accepted: boolean;
   captured_at: string;
 };
 
@@ -70,6 +71,15 @@ export type BusinessPulseSetRateReportRow = {
   captured_at: string;
 };
 
+export type BusinessPulseClosingReportRow = {
+  period_start: string;
+  period_end: string;
+  qualified_proposals_count: number | string;
+  accepted_proposals_count: number | string;
+  jobs_won_count: number | string;
+  captured_at: string;
+};
+
 export type BusinessPulseQuoteRow = {
   id: string;
   lead_id: string;
@@ -90,6 +100,7 @@ export type BusinessPulseInput = {
   transactions?: BusinessPulseTransactionRow[];
   salesReports?: BusinessPulseSalesReportRow[];
   setRateReports?: BusinessPulseSetRateReportRow[];
+  closingReports?: BusinessPulseClosingReportRow[];
 };
 
 export type MetricComparison = {
@@ -109,6 +120,8 @@ export type BusinessPulseActivity = {
   leads: MetricComparison;
   appointments: MetricComparison;
   proposals: MetricComparison;
+  acceptedProposals: MetricComparison;
+  jobsWon: MetricComparison;
   acceptedJobs: MetricComparison;
   bookedSalesCents: MetricComparison;
   salesCents: MetricComparison;
@@ -121,6 +134,7 @@ export type BusinessPulseActivity = {
   setRateBasis: "dripjobs_contact_cohort" | "lead_report_contact_cohort";
   proposalRate: RateComparison;
   acceptedProposalRate: RateComparison;
+  closingBasis: "dripjobs_qualified_proposal_cohort" | "imported_first_send_cohort";
 };
 
 export type AppointmentPeriodSegment = {
@@ -139,6 +153,8 @@ export type BusinessPulseMonthlyPoint = {
   leads: number;
   appointments: number;
   proposals: number;
+  acceptedProposals: number;
+  jobsWon: number;
   acceptedJobs: number;
   paidSocialLeads: number;
   metaAcceptedJobs: number;
@@ -163,6 +179,7 @@ export type BusinessPulseMonthlyPoint = {
   setRateBasis: "dripjobs_contact_cohort" | "lead_report_contact_cohort";
   proposalRate: number | null;
   acceptedRate: number | null;
+  closingBasis: "dripjobs_qualified_proposal_cohort" | "imported_first_send_cohort";
 };
 
 export type BusinessPulse = {
@@ -194,6 +211,7 @@ export type BusinessPulse = {
     accounting: string | null;
     sales: string | null;
     setRate: string | null;
+    closing: string | null;
   };
 };
 
@@ -333,6 +351,18 @@ function proposalCount(
   ).size;
 }
 
+function acceptedProposalCount(
+  rows: BusinessPulseProposalRow[],
+  start: string,
+  end: string,
+): number {
+  return new Set(
+    rows
+      .filter((row) => row.is_accepted && within(row.first_sent_on, start, end))
+      .map((row) => row.proposal_key),
+  ).size;
+}
+
 function isMetaApiSpend(row: BusinessPulseSpendRow): boolean {
   return row.platform.toLowerCase() === "meta" &&
     row.grain === "daily" &&
@@ -465,6 +495,17 @@ function exactSetRateReport(
     .at(-1) ?? null;
 }
 
+function exactClosingReport(
+  rows: BusinessPulseClosingReportRow[],
+  start: string,
+  end: string,
+): BusinessPulseClosingReportRow | null {
+  return rows
+    .filter((row) => row.period_start === start && row.period_end === end)
+    .sort((left, right) => left.captured_at.localeCompare(right.captured_at))
+    .at(-1) ?? null;
+}
+
 // The yearly series intentionally ignores the selected page period. It relies on
 // BusinessPulseInput containing the complete fact history through `asOf`.
 function monthlySeries(
@@ -489,8 +530,17 @@ function monthlySeries(
     const setRateBookedContacts = setRateReport
       ? cents(setRateReport.booked_contacts_count)
       : cohortBookedCount(input.leads, start, end);
-    const proposals = proposalCount(input.proposals, start, end);
+    const closingReport = exactClosingReport(input.closingReports ?? [], start, end);
+    const proposals = closingReport
+      ? cents(closingReport.qualified_proposals_count)
+      : proposalCount(input.proposals, start, end);
+    const acceptedProposals = closingReport
+      ? cents(closingReport.accepted_proposals_count)
+      : acceptedProposalCount(input.proposals, start, end);
     const accepted = acceptedPeriod(jobs, start, end);
+    const jobsWon = closingReport
+      ? cents(closingReport.jobs_won_count)
+      : accepted.count;
     const spend = resolvedMetaSpend(input, start, end);
     const spendCents = spend.cents;
     const cashCollectedCents = customerCashCollected(input.transactions ?? [], start, end);
@@ -542,6 +592,8 @@ function monthlySeries(
       leads: monthLeads.length,
       appointments,
       proposals,
+      acceptedProposals,
+      jobsWon,
       acceptedJobs: accepted.count,
       paidSocialLeads: paidSocialLeads.length,
       metaAcceptedJobs: metaJobs.length,
@@ -572,8 +624,11 @@ function monthlySeries(
       setRateBasis: setRateReport
         ? "dripjobs_contact_cohort"
         : "lead_report_contact_cohort",
-      proposalRate: ratio(proposals, monthLeads.length),
-      acceptedRate: ratio(accepted.count, proposals),
+      proposalRate: ratio(proposals, setRateContacts),
+      acceptedRate: ratio(acceptedProposals, proposals),
+      closingBasis: closingReport
+        ? "dripjobs_qualified_proposal_cohort"
+        : "imported_first_send_cohort",
     });
   }
 
@@ -695,6 +750,17 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     previousEnd,
   );
   const useDripJobsSetRate = Boolean(currentSetRateReport && previousSetRateReport);
+  const currentClosingReport = exactClosingReport(
+    input.closingReports ?? [],
+    currentStart,
+    currentEnd,
+  );
+  const previousClosingReport = exactClosingReport(
+    input.closingReports ?? [],
+    previousStart,
+    previousEnd,
+  );
+  const useDripJobsClosing = Boolean(currentClosingReport && previousClosingReport);
   const currentAppointmentCount = appointmentCount(input.leads, currentStart, currentEnd);
   const previousAppointmentCount = appointmentCount(input.leads, previousStart, previousEnd);
   const currentSetRateContacts = useDripJobsSetRate
@@ -709,8 +775,24 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
   const previousSetRateBookedContacts = useDripJobsSetRate
     ? cents(previousSetRateReport?.booked_contacts_count)
     : cohortBookedCount(input.leads, previousStart, previousEnd);
-  const currentProposalCount = proposalCount(input.proposals, currentStart, currentEnd);
-  const previousProposalCount = proposalCount(input.proposals, previousStart, previousEnd);
+  const currentProposalCount = useDripJobsClosing
+    ? cents(currentClosingReport?.qualified_proposals_count)
+    : proposalCount(input.proposals, currentStart, currentEnd);
+  const previousProposalCount = useDripJobsClosing
+    ? cents(previousClosingReport?.qualified_proposals_count)
+    : proposalCount(input.proposals, previousStart, previousEnd);
+  const currentAcceptedProposalCount = useDripJobsClosing
+    ? cents(currentClosingReport?.accepted_proposals_count)
+    : acceptedProposalCount(input.proposals, currentStart, currentEnd);
+  const previousAcceptedProposalCount = useDripJobsClosing
+    ? cents(previousClosingReport?.accepted_proposals_count)
+    : acceptedProposalCount(input.proposals, previousStart, previousEnd);
+  const currentJobsWonCount = useDripJobsClosing
+    ? cents(currentClosingReport?.jobs_won_count)
+    : currentAccepted.count;
+  const previousJobsWonCount = useDripJobsClosing
+    ? cents(previousClosingReport?.jobs_won_count)
+    : previousAccepted.count;
   const currentSpend = resolvedMetaSpend(input, currentStart, currentEnd);
   const previousSpend = resolvedMetaSpend(input, previousStart, previousEnd);
   const currentPaidSocialLeads = currentLeads.filter(
@@ -763,6 +845,11 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
       leads: comparison(currentLeads.length, previousLeads.length),
       appointments: comparison(currentAppointmentCount, previousAppointmentCount),
       proposals: comparison(currentProposalCount, previousProposalCount),
+      acceptedProposals: comparison(
+        currentAcceptedProposalCount,
+        previousAcceptedProposalCount,
+      ),
+      jobsWon: comparison(currentJobsWonCount, previousJobsWonCount),
       acceptedJobs: comparison(currentAccepted.count, previousAccepted.count),
       bookedSalesCents: comparison(
         currentAccepted.revenueCents,
@@ -795,13 +882,16 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
         ? "dripjobs_contact_cohort"
         : "lead_report_contact_cohort",
       proposalRate: {
-        current: ratio(currentProposalCount, currentLeads.length),
-        previous: ratio(previousProposalCount, previousLeads.length),
+        current: ratio(currentProposalCount, currentSetRateContacts),
+        previous: ratio(previousProposalCount, previousSetRateContacts),
       },
       acceptedProposalRate: {
-        current: ratio(currentAccepted.count, currentProposalCount),
-        previous: ratio(previousAccepted.count, previousProposalCount),
+        current: ratio(currentAcceptedProposalCount, currentProposalCount),
+        previous: ratio(previousAcceptedProposalCount, previousProposalCount),
       },
+      closingBasis: useDripJobsClosing
+        ? "dripjobs_qualified_proposal_cohort"
+        : "imported_first_send_cohort",
     },
     economics: {
       metaSpendCents: currentSpend.cents,
@@ -838,6 +928,7 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
       ]),
       sales: latest((input.salesReports ?? []).map((row) => row.captured_at)),
       setRate: latest((input.setRateReports ?? []).map((row) => row.captured_at)),
+      closing: latest((input.closingReports ?? []).map((row) => row.captured_at)),
     },
   };
 }

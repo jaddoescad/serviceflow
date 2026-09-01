@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   buildBusinessPulse,
   type BusinessPulse,
+  type BusinessPulseClosingReportRow,
   type BusinessPulseJobRow,
   type BusinessPulseLeadRow,
   type BusinessPulseProposalRow,
@@ -67,6 +68,7 @@ export async function getBusinessPulse(
     transactions,
     salesReports,
     setRateReports,
+    closingReports,
   ] =
     await Promise.all([
       fetchAllRows<BusinessPulseLeadRow>(
@@ -78,7 +80,7 @@ export async function getBusinessPulse(
       fetchAllRows<BusinessPulseProposalRow>(
         supabase,
         "marketing_proposal_facts",
-        "source_document_id,source_row_number,proposal_key,lead_id,first_sent_on,captured_at",
+        "source_document_id,source_row_number,proposal_key,lead_id,first_sent_on,is_accepted,captured_at",
         "source_row_number",
       ),
       fetchAllRows<BusinessPulseSpendRow>(
@@ -117,6 +119,12 @@ export async function getBusinessPulse(
         "period_start,period_end,contacts_created_count,booked_contacts_count,captured_at",
         "period_start",
       ),
+      fetchAllRows<BusinessPulseClosingReportRow>(
+        supabase,
+        "dripjobs_closing_ratio_latest",
+        "period_start,period_end,qualified_proposals_count,accepted_proposals_count,jobs_won_count,captured_at",
+        "period_start",
+      ),
     ]);
 
   return buildBusinessPulse({
@@ -130,5 +138,6 @@ export async function getBusinessPulse(
     transactions,
     salesReports,
     setRateReports,
+    closingReports,
   });
 }

@@ -175,6 +175,7 @@ export function BusinessPulseBento({
     pulse.freshness.accounting,
     pulse.freshness.sales,
     pulse.freshness.setRate,
+    pulse.freshness.closing,
   ]
     .filter((value): value is string => Boolean(value))
     .sort()[0];

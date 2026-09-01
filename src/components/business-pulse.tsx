@@ -216,6 +216,7 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
     pulse.freshness.accounting,
     pulse.freshness.sales,
     pulse.freshness.setRate,
+    pulse.freshness.closing,
   ]
     .filter((value): value is string => Boolean(value))
     .sort()
@@ -248,7 +249,7 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               {periodLabel} · flow, not final results—most recent leads have not matured yet.
             </p>
           </div>
-          <div className="grid gap-px bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-px bg-[var(--color-border)] sm:grid-cols-2 xl:grid-cols-6">
             <ActivityCell
               label="Meta spend"
               value={money(pulse.activity.metaSpendCents.current)}
@@ -257,14 +258,14 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               hint={`Current Meta CPL ${money(pulse.activity.metaCostPerLeadCents)}`}
             />
             <ActivityCell
-              label="Eligible leads"
-              value={integer.format(pulse.activity.leads.current)}
-              comparison={pulse.activity.leads}
+              label="Contacts created"
+              value={integer.format(pulse.activity.setRateContacts.current)}
+              comparison={pulse.activity.setRateContacts}
             />
             <ActivityCell
-              label="Appointments"
-              value={integer.format(pulse.activity.appointments.current)}
-              comparison={pulse.activity.appointments}
+              label="Booked contacts"
+              value={integer.format(pulse.activity.setRateBookedContacts.current)}
+              comparison={pulse.activity.setRateBookedContacts}
               hint={`${rateHint(
                 pulse.activity.setRateBasis === "dripjobs_contact_cohort"
                   ? "DripJobs set rate"
@@ -273,16 +274,22 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               )} · ${integer.format(pulse.activity.setRateBookedContacts.current)} booked / ${integer.format(pulse.activity.setRateContacts.current)} contacts`}
             />
             <ActivityCell
-              label="Proposals sent"
+              label="Qualified proposals"
               value={integer.format(pulse.activity.proposals.current)}
               comparison={pulse.activity.proposals}
-              hint={`${rateHint("Proposal rate", pulse.activity.proposalRate)} · first sends only`}
+              hint={`${rateHint("Qualified proposal rate", pulse.activity.proposalRate)} · ${integer.format(pulse.activity.proposals.current)} / ${integer.format(pulse.activity.setRateContacts.current)} contacts`}
             />
             <ActivityCell
-              label="Jobs accepted"
-              value={integer.format(pulse.activity.acceptedJobs.current)}
-              comparison={pulse.activity.acceptedJobs}
-              hint={rateHint("Accepted ÷ proposals", pulse.activity.acceptedProposalRate)}
+              label="Accepted proposals"
+              value={integer.format(pulse.activity.acceptedProposals.current)}
+              comparison={pulse.activity.acceptedProposals}
+              hint={`${rateHint("Closing ratio", pulse.activity.acceptedProposalRate)} · ${integer.format(pulse.activity.acceptedProposals.current)} / ${integer.format(pulse.activity.proposals.current)} qualified`}
+            />
+            <ActivityCell
+              label="Jobs Won"
+              value={integer.format(pulse.activity.jobsWon.current)}
+              comparison={pulse.activity.jobsWon}
+              hint="Accepted proposals in period regardless of sent date; not the closing numerator"
             />
           </div>
         </div>
@@ -337,7 +344,7 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
               </Badge>
             </div>
             <p className="text-[11px] text-[var(--color-muted)]">
-              This month&apos;s leads, proposals, and accepted jobs split by appointment history.
+              Operational same-period activity split by appointment history.
             </p>
           </div>
           <div className="overflow-x-auto px-5 pb-1">
@@ -349,9 +356,9 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
                 <tr>
                   <th scope="col" className="px-3 py-2 text-left font-medium">Path</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Leads</th>
-                  <th scope="col" className="px-3 py-2 text-right font-semibold text-[var(--color-heading)]">Proposals sent</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Jobs accepted</th>
-                  <th scope="col" className="px-3 py-2 text-right font-medium">Accepted ÷ proposals</th>
+                  <th scope="col" className="px-3 py-2 text-right font-semibold text-[var(--color-heading)]">Proposals sent · operational</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Jobs accepted · operational</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Same-period ratio</th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">Booked revenue</th>
                 </tr>
               </thead>
@@ -370,11 +377,11 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
             </table>
           </div>
           <p className="px-5 pb-4 pt-2 text-[13px] text-[var(--color-text)]">
-            With-appointment proposals convert at{" "}
+            In this operational view, the with-appointment accepted-job ratio is{" "}
             <span className="font-semibold text-[var(--color-heading)]">
               {multiplier(pulse.appointments.appointmentLift)}
             </span>{" "}
-            the rate of no-appointment proposals ·{" "}
+            the no-appointment ratio ·{" "}
             <span className="font-semibold text-[var(--color-heading)]">
               {percent(pulse.appointments.acceptedWithoutAppointmentShare)}
             </span>{" "}
@@ -383,14 +390,17 @@ export function BusinessPulse({ pulse }: { pulse: BusinessPulseData }) {
         </div>
 
         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-3 text-[11px] leading-relaxed text-[var(--color-muted)]">
-          Set and proposal rates divide same-period activity by leads; accepted-job rate divides
-          same-period accepted jobs by proposals sent.
+          Set rate divides booked contacts by contacts created. Qualified proposal rate divides
+          qualified proposals by those contacts. Closing ratio divides accepted proposals from the
+          same qualified-proposal cohort by qualified proposals. Jobs Won is separate because it
+          includes accepted proposals in the selected period regardless of when the proposal was sent.
           Monthly CAC and ROAS use spend and accepted jobs from the same month-to-date period; they do
           not assign later closes back to the lead-created month. The appointment split uses this
           month-to-date period; proposals and accepted jobs are classified by whether DripJobs recorded
-          an appointment before that event. Booked revenue excludes HST. Blended CAC
-          currently uses recorded Meta acquisition spend because it is the
-          connected paid-marketing spend. CAC denominators are accepted, non-cancelled jobs—not leads.
+          an appointment before that event and are not the official DripJobs closing cohort. Booked
+          revenue excludes HST. Blended CAC currently uses recorded Meta acquisition spend because it
+          is the connected paid-marketing spend. CAC denominators are accepted, non-cancelled jobs—not
+          leads.
           {freshest ? ` Oldest connected source refreshed ${fmtDateTime(freshest)}.` : ""}
         </div>
       </Card>

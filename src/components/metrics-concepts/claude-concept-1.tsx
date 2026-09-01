@@ -59,7 +59,8 @@ type GrowthReturnChartPoint = {
   setRateBookedContacts: number | null;
   setRateBasis: BusinessPulseMonthlyPoint["setRateBasis"] | null;
   proposalRatePct: number | null;
-  winRatePct: number | null;
+  closingRatePct: number | null;
+  closingBasis: BusinessPulseMonthlyPoint["closingBasis"] | null;
   bookedJobsInLeadBar: number | null;
   leadsNotBooked: number | null;
   bookedSalesCents: number | null;
@@ -67,6 +68,8 @@ type GrowthReturnChartPoint = {
   metaSpendSource: BusinessPulseMonthlyPoint["metaSpendSource"] | null;
   metaCostPerLeadCents: number | null;
   proposals: number | null;
+  acceptedProposals: number | null;
+  jobsWon: number | null;
   acceptedJobs: number | null;
   blendedCacCents: number | null;
   bookedRoas: number | null;
@@ -88,6 +91,14 @@ function spendSourceLabel(
   if (source === "bank") return "bank/card";
   if (source === "bank_and_meta_api") return "bank + Meta API";
   return "Meta API";
+}
+
+function closingRateLabel(
+  basis: BusinessPulseMonthlyPoint["closingBasis"] | null,
+): string {
+  return basis === "dripjobs_qualified_proposal_cohort"
+    ? "Closing ratio · DripJobs cohort"
+    : "Closing ratio · imported cohort";
 }
 
 function MonthlyTooltipRow({ label, value }: { label: string; value: string }) {
@@ -136,8 +147,16 @@ function GrowthReturnTooltip({
           label="Meta CPL"
           value={point.metaCostPerLeadCents == null ? "—" : dollars(point.metaCostPerLeadCents)}
         />
-        <MonthlyTooltipRow label="Proposals" value={String(point.proposals ?? 0)} />
-        <MonthlyTooltipRow label="Jobs accepted" value={String(point.acceptedJobs ?? 0)} />
+        <MonthlyTooltipRow label="Qualified proposals" value={String(point.proposals ?? 0)} />
+        <MonthlyTooltipRow
+          label="Accepted proposals"
+          value={String(point.acceptedProposals ?? 0)}
+        />
+        <MonthlyTooltipRow label="Jobs Won" value={String(point.jobsWon ?? 0)} />
+        <MonthlyTooltipRow
+          label="Operational jobs accepted"
+          value={String(point.acceptedJobs ?? 0)}
+        />
         <MonthlyTooltipRow
           label="Blended CAC"
           value={point.blendedCacCents == null ? "—" : dollars(point.blendedCacCents)}
@@ -172,17 +191,22 @@ function FunnelHealthTooltip({
       </p>
       <div className="mt-1.5 space-y-0.5">
         <MonthlyTooltipRow
-          label={point.setRateBasis === "dripjobs_contact_cohort" ? "Set rate · DripJobs cohort" : "Set rate · imported cohort"}
+          label={
+            point.setRateBasis === "dripjobs_contact_cohort"
+              ? "Set rate · DripJobs cohort"
+              : "Set rate · imported cohort"
+          }
           value={`${rate(point.setRatePct)} · ${point.setRateBookedContacts ?? 0} / ${point.setRateContacts ?? 0}`}
         />
         <MonthlyTooltipRow
-          label="Proposal rate"
-          value={`${rate(point.proposalRatePct)} · ${point.proposals ?? 0} / ${point.leads ?? 0}`}
+          label="Qualified proposal rate"
+          value={`${rate(point.proposalRatePct)} · ${point.proposals ?? 0} / ${point.setRateContacts ?? 0}`}
         />
         <MonthlyTooltipRow
-          label="Proposal win rate"
-          value={`${rate(point.winRatePct)} · ${point.acceptedJobs ?? 0} / ${point.proposals ?? 0}`}
+          label={closingRateLabel(point.closingBasis)}
+          value={`${rate(point.closingRatePct)} · ${point.acceptedProposals ?? 0} / ${point.proposals ?? 0}`}
         />
+        <MonthlyTooltipRow label="Jobs Won · separate" value={String(point.jobsWon ?? 0)} />
       </div>
     </div>
   );
@@ -382,12 +406,14 @@ function RateKpiCard({
   denominator,
   numeratorLabel,
   denominatorLabel,
+  context,
 }: {
   label: string;
   numerator: Comparison;
   denominator: Comparison;
   numeratorLabel: string;
   denominatorLabel: string;
+  context?: string;
 }) {
   const rate = (value: number, total: number) =>
     total > 0 ? (value / total) * 100 : 0;
@@ -420,6 +446,7 @@ function RateKpiCard({
       <p className="mt-0.5 text-xs text-slate-400">
         was {previous.toFixed(1)}% ({numerator.previous} / {denominator.previous})
       </p>
+      {context ? <p className="mt-1 text-xs text-slate-400">{context}</p> : null}
     </div>
   );
 }
@@ -456,9 +483,9 @@ function PathCard({
       </div>
       <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
         <span>
-          {path.acceptedJobs} of {path.proposals} proposals won
+          {path.acceptedJobs} accepted jobs / {path.proposals} proposals
         </span>
-        <span className="font-medium text-slate-700">{rate.toFixed(1)}% close</span>
+        <span className="font-medium text-slate-700">{rate.toFixed(1)}% same-period ratio</span>
       </div>
     </div>
   );
@@ -469,32 +496,32 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
 
   const funnelData = [
     {
-      stage: "Leads",
-      current: activity.leads.current,
-      previous: activity.leads.previous,
+      stage: "Contacts created",
+      current: activity.setRateContacts.current,
+      previous: activity.setRateContacts.previous,
     },
     {
-      stage: "Appointments",
-      current: activity.appointments.current,
-      previous: activity.appointments.previous,
+      stage: "Booked contacts",
+      current: activity.setRateBookedContacts.current,
+      previous: activity.setRateBookedContacts.previous,
     },
     {
-      stage: "Proposals",
+      stage: "Qualified proposals",
       current: activity.proposals.current,
       previous: activity.proposals.previous,
     },
     {
-      stage: "Accepted",
-      current: activity.acceptedJobs.current,
-      previous: activity.acceptedJobs.previous,
+      stage: "Accepted proposals",
+      current: activity.acceptedProposals.current,
+      previous: activity.acceptedProposals.previous,
     },
   ];
 
-  const metaWins = economics.metaAcceptedJobs;
-  const otherWins = Math.max(economics.acceptedJobs - metaWins, 0);
-  const winSourceData = [
-    { name: "Meta ads", value: metaWins, fill: "#0ea5e9" },
-    { name: "Other sources", value: otherWins, fill: "#cbd5e1" },
+  const metaAcceptedJobs = economics.metaAcceptedJobs;
+  const otherAcceptedJobs = Math.max(economics.acceptedJobs - metaAcceptedJobs, 0);
+  const acceptedJobSourceData = [
+    { name: "Meta ads", value: metaAcceptedJobs, fill: "#0ea5e9" },
+    { name: "Other sources", value: otherAcceptedJobs, fill: "#cbd5e1" },
   ];
 
   const appointmentLiftPts =
@@ -522,7 +549,8 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           setRateBookedContacts: null,
           setRateBasis: null,
           proposalRatePct: null,
-          winRatePct: null,
+          closingRatePct: null,
+          closingBasis: null,
           bookedJobsInLeadBar: null,
           leadsNotBooked: null,
           bookedSalesCents: null,
@@ -530,6 +558,8 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           metaSpendSource: null,
           metaCostPerLeadCents: null,
           proposals: null,
+          acceptedProposals: null,
+          jobsWon: null,
           acceptedJobs: null,
           blendedCacCents: null,
           bookedRoas: null,
@@ -560,8 +590,9 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         setRateBasis: point.setRateBasis,
         proposalRatePct:
           point.proposalRate == null ? null : asPercent(point.proposalRate),
-        winRatePct:
+        closingRatePct:
           point.acceptedRate == null ? null : asPercent(point.acceptedRate),
+        closingBasis: point.closingBasis,
         bookedJobsInLeadBar: Math.min(point.acceptedJobs, point.leads),
         leadsNotBooked: Math.max(point.leads - point.acceptedJobs, 0),
         bookedSalesCents: point.bookedSalesCents,
@@ -569,6 +600,8 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         metaSpendSource: point.metaSpendSource,
         metaCostPerLeadCents: point.metaCostPerLeadCents,
         proposals: point.proposals,
+        acceptedProposals: point.acceptedProposals,
+        jobsWon: point.jobsWon,
         acceptedJobs: point.acceptedJobs,
         blendedCacCents: point.blendedCacCents,
         bookedRoas: point.bookedRoas,
@@ -608,25 +641,34 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           comparison={activity.salesCents}
         />
         <RateKpiCard
-          label={activity.setRateBasis === "dripjobs_contact_cohort" ? "Set rate · DripJobs cohort" : "Set rate · imported cohort"}
+          label={
+            activity.setRateBasis === "dripjobs_contact_cohort"
+              ? "Set rate · DripJobs cohort"
+              : "Set rate · imported cohort"
+          }
           numerator={activity.setRateBookedContacts}
           denominator={activity.setRateContacts}
-          numeratorLabel="booked"
+          numeratorLabel="booked contacts"
           denominatorLabel="contacts"
         />
         <RateKpiCard
-          label="Proposal rate"
+          label={
+            activity.closingBasis === "dripjobs_qualified_proposal_cohort"
+              ? "Qualified proposal rate · DripJobs"
+              : "Qualified proposal rate · imported"
+          }
           numerator={activity.proposals}
-          denominator={activity.leads}
-          numeratorLabel="proposals"
-          denominatorLabel="leads"
+          denominator={activity.setRateContacts}
+          numeratorLabel="qualified proposals"
+          denominatorLabel="contacts"
         />
         <RateKpiCard
-          label="Accepted rate"
-          numerator={activity.acceptedJobs}
+          label={closingRateLabel(activity.closingBasis)}
+          numerator={activity.acceptedProposals}
           denominator={activity.proposals}
-          numeratorLabel="jobs"
-          denominatorLabel="proposals"
+          numeratorLabel="accepted proposals"
+          denominatorLabel="qualified proposals"
+          context={`Jobs Won: ${activity.jobsWon.current} · was ${activity.jobsWon.previous} · accepted proposals in period regardless of sent date`}
         />
       </div>
 
@@ -635,7 +677,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
           <div className="flex items-baseline justify-between">
             <h3 className="text-sm font-semibold text-slate-900">
-              Sales funnel vs prior period
+              Conversion cohorts vs prior period
             </h3>
             <div className="flex items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5">
@@ -677,6 +719,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            Set rate pairs booked contacts with contacts created. Closing ratio pairs accepted
+            proposals with the same qualified-proposal cohort. Jobs Won: {activity.jobsWon.current}
+            {" "}(was {activity.jobsWon.previous}) is separate and can include proposals sent earlier.
+          </p>
         </div>
 
         {/* Meta ads economics */}
@@ -686,7 +733,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={winSourceData}
+                  data={acceptedJobSourceData}
                   dataKey="value"
                   nameKey="name"
                   innerRadius={48}
@@ -694,7 +741,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
                   paddingAngle={2}
                   strokeWidth={0}
                 >
-                  {winSourceData.map((entry) => (
+                  {acceptedJobSourceData.map((entry) => (
                     <Cell key={entry.name} fill={entry.fill} />
                   ))}
                 </Pie>
@@ -715,7 +762,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             </div>
           </div>
           <p className="mt-1 text-center text-xs text-slate-500">
-            {metaWins} of {economics.acceptedJobs} wins came from Meta ads
+            {metaAcceptedJobs} of {economics.acceptedJobs} operational jobs accepted came from Meta ads
           </p>
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <div className="flex justify-between gap-2 border-t border-slate-100 pt-2">
@@ -752,15 +799,15 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-900">
-            Do appointments close more jobs?
+            Do appointments correlate with accepted jobs?
           </h3>
           <p className="text-xs text-slate-500">
-            Appointments lift close rate by{" "}
+            Appointments lift the same-period accepted-job ratio by{" "}
             <span className="font-semibold text-emerald-700">
               {appointmentLiftPts.toFixed(1)} pts
             </span>
-            ; {formatPercent(appointments.acceptedWithoutAppointmentShare)} of wins
-            still close without one
+            ; {formatPercent(appointments.acceptedWithoutAppointmentShare)} of accepted jobs
+            had no recorded appointment
           </p>
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -1004,11 +1051,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-violet-500" />
-              Proposal rate
+              Qualified proposal rate
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-0.5 w-3 rounded-full bg-emerald-500" />
-              Proposal win rate
+              Closing ratio
             </span>
           </div>
         </div>
@@ -1048,7 +1095,7 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
               <Line
                 type="monotone"
                 dataKey="proposalRatePct"
-                name="Proposal rate"
+                name="Qualified proposal rate"
                 stroke="#8b5cf6"
                 strokeWidth={3}
                 connectNulls={false}
@@ -1057,8 +1104,8 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
               />
               <Line
                 type="monotone"
-                dataKey="winRatePct"
-                name="Proposal win rate"
+                dataKey="closingRatePct"
+                name="Closing ratio"
                 stroke="#10b981"
                 strokeWidth={3}
                 connectNulls={false}
@@ -1069,10 +1116,11 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-400">
-          Set rate always uses a contact-created cohort: contacts who eventually booked ÷ contacts
-          created. Validated DripJobs snapshots are used when available; other periods use the latest
-          imported DripJobs lead report. Proposal rate and proposal win rate remain same-month
-          activity. * current month to date; future months are intentionally blank.
+          Set rate uses booked contacts ÷ contacts created. Qualified proposal rate uses qualified
+          proposals ÷ contacts. Closing ratio uses accepted proposals from that exact
+          qualified-proposal cohort ÷ qualified proposals. Validated DripJobs snapshots are used when
+          available; imported reports fill other periods. Jobs Won remains separate and can include
+          proposals sent earlier. * current month to date; future months are intentionally blank.
         </p>
       </div>
 
