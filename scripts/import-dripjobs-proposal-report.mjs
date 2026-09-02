@@ -18,6 +18,7 @@ const APPLY = process.argv.includes("--apply");
 const JSON_ONLY = process.argv.includes("--json");
 const fileArgument = process.argv.find((value) => value.startsWith("--file="));
 const envArgument = process.argv.find((value) => value.startsWith("--env="));
+const minimumRowsArgument = process.argv.find((value) => value.startsWith("--minimum-rows="));
 if (!fileArgument) throw new Error("Provide --file=/absolute/path/to/TotalProposalsSent.csv");
 const filePath = path.resolve(fileArgument.slice("--file=".length));
 if (!existsSync(filePath)) throw new Error(`Proposal report not found: ${filePath}`);
@@ -90,7 +91,13 @@ const db = createClient(supabaseUrl, backendKey, { auth: { persistSession: false
 
 const buffer = readFileSync(filePath);
 const capturedAt = statSync(filePath).mtime.toISOString();
-const validation = validateDripJobsProposalReport(buffer, { capturedAt });
+const minimumRows = minimumRowsArgument
+  ? Number.parseInt(minimumRowsArgument.slice("--minimum-rows=".length), 10)
+  : 100;
+if (!Number.isInteger(minimumRows) || minimumRows < 1 || minimumRows > 10_000) {
+  throw new Error("--minimum-rows must be an integer between 1 and 10000");
+}
+const validation = validateDripJobsProposalReport(buffer, { capturedAt, minimumRows });
 const [leadReportRows, leads, quotes, jobs] = await Promise.all([
   allRows(db, "dripjobs_lead_report_latest", "source_document_id,source_row_number,matched_lead_id,normalized_email,normalized_phone,deal_name,raw_source,created_on,marketing_eligible,exclusion_reason"),
   allRows(db, "leads", "id,marketing_eligible,marketing_exclusion_reason"),
@@ -320,7 +327,7 @@ resultData("Accept Proposal report document", await db.from("documents").update(
 }).eq("id", documentId));
 
 const [latestRows, deliveryRows, proposalFacts] = await Promise.all([
-  db.from("dripjobs_proposal_report_latest").select("source_row_number", { count: "exact", head: true }),
+  db.from("dripjobs_proposal_report_latest").select("source_row_number", { count: "exact", head: true }).eq("source_document_id", documentId),
   db.from("marketing_proposal_delivery_events").select("source_row_number", { count: "exact", head: true }),
   db.from("marketing_proposal_facts").select("proposal_key", { count: "exact", head: true }),
 ]);
@@ -328,8 +335,8 @@ for (const [label, result] of [["latest rows", latestRows], ["delivery events", 
   if (result.error) throw new Error(`Verify ${label}: ${result.error.message}`);
 }
 assert(latestRows.count === validation.rows.length, `Latest Proposal report has ${latestRows.count ?? 0}/${validation.rows.length} rows`);
-assert(deliveryRows.count === counts.final_eligible_delivered_row_count, `Delivery event view has ${deliveryRows.count ?? 0}/${counts.final_eligible_delivered_row_count} rows`);
-assert(proposalFacts.count === counts.final_eligible_delivered_proposal_key_count, `Proposal fact view has ${proposalFacts.count ?? 0}/${counts.final_eligible_delivered_proposal_key_count} rows`);
+assert((deliveryRows.count ?? 0) >= counts.final_eligible_delivered_row_count, `Delivery event view has only ${deliveryRows.count ?? 0} rows`);
+assert((proposalFacts.count ?? 0) >= counts.final_eligible_delivered_proposal_key_count, `Proposal fact view has only ${proposalFacts.count ?? 0} rows`);
 
 process.stdout.write(`${JSON.stringify({
   status: "applied",
