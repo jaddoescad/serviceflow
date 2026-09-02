@@ -587,6 +587,20 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
   const appointmentProposalTotal =
     appointments.withAppointment.proposals + appointments.withoutAppointment.proposals;
   const appointmentSnapshotMissing = appointments.basis == null;
+  const contactsWithoutBooking = Math.max(
+    activity.setRateContacts.current - activity.setRateBookedContacts.current,
+    0,
+  );
+  const contactsWithoutProposal = Math.max(
+    activity.setRateContacts.current - activity.proposals.current,
+    0,
+  );
+  const appointmentProposalShare = appointmentSnapshotMissing || appointmentProposalTotal === 0
+    ? null
+    : appointments.withAppointment.proposals / appointmentProposalTotal;
+  const noAppointmentProposalShare = appointmentSnapshotMissing || appointmentProposalTotal === 0
+    ? null
+    : appointments.withoutAppointment.proposals / appointmentProposalTotal;
   const monthlyYear = pulse.asOf.slice(0, 4);
   const monthlyPoints = new Map(pulse.monthly.map((point) => [point.month, point]));
   const monthlyData: GrowthReturnChartPoint[] = Array.from(
@@ -941,6 +955,108 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
             through a lead record created on or before the proposal date.
           </p>
         ) : null}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-4 py-4">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Where the funnel is breaking
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Selected-period conversion cohorts only; Jobs Won remains a separate acceptance-date metric.
+            </p>
+          </div>
+          <p className="text-xs text-slate-400">
+            Jobs Won: {activity.jobsWon.current}
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-100 text-left text-sm">
+            <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Concern</th>
+                <th className="px-4 py-3">Evidence</th>
+                <th className="px-4 py-3">Interpretation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                  Appointment setting
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  {activity.setRateBookedContacts.current} booked / {activity.setRateContacts.current} contacts
+                </td>
+                <td className="min-w-72 px-4 py-3">
+                  {contactsWithoutBooking} contacts did not book; set rate was{" "}
+                  {activity.appointmentSetRate.current == null
+                    ? "unavailable"
+                    : formatPercent(activity.appointmentSetRate.current)}.
+                </td>
+              </tr>
+              <tr>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                  Qualified proposal coverage
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  {activity.proposals.current} proposals / {activity.setRateContacts.current} contacts
+                </td>
+                <td className="min-w-72 px-4 py-3">
+                  {contactsWithoutProposal} contacts did not reach the qualified-proposal cohort; proposal rate was{" "}
+                  {activity.proposalRate.current == null
+                    ? "unavailable"
+                    : formatPercent(activity.proposalRate.current)}.
+                </td>
+              </tr>
+              <tr>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                  Proposals without appointments
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  {appointmentSnapshotMissing
+                    ? "Unavailable"
+                    : `${appointments.withoutAppointment.proposals} of ${appointmentProposalTotal} proposals`}
+                </td>
+                <td className="min-w-72 px-4 py-3">
+                  {noAppointmentProposalShare == null
+                    ? "Customer appointment history is not fully matched for this period."
+                    : `${formatPercent(noAppointmentProposalShare)} of qualified proposals had no recorded scheduled appointment.`}
+                </td>
+              </tr>
+              <tr>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                  No-appointment closing
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  {appointmentSnapshotMissing
+                    ? "Unavailable"
+                    : `${appointments.withoutAppointment.acceptedProposals} accepted / ${appointments.withoutAppointment.proposals} proposals`}
+                </td>
+                <td className="min-w-72 px-4 py-3">
+                  {appointments.withoutAppointment.acceptanceRate == null
+                    ? "No cohort rate is available."
+                    : `${formatPercent(appointments.withoutAppointment.acceptanceRate)} closing ratio without an appointment.`}
+                </td>
+              </tr>
+              <tr>
+                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
+                  Appointment-path closing
+                </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  {appointmentSnapshotMissing
+                    ? "Unavailable"
+                    : `${appointments.withAppointment.acceptedProposals} accepted / ${appointments.withAppointment.proposals} proposals`}
+                </td>
+                <td className="min-w-72 px-4 py-3">
+                  {appointments.withAppointment.acceptanceRate == null || appointmentProposalShare == null
+                    ? "No cohort rate is available."
+                    : `${formatPercent(appointments.withAppointment.acceptanceRate)} closing ratio; ${formatPercent(appointmentProposalShare)} of proposals followed the appointment path.`}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
