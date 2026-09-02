@@ -587,8 +587,6 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
   const appointmentProposalTotal =
     appointments.withAppointment.proposals + appointments.withoutAppointment.proposals;
   const appointmentSnapshotMissing = appointments.basis == null;
-  const appointmentLinksMissing =
-    !appointmentSnapshotMissing && appointments.withAppointment.proposals === 0;
   const monthlyYear = pulse.asOf.slice(0, 4);
   const monthlyPoints = new Map(pulse.monthly.map((point) => [point.month, point]));
   const monthlyData: GrowthReturnChartPoint[] = Array.from(
@@ -897,26 +895,21 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h3 className="text-sm font-semibold text-slate-900">
-            Do linked appointments correlate with accepted proposals?
+            Do appointments correlate with accepted proposals?
           </h3>
           <p className="text-xs text-slate-500">
             {appointmentSnapshotMissing ? (
-              "No validated DripJobs proposal cohort snapshot is available for this period."
-            ) : appointmentLinksMissing ? (
-              <>
-                DripJobs marked 0 of {appointmentProposalTotal} qualified proposals{" "}
-                appointment-linked, so correlation is unavailable.
-              </>
+              "A fully identity-matched DripJobs proposal cohort is not available for this period."
             ) : appointments.appointmentLift != null &&
               appointments.acceptedWithoutAppointmentShare != null ? (
               <>
-                Appointment-linked proposals had a{" "}
+                Proposals for customers with a scheduled appointment had a{" "}
                 <span className="font-semibold text-emerald-700">
                   {appointments.appointmentLift.toFixed(1)} pt
                 </span>{" "}
                 closing-ratio lift;{" "}
                 {formatPercent(appointments.acceptedWithoutAppointmentShare)} of accepted proposals
-                had no appointment link.
+                had no recorded scheduled appointment.
               </>
             ) : (
               "Correlation is unavailable for this period."
@@ -930,17 +923,24 @@ export function ClaudeConcept1({ pulse }: { pulse: MetricsConceptPulse }) {
         ) : (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <PathCard
-              title="Appointment linked"
+              title="Customer had an appointment"
               accent="bg-emerald-500"
               path={appointments.withAppointment}
             />
             <PathCard
-              title="No appointment link"
+              title="No appointment found"
               accent="bg-amber-400"
               path={appointments.withoutAppointment}
             />
           </div>
         )}
+        {!appointmentSnapshotMissing ? (
+          <p className="mt-3 text-xs leading-5 text-slate-400">
+            All {appointmentProposalTotal} proposal rows come from the same DripJobs qualified-proposal cohort.
+            Appointment history comes from the validated DripJobs Leads export and is matched by customer
+            through a lead record created on or before the proposal date.
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -110,6 +110,10 @@ function closingRowMetric({
   accepted,
   appointmentLinkedProposals,
   appointmentLinkedAccepted,
+  appointmentHistoryMatchedProposals = proposals,
+  appointmentHistoryMatchedAccepted = accepted,
+  appointmentHistoryProposals = appointmentLinkedProposals,
+  appointmentHistoryAccepted = appointmentLinkedAccepted,
   paidSocialProposals = 0,
   paidSocialAccepted = 0,
 }) {
@@ -122,6 +126,10 @@ function closingRowMetric({
     appointment_linked_accepted_count: appointmentLinkedAccepted,
     paid_social_proposals_count: paidSocialProposals,
     paid_social_accepted_count: paidSocialAccepted,
+    appointment_history_matched_proposals_count: appointmentHistoryMatchedProposals,
+    appointment_history_matched_accepted_count: appointmentHistoryMatchedAccepted,
+    appointment_history_proposals_count: appointmentHistoryProposals,
+    appointment_history_accepted_count: appointmentHistoryAccepted,
     captured_at: capturedAt,
   };
 }
@@ -392,7 +400,7 @@ test("exact DripJobs closing snapshots keep qualified, accepted, and Jobs Won co
     ],
     closingRowMetrics: [
       closingRowMetric({ start: "2026-07-01", end: "2026-07-31", proposals: 54, accepted: 12, appointmentLinkedProposals: 0, appointmentLinkedAccepted: 0 }),
-      closingRowMetric({ start: "2026-08-01", end: "2026-08-31", proposals: 75, accepted: 13, appointmentLinkedProposals: 0, appointmentLinkedAccepted: 0 }),
+      closingRowMetric({ start: "2026-08-01", end: "2026-08-31", proposals: 75, accepted: 13, appointmentLinkedProposals: 0, appointmentLinkedAccepted: 0, appointmentHistoryProposals: 39, appointmentHistoryAccepted: 9 }),
     ],
     salesMetrics: [
       salesMetric({ start: "2026-07-01", end: "2026-07-31", salesCount: 15, grossSalesCents: 4_162_632, preHstSalesCents: 3_683_745, paidSocialSalesCount: 3, paidSocialGrossSalesCents: 600_000, paidSocialPreHstSalesCents: 530_973 }),
@@ -466,17 +474,21 @@ test("exact DripJobs closing snapshots keep qualified, accepted, and Jobs Won co
     "dripjobs_qualified_proposal_cohort",
   );
   assert.deepEqual(pulse.appointments.withAppointment, {
-    proposals: 0,
-    acceptedProposals: 0,
-    acceptanceRate: null,
+    proposals: 39,
+    acceptedProposals: 9,
+    acceptanceRate: 9 / 39,
   });
   assert.deepEqual(pulse.appointments.withoutAppointment, {
-    proposals: 75,
-    acceptedProposals: 13,
-    acceptanceRate: 13 / 75,
+    proposals: 36,
+    acceptedProposals: 4,
+    acceptanceRate: 4 / 36,
   });
-  assert.equal(pulse.appointments.acceptedWithoutAppointmentShare, 1);
-  assert.equal(pulse.appointments.basis, "dripjobs_qualified_proposal_cohort");
+  assert.equal(pulse.appointments.appointmentLift, (9 / 39) - (4 / 36));
+  assert.equal(pulse.appointments.acceptedWithoutAppointmentShare, 4 / 13);
+  assert.equal(
+    pulse.appointments.basis,
+    "dripjobs_qualified_proposal_customer_appointment_history",
+  );
   assert.equal(pulse.freshness.closing, capturedAt);
 });
 
@@ -715,6 +727,8 @@ test("appointment lift is a percentage-point difference, not a rate multiple", (
         accepted: 5,
         appointmentLinkedProposals: 4,
         appointmentLinkedAccepted: 3,
+        appointmentHistoryProposals: 4,
+        appointmentHistoryAccepted: 3,
       }),
     ],
   });
@@ -723,4 +737,42 @@ test("appointment lift is a percentage-point difference, not a rate multiple", (
   assert.equal(pulse.appointments.withoutAppointment.acceptanceRate, 2 / 6);
   assert.equal(pulse.appointments.appointmentLift, (3 / 4) - (2 / 6));
   assert.equal(pulse.appointments.acceptedWithoutAppointmentShare, 2 / 5);
+});
+
+test("appointment comparison stays unavailable when customer matching is incomplete", () => {
+  const pulse = buildBusinessPulse({
+    asOf: "2026-08-31",
+    period: {
+      current: { start: "2026-08-01", end: "2026-08-31" },
+      previous: { start: "2026-07-01", end: "2026-07-31" },
+    },
+    leads: [],
+    proposals: [],
+    spend: [],
+    jobs: [],
+    quotes: [],
+    closingRowMetrics: [
+      closingRowMetric({
+        start: "2026-08-01",
+        end: "2026-08-31",
+        proposals: 75,
+        accepted: 13,
+        appointmentLinkedProposals: 0,
+        appointmentLinkedAccepted: 0,
+        appointmentHistoryMatchedProposals: 74,
+        appointmentHistoryMatchedAccepted: 13,
+        appointmentHistoryProposals: 39,
+        appointmentHistoryAccepted: 9,
+      }),
+    ],
+  });
+
+  assert.equal(pulse.appointments.basis, null);
+  assert.deepEqual(pulse.appointments.withAppointment, {
+    proposals: 0,
+    acceptedProposals: 0,
+    acceptanceRate: null,
+  });
+  assert.equal(pulse.appointments.appointmentLift, null);
+  assert.equal(pulse.appointments.acceptedWithoutAppointmentShare, null);
 });

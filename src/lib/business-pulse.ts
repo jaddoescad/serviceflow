@@ -138,7 +138,7 @@ export async function getBusinessPulse(
       fetchAllRows<BusinessPulseClosingRowMetricsRow>(
         supabase,
         "dripjobs_closing_ratio_row_metrics",
-        "period_start,period_end,qualified_proposals_count,accepted_proposals_count,appointment_linked_proposals_count,appointment_linked_accepted_count,paid_social_proposals_count,paid_social_accepted_count,captured_at",
+        "period_start,period_end,qualified_proposals_count,accepted_proposals_count,appointment_linked_proposals_count,appointment_linked_accepted_count,paid_social_proposals_count,paid_social_accepted_count,appointment_history_matched_proposals_count,appointment_history_matched_accepted_count,appointment_history_proposals_count,appointment_history_accepted_count,captured_at",
         "period_start",
       ),
     ]);

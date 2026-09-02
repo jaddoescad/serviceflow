@@ -101,6 +101,10 @@ export type BusinessPulseClosingRowMetricsRow = {
   appointment_linked_accepted_count: number | string;
   paid_social_proposals_count: number | string;
   paid_social_accepted_count: number | string;
+  appointment_history_matched_proposals_count: number | string | null;
+  appointment_history_matched_accepted_count: number | string | null;
+  appointment_history_proposals_count: number | string | null;
+  appointment_history_accepted_count: number | string | null;
   captured_at: string;
 };
 
@@ -227,7 +231,7 @@ export type BusinessPulse = {
     withoutAppointment: AppointmentPeriodSegment;
     appointmentLift: number | null;
     acceptedWithoutAppointmentShare: number | null;
-    basis: "dripjobs_qualified_proposal_cohort" | null;
+    basis: "dripjobs_qualified_proposal_customer_appointment_history" | null;
   };
   freshness: {
     leads: string | null;
@@ -703,11 +707,22 @@ function monthlySeries(
 
 function appointmentPeriodSegments(
   metric: BusinessPulseClosingRowMetricsRow | null,
-): { withAppointment: AppointmentPeriodSegment; withoutAppointment: AppointmentPeriodSegment } {
+): {
+  withAppointment: AppointmentPeriodSegment;
+  withoutAppointment: AppointmentPeriodSegment;
+} | null {
+  if (!metric) return null;
+
   const totalProposals = metric ? cents(metric.qualified_proposals_count) : 0;
   const totalAccepted = metric ? cents(metric.accepted_proposals_count) : 0;
-  const linkedProposals = metric ? cents(metric.appointment_linked_proposals_count) : 0;
-  const linkedAccepted = metric ? cents(metric.appointment_linked_accepted_count) : 0;
+  const matchedProposals = cents(metric.appointment_history_matched_proposals_count);
+  const matchedAccepted = cents(metric.appointment_history_matched_accepted_count);
+  if (matchedProposals !== totalProposals || matchedAccepted !== totalAccepted) {
+    return null;
+  }
+
+  const linkedProposals = cents(metric.appointment_history_proposals_count);
+  const linkedAccepted = cents(metric.appointment_history_accepted_count);
   const withAppointment = {
     proposals: linkedProposals,
     acceptedProposals: linkedAccepted,
@@ -872,9 +887,16 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
     ? cents(currentSalesMetric.paid_social_pre_hst_sales_cents)
     : currentMetaBookedRevenueCents;
 
-  const { withAppointment, withoutAppointment } = appointmentPeriodSegments(
-    currentClosingRowMetric,
-  );
+  const appointmentSegments = appointmentPeriodSegments(currentClosingRowMetric);
+  const emptyAppointmentSegment: AppointmentPeriodSegment = {
+    proposals: 0,
+    acceptedProposals: 0,
+    acceptanceRate: null,
+  };
+  const withAppointment =
+    appointmentSegments?.withAppointment ?? emptyAppointmentSegment;
+  const withoutAppointment =
+    appointmentSegments?.withoutAppointment ?? emptyAppointmentSegment;
   const totalAcceptedProposals =
     withAppointment.acceptedProposals + withoutAppointment.acceptedProposals;
 
@@ -973,8 +995,8 @@ export function buildBusinessPulse(input: BusinessPulseInput): BusinessPulse {
         withoutAppointment.acceptedProposals,
         totalAcceptedProposals,
       ),
-      basis: currentClosingRowMetric
-        ? "dripjobs_qualified_proposal_cohort"
+      basis: appointmentSegments
+        ? "dripjobs_qualified_proposal_customer_appointment_history"
         : null,
     },
     freshness: {
