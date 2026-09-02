@@ -159,6 +159,11 @@ if (verifiedAccepted !== validation.parent.accepted_proposals_count) {
   throw new Error(`Verification found ${verifiedAccepted} accepted rows; expected ${validation.parent.accepted_proposals_count}`);
 }
 
+resultData(
+  "Refresh closing-ratio appointment metrics",
+  await db.rpc("refresh_dripjobs_closing_ratio_appointment_metrics"),
+);
+
 console.log(JSON.stringify({
   ...preview,
   snapshot_id: parent.id,

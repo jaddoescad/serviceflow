@@ -371,4 +371,9 @@ data("accept Lead report document", await db.from("documents").update({
   },
 }).eq("id", documentId));
 
+data(
+  "refresh closing-ratio appointment metrics",
+  await db.rpc("refresh_dripjobs_closing_ratio_appointment_metrics"),
+);
+
 process.stdout.write(`${JSON.stringify({ status: "verified", project_ref: PROJECT_REF, source_document_id: documentId, source_filename: path.basename(filePath), ...counts }, null, JSON_ONLY ? 0 : 2)}\n`);

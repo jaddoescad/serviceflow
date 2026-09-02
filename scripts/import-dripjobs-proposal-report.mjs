@@ -326,6 +326,11 @@ resultData("Accept Proposal report document", await db.from("documents").update(
   },
 }).eq("id", documentId));
 
+resultData(
+  "Refresh closing-ratio appointment metrics",
+  await db.rpc("refresh_dripjobs_closing_ratio_appointment_metrics"),
+);
+
 const [latestRows, deliveryRows, proposalFacts] = await Promise.all([
   db.from("dripjobs_proposal_report_latest").select("source_row_number", { count: "exact", head: true }).eq("source_document_id", documentId),
   db.from("marketing_proposal_delivery_events").select("source_row_number", { count: "exact", head: true }),
