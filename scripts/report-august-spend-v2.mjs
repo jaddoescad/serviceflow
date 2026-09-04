@@ -71,6 +71,7 @@ const rows = await fetchAll(() => db.from("transactions")
   .order("id"));
 
 const exclusions = rows.filter((row) => Number(row.amount_cents) < 0 && (row.is_transfer || isCancelledEvidence(row)));
+const revenueRows = rows.filter((row) => Number(row.amount_cents) > 0 && !row.is_transfer && !isCancelledEvidence(row));
 const spendingRows = rows.filter((row) => Number(row.amount_cents) < 0 && !row.is_transfer && !isCancelledEvidence(row));
 const groups = new Map(["Labour", "Material", "Overhead", "Other"].map((name) => [name, { name, cents: 0, rows: 0, needsReviewCents: 0, needsReviewRows: 0, categories: new Map() }]));
 for (const row of spendingRows) {
@@ -86,6 +87,21 @@ for (const row of spendingRows) {
   group.categories.set(category, (group.categories.get(category) ?? 0) + amountCents);
 }
 const totalCents = [...groups.values()].reduce((total, group) => total + group.cents, 0);
+const revenueTotalCents = revenueRows.reduce((total, row) => total + Number(row.amount_cents), 0);
+const revenueCategories = [...Map.groupBy(revenueRows, (row) => row.category ?? "Uncategorized").entries()]
+  .map(([category, categoryRows]) => {
+    const cents = categoryRows.reduce((total, row) => total + Number(row.amount_cents), 0);
+    const reviewRows = categoryRows.filter((row) => row.review_status !== "reconciled");
+    return {
+      category,
+      cents,
+      percent_of_revenue: revenueTotalCents ? Math.round(cents / revenueTotalCents * 10000) / 100 : 0,
+      rows: categoryRows.length,
+      needs_review_cents: reviewRows.reduce((total, row) => total + Number(row.amount_cents), 0),
+      needs_review_rows: reviewRows.length,
+    };
+  })
+  .sort((left, right) => right.cents - left.cents);
 const summary = [...groups.values()].map((group) => ({
   bucket: group.name,
   cents: group.cents,
@@ -102,6 +118,9 @@ console.log(JSON.stringify({
   period: { from: FROM, to: TO },
   posted_through: rows.map((row) => row.posted_on).sort().at(-1) ?? null,
   transaction_rows: rows.length,
+  revenue_rows: revenueRows.length,
+  total_revenue_cents: revenueTotalCents,
+  revenue_categories: revenueCategories,
   spending_rows: spendingRows.length,
   total_spent_cents: totalCents,
   summary,

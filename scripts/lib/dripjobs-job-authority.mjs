@@ -48,9 +48,7 @@ export function productionMonthDecision(currentMonth, candidateMonth) {
   const candidate = candidateMonth ? String(candidateMonth).slice(0, 10) : null;
   if (!candidate) return { apply: false, effectiveMonth: current, reason: "stage_not_eligible" };
   if (!current) return { apply: true, effectiveMonth: candidate, reason: "production_month_missing" };
-  if (candidate > current) return { apply: true, effectiveMonth: candidate, reason: "later_workflow_transition" };
-  if (candidate === current) return { apply: false, effectiveMonth: current, reason: "already_current" };
-  return { apply: false, effectiveMonth: current, reason: "never_move_backward" };
+  return { apply: false, effectiveMonth: current, reason: "production_month_already_set" };
 }
 
 export function amountAuthorityEquivalent(authority, row) {

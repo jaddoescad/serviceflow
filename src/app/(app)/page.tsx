@@ -29,6 +29,7 @@ import { CrewOperationsMap, type CrewLocation } from "@/components/crew-operatio
 import { dayKey, fmtHoursDecimal, fmtMoney, fmtDistance, fmtDateTime } from "@/lib/format";
 import type { EmployeeLocationPoint, EmployeeTrackingStatus, Project, TimeEntry } from "@/lib/types";
 import { getProjectLabourInvoiceSummaries } from "@/lib/invoice-queries";
+import { summarizeCompletedLabourPeriod } from "@/lib/labour-period";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +146,21 @@ export default async function OverviewPage() {
       r.wageCost > 0,
   );
   const labourSummary = summarizeLabour(projectRollups, now);
+  const completionByProject = new Map(
+    projects.map((project) => [project.companycam_id, project.completed_on]),
+  );
+  const completedLabourSummary = summarizeCompletedLabourPeriod(
+    projectRollups.map((rollup) => ({
+      completedOn: completionByProject.get(rollup.projectId) ?? null,
+      amountBeforeTax: rollup.amountBeforeTax,
+      labourCost: Number(
+        invoiceSummaries.get(rollup.projectId)?.totals.CAD ?? 0,
+      ),
+      labourExcluded: rollup.labourExcluded,
+    })),
+    dayKey(new Date(now - 30 * DAY)),
+    dayKey(new Date(now)),
+  );
   const budgetItems = jobsWithLabour.map((r) => ({
     projectId: r.projectId,
     name: r.name,
@@ -157,7 +173,7 @@ export default async function OverviewPage() {
     status: r.status,
     settled: r.labourBucket === "settled",
   }));
-  const budgetPct = labourSummary.settled.sharePercent;
+  const budgetPct = completedLabourSummary.sharePercent;
 
   const attention = attentionLists(entries, now);
   const crewLocations = buildCrewLocations(movementShifts, projects, trackingStatuses, locationPoints);
@@ -190,8 +206,8 @@ export default async function OverviewPage() {
           value={budgetPct != null ? `${budgetPct.toFixed(1)}%` : "—"}
           hint={
             budgetPct != null
-              ? `${fmtMoney(labourSummary.settled.labourCost)} on ${labourSummary.settled.count} completed`
-              : "mark labour completed on a finished job"
+              ? `${fmtMoney(completedLabourSummary.labourCost)} on ${completedLabourSummary.count} completed`
+              : "no costed jobs completed in the last 30 days"
           }
           tone={budgetPct == null ? "neutral" : budgetPct >= LABOUR_ALERT_PERCENT ? "bad" : "good"}
         />

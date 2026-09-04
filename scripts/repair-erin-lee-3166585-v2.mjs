@@ -170,7 +170,7 @@ const productionAuthority = {
   deal_stage_date: authorityRow.dealStageDateIso,
   candidate_production_month: authorityRow.productionMonth,
   effective_production_month: authorityRow.productionMonth,
-  rule: "advance from a qualifying workflow transition date; never clear or move backward",
+  rule: "assign from the first qualifying workflow transition only when missing; never change an existing production month",
   imported_at: capturedAt,
 };
 

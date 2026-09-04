@@ -8,19 +8,36 @@ import {
   productionMonthDecision,
 } from "./lib/dripjobs-job-authority.mjs";
 
-test("production month advances on later qualifying transitions but never moves backward", () => {
+test("production month is assigned once and never changed by later imports", () => {
   assert.deepEqual(productionMonthDecision(null, "2026-07-01"), {
     apply: true,
     effectiveMonth: "2026-07-01",
     reason: "production_month_missing",
   });
-  assert.equal(productionMonthDecision("2026-07-01", "2026-08-01").apply, true);
+  assert.deepEqual(productionMonthDecision("2026-07-01", "2026-08-01"), {
+    apply: false,
+    effectiveMonth: "2026-07-01",
+    reason: "production_month_already_set",
+  });
   assert.deepEqual(productionMonthDecision("2026-08-01", "2026-07-01"), {
     apply: false,
     effectiveMonth: "2026-08-01",
-    reason: "never_move_backward",
+    reason: "production_month_already_set",
+  });
+  assert.deepEqual(productionMonthDecision("2026-07-01", "2026-07-01"), {
+    apply: false,
+    effectiveMonth: "2026-07-01",
+    reason: "production_month_already_set",
   });
   assert.equal(productionMonthDecision("2026-08-01", null).effectiveMonth, "2026-08-01");
+});
+
+test("Barry regression: an August workflow transition cannot replace a confirmed July production month", () => {
+  assert.deepEqual(productionMonthDecision("2026-07-01", "2026-08-01"), {
+    apply: false,
+    effectiveMonth: "2026-07-01",
+    reason: "production_month_already_set",
+  });
 });
 
 test("Jobs List operational authority tracks schedules, actual dates, and invoice balance", () => {

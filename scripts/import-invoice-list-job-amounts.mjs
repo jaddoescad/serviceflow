@@ -213,7 +213,7 @@ const sources = {
   combined_rows: validation.manifest.row_count,
   gross_amount_semantics: "includes 13% HST",
   stored_job_amount_formula: "round(Amount cents / 1.13)",
-  production_month_rule: "month of the current qualifying Deal Stage Date; advance only, never clear or move backward",
+  production_month_rule: "assign from the first qualifying Deal Stage Date only when missing; never change an existing production month",
   operational_date_rule: "sync non-empty planned and actual DripJobs dates for current unlocked jobs; never infer application status",
 };
 const preview = {
@@ -393,7 +393,7 @@ for (const item of changed) {
     deal_stage_date: item.dealStageDateIso,
     candidate_production_month: item.productionMonth,
     effective_production_month: effectiveProductionMonth,
-    rule: "advance from a qualifying workflow transition date; never clear or move backward",
+    rule: "assign from the first qualifying workflow transition only when missing; never change an existing production month",
     imported_at: importedAt,
   } : null;
   const operationalAuthority = {

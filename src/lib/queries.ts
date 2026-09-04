@@ -70,6 +70,7 @@ function project(row: any): Project {
     companycam_id: row.id,
     name: row.name,
     started_on: row.started_on ?? null,
+    completed_on: row.completed_on ?? null,
     production_month: row.production_month ?? null,
     formatted_address: row.formatted_address ?? row.address_line_1 ?? null,
     city: row.city,

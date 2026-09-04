@@ -90,6 +90,7 @@ export type Project = {
   companycam_id: string;
   name: string;
   started_on: string | null;
+  completed_on: string | null;
   production_month: string | null;
   formatted_address: string | null;
   city: string | null;
