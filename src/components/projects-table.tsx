@@ -16,13 +16,11 @@ import {
 } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
-import type { ProjectMaterialSummary } from "@/lib/materials";
 import { compareJobsTableRows } from "@/lib/project-sort";
 import { AmountDialog } from "@/components/project-detail";
 
 type ProjectTableRow = ProjectRollup & {
   labourInvoices: ProjectLabourInvoiceSummary;
-  materials: ProjectMaterialSummary;
   painters: string[];
 };
 
@@ -128,45 +126,6 @@ function labourShare(amountBeforeTax: number | null, cost: number): number | nul
   return amountBeforeTax && amountBeforeTax > 0
     ? (cost / amountBeforeTax) * 100
     : null;
-}
-
-function MaterialShareBar({
-  amountBeforeTax,
-  materialCost,
-  lineCount,
-}: {
-  amountBeforeTax: number | null;
-  materialCost: number;
-  lineCount: number;
-}) {
-  const percent =
-    amountBeforeTax && amountBeforeTax > 0 && materialCost > 0
-      ? (materialCost / amountBeforeTax) * 100
-      : null;
-  if (percent == null) {
-    return <span className="text-xs text-[var(--color-muted)]">—</span>;
-  }
-
-  return (
-    <div
-      title={`${fmtMoney(materialCost)} allocated materials ÷ ${fmtMoney(amountBeforeTax)} job amount before HST`}
-    >
-      <div className="flex items-center gap-2">
-        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--color-surface-2)] xl:w-20">
-          <div
-            className="h-full rounded-full bg-[var(--color-brand)]"
-            style={{ width: `${Math.min(100, percent)}%` }}
-          />
-        </div>
-        <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">
-          {percent.toFixed(1)}%
-        </span>
-      </div>
-      <div className="mt-0.5 whitespace-nowrap text-[10px] text-[var(--color-muted)]">
-        {lineCount} allocated {lineCount === 1 ? "line" : "lines"}
-      </div>
-    </div>
-  );
 }
 
 function JobStatus({ row }: { row: ProjectTableRow }) {
@@ -320,7 +279,7 @@ export function ProjectsTable({
       <Card>
         <CardHeader
           title="Jobs & costs"
-          subtitle="Labour uses clocked wages or allocated invoices; materials use allocated supplier-invoice lines before HST"
+          subtitle="Compare clocked wages and allocated labour invoices with each job’s labour budget"
           right={
             <div className="flex flex-wrap gap-2">
               {totals.readyToCloseCount ? (
@@ -450,10 +409,6 @@ export function ProjectsTable({
                   <th className="px-2.5 py-2.5 font-medium">Invoices</th>
                   <th className="px-2.5 py-2.5 font-medium">Hourly usage</th>
                   <th className="px-2.5 py-2.5 font-medium">Invoice usage</th>
-                  <th className="px-2.5 py-2.5 text-right font-medium">
-                    Materials (pre-tax)
-                  </th>
-                  <th className="px-2.5 py-2.5 font-medium">Material share</th>
                   <th
                     className="px-2.5 py-2.5 font-medium"
                     title="Open jobs appear first by labour activity: latest clock-in, then latest labour invoice; all other jobs follow by DripJobs start date"
@@ -590,21 +545,6 @@ export function ProjectsTable({
                         status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.labourInvoices.totals.CAD))}
                         label="Invoices"
                         amount={r.labourInvoices.totals.CAD}
-                      />
-                    </td>
-                    <td
-                      className="whitespace-nowrap px-2.5 py-2.5 text-right font-medium tabular-nums"
-                      title="Material invoice lines allocated to this job before HST"
-                    >
-                      {r.materials.amountBeforeTax > 0
-                        ? fmtMoney(r.materials.amountBeforeTax)
-                        : "—"}
-                    </td>
-                    <td className="px-2.5 py-2.5">
-                      <MaterialShareBar
-                        amountBeforeTax={r.amountBeforeTax}
-                        materialCost={r.materials.amountBeforeTax}
-                        lineCount={r.materials.lineCount}
                       />
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2.5 text-[var(--color-muted)]">

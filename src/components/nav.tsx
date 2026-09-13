@@ -16,9 +16,7 @@ const LINKS = [
   { href: "/jobs", label: "Jobs & Budgets" },
   { href: "/photos", label: "Photos" },
   { href: "/financials", label: "Financials" },
-  { href: "/marketing", label: "Marketing" },
   { href: "/invoices", label: "Labour invoices" },
-  { href: "/material-invoices", label: "Material invoices" },
   { href: "/timesheets", label: "Timesheets" },
   { href: "/employees", label: "Crew" },
 ];

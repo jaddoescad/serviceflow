@@ -2,7 +2,6 @@ import {
   getAssignments,
   getBudgets,
   getEmployeePayRates,
-  getJobMaterialSummaries,
   getProjectLabourExpenses,
   getProjects,
   getTimeEntries,
@@ -32,7 +31,6 @@ export default async function ProjectsPage() {
     assignments,
     labourExpenses,
     invoiceSummaries,
-    materialSummaries,
   ] = await Promise.all([
     getTimeEntries(new Date(now - 180 * DAY).toISOString()),
     getEmployeePayRates(),
@@ -41,7 +39,6 @@ export default async function ProjectsPage() {
     getAssignments(),
     getProjectLabourExpenses(),
     getProjectLabourInvoiceSummaries(),
-    getJobMaterialSummaries(),
   ]);
 
   const rows = rollupProjects(
@@ -61,18 +58,14 @@ export default async function ProjectsPage() {
       ...row,
       labourInvoices,
       painters: labourInvoices.painterNames,
-      materials: materialSummaries.get(row.projectId) ?? {
-        amountBeforeTax: 0,
-        lineCount: 0,
-      },
     };
   });
 
   return (
     <>
       <PageHeader
-        title="Jobs & Costs"
-        subtitle="Compare labour and allocated material costs with each job's before-HST value"
+        title="Labour budgets"
+        subtitle="Track labour budgets, clocked hours, and labour invoices for each job"
       />
       <ProjectsTable
         rows={rows}

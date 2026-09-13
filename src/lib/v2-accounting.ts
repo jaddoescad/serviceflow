@@ -50,22 +50,6 @@ async function getEvidenceForInvoices(
   return evidenceByInvoice;
 }
 
-export async function getUnifiedInvoices(category?: "customer" | "labour" | "material" | "other") {
-  const supabase = await createClient();
-  let query = supabase
-    .from("invoices")
-    .select("*,contact:contacts(name),allocations:invoice_job_allocations(id,invoice_id,invoice_line_id,job_id,total_cents,needs_review,metadata,job:jobs(name))")
-    .order("issued_on", { ascending: false, nullsFirst: false })
-    .limit(2000);
-  if (category) query = query.eq("category", category);
-  const { data, error } = await query;
-  if (error) throw new Error(`invoices: ${error.message}`);
-  return (data ?? []).map((invoice: any) => ({
-    ...invoice,
-    allocations: selectUsableInvoiceJobAllocations(invoice.allocations ?? []),
-  }));
-}
-
 export async function getLabourInvoiceReviewInvoices() {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -240,11 +224,13 @@ export async function getJobInvoices(jobId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("invoice_job_allocations")
-    .select("*,invoice:invoices(*,contact:contacts(name))")
+    .select("*,line:invoice_lines(metadata),invoice:invoices(*,contact:contacts(name))")
     .eq("job_id", jobId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`job invoices: ${error.message}`);
-  return selectCostingInvoiceJobAllocations(data ?? []);
+  return selectCostingInvoiceJobAllocations(data ?? []).filter(
+    (allocation: any) => invoiceJobCostCategory(allocation) === "labour",
+  );
 }
 
 export async function getLedger() {
@@ -268,15 +254,4 @@ export async function getLedgerTransaction(transactionId: string) {
     .maybeSingle();
   if (error) throw new Error(`transaction: ${error.message}`);
   return data;
-}
-
-export async function getMarketingPerformance() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("marketing_summary")
-    .select("*")
-    .order("period_start", { ascending: false })
-    .limit(2000);
-  if (error) throw new Error(`marketing: ${error.message}`);
-  return data ?? [];
 }

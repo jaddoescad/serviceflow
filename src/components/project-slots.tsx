@@ -27,7 +27,6 @@ export async function OverviewSlot({ projectId }: { projectId: string }) {
       project={data.project}
       detail={data.detail}
       canManage={data.canManage}
-      materialCostSummary={data.materialCostSummary}
     />
   );
 }

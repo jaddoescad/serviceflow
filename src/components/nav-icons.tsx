@@ -73,22 +73,10 @@ export const NAV_ICONS: Record<string, ReactNode> = {
       <path d="M16 8.5c-.8-.7-2-1.1-3.4-1.1-1.8 0-3.1.8-3.1 2s1 1.8 3.1 2.3 3.4 1 3.4 2.4-1.4 2.4-3.5 2.4c-1.6 0-3-.5-4-1.4M12.5 5.5v13" />
     </Icon>
   ),
-  "/marketing": (
-    <Icon>
-      <path d="m3 11 15-6v14L3 13z" />
-      <path d="M7 13.5 8.5 19H12l-2-6.7M18 9v6M21 10v4" />
-    </Icon>
-  ),
   "/invoices": (
     <Icon>
       <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
       <path d="M9 8h6M9 12h6M9 16h3" />
-    </Icon>
-  ),
-  "/material-invoices": (
-    <Icon>
-      <path d="m4 7 8-4 8 4-8 4z" />
-      <path d="m4 7 8 4 8-4v10l-8 4-8-4zM12 11v10" />
     </Icon>
   ),
   "/timesheets": (

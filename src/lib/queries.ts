@@ -502,31 +502,6 @@ export async function getAssignments(): Promise<Assignment[]> {
   }));
 }
 
-export async function getJobMaterialSummaries(): Promise<Map<string, { amountBeforeTax: number; lineCount: number }>> {
-  const supabase = await createClient();
-  const rows: any[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("invoice_job_allocations")
-      .select("id,invoice_id,job_id,subtotal_cents,invoice_line_id,metadata,line:invoice_lines(metadata),invoice:invoices(category,status,source_system)")
-      .order("id")
-      .range(from, from + 999);
-    if (error) throw new Error(`material job costs: ${error.message}`);
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < 1000) break;
-  }
-  const result = new Map<string, { amountBeforeTax: number; lineCount: number }>();
-  for (const row of selectCostingInvoiceJobAllocations(rows)) {
-    const invoice: any = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
-    if (!invoice || invoiceJobCostCategory(row) !== "material" || !isCostingInvoice(invoice)) continue;
-    const current = result.get(row.job_id) ?? { amountBeforeTax: 0, lineCount: 0 };
-    current.amountBeforeTax += Number(row.subtotal_cents ?? 0) / 100;
-    if (row.invoice_line_id) current.lineCount += 1;
-    result.set(row.job_id, current);
-  }
-  return result;
-}
-
 export async function getProjectById(projectId: string): Promise<Project | null> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("jobs").select("*").eq("id", projectId).maybeSingle();

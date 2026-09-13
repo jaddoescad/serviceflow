@@ -1,5 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import type { MaterialPaymentVerificationSummary } from "@/lib/materials";
+type MaterialPaymentVerificationSummary = {
+  invoice_count: number;
+  payment_amount: number;
+  allocated_amount: number;
+  unallocated_amount: number;
+  payment_status:
+    | "unmatched"
+    | "partially_allocated"
+    | "fully_allocated"
+    | "needs_review";
+};
 
 export type FinancialAccount = {
   id: string;
@@ -358,7 +368,7 @@ function buildEvidence(
       detail: `${invoice.invoice_date}${invoice.po_number ? ` · PO ${invoice.po_number}` : ""}`,
       status: "confirmed",
       amount,
-      href: `/material-invoices/${encodeURIComponent(invoice.id)}`,
+      href: `/invoices/${encodeURIComponent(invoice.id)}`,
       filename: invoice.original_filename,
     });
   }

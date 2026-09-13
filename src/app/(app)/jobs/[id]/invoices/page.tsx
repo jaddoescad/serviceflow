@@ -20,7 +20,7 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
   const byInvoice = new Map<string, any>();
   for (const allocation of allocations) {
     const invoice: any = Array.isArray(allocation.invoice) ? allocation.invoice[0] : allocation.invoice;
-    if (!invoice) continue;
+    if (!invoice || invoice.category !== "labour") continue;
     const existing = byInvoice.get(invoice.id);
     if (existing) {
       existing.allocations.push({ ...allocation, job: { name: shell.name } });
@@ -38,10 +38,6 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
     const invoice = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
     return invoice?.category === "labour";
   }).reduce((sum, row) => sum + Number(row.subtotal_cents ?? 0), 0) / 100;
-  const materials = allocations.filter((row: any) => {
-    const invoice = Array.isArray(row.invoice) ? row.invoice[0] : row.invoice;
-    return invoice?.category === "material";
-  }).reduce((sum, row) => sum + Number(row.subtotal_cents ?? 0), 0) / 100;
   return (
     <JobShell
       projectId={jobId}
@@ -52,14 +48,13 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
       isLead={shell.isLead}
       activeTab="invoices"
     >
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2">
         <Kpi label="Invoices" value={invoices.length} />
         <Kpi label="Labour cost" value={fmtMoney(labour)} />
-        <Kpi label="Material cost" value={fmtMoney(materials)} />
       </div>
       <UnifiedInvoicesTable
         invoices={invoices}
-        title="Job invoices and costs"
+        title="Labour invoices"
         showJobAllocation
       />
     </JobShell>

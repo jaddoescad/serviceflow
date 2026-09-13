@@ -31,15 +31,10 @@ export function ProjectOverviewPanel({
   project,
   detail,
   canManage,
-  materialCostSummary,
 }: {
   project: ProjectRollup;
   detail?: ProjectDetail;
   canManage: boolean;
-  materialCostSummary: {
-    invoiceCount: number;
-    amountBeforeTax: number;
-  };
 }) {
   const [editingAmount, setEditingAmount] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,15 +192,6 @@ export function ProjectOverviewPanel({
                 label="Labour cost"
                 value={project.labourExcluded ? "—" : fmtMoney(project.wageCost)}
                 hint={project.labourExcluded ? undefined : costSourceHint}
-              />
-              <Stat
-                label="Material cost"
-                value={fmtMoney(materialCostSummary.amountBeforeTax)}
-                hint={
-                  materialCostSummary.invoiceCount > 0
-                    ? `${materialCostSummary.invoiceCount} allocated ${materialCostSummary.invoiceCount === 1 ? "invoice" : "invoices"} · before HST`
-                    : "No material invoices linked"
-                }
               />
               <Stat
                 label="Budget position"

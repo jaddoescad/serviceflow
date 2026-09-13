@@ -18,7 +18,6 @@ import {
 } from "@/lib/metrics";
 import {
   getProjectLabourInvoiceSummary,
-  getProjectMaterialCostSummary,
 } from "@/lib/invoice-queries";
 import { createClient } from "@/lib/supabase/server";
 import { selectCanonicalJobId } from "@/lib/project-routing";
@@ -316,7 +315,6 @@ export const getProjectData = cache(async (projectId: string) => {
         labourExpenses: [],
       },
       taskProgress: [],
-      materialCostSummary: { invoiceCount: 0, amountBeforeTax: 0 },
     };
   }
 
@@ -332,7 +330,6 @@ export const getProjectData = cache(async (projectId: string) => {
     labourTasks,
     employees,
     invoiceSummary,
-    materialCostSummary,
   ] = await Promise.all([
     requireStaff(),
     getProjectById(projectId),
@@ -344,7 +341,6 @@ export const getProjectData = cache(async (projectId: string) => {
     getLabourTasksForProject(projectId),
     getEmployees(),
     getProjectLabourInvoiceSummary(projectId),
-    getProjectMaterialCostSummary(projectId),
   ]);
 
   if (!project) return null;
@@ -367,7 +363,6 @@ export const getProjectData = cache(async (projectId: string) => {
     project: rollup,
     detail: projectDetails(entries, payRates, labourExpenses, now)[projectId],
     taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
-    materialCostSummary,
   };
 });
 
