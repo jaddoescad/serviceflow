@@ -136,7 +136,7 @@ export async function LeadInvoicesView({ leadId }: { leadId: string }) {
     <>
       <div className="mb-2 text-xs text-[var(--color-muted)]">
         <Link href="/leads" className="hover:text-[var(--color-text)]">
-          Leads & Estimates
+          Deals
         </Link>
         <span className="mx-1.5">/</span>
         <Link href={`/jobs/${encodeURIComponent(leadId)}`} className="hover:text-[var(--color-text)]">
@@ -148,7 +148,7 @@ export async function LeadInvoicesView({ leadId }: { leadId: string }) {
       <PageHeader
         title={name}
         subtitle={lead.address ?? undefined}
-        actions={<Badge tone="brand">Lead</Badge>}
+        actions={<Badge tone="brand">Deal</Badge>}
       />
       <ProjectTabs projectId={leadId} projectName={name} isLead />
       <Card>

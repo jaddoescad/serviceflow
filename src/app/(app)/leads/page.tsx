@@ -10,8 +10,8 @@ export default async function LeadsPage() {
   return (
     <>
       <PageHeader
-        title="Leads & Estimates"
-        subtitle={`${leads.length.toLocaleString("en-CA")} projects · one lead, estimate, or current job per row`}
+        title="Deals"
+        subtitle={`${leads.length.toLocaleString("en-CA")} deals · contacts and linked jobs`}
       />
       <LeadsTable leads={leads} />
     </>

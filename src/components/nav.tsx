@@ -11,7 +11,7 @@ import { initials } from "@/lib/format";
 const LINKS = [
   { href: "/", label: "Overview" },
   { href: "/contacts", label: "Contacts" },
-  { href: "/leads", label: "Leads & Estimates" },
+  { href: "/leads", label: "Deals" },
   { href: "/jobs", label: "Jobs & Budgets" },
   { href: "/photos", label: "Photos" },
   { href: "/financials", label: "Financials" },

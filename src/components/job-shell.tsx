@@ -45,7 +45,7 @@ export function JobShell({
           className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)] transition-colors hover:text-[var(--color-heading)]"
         >
           <span aria-hidden="true">‹</span>
-          {isLead ? "Leads & Estimates" : "Projects"}
+          {isLead ? "Deals" : "Projects"}
         </Link>
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="font-display text-2xl font-bold tracking-tight text-[var(--color-heading)] sm:text-3xl">

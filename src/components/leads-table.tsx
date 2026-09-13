@@ -4,10 +4,10 @@ import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, EmptyState, Input, Select, cn } from "@/components/ui";
-import { fmtDate, fmtMoney } from "@/lib/format";
+import { fmtDate } from "@/lib/format";
 import type { MarketingLead } from "@/lib/types";
 
-type ProgressFilter = "all" | "lead" | "estimate" | "job" | "proposal";
+type ProgressFilter = "all" | "deal" | "job";
 
 type Stage = {
   label: string;
@@ -23,10 +23,8 @@ const PROGRESS_SCOPES: Array<{
   title: string;
 }> = [
   { value: "all", label: "All", title: "All records" },
-  { value: "lead", label: "Lead", title: "No estimate, proposal, or job yet" },
-  { value: "estimate", label: "Estimate", title: "Estimate booked" },
-  { value: "proposal", label: "Proposal", title: "Proposal recorded" },
-  { value: "job", label: "Job", title: "Converted to job" },
+  { value: "deal", label: "Deals", title: "Deals without a job yet" },
+  { value: "job", label: "Jobs", title: "Deals converted to jobs" },
 ];
 
 const stageTones: Record<Stage["tone"], string> = {
@@ -48,34 +46,13 @@ function sourceTone(lead: MarketingLead): "neutral" | "brand" | "good" {
 
 function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
   if (filter === "all") return true;
-  if (filter === "lead") {
-    return (
-      !lead.job &&
-      !lead.estimateScheduledOn &&
-      !lead.estimateAppointmentOn &&
-      !lead.proposalNumber &&
-      lead.proposalAmount == null &&
-      !lead.proposalOn
-    );
-  }
-  if (filter === "estimate") {
-    return Boolean(lead.estimateScheduledOn || lead.estimateAppointmentOn);
-  }
-  if (filter === "job") return Boolean(lead.job);
-  return Boolean(lead.proposalNumber || lead.proposalAmount || lead.proposalOn);
+  return filter === "job" ? Boolean(lead.job) : !lead.job;
 }
 
 function leadStage(lead: MarketingLead): Stage {
-  if (lead.job) {
-    return { label: "Job", tone: "good" };
-  }
-  if (lead.proposalNumber || lead.proposalAmount != null || lead.proposalOn) {
-    return { label: "Proposal", tone: "warn" };
-  }
-  if (lead.estimateAppointmentOn || lead.estimateScheduledOn) {
-    return { label: "Estimate", tone: "brand" };
-  }
-  return { label: "Lead", tone: "neutral" };
+  return lead.job
+    ? { label: "Job", tone: "good" }
+    : { label: "Deal", tone: "neutral" };
 }
 
 type IconProps = { className?: string };
@@ -232,9 +209,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         lead.postalCode,
         lead.dealId,
         lead.rawLeadSource,
-        lead.proposalNumber,
         lead.job?.jobName,
-        lead.job?.proposalId,
         lead.job?.status,
       ].some((value) => value?.toLocaleLowerCase("en-CA").includes(needle));
     });
@@ -283,7 +258,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         <div
           className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
           role="group"
-          aria-label="Lead scope"
+          aria-label="Deal scope"
         >
           {PROGRESS_SCOPES.map((scope) => {
             const active = progress === scope.value;
@@ -315,8 +290,8 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-muted)]" />
             <Input
               type="search"
-              aria-label="Search leads"
-              placeholder="Search leads…"
+              aria-label="Search deals"
+              placeholder="Search deals…"
               value={search}
               onChange={(event) => updateFilters(() => setSearch(event.target.value))}
               className="bg-[var(--color-surface)] py-1.5 pl-9 text-[13px]"
@@ -353,7 +328,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
           </Select>
 
           <Select
-            aria-label="Filter by lead source"
+            aria-label="Filter by deal source"
             value={source}
             onChange={(event) => updateFilters(() => setSource(event.target.value))}
             className="w-auto min-w-36 max-w-52 bg-[var(--color-surface)] py-1.5 text-[13px]"
@@ -376,15 +351,12 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
 
       <Card className="overflow-hidden">
         {visible.length === 0 ? (
-          <EmptyState>No leads match these filters.</EmptyState>
+          <EmptyState>No deals match these filters.</EmptyState>
         ) : (
           <>
             <div className="max-h-[72vh] overflow-auto">
               {visible.map((lead) => {
                 const projectHref = `/jobs/${encodeURIComponent(lead.job?.jobId ?? lead.leadId)}`;
-                const estimateOn = lead.estimateAppointmentOn ?? lead.estimateScheduledOn;
-                const hasProposal =
-                  lead.proposalAmount != null || Boolean(lead.proposalNumber);
                 const stage = leadStage(lead);
 
                 return (
@@ -428,19 +400,6 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                         >
                           {sourceLabel(lead)}
                         </span>
-                        {estimateOn ? (
-                          <span className="font-medium text-[var(--color-brand-strong)]">
-                            Estimate {fmtDate(estimateOn)}
-                          </span>
-                        ) : null}
-                        {hasProposal ? (
-                          <span className="truncate">
-                            Proposal{lead.proposalNumber ? ` #${lead.proposalNumber}` : ""}
-                            {lead.proposalAmount != null
-                              ? ` · ${fmtMoney(lead.proposalAmount)}`
-                              : ""}
-                          </span>
-                        ) : null}
                       </div>
                     </div>
 

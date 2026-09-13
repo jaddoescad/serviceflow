@@ -95,7 +95,7 @@ export function CalculatorPage({
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
             <Link href={isLead ? "/leads" : "/jobs"} className="hover:text-[var(--color-text)]">
-              {isLead ? "Leads & Estimates" : "Jobs & Budgets"}
+              {isLead ? "Deals" : "Jobs & Budgets"}
             </Link>
             <span className="mx-1.5">/</span>
             <span>{displayName || "Job"}</span>
@@ -103,7 +103,7 @@ export function CalculatorPage({
           <PageHeader
             title={displayName || "Job calculator"}
             subtitle="Prices and the labour budget update as you type"
-            actions={isLead ? <Badge tone="brand">Lead</Badge> : null}
+            actions={isLead ? <Badge tone="brand">Deal</Badge> : null}
           />
 
           <ProjectTabs
