@@ -39,7 +39,6 @@ const DASHBOARD_ICON = (
 
 export const NAV_ICONS: Record<string, ReactNode> = {
   "/": DASHBOARD_ICON,
-  "/metrics": DASHBOARD_ICON,
   "/leads": (
     <Icon>
       <circle cx="12" cy="12" r="8" />
