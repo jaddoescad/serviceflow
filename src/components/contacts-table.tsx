@@ -88,7 +88,7 @@ export function ContactsTable({ contacts }: { contacts: ContactSummary[] }) {
                     ) : null}
                     {contact.leadCount > 0 ? (
                       <Badge tone="brand">
-                        {contact.leadCount} {contact.leadCount === 1 ? "lead" : "leads"}
+                        {contact.leadCount} {contact.leadCount === 1 ? "deal" : "deals"}
                       </Badge>
                     ) : null}
                     {contact.projectCount === 0 ? <Badge>No projects</Badge> : null}

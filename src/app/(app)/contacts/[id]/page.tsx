@@ -75,7 +75,7 @@ export default async function ContactDetailPage({
       </div>
       <PageHeader
         title={contact.name}
-        subtitle={`${jobs} ${jobs === 1 ? "job" : "jobs"} · ${leads} ${leads === 1 ? "lead or estimate" : "leads or estimates"}`}
+        subtitle={`${jobs} ${jobs === 1 ? "job" : "jobs"} · ${leads} ${leads === 1 ? "deal" : "deals"}`}
       />
 
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -85,10 +85,10 @@ export default async function ContactDetailPage({
               id="contact-projects-title"
               className="font-display text-lg font-semibold text-[var(--color-heading)]"
             >
-              Jobs & estimates
+              Deals & jobs
             </h2>
             <p className="mt-0.5 text-sm text-[var(--color-muted)]">
-              Each card is one job, with its own proposal, status, and photos.
+              Each card is a separate deal or job with its own photos.
             </p>
           </div>
 
@@ -106,15 +106,10 @@ export default async function ContactDetailPage({
                           {project.address || project.name}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-                          {project.proposalNumber ? (
-                            <span>Proposal #{project.proposalNumber}</span>
-                          ) : (
-                            <span>No proposal yet</span>
-                          )}
-                          {project.amount != null ? <span>· {fmtMoney(project.amount)}</span> : null}
+                          {project.kind === "job" && project.amount != null ? <span>{fmtMoney(project.amount)}</span> : null}
                         </div>
                       </div>
-                      <Badge tone={statusTone(project.status)}>{statusLabel(project.status)}</Badge>
+                      <Badge tone={project.kind === "job" ? statusTone(project.status) : "neutral"}>{project.kind === "job" ? statusLabel(project.status) : "Deal"}</Badge>
                     </div>
 
                     <div className="mt-4">
@@ -122,7 +117,7 @@ export default async function ContactDetailPage({
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--color-muted)]">
-                      <span>{project.source || (project.kind === "job" ? "Job" : "Lead")}</span>
+                      <span>{project.source || (project.kind === "job" ? "Job" : "Deal")}</span>
                       <span>
                         {project.mediaCount} {project.mediaCount === 1 ? "photo or video" : "photos and videos"} · {fmtDate(project.createdAt)}
                       </span>
@@ -133,7 +128,7 @@ export default async function ContactDetailPage({
             </div>
           ) : (
             <Card>
-              <EmptyState>No leads or jobs are linked to this contact yet.</EmptyState>
+              <EmptyState>No deals or jobs are linked to this contact yet.</EmptyState>
             </Card>
           )}
         </section>

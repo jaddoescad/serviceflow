@@ -11,7 +11,7 @@ export default async function ContactsPage() {
     <>
       <PageHeader
         title="Contacts"
-        subtitle={`${contacts.length.toLocaleString("en-CA")} customers, with every lead and job kept separate`}
+        subtitle={`${contacts.length.toLocaleString("en-CA")} customers, with every deal and job kept separate`}
       />
       <ContactsTable contacts={contacts} />
     </>
