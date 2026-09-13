@@ -1,3 +1,4 @@
+import { SITE_NAME, SITE_INITIALS } from "@/lib/site-brand";
 import { requireStaff } from "@/lib/auth";
 import { MobileNav, Nav, SidebarAccount } from "@/components/nav";
 import { SignOutButton } from "@/components/sign-out";
@@ -20,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-6">
         <div className="max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-8 text-center shadow-sm">
           <div className="font-display text-2xl font-bold text-[var(--color-heading)]">Database upgrade in progress</div>
-          <p className="mt-3 text-sm text-[var(--color-muted)]">Ottawa Painters is temporarily read-only while the V2 data migration is verified. Please try again shortly.</p>
+          <p className="mt-3 text-sm text-[var(--color-muted)]">{SITE_NAME} is temporarily read-only while the V2 data migration is verified. Please try again shortly.</p>
           <div className="mt-5"><SignOutButton /></div>
         </div>
       </main>
@@ -35,10 +36,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         <div className="mb-5 flex h-[84px] shrink-0 items-center gap-3 px-5">
           <span className="font-display inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#2979ff] text-sm font-bold text-white shadow-[0_8px_24px_rgba(41,121,255,0.3)]">
-            OP
+            {SITE_INITIALS}
           </span>
           <div className="leading-tight">
-            <div className="text-sm font-semibold text-[var(--sidebar-text)]">Ottawa Painters</div>
+            <div className="text-sm font-semibold text-[var(--sidebar-text)]">{SITE_NAME}</div>
             <div className="mt-0.5 text-[11px] text-[var(--sidebar-muted)]">Admin dashboard</div>
           </div>
         </div>

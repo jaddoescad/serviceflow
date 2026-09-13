@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_NAME, SITE_INITIALS } from "@/lib/site-brand";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -143,10 +145,10 @@ export function MobileNav({ name, role }: { name: string; role: string }) {
       <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 md:hidden">
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
           <span className="font-display inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brand)] text-sm font-bold text-[var(--color-brand-ink)]">
-            OP
+            {SITE_INITIALS}
           </span>
           <span className="truncate text-sm font-semibold text-[var(--color-heading)]">
-            Ottawa Painters
+            {SITE_NAME}
           </span>
         </Link>
         <button
@@ -182,10 +184,10 @@ export function MobileNav({ name, role }: { name: string; role: string }) {
             <div className="flex h-[76px] shrink-0 items-center justify-between px-4">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="font-display inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2979ff] text-sm font-bold text-white shadow-[0_8px_24px_rgba(41,121,255,0.3)]">
-                  OP
+                  {SITE_INITIALS}
                 </span>
                 <div className="min-w-0 leading-tight">
-                  <div className="truncate text-sm font-semibold text-[var(--sidebar-text)]">Ottawa Painters</div>
+                  <div className="truncate text-sm font-semibold text-[var(--sidebar-text)]">{SITE_NAME}</div>
                   <div className="mt-0.5 text-[11px] text-[var(--sidebar-muted)]">Admin dashboard</div>
                 </div>
               </div>

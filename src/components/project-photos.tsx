@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_NAME } from "@/lib/site-brand";
+
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { ProjectMediaUpload } from "@/components/project-media-upload";
@@ -245,7 +247,7 @@ export function ProjectPhotosPanel({
                           <figcaption className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-muted)]">
                             <time dateTime={capturedAt}>{captureTime(capturedAt)}</time>
                             <span aria-hidden="true">•</span>
-                            <span className="truncate">{item.creatorName ?? "Ottawa Painters"}</span>
+                            <span className="truncate">{item.creatorName ?? SITE_NAME}</span>
                             {item.mediaType === "video" ? (
                               <span className="ml-auto font-medium text-[var(--color-heading)]">Video</span>
                             ) : null}

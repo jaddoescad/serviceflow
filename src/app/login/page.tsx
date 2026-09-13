@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_NAME, SITE_INITIALS } from "@/lib/site-brand";
+
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -33,9 +35,9 @@ function LoginForm() {
     <Card className="w-full max-w-sm p-6">
       <div className="mb-6">
         <div className="mb-2 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-brand)] text-lg font-bold text-[var(--color-brand-ink)]">
-          OP
+          {SITE_INITIALS}
         </div>
-        <h1 className="text-lg font-semibold">Ottawa Painters Admin</h1>
+        <h1 className="text-lg font-semibold">{SITE_NAME}</h1>
         <p className="text-sm text-[var(--color-muted)]">Sign in with your admin or manager account.</p>
       </div>
       <form onSubmit={onSubmit} className="space-y-4">
@@ -46,7 +48,7 @@ function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="info@paintersottawa.com"
+            placeholder="you@company.com"
           />
         </Field>
         <Field label="Password">

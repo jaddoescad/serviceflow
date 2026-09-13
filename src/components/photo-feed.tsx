@@ -1,5 +1,7 @@
 "use client";
 
+import { SITE_INITIALS } from "@/lib/site-brand";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -66,7 +68,7 @@ function initials(name: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
-  return letters || "OP";
+  return letters || SITE_INITIALS;
 }
 
 function mediaUrl(photo: PhotoFeedItem): string {

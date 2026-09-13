@@ -1,10 +1,11 @@
+import { SITE_NAME, SITE_TITLE } from "@/lib/site-brand";
 import type { Metadata } from "next";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ottawa Painters — Admin",
-  description: "Timesheets, crews, jobs, and budgets for Ottawa Painters.",
+  title: SITE_TITLE,
+  description: `Jobs, photos, hours, and deals for ${SITE_NAME}.`,
 };
 
 // data-design pins the active theme. Themes 1–5 are defined in globals.css.
