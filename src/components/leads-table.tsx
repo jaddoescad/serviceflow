@@ -7,32 +7,8 @@ import { Button, Card, EmptyState, Input, Select, cn } from "@/components/ui";
 import { fmtDate } from "@/lib/format";
 import type { MarketingLead } from "@/lib/types";
 
-type ProgressFilter = "all" | "deal" | "job";
-
-type Stage = {
-  label: string;
-  tone: "neutral" | "brand" | "warn" | "good";
-};
-
 const PAGE_SIZE = 50;
 const DEFAULT_YEAR = "2026";
-
-const PROGRESS_SCOPES: Array<{
-  value: ProgressFilter;
-  label: string;
-  title: string;
-}> = [
-  { value: "all", label: "All", title: "All records" },
-  { value: "deal", label: "Deals", title: "Deals without a job yet" },
-  { value: "job", label: "Jobs", title: "Deals converted to jobs" },
-];
-
-const stageTones: Record<Stage["tone"], string> = {
-  neutral: "bg-[var(--color-chip-muted)] text-[var(--color-muted)]",
-  brand: "bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)]",
-  warn: "bg-[var(--color-warn-soft)] text-[var(--color-warn)]",
-  good: "bg-[var(--color-good-soft)] text-[var(--color-good)]",
-};
 
 function sourceLabel(lead: MarketingLead): string {
   return lead.rawLeadSource?.trim() || "No source";
@@ -42,17 +18,6 @@ function sourceTone(lead: MarketingLead): "neutral" | "brand" | "good" {
   if (lead.normalizedChannel === "paid_social") return "brand";
   if (["referral", "organic_search"].includes(lead.normalizedChannel)) return "good";
   return "neutral";
-}
-
-function hasProgress(lead: MarketingLead, filter: ProgressFilter): boolean {
-  if (filter === "all") return true;
-  return filter === "job" ? Boolean(lead.job) : !lead.job;
-}
-
-function leadStage(lead: MarketingLead): Stage {
-  return lead.job
-    ? { label: "Job", tone: "good" }
-    : { label: "Deal", tone: "neutral" };
 }
 
 type IconProps = { className?: string };
@@ -154,15 +119,13 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [month, setMonth] = useState("all");
   const [source, setSource] = useState("all");
-  const [progress, setProgress] = useState<ProgressFilter>("all");
   const [page, setPage] = useState(1);
 
   const isFiltered =
     search !== "" ||
     year !== DEFAULT_YEAR ||
     month !== "all" ||
-    source !== "all" ||
-    progress !== "all";
+    source !== "all";
 
   const years = useMemo(
     () => [...new Set(leads.map((lead) => lead.updatedAt.slice(0, 4)))].sort().reverse(),
@@ -215,22 +178,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
     });
   }, [leads, month, search, source, year]);
 
-  const scopeCounts = useMemo(() => {
-    const counts = Object.fromEntries(
-      PROGRESS_SCOPES.map((scope) => [scope.value, 0]),
-    ) as Record<ProgressFilter, number>;
-    for (const lead of scoped) {
-      for (const scope of PROGRESS_SCOPES) {
-        if (hasProgress(lead, scope.value)) counts[scope.value] += 1;
-      }
-    }
-    return counts;
-  }, [scoped]);
-
-  const filtered = useMemo(
-    () => scoped.filter((lead) => hasProgress(lead, progress)),
-    [progress, scoped],
-  );
+  const filtered = scoped;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -248,43 +196,12 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
       setYear(DEFAULT_YEAR);
       setMonth("all");
       setSource("all");
-      setProgress("all");
     });
   }
 
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div
-          className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
-          role="group"
-          aria-label="Deal scope"
-        >
-          {PROGRESS_SCOPES.map((scope) => {
-            const active = progress === scope.value;
-            return (
-              <button
-                key={scope.value}
-                type="button"
-                title={scope.title}
-                aria-pressed={active}
-                onClick={() => updateFilters(() => setProgress(scope.value))}
-                className={cn(
-                  "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                  active
-                    ? "bg-[var(--color-heading)] font-semibold text-[var(--color-surface)]"
-                    : "text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
-                )}
-              >
-                {scope.label}{" "}
-                <span className="tabular-nums opacity-65">
-                  {scopeCounts[scope.value].toLocaleString("en-CA")}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
           <div className="relative min-w-48 flex-1 sm:max-w-[250px]">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-muted)]" />
@@ -355,15 +272,13 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         ) : (
           <>
             <div className="max-h-[72vh] overflow-auto">
-              <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs font-semibold text-[var(--color-muted)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_5rem_8rem_10rem]">
+              <div className="sticky top-0 z-10 grid grid-cols-1 items-center gap-x-4 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs font-semibold text-[var(--color-muted)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_8rem_10rem]">
                 <span>Deal</span>
-                <span>Status</span>
                 <span className="hidden text-right lg:block">Updated at</span>
                 <span className="hidden lg:block">Photos</span>
               </div>
               {visible.map((lead) => {
                 const projectHref = `/jobs/${encodeURIComponent(lead.job?.jobId ?? lead.leadId)}`;
-                const stage = leadStage(lead);
 
                 return (
                   <div
@@ -380,7 +295,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                       event.preventDefault();
                       router.push(projectHref);
                     }}
-                    className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] px-4 py-3 outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_5rem_8rem_10rem]"
+                    className="grid cursor-pointer grid-cols-1 items-center gap-x-4 border-b border-[var(--color-border)] px-4 py-3 outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_8rem_10rem]"
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2.5">
@@ -409,16 +324,6 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                         <span className="lg:hidden">Updated {fmtDate(lead.updatedAt)}</span>
                       </div>
                     </div>
-
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
-                        stageTones[stage.tone],
-                      )}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-                      {stage.label}
-                    </span>
 
                     <span className="hidden text-right text-xs text-[var(--color-muted)] lg:block">
                       {fmtDate(lead.updatedAt)}

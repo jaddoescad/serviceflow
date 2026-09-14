@@ -11,7 +11,7 @@ export default async function DealsPage() {
     <>
       <PageHeader
         title="Deals"
-        subtitle={`${leads.length.toLocaleString("en-CA")} deals · contacts and linked jobs`}
+        subtitle={`${leads.length.toLocaleString("en-CA")} deals`}
       />
       <LeadsTable leads={leads} />
     </>
