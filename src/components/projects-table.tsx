@@ -4,12 +4,10 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
-import { fmtMoney, fmtDate, fmtMonthYear } from "@/lib/format";
+import { fmtMoney } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
-  LABOUR_MAX_PERCENT,
-  LABOUR_MIN_PERCENT,
   budgetStatus,
   readyToCloseLabour,
   summarizeLabour,
@@ -18,64 +16,13 @@ import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import { compareJobsTableRows } from "@/lib/project-sort";
 import { AmountDialog } from "@/components/job-amount-dialog";
 
-type ProjectTableRow = ProjectRollup & {
-  painters: string[];
-};
+type ProjectTableRow = ProjectRollup;
 
-const UNSCHEDULED_MONTH = "unscheduled";
 
 function painterBudget(row: ProjectTableRow): number | null {
   return row.amountBeforeTax == null
     ? null
     : row.amountBeforeTax * (LABOUR_ALERT_PERCENT / 100);
-}
-
-function BudgetLeft({
-  amountBeforeTax,
-  used,
-}: {
-  amountBeforeTax: number | null;
-  used: number;
-}) {
-  if (amountBeforeTax == null) {
-    return <span className="text-xs text-[var(--color-muted)]">—</span>;
-  }
-
-  const comparisons = [
-    LABOUR_MIN_PERCENT,
-    LABOUR_MAX_PERCENT,
-    LABOUR_ALERT_PERCENT,
-  ].map((percent) => ({
-    percent,
-    remaining: amountBeforeTax * (percent / 100) - used,
-  }));
-
-  return (
-    <div
-      className="ml-auto inline-flex items-baseline justify-end whitespace-nowrap text-[11px]"
-      title={`${fmtMoney(used)} chosen painter cost subtracted from each labour allowance`}
-    >
-      {comparisons.map(({ percent, remaining }, index) => (
-        <span
-          key={percent}
-          className="inline-flex items-baseline"
-        >
-          {index > 0 ? (
-            <span className="mx-1 font-normal text-[var(--color-muted)]">/</span>
-          ) : null}
-          <span
-            className={`font-medium ${
-              remaining < 0
-                ? "text-[var(--color-bad)]"
-                : "text-[var(--color-good)]"
-            }`}
-          >
-            {fmtMoney(remaining)}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function UsageBar({
@@ -126,14 +73,6 @@ function labourShare(amountBeforeTax: number | null, cost: number): number | nul
     : null;
 }
 
-function JobStatus({ row }: { row: ProjectTableRow }) {
-  return row.labourClosedAt ? (
-    <Badge tone="good">Completed</Badge>
-  ) : (
-    <Badge tone="neutral">Not completed</Badge>
-  );
-}
-
 export function ProjectsTable({
   rows,
   now,
@@ -145,39 +84,12 @@ export function ProjectsTable({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [productionMonthFilter, setProductionMonthFilter] = useState("all");
   const [budgetFor, setBudgetFor] = useState<ProjectRollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const productionMonths = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          rows
-            .map((row) => row.productionMonth?.slice(0, 7) ?? null)
-            .filter((month): month is string => Boolean(month)),
-        ),
-      ).sort((left, right) => right.localeCompare(left)),
-    [rows],
-  );
-  const hasUnscheduledJobs = useMemo(
-    () => rows.some((row) => !row.productionMonth),
-    [rows],
-  );
-
   const filtered = useMemo(() => {
     const matches = rows.filter((r) => {
-        const rowProductionMonth = r.productionMonth?.slice(0, 7) ?? null;
-        if (
-          productionMonthFilter === UNSCHEDULED_MONTH &&
-          rowProductionMonth != null
-        ) return false;
-        if (
-          productionMonthFilter !== "all" &&
-          productionMonthFilter !== UNSCHEDULED_MONTH &&
-          rowProductionMonth !== productionMonthFilter
-        ) return false;
         if (filter === "budgeted" && r.amountBeforeTax == null) return false;
         if (filter === "over" && r.status !== "over") return false;
         if (filter === "nobudget" && r.amountBeforeTax != null) return false;
@@ -188,7 +100,7 @@ export function ProjectsTable({
         return true;
       });
     return matches.sort(compareJobsTableRows);
-  }, [rows, search, filter, productionMonthFilter, now]);
+  }, [rows, search, filter, now]);
 
   const visibleAmountSummary = useMemo(() => {
     const jobsWithAmount = filtered.filter(
@@ -207,13 +119,6 @@ export function ProjectsTable({
           : null,
     };
   }, [filtered]);
-
-  const selectedMonthLabel =
-    productionMonthFilter === "all"
-      ? "All production months"
-      : productionMonthFilter === UNSCHEDULED_MONTH
-        ? "Unscheduled"
-        : fmtMonthYear(`${productionMonthFilter}-01`);
 
   // Only settled jobs produce a headline percentage. In-flight jobs carry a full
   // contract value against a part-spent labour cost, so averaging them in would
@@ -304,23 +209,7 @@ export function ProjectsTable({
               <option value="nobudget">No amount set</option>
             </Select>
           </Field>
-          <Field label="Production month">
-            <Select
-              value={productionMonthFilter}
-              onChange={(event) => setProductionMonthFilter(event.target.value)}
-              className="min-w-44"
-            >
-              <option value="all">All months</option>
-              {productionMonths.map((month) => (
-                <option key={month} value={month}>
-                  {fmtMonthYear(`${month}-01`)}
-                </option>
-              ))}
-              {hasUnscheduledJobs ? (
-                <option value={UNSCHEDULED_MONTH}>Unscheduled</option>
-              ) : null}
-            </Select>
-          </Field>
+
         </div>
 
         <div
@@ -338,7 +227,7 @@ export function ProjectsTable({
           </div>
           <div className="text-right text-xs text-[var(--color-muted)]">
             <div className="font-medium text-[var(--color-text)]">
-              {selectedMonthLabel} · {visibleAmountSummary.jobCount}{" "}
+              {visibleAmountSummary.jobCount}{" "}
               {visibleAmountSummary.jobCount === 1 ? "job" : "jobs"}
             </div>
             <div className="mt-0.5">
@@ -359,24 +248,17 @@ export function ProjectsTable({
 
         {filtered.length === 0 ? (
           <EmptyState>
-            {productionMonthFilter === "all"
-              ? "No jobs match the current filters."
-              : `No jobs in ${selectedMonthLabel} match the current filters.`}
+            No jobs match the current filters.
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] table-fixed text-[13px]">
-              <colgroup><col className="w-[15%]" /><col className="w-[10%]" /><col className="w-[9%]" /><col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[12%]" /><col className="w-[7%]" /></colgroup>
+            <table className="w-full min-w-[800px] table-fixed text-[13px]">
+              <colgroup><col className="w-[28%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[18%]" /></colgroup>
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                   <th className="px-2.5 py-2.5 font-medium">Job</th>
-                  <th
-                    className="px-2.5 py-2.5 font-medium"
-                    title="Painters assigned to this job"
-                  >
-                    Assigned painters
-                  </th>
-                  <th className="px-2.5 py-2.5 font-medium">Production month</th>
+
+
                   <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
                   <th className="px-2.5 py-2.5 text-right font-medium">Painter budget (40%)</th>
                   <th
@@ -386,19 +268,9 @@ export function ProjectsTable({
                     Clocked hours ($)
                   </th>
                   <th className="px-2.5 py-2.5 font-medium">Hourly usage</th>
-                  <th
-                    className="px-2.5 py-2.5 font-medium"
-                    title="Open jobs appear first by labour activity: latest clock-in; all other jobs follow by DripJobs start date"
-                  >
-                    Job start date ↓
-                  </th>
-                  <th
-                    className="px-2.5 py-2.5 text-right font-medium"
-                    title="Amount remaining after the chosen painter cost at 35%, 37%, and 40% of the pre-tax job amount"
-                  >
-                    Budget left 35/37/40
-                  </th>
-                  <th className="px-2.5 py-2.5 font-medium">Status</th>
+
+
+
                 </tr>
               </thead>
               <tbody>
@@ -422,16 +294,8 @@ export function ProjectsTable({
                         ) : null}
                       </Link>
                     </td>
-                    <td className="px-2.5 py-2.5 text-xs text-[var(--color-text)]">
-                      {r.painters.length ? (
-                        <span title={r.painters.join(", ")}>{r.painters.join(", ")}</span>
-                      ) : (
-                        <span className="text-[var(--color-muted)]">—</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-2.5 font-medium text-[var(--color-text)]">
-                      {fmtMonthYear(r.productionMonth)}
-                    </td>
+
+
                     <td className="whitespace-nowrap px-2.5 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
                       <div className="flex items-center justify-end gap-1.5">
                         <span>{fmtMoney(r.amountBeforeTax)}</span>
@@ -478,18 +342,9 @@ export function ProjectsTable({
                         amount={r.clockedWageCost}
                       />
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-2.5 text-[var(--color-muted)]">
-                      {fmtDate(r.jobStartedOn)}
-                    </td>
-                    <td className="px-2.5 py-2.5 text-right tabular-nums">
-                      <BudgetLeft
-                        amountBeforeTax={r.labourExcluded ? null : r.amountBeforeTax}
-                        used={r.wageCost}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-2.5">
-                      <JobStatus row={r} />
-                    </td>
+
+
+
                   </tr>
                 ))}
               </tbody>
