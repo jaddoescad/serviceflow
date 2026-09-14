@@ -1,5 +1,5 @@
 {
-  "name": "serviceflow-web",
+  "name": "serviceflow-admin",
   "version": "1.0.0",
   "private": true,
   "engines": {
@@ -46,7 +46,10 @@
     "test:marketing-sales": "node --experimental-strip-types --test scripts/marketing-sales-metrics.test.mjs",
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
     "test:dripjobs-daily-sync": "node --test scripts/dripjobs-jobs-list.test.mjs scripts/dripjobs-sales-list.test.mjs scripts/dripjobs-job-authority.test.mjs scripts/dripjobs-daily-sync-runner.test.mjs",
-    "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs"
+    "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
+    "mobile:start": "npm --prefix apps/mobile start",
+    "mobile:install": "npm --prefix apps/mobile ci",
+    "mobile:check": "npm --prefix apps/mobile run qa:secrets"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",

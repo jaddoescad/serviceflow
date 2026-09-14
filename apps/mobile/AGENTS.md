@@ -1,5 +1,9 @@
 # Agent Instructions
 
+## UI/UX Design
+
+- Before starting UI/UX design work, use the imagegen skill to generate a UI mockup and use it as the visual reference for the design and implementation.
+
 ## Branch Policy
 
 - Work on the current branch by default.
@@ -69,10 +73,11 @@ bridge caps at 10 MB and an app bundle is far larger.
 
 ### Local iOS builds
 
-Never build iOS from this directory — the space in "Ottawa Painters App"
-breaks Expo's build scripts. Clone to a path without spaces
-(`~/.serviceflow-build` is the working copy), run `npm install` and
-`eas env:pull --environment production` there, and build from that clone.
+Run mobile commands from `apps/mobile` in this repository. For local iOS
+builds use a checkout path without spaces, then `cd apps/mobile`, run
+`npm ci` and `eas env:pull --environment production`. Any older standalone
+`~/.serviceflow-build` checkout must be replaced or refreshed from the combined
+`jaddoescad/serviceflow` repository before building.
 
 ## Testers
 

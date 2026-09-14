@@ -20,7 +20,7 @@
 ## Production deployment
 
 - The canonical production URL is `https://serviceflow-admin.vercel.app`.
-- GitHub repository `jaddoescad/serviceflow-web` is the deployment source of truth. Vercel is linked to its `main` branch.
+- GitHub repository `jaddoescad/serviceflow` is the deployment source of truth. Vercel is linked to its `main` branch.
 - Deploy by committing only the intended files and pushing `main` to `origin`. The GitHub integration must perform the Vercel production deployment.
 - Do not run `vercel deploy`, create preview deployments, promote previews, or create/link another Vercel project unless the user explicitly asks for that exact action.
 - Before pushing, inspect the staged diff and exclude unrelated dirty-worktree changes. After pushing, wait for the linked Vercel deployment to become Ready and verify the canonical production URL.
@@ -46,3 +46,11 @@
 ## Backend ownership
 
 This is ServiceFlow. Operational edits belong here. Sync only the approved operational columns to Ottawa Painters; never import Ottawa Painters accounting or login access. Production Supabase project: `bwbckdkouqghdadpkjvn`.
+
+## Repository layout
+
+- This private repository contains the ServiceFlow admin at the root and mobile app in `apps/mobile`.
+- Run mobile npm/Expo/EAS commands from `apps/mobile`; keep its independent lockfile and dependencies.
+- Follow `apps/mobile/AGENTS.md` for mobile release requirements.
+- Before UI/UX design work, use the imagegen skill for a visual reference.
+- Ottawa Painters admin stays in its separate repository.

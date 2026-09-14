@@ -1,119 +1,32 @@
-# Ottawa Painters — Admin Dashboard
+# ServiceFlow
 
-Desktop web dashboard (Next.js 15, App Router) for reviewing crew timesheets,
-managing employees and job assignments, and tracking hours against per-job
-budgets. It reads from and writes to the same Supabase project as the mobile
-app.
+One private repository for the ServiceFlow admin website and mobile app.
 
-## How it fits together
+| Component | Directory | Release |
+| --- | --- | --- |
+| Admin website | Repository root (`src/`) | Push `main`; existing Vercel project deploys https://serviceflow-admin.vercel.app |
+| Mobile app | `apps/mobile` | Expo EAS channels `preview`, `pilot`, `production` |
 
-- **Reads** run under the signed-in admin/manager's Supabase session. RLS
-  (migration `20260630150000`) grants admins/managers read access to every
-  crew member's profiles, assignments, and time entries.
-- **Timesheet edits, approvals, deletes** call the existing
-  `admin-time-entries` edge function with the user's JWT.
-- **Employee create / role / active / assignments** call the existing
-  `project-assignments` edge function.
-- **Financial budgets** are stored in `project_budgets` (migration
-  `20260707190000`) and written directly via RLS (admin/manager only).
-- **Financial statements** are consolidated in `financial_accounts`,
-  `financial_imports`, and `financial_transactions` (migration
-  `20260726180000`), with live-feed balances added by migration
-  `20260727020000`. Signed HST and before-tax amounts are retained with
-  source hashes; inter-account credit-card payments are marked as transfers
-  so the dashboard does not double-count them. Live posted transactions are
-  imported idempotently, pending transactions are skipped, and provisional
-  categories and HST remain flagged for review.
-- **Calculator labour budgets** are versioned in `project_labour_budgets`.
-  The first calculator is the default automatically. Opening another quote
-  does not change it; selecting **Make default** explicitly chooses that quote
-  and materializes its rooms/exterior lines as `project_labour_tasks`. Later
-  edits to the default quote republish those tasks through autosave. Replacing
-  the selection keeps older task and timer history inactive instead of
-  deleting it.
-- **Painter task time** is stored separately in
-  `project_labour_task_time_entries`, with offline-safe client IDs and an
-  optional link to the painter's existing whole-shift `time_entries` row.
-  Assigned painters can read the safe task payload and aggregate hours through
-  `list_project_labour_tasks`; calculator prices and rates remain staff-only.
+## Development
 
-## Access
+Admin: run `npm ci`, then `npm run dev` at the root. `npm run build` validates production.
 
-Only active `admin` or `manager` employee profiles can sign in. Everyone else
-is redirected to a not-authorized screen. `info@paintersottawa.com` is an admin.
+Mobile: `cd apps/mobile`, `npm ci`, then `npm start`. Run all Expo and EAS commands there. The two apps retain independent lockfiles and dependencies; this repository intentionally does not hoist native dependencies into the admin.
 
-## Setup
+Both use the existing ServiceFlow backend. Ottawa Painters remains in its own repository and database. Combining the code does not merge their data or releases.
 
-```bash
-cd admin-dashboard
-npm install
-cp .env.example .env.local   # fill in Supabase URL + publishable key
-npm run dev                  # http://localhost:3100
-```
+## Deployment
 
-Environment variables (`.env.local`):
+Vercel keeps its existing project, domain, environment, root directory (`.`), and `npm run build` command. GitHub source is `jaddoescad/serviceflow`, branch `main`. No new Vercel project is needed.
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key)
-- `NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL` (optional; defaults to `<url>/functions/v1`)
+Mobile retains the ServiceFlow display name, Expo project ID, runtime version, update channels, iOS bundle identifier, and Android application ID. Package metadata is now named `serviceflow`. Keeping the platform identifiers preserves updates for existing installed apps and store listings.
 
-## Pages
+From `apps/mobile`, use `eas update --branch <preview|pilot|production> --message "description"` for JavaScript releases, or the existing EAS build/submit profiles for native releases. See `apps/mobile/AGENTS.md` for mandatory release verification.
 
-- `/` — Overview: live shift board, KPIs, hours/day, hours by crew & job,
-  approval status, budget health, a crew/job map, daily clock-in activity, and
-  off-site clock-in attention. The map refreshes every minute and loads each
-  active shift's unique `employee_location_points` as a selectable movement
-  trail. It reports GPS freshness separately from the app heartbeat, shows the
-  latest coordinate/accuracy/distance, and marks the 250 m job area. A
-  clock-in position is used when there are no later updates; employees with no
-  recorded coordinates are not placed at the job address.
-- `/timesheets` — filter, edit, approve, and delete time entries.
-  Active shifts have a dedicated **Clock out** action with Now, 5:00 PM, and
-  6:00 PM shortcuts. **Fix time** provides an Ottawa-time editor, duration
-  preview, correction notes, and a clear warning when a completed shift would
-  be reopened.
-- `/projects` — Jobs & Budgets: set job amounts, track labour, assign crew,
-  build multiple calculator options, and publish one option as the painter
-  task budget.
-  Job amounts are entered manually before HST and remain independent of
-  calculator totals. No tax is added or removed. Managers can edit the amount
-  whether or not a default calculator has been selected for painter tasks.
-  “Last active” uses the latest crew time or verified contractor invoice date;
-  logged hours use the higher verified total so invoices do not double-count
-  clocked labour.
-- `/financials` — consolidated business chequing, e-transfer, and TD Visa
-  activity with before-HST revenue and expenses, cash-basis net income, HST
-  payable, live account balances, reconciliation coverage, category totals,
-  and source-level transaction provenance.
-- `/employees` — Crew: create members, set roles, activate/deactivate.
+Ignored mobile credentials and environment files belong inside `apps/mobile`, not the repository root. Obtain these securely for new checkouts; never commit signing credentials or production secrets.
 
-## Clock-out CLI
+## Migration provenance
 
-Use the CLI when you already know the painter and end time:
+The mobile history through `9beb24a` was imported with a full-history subtree merge. Admin history remains intact. The old mobile checkout/repository is a recovery reference, not the active development source. Do all future mobile and admin work here.
 
-```bash
-# Review the matched active shift, then confirm interactively.
-npm run clock-out -- "Michael Matambo" 6pm
-
-# Skip the prompt when using the command in a trusted admin workflow.
-npm run clock-out -- --employee "Michael Matambo" --at 18:00 --yes
-
-# Inspect the match without changing production data.
-npm run clock-out -- "Michael" now --dry-run
-```
-
-The command accepts `now`, friendly times such as `6pm`, 24-hour times such as
-`18:00`, and ISO timestamps. Time-only values use `America/Toronto`; add
-`--date YYYY-MM-DD` for another day or `--project` to disambiguate a name.
-
-The CLI needs `SUPABASE_URL` and the server-only
-`SUPABASE_SERVICE_ROLE_KEY`. It loads normal environment variables and local
-`.env.local` files, including the adjacent mobile-app `.env.local` in this
-workspace. Set `TIME_ENTRY_ADMIN_EMAIL` (or pass `--actor-email`) to choose the
-admin/manager recorded in the audit history. The service-role key is never
-used by the dashboard's browser bundle.
-
-## Deploy
-
-Deploy as a standalone app (e.g. Vercel) with the Supabase env vars set. It is
-independent of the Expo build.
+Historical admin documentation is retained in `docs/admin-legacy-readme.md`; descriptions of removed accounting modules there are historical, not current features.
