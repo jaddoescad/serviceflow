@@ -140,6 +140,7 @@ export default async function ContactDetailPage({
             </h2>
           </div>
           <dl className="space-y-4 p-5 text-sm">
+            {contact.address ? <div><dt className="text-xs font-medium text-[var(--color-muted)]">Address</dt><dd className="mt-1 text-[var(--color-heading)]">{contact.address}</dd></div> : null}
             <div>
               <dt className="text-xs font-medium text-[var(--color-muted)]">Email</dt>
               <dd className="mt-1 break-words text-[var(--color-heading)]">

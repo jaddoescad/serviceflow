@@ -45,6 +45,7 @@ export type ContactDetail = {
   email: string | null;
   phone: string | null;
   notes: string | null;
+  address: string | null;
   createdAt: string;
   projects: ContactProject[];
 };
@@ -214,7 +215,7 @@ export const getCustomerContacts = cache(async (): Promise<ContactSummary[]> => 
         ? latest.name
           ? jobAddress(latest)
           : leadAddress(latest)
-        : null,
+        : text(contact.metadata?.address),
       jobCount: selectedJobs.length,
       leadCount: openLeads.length,
       projectCount: selectedJobs.length + openLeads.length,
@@ -388,6 +389,7 @@ export const getContactDetail = cache(
       .sort((left, right) => milliseconds(right.updatedAt) - milliseconds(left.updatedAt));
     const metadata = contact.metadata ?? {};
     return {
+      address: text(contact.metadata?.address),
       id: contact.id,
       name: text(contact.name) ?? "Unnamed contact",
       email: text(contact.email),
