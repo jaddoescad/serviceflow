@@ -2,14 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { Badge, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
-import { Kpi } from "@/components/kpi";
+import { Badge, Card, CardHeader, EmptyState, Field, Input } from "@/components/ui";
 import { fmtMoney, fmtHours } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
   budgetStatus,
-  readyToCloseLabour,
   summarizeLabour,
 } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
@@ -68,56 +66,19 @@ export function ProjectsTable({
   canManage: boolean;
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
   const [budgetFor, setBudgetFor] = useState<ProjectRollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const filtered = useMemo(() => {
     const matches = rows.filter((r) => {
-        if (filter === "budgeted" && r.amountBeforeTax == null) return false;
-        if (filter === "over" && r.status !== "over") return false;
-        if (filter === "nobudget" && r.amountBeforeTax != null) return false;
-        if (filter === "settled" && !r.labourClosedAt) return false;
-        if (filter === "inflight" && r.labourClosedAt) return false;
-        if (filter === "toclose" && !readyToCloseLabour(r, now)) return false;
         if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
         return true;
       });
     return matches.sort(compareJobsTableRows);
-  }, [rows, search, filter, now]);
+  }, [rows, search]);
 
-  const visibleAmountSummary = useMemo(() => {
-    const jobsWithAmount = filtered.filter(
-      (row) => row.amountBeforeTax != null,
-    );
-    return {
-      jobCount: filtered.length,
-      amountCount: jobsWithAmount.length,
-      missingAmountCount: filtered.length - jobsWithAmount.length,
-      totalBeforeHst:
-        jobsWithAmount.length > 0
-          ? jobsWithAmount.reduce(
-              (total, row) => total + Number(row.amountBeforeTax),
-              0,
-            )
-          : null,
-    };
-  }, [filtered]);
-
-  // Only settled jobs produce a headline percentage. In-flight jobs carry a full
-  // contract value against a part-spent labour cost, so averaging them in would
-  // understate labour and flatter an unfinished book.
   const totals = useMemo(() => summarizeLabour(rows, now), [rows, now]);
-  const completedCount = rows.filter((row) => Boolean(row.labourClosedAt)).length;
-  const completedWithoutLabourCount = Math.max(
-    0,
-    completedCount - totals.settled.count,
-  );
-  const notCompletedCount = rows.filter(
-    (row) => row.amountBeforeTax != null && !row.labourClosedAt,
-  ).length;
-
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
     setError(null);
     startTransition(async () => {
@@ -129,41 +90,6 @@ export function ProjectsTable({
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Kpi
-          label="Job value"
-          value={fmtMoney(totals.settled.jobValue)}
-          hint={`${totals.settled.count} costed completions · before HST`}
-        />
-        <Kpi
-          label="Painter cost"
-          value={fmtMoney(totals.settled.labourCost)}
-          hint="costed completions · clocked wages"
-        />
-        <Kpi
-          label="Labour share"
-          value={totals.settled.sharePercent != null ? `${totals.settled.sharePercent.toFixed(1)}%` : "—"}
-          tone={
-            totals.settled.sharePercent == null
-              ? "neutral"
-              : totals.settled.sharePercent >= LABOUR_ALERT_PERCENT
-                ? "bad"
-                : "good"
-          }
-          hint={totals.settled.sharePercent != null ? "costed completed jobs · green below 40%" : "complete a finished job"}
-        />
-        <Kpi
-          label="Completed"
-          value={completedCount}
-          tone="neutral"
-          hint={
-            completedWithoutLabourCount > 0
-              ? `${completedWithoutLabourCount} need labour cost · ${notCompletedCount} not completed`
-              : `${notCompletedCount} not completed`
-          }
-        />
-      </div>
-
       <Card>
         <CardHeader
           title="Jobs & costs"
@@ -183,46 +109,8 @@ export function ProjectsTable({
           <Field label="Search">
             <Input placeholder="Job name…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56" />
           </Field>
-          <Field label="Filter">
-            <Select value={filter} onChange={(e) => setFilter(e.target.value)}>
-              <option value="all">All jobs</option>
-              <option value="settled">Completed</option>
-              <option value="inflight">Not completed</option>
-              <option value="toclose">Ready to complete</option>
-              <option value="budgeted">Has amount</option>
-              <option value="over">40% or higher</option>
-              <option value="nobudget">No amount set</option>
-            </Select>
-          </Field>
 
-        </div>
 
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          <div>
-            <div className="text-xs font-medium text-[var(--color-muted)]">
-              Total job value before HST
-            </div>
-            <div className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
-              {fmtMoney(visibleAmountSummary.totalBeforeHst)}
-            </div>
-          </div>
-          <div className="text-right text-xs text-[var(--color-muted)]">
-            <div className="font-medium text-[var(--color-text)]">
-              {visibleAmountSummary.jobCount}{" "}
-              {visibleAmountSummary.jobCount === 1 ? "job" : "jobs"}
-            </div>
-            <div className="mt-0.5">
-              {visibleAmountSummary.missingAmountCount > 0
-                ? `${visibleAmountSummary.amountCount} included · ${visibleAmountSummary.missingAmountCount} missing ${visibleAmountSummary.missingAmountCount === 1 ? "amount" : "amounts"} excluded`
-                : visibleAmountSummary.jobCount > 0
-                  ? "All visible jobs have amounts"
-                  : "No visible jobs"}
-            </div>
-          </div>
         </div>
 
         {error ? (
