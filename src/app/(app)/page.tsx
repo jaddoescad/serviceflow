@@ -87,7 +87,6 @@ export default async function OverviewPage() {
     movementShifts.flatMap((entry) => (entry.user_id ? [entry.user_id] : [])),
     new Date(earliestMovementStart - LOCATION_MATCH_TOLERANCE_MS).toISOString(),
   );
-  const completedInWindow = entries.filter((e) => e.status === "complete");
 
   // On-site compliance across the window.
   let onSiteMs = 0;
