@@ -1,0 +1,23 @@
+// Cloudflare Worker for authenticated project media (photos/videos).
+// The R2 bucket stays private: every object route requires a Supabase JWT and
+// authorization is enforced by Supabase RLS via the Data API.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "project-media-worker",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-17",
+  // Preserve the Supabase variables configured in Cloudflare when deploying
+  // from this checked-in config. Local development reads .dev.vars instead.
+  "keep_vars": true,
+  // Media Transformations: extracts still frames from stored videos. Takes the
+  // R2 body directly, so the bucket stays private.
+  "media": {
+    "binding": "MEDIA"
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "ottawa-painters-project-media"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+# Expo
+.expo/
+web-build/
+build/
+qa-artifacts/
+outputs/
+tmp/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+deno.lock
+.DS_Store
+.env
+.env.local
+.env.*.local
+**/.dev.vars
+supabase/.temp/
+
+# iOS native build output
+ios/Pods/
+ios/build/
+ios/DerivedData/
+ios/*.xcworkspace/xcuserdata/
+ios/**/xcuserdata/
+
+# Android release signing
+android/keystore.properties
+android/app/*.jks
+credentials.json
+# Google Play service account key used by `eas submit`.
+play-service-account.json
+build-artifacts/

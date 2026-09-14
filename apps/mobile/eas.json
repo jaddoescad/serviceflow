@@ -1,0 +1,78 @@
+{
+  "cli": {
+    "version": ">= 16.2.2",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "environment": "production",
+      "autoIncrement": true,
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "credentialsSource": "remote"
+      }
+    },
+    "simcheck": {
+      "distribution": "internal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "simulator": true
+      }
+    },
+    "pilot": {
+      "channel": "pilot",
+      "environment": "production",
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "credentialsSource": "remote"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "android": {
+        "credentialsSource": "local"
+      },
+      "ios": {
+        "image": "macos-tahoe-26.5-xcode-26.6",
+        "credentialsSource": "remote"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "alpha",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      },
+      "ios": {
+        "ascAppId": "6787451069"
+      }
+    },
+    "internal": {
+      "android": {
+        "track": "internal",
+        "serviceAccountKeyPath": "./play-service-account.json"
+      }
+    },
+    "pilot": {
+      "ios": {
+        "ascAppId": "6787451069"
+      }
+    }
+  }
+}

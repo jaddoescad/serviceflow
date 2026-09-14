@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "88880672203",
+    "project_id": "serviceflow-b9b49",
+    "storage_bucket": "serviceflow-b9b49.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:88880672203:android:636847c0d8fa34aaa35a4e",
+        "android_client_info": {
+          "package_name": "com.ottawapainters.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbvxVEN3Q2G5_g64v9_64JWKDmoUWbVmg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

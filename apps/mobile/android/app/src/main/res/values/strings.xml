@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">ServiceFlow</string>
+  <string name="expo_runtime_version">1.5.0</string>
+</resources>
