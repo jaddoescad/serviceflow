@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
 import { Kpi } from "@/components/kpi";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, fmtHours } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
@@ -28,25 +28,12 @@ function painterBudget(row: ProjectTableRow): number | null {
 function UsageBar({
   percent,
   status,
-  label,
-  amount,
 }: {
   percent: number | null;
   status: BudgetStatus;
-  label: string;
-  amount: number;
 }) {
   if (percent == null) {
-    return amount > 0 ? (
-      <div>
-        <span className="text-xs text-[var(--color-muted)]">—</span>
-        <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">
-          {label} · {fmtMoney(amount)}
-        </div>
-      </div>
-    ) : (
-      <span className="text-xs text-[var(--color-muted)]">—</span>
-    );
+    return <span className="text-xs text-[var(--color-muted)]">—</span>;
   }
   const color = status === "over" ? "var(--color-bad)" : status === "near" ? "var(--color-warn)" : "var(--color-good)";
   return (
@@ -60,9 +47,7 @@ function UsageBar({
         </div>
         <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">{percent.toFixed(1)}%</span>
       </div>
-      <div className="mt-0.5 whitespace-nowrap text-[10px] text-[var(--color-muted)]">
-        {label} · {fmtMoney(amount)}
-      </div>
+
     </div>
   );
 }
@@ -322,7 +307,7 @@ export function ProjectsTable({
                       </div>
                     </td>
                     <td className="px-2.5 py-2.5 text-right font-medium tabular-nums">
-                      {r.labourExcluded ? "—" : fmtMoney(painterBudget(r))}
+                      {r.labourExcluded ? "—" : <>{fmtMoney(painterBudget(r))} <span className="text-xs text-[var(--color-muted)]">({r.budgetedHours == null ? "hours not set" : fmtHours(r.budgetedHours)})</span></>}
                     </td>
                     <td
                       className="px-2.5 py-2.5 text-right font-medium tabular-nums"
@@ -332,14 +317,12 @@ export function ProjectsTable({
                           : "Priced clocked wages before any invoice override"
                       }
                     >
-                      {r.labourExcluded ? "—" : fmtMoney(r.clockedWageCost)}
+                      {r.labourExcluded ? "—" : <>{fmtMoney(r.clockedWageCost)} <span className="text-xs text-[var(--color-muted)]">({fmtHours(r.clockedHours)})</span></>}
                     </td>
                     <td className="px-2.5 py-2.5">
                       <UsageBar
                         percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost)}
                         status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost))}
-                        label="Clocked hours"
-                        amount={r.clockedWageCost}
                       />
                     </td>
 
