@@ -674,6 +674,24 @@ export default {
       return errorResponse(503, "Media service is not configured.");
     }
 
+    // Issuer is only a routing hint. Supabase verifies the signature and
+    // destination staff-access RLS before any object bytes can be returned.
+    const token = getBearerToken(request);
+    let issuer = null;
+    try {
+      const payload = token?.split(".")[1];
+      if (payload) issuer = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))).iss;
+    } catch { /* Invalid tokens are rejected by the existing authorization path. */ }
+    if (issuer === "https://pyzejfhsdewpnvmtqtlw.supabase.co/auth/v1") {
+      if (!["GET", "HEAD"].includes(method) || !/^\/v1\/media\/[^/]+(?:\/thumbnail)?$/.test(pathname)) {
+        return errorResponse(403, "Ottawa Painters media access is read-only.");
+      }
+      env = { ...env,
+        SUPABASE_URL: "https://pyzejfhsdewpnvmtqtlw.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_0RiQurAT9LTl8AGrfcLbOg_BlmqDGgx",
+      };
+    }
+
     const multipartStart = pathname.match(/^\/v1\/(jobs|leads)\/([^/]+)\/media\/multipart$/);
     if (multipartStart) {
       if (method !== "POST") return errorResponse(405, "Method not allowed.");

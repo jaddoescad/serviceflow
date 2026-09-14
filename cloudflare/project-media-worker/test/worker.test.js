@@ -668,3 +668,34 @@ test("delete removes metadata first, then the R2 object", async () => {
   assert.equal(response.status, 204);
   assert.equal(bucket.objects.has(row.object_key), false);
 });
+
+function ottawaJwt() {
+  return `header.${Buffer.from(JSON.stringify({sub:USER_ID,iss:'https://pyzejfhsdewpnvmtqtlw.supabase.co/auth/v1'})).toString('base64url')}.signature`;
+}
+
+test('Ottawa Painters tokens cannot upload, delete, or start multipart uploads', async () => {
+  for (const [method,path] of [['PUT',`/v1/jobs/${JOB_ID}/media`],['DELETE',`/v1/media/${JOB_ID}`],['POST',`/v1/jobs/${JOB_ID}/media/multipart`]]) {
+    const response = await worker.fetch(new Request(BASE+path,{method,headers:{Authorization:`Bearer ${ottawaJwt()}`}}),env);
+    assert.equal(response.status,403);
+  }
+  assert.equal(supabaseRequests.length,0);
+});
+
+test('Ottawa Painters media reads validate the token against destination RLS', async () => {
+  const {row,bytes}=await seedMediaRow();
+  globalThis.fetch = async (url,init) => {
+    assert.ok(String(url).startsWith('https://pyzejfhsdewpnvmtqtlw.supabase.co/rest/v1/job_media?'));
+    assert.equal(init.headers.Authorization,`Bearer ${ottawaJwt()}`);
+    return Response.json([row]);
+  };
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}`,{headers:{Authorization:`Bearer ${ottawaJwt()}`}}),env);
+  assert.equal(response.status,200);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);
+});
+
+test('A forged Ottawa Painters issuer cannot bypass destination token validation', async () => {
+  const {row}=await seedMediaRow();
+  globalThis.fetch=async()=>new Response('{}',{status:401});
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}`,{headers:{Authorization:`Bearer ${ottawaJwt()}`}}),env);
+  assert.equal(response.status,401);
+});
