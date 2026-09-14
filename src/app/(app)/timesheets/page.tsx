@@ -19,7 +19,7 @@ export default async function TimesheetsPage() {
     <>
       <PageHeader
         title="Timesheets"
-        subtitle="Review, edit, and approve crew hours · last 90 days"
+        subtitle="Review and edit crew hours · last 90 days"
       />
       <TimesheetsTable
         entries={entries}

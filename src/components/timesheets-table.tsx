@@ -5,10 +5,8 @@ import { Badge, Button, Card, EmptyState, Field, Input, Select } from "@/compone
 import { computeDurations, isStaleActive, wasEdited } from "@/lib/hours";
 import { fmtHours, fmtDate, fmtTime, fmtDistance } from "@/lib/format";
 import {
-  approveEntry,
   clockOutEntry,
   deleteEntry,
-  unapproveEntry,
   updateEntry,
 } from "@/lib/actions/time-entries";
 import type { EmployeeProfile, Project, TimeEntry } from "@/lib/types";
@@ -114,7 +112,6 @@ export function TimesheetsTable({
   const [employee, setEmployee] = useState("all");
   const [project, setProject] = useState("all");
   const [status, setStatus] = useState("all");
-  const [approval, setApproval] = useState("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [clockingOut, setClockingOut] = useState<TimeEntry | null>(null);
@@ -129,15 +126,13 @@ export function TimesheetsTable({
       if (employee !== "all" && e.user_id !== employee) return false;
       if (project !== "all" && e.companycam_project_id !== project) return false;
       if (status !== "all" && e.status !== status) return false;
-      if (approval === "approved" && !e.approved_at) return false;
-      if (approval === "pending" && (e.approved_at || e.status !== "complete")) return false;
       if (search) {
         const hay = `${e.user_name ?? ""} ${e.project_name ?? ""}`.toLowerCase();
         if (!hay.includes(search.toLowerCase())) return false;
       }
       return true;
     });
-  }, [entries, employee, project, status, approval, search]);
+  }, [entries, employee, project, status, search]);
 
   const totalHours = useMemo(
     () => filtered.reduce((acc, e) => acc + computeDurations(e, now).totalHours, 0),
@@ -196,13 +191,6 @@ export function TimesheetsTable({
             <option value="complete">Complete</option>
           </Select>
         </Field>
-        <Field label="Approval">
-          <Select value={approval} onChange={(e) => setApproval(e.target.value)}>
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-          </Select>
-        </Field>
         <Button
           type="button"
           variant={status === "active" ? "primary" : "subtle"}
@@ -247,7 +235,6 @@ export function TimesheetsTable({
                 <th className="px-4 py-2.5 font-medium">Out</th>
                 <th className="px-4 py-2.5 text-right font-medium">Hours</th>
                 <th className="px-4 py-2.5 font-medium">Flags</th>
-                <th className="px-4 py-2.5 font-medium">Approval</th>
                 <th className="px-4 py-2.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -291,15 +278,6 @@ export function TimesheetsTable({
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
-                      {e.approved_at ? (
-                        <Badge tone="good">approved</Badge>
-                      ) : e.status === "complete" ? (
-                        <Badge tone="warn">pending</Badge>
-                      ) : (
-                        <span className="text-xs text-[var(--color-muted)]">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1">
                         {e.status === "active" ? (
                           <Button
@@ -314,44 +292,28 @@ export function TimesheetsTable({
                             Clock out
                           </Button>
                         ) : null}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setError(null);
-                            setNotice(null);
-                            setEditing(e);
-                          }}
-                          disabled={pending}
-                        >
-                          Fix time
-                        </Button>
-                        {e.status === "complete" ? (
-                          e.approved_at ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => run(() => unapproveEntry(e.id), "Entry returned to pending approval.")}
-                              disabled={pending}
-                            >
-                              Unapprove
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="subtle"
-                              size="sm"
-                              onClick={() => run(() => approveEntry(e.id), "Entry approved for payroll.")}
-                              disabled={pending}
-                            >
-                              Approve
-                            </Button>
-                          )
-                        ) : null}
+                        <details className="relative" onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.currentTarget.open = false;
+                            event.currentTarget.querySelector("summary")?.focus();
+                          }
+                        }} onBlur={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+                        }}>
+                          <summary aria-label={`Time entry actions for ${e.user_name ?? "painter"}`} className="cursor-pointer list-none rounded-lg px-3 py-1.5 text-lg hover:bg-[var(--color-surface)] [&::-webkit-details-marker]:hidden">⋯</summary>
+                          <div className="relative z-20 flex min-w-32 flex-col rounded-lg border border-[var(--color-border)] bg-white p-1 shadow-lg">
+                            <Button variant="ghost" size="sm" disabled={pending} onClick={(event) => {
+                              event.currentTarget.closest("details")?.removeAttribute("open");
+                              setError(null);
+                              setNotice(null);
+                              setEditing(e);
+                            }}>Fix time</Button>
                         {canDelete ? (
                           <Button
                             variant="danger"
                             size="sm"
-                            onClick={() => {
+                            onClick={(event) => {
+                              event.currentTarget.closest("details")?.removeAttribute("open");
                               if (confirm("Delete this time entry? This cannot be undone.")) {
                                 run(() => deleteEntry(e.id), "Time entry deleted.");
                               }
@@ -361,6 +323,8 @@ export function TimesheetsTable({
                             Delete
                           </Button>
                         ) : null}
+                          </div>
+                        </details>
                       </div>
                     </td>
                   </tr>

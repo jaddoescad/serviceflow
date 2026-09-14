@@ -54,26 +54,6 @@ export async function clockOutEntry(input: {
   }
 }
 
-export async function approveEntry(id: string): Promise<ActionResult> {
-  await requireStaff();
-  try {
-    await callEdge("admin-time-entries", { action: "approve", id });
-    return ok();
-  } catch (e) {
-    return fail(e);
-  }
-}
-
-export async function unapproveEntry(id: string): Promise<ActionResult> {
-  await requireStaff();
-  try {
-    await callEdge("admin-time-entries", { action: "unapprove", id });
-    return ok();
-  } catch (e) {
-    return fail(e);
-  }
-}
-
 export async function deleteEntry(id: string): Promise<ActionResult> {
   await requireStaff();
   try {

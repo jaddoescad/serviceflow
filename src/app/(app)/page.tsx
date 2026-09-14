@@ -88,7 +88,6 @@ export default async function OverviewPage() {
     new Date(earliestMovementStart - LOCATION_MATCH_TOLERANCE_MS).toISOString(),
   );
   const completedInWindow = entries.filter((e) => e.status === "complete");
-  const pendingApprovals = completedInWindow.filter((e) => !e.approved_at);
 
   // On-site compliance across the window.
   let onSiteMs = 0;
@@ -132,19 +131,13 @@ export default async function OverviewPage() {
         actions={<Badge tone="brand">{activeShifts.length} on the clock</Badge>}
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
         <Kpi label="Clocked in now" value={activeShifts.length} hint="live" tone={activeShifts.length ? "good" : "neutral"} />
         <Kpi
           label="Hours this week"
           value={fmtHoursDecimal(hoursThisWeek)}
           delta={weekDelta != null ? { value: weekDelta } : null}
           hint="vs last week"
-        />
-        <Kpi
-          label="Pending approvals"
-          value={pendingApprovals.length}
-          hint="awaiting payroll"
-          tone={pendingApprovals.length ? "warn" : "good"}
         />
         <Kpi label="Active crew" value={activeEmployees.length} hint={`${employees.length} total`} />
         <Kpi
