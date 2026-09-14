@@ -3,12 +3,11 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, EmptyState, Input, Select, cn } from "@/components/ui";
+import { Button, Card, EmptyState, Input, cn } from "@/components/ui";
 import { fmtDate } from "@/lib/format";
 import type { MarketingLead } from "@/lib/types";
 
 const PAGE_SIZE = 50;
-const DEFAULT_YEAR = "2026";
 
 function sourceLabel(lead: MarketingLead): string {
   return lead.rawLeadSource?.trim() || "No source";
@@ -116,53 +115,13 @@ function LeadMediaPreview({ lead }: { lead: MarketingLead }) {
 export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [year, setYear] = useState(DEFAULT_YEAR);
-  const [month, setMonth] = useState("all");
-  const [source, setSource] = useState("all");
   const [page, setPage] = useState(1);
 
-  const isFiltered =
-    search !== "" ||
-    year !== DEFAULT_YEAR ||
-    month !== "all" ||
-    source !== "all";
-
-  const years = useMemo(
-    () => [...new Set(leads.map((lead) => lead.updatedAt.slice(0, 4)))].sort().reverse(),
-    [leads],
-  );
-
-  const monthOptions = useMemo(
-    () =>
-      Array.from({ length: 12 }, (_, index) => {
-        const value = String(index + 1).padStart(2, "0");
-        const label = new Intl.DateTimeFormat("en-CA", {
-          month: "short",
-          timeZone: "UTC",
-        }).format(new Date(Date.UTC(2026, index, 1)));
-        return { value, label };
-      }),
-    [],
-  );
-
-  const sources = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const lead of leads) {
-      if (year !== "all" && !lead.updatedAt.startsWith(`${year}-`)) continue;
-      const label = sourceLabel(lead);
-      counts.set(label, (counts.get(label) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort(
-      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "en-CA"),
-    );
-  }, [leads, year]);
+  const isFiltered = search !== "";
 
   const scoped = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("en-CA");
     return leads.filter((lead) => {
-      if (year !== "all" && !lead.updatedAt.startsWith(`${year}-`)) return false;
-      if (month !== "all" && lead.updatedAt.slice(5, 7) !== month) return false;
-      if (source !== "all" && sourceLabel(lead) !== source) return false;
       if (!needle) return true;
       return [
         lead.name,
@@ -176,14 +135,13 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         lead.job?.status,
       ].some((value) => value?.toLocaleLowerCase("en-CA").includes(needle));
     });
-  }, [leads, month, search, source, year]);
+  }, [leads, search]);
 
   const filtered = scoped;
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-  const dateFilter = `${year}:${month}`;
 
   function updateFilters(update: () => void) {
     update();
@@ -193,9 +151,6 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
   function resetFilters() {
     updateFilters(() => {
       setSearch("");
-      setYear(DEFAULT_YEAR);
-      setMonth("all");
-      setSource("all");
     });
   }
 
@@ -215,48 +170,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
             />
           </div>
 
-          <Select
-            aria-label="Filter by updated date"
-            value={dateFilter}
-            onChange={(event) => {
-              const [nextYear, nextMonth] = event.target.value.split(":");
-              updateFilters(() => {
-                if (nextYear !== year) setSource("all");
-                setYear(nextYear);
-                setMonth(nextMonth);
-              });
-            }}
-            className="w-auto min-w-40 bg-[var(--color-surface)] py-1.5 text-[13px]"
-          >
-            <option value="all:all">All dates</option>
-            {years.flatMap((optionYear) => [
-              <option key={`${optionYear}:all`} value={`${optionYear}:all`}>
-                {optionYear} · All months
-              </option>,
-              ...monthOptions.map((optionMonth) => (
-                <option
-                  key={`${optionYear}:${optionMonth.value}`}
-                  value={`${optionYear}:${optionMonth.value}`}
-                >
-                  {optionYear} · {optionMonth.label}
-                </option>
-              )),
-            ])}
-          </Select>
 
-          <Select
-            aria-label="Filter by deal source"
-            value={source}
-            onChange={(event) => updateFilters(() => setSource(event.target.value))}
-            className="w-auto min-w-36 max-w-52 bg-[var(--color-surface)] py-1.5 text-[13px]"
-          >
-            <option value="all">All sources</option>
-            {sources.map(([option, count]) => (
-              <option key={option} value={option}>
-                {option} ({count})
-              </option>
-            ))}
-          </Select>
 
           {isFiltered ? (
             <Button variant="ghost" size="sm" onClick={resetFilters}>
@@ -268,7 +182,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
 
       <Card className="overflow-hidden">
         {visible.length === 0 ? (
-          <EmptyState>No deals match these filters.</EmptyState>
+          <EmptyState>No deals match your search.</EmptyState>
         ) : (
           <>
             <div className="max-h-[72vh] overflow-auto">
