@@ -41,7 +41,7 @@ export function JobShell({
     <>
       <header className="mb-4">
         <Link
-          href={isLead ? "/leads" : "/jobs"}
+          href={isLead ? "/deals" : "/jobs"}
           className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)] transition-colors hover:text-[var(--color-heading)]"
         >
           <span aria-hidden="true">‹</span>

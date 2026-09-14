@@ -169,7 +169,8 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
     const { data, error } = await supabase
       .from("leads")
       .select("*,contact:contacts(id,name,email,phone)")
-      .order("created_at", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, from + 999);
     if (error) throw new Error(`leads: ${error.message}`);
     rows.push(...(data ?? []));
@@ -274,6 +275,7 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
       dealId: row.dripjobs_sales_deal_id ?? row.dripjobs_deal_id ?? row.id,
       operationalProjectId: row.id,
       createdOn: String(row.created_at).slice(0, 10),
+      updatedAt: row.updated_at ?? row.created_at,
       createdAtLocal: row.created_at,
       name: row.contact?.name?.trim() || "Unnamed lead",
       email: row.contact?.email ?? null,

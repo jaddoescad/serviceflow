@@ -13,7 +13,7 @@ import { initials } from "@/lib/format";
 const LINKS = [
   { href: "/", label: "Overview" },
   { href: "/contacts", label: "Contacts" },
-  { href: "/leads", label: "Deals" },
+  { href: "/deals", label: "Deals" },
   { href: "/jobs", label: "Jobs & Budgets" },
   { href: "/photos", label: "Photos" },
   { href: "/timesheets", label: "Timesheets" },

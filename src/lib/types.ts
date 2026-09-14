@@ -136,6 +136,7 @@ export type MarketingLead = {
   dealId: string;
   operationalProjectId: string;
   createdOn: string;
+  updatedAt: string;
   createdAtLocal: string | null;
   name: string;
   email: string | null;

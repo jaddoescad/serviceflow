@@ -20,7 +20,7 @@ function invalidLength(value: string, max: number): boolean {
 function revalidateProject(projectId: string) {
   revalidatePath(`/jobs/${projectId}`);
   revalidatePath("/jobs");
-  revalidatePath("/leads");
+  revalidatePath("/deals");
 }
 
 async function saveProjectSection(

@@ -94,7 +94,7 @@ export function CalculatorPage({
       <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-[1040px]">
           <div className="mb-2 text-xs text-[var(--color-muted)]">
-            <Link href={isLead ? "/leads" : "/jobs"} className="hover:text-[var(--color-text)]">
+            <Link href={isLead ? "/deals" : "/jobs"} className="hover:text-[var(--color-text)]">
               {isLead ? "Deals" : "Jobs & Budgets"}
             </Link>
             <span className="mx-1.5">/</span>

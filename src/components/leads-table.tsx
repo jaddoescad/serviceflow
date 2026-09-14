@@ -165,7 +165,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
     progress !== "all";
 
   const years = useMemo(
-    () => [...new Set(leads.map((lead) => lead.createdOn.slice(0, 4)))].sort().reverse(),
+    () => [...new Set(leads.map((lead) => lead.updatedAt.slice(0, 4)))].sort().reverse(),
     [leads],
   );
 
@@ -185,7 +185,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
   const sources = useMemo(() => {
     const counts = new Map<string, number>();
     for (const lead of leads) {
-      if (year !== "all" && !lead.createdOn.startsWith(`${year}-`)) continue;
+      if (year !== "all" && !lead.updatedAt.startsWith(`${year}-`)) continue;
       const label = sourceLabel(lead);
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }
@@ -197,8 +197,8 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
   const scoped = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("en-CA");
     return leads.filter((lead) => {
-      if (year !== "all" && !lead.createdOn.startsWith(`${year}-`)) return false;
-      if (month !== "all" && lead.createdOn.slice(5, 7) !== month) return false;
+      if (year !== "all" && !lead.updatedAt.startsWith(`${year}-`)) return false;
+      if (month !== "all" && lead.updatedAt.slice(5, 7) !== month) return false;
       if (source !== "all" && sourceLabel(lead) !== source) return false;
       if (!needle) return true;
       return [
@@ -299,7 +299,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
           </div>
 
           <Select
-            aria-label="Filter by date"
+            aria-label="Filter by updated date"
             value={dateFilter}
             onChange={(event) => {
               const [nextYear, nextMonth] = event.target.value.split(":");
@@ -355,6 +355,12 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
         ) : (
           <>
             <div className="max-h-[72vh] overflow-auto">
+              <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-3 text-xs font-semibold text-[var(--color-muted)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_5rem_8rem_10rem]">
+                <span>Deal</span>
+                <span>Status</span>
+                <span className="hidden text-right lg:block">Updated at</span>
+                <span className="hidden lg:block">Photos</span>
+              </div>
               {visible.map((lead) => {
                 const projectHref = `/jobs/${encodeURIComponent(lead.job?.jobId ?? lead.leadId)}`;
                 const stage = leadStage(lead);
@@ -374,7 +380,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                       event.preventDefault();
                       router.push(projectHref);
                     }}
-                    className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] px-4 py-3 outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_auto_7rem_auto]"
+                    className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--color-border)] px-4 py-3 outline-none last:border-0 hover:bg-[var(--color-surface-2)] focus-visible:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)] sm:px-5 lg:grid-cols-[minmax(0,1fr)_5rem_8rem_10rem]"
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2.5">
@@ -400,6 +406,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                         >
                           {sourceLabel(lead)}
                         </span>
+                        <span className="lg:hidden">Updated {fmtDate(lead.updatedAt)}</span>
                       </div>
                     </div>
 
@@ -414,7 +421,7 @@ export function LeadsTable({ leads }: { leads: MarketingLead[] }) {
                     </span>
 
                     <span className="hidden text-right text-xs text-[var(--color-muted)] lg:block">
-                      Created {fmtDate(lead.createdOn)}
+                      {fmtDate(lead.updatedAt)}
                     </span>
 
                     <div className="hidden lg:block">
