@@ -1,18 +1,19 @@
-import Link from "next/link";
+import { CreateContactModal } from "@/components/create-contact-form";
 import { ContactsTable } from "@/components/contacts-table";
 import { PageHeader } from "@/components/kpi";
 import { getCustomerContacts } from "@/lib/contacts";
 
 export const dynamic = "force-dynamic";
 
-export default async function ContactsPage() {
+export default async function ContactsPage({ searchParams }: { searchParams: Promise<{ create?: string }> }) {
+  const { create } = await searchParams;
   const contacts = await getCustomerContacts();
 
   return (
     <>
       <PageHeader
         title="Contacts"
-        actions={<Link href="/contacts/new" className="shrink-0 rounded-lg bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-brand-ink)]">Create contact</Link>}
+        actions={<CreateContactModal initiallyOpen={create === "1"} />}
         subtitle={`${contacts.length.toLocaleString("en-CA")} customers, with every deal and job kept separate`}
       />
       <ContactsTable contacts={contacts} />
