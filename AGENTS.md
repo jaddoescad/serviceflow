@@ -19,8 +19,8 @@
 
 ## Production deployment
 
-- The canonical production URL is `https://ottawa-painters-dashboard.vercel.app`.
-- GitHub repository `jaddoescad/ottawa-painters-admin` is the deployment source of truth. Vercel is linked to its `main` branch.
+- The canonical production URL is `https://serviceflow-admin.vercel.app`.
+- GitHub repository `jaddoescad/serviceflow-web` is the deployment source of truth. Vercel is linked to its `main` branch.
 - Deploy by committing only the intended files and pushing `main` to `origin`. The GitHub integration must perform the Vercel production deployment.
 - Do not run `vercel deploy`, create preview deployments, promote previews, or create/link another Vercel project unless the user explicitly asks for that exact action.
 - Before pushing, inspect the staged diff and exclude unrelated dirty-worktree changes. After pushing, wait for the linked Vercel deployment to become Ready and verify the canonical production URL.
@@ -42,3 +42,7 @@
 - Apply changes through a versioned job budget and keep `jobs.contract_amount_cents` synchronized. Preserve the previous budget and record the import in `verification_events`.
 - For production month, only `Work Finished`/`Work Complete`, `Review Request`, and `Project Complete`/`Job Completed` qualify for the first assignment. When `jobs.production_month` is null, use the month of the qualifying `Deal Stage Date`, store the first day of that month on both `jobs.production_month` and associated `job_budgets.production_month`, and preserve stage/date/source provenance. Once `jobs.production_month` has any value, automation must never change or clear it; later workflow transitions are audit evidence only. Keep associated budget months synchronized to the immutable job value and never use the daily sync date.
 - The historical job accounting lock still applies. A broad CSV import does not authorize changing locked historical jobs.
+
+## Backend ownership
+
+This is ServiceFlow. Operational edits belong here. Sync only the approved operational columns to Ottawa Painters; never import Ottawa Painters accounting or login access. Production Supabase project: `bwbckdkouqghdadpkjvn`.
