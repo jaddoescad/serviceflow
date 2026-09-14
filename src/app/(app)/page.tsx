@@ -6,30 +6,24 @@ import {
   getEmployees,
   getEmployeeTrackingStatuses,
   getProjects,
-  getProjectLabourExpenses,
   getTimeEntries,
 } from "@/lib/queries";
 import {
   attentionLists,
   hoursByDay,
-  LABOUR_ALERT_PERCENT,
   rollupEmployees,
   rollupProjects,
-  summarizeLabour,
   sumHours,
 } from "@/lib/metrics";
 import { computeDurations } from "@/lib/hours";
 import { PageHeader, Kpi } from "@/components/kpi";
 import { Card, CardHeader, Badge, EmptyState } from "@/components/ui";
 import { HoursByDayChart, HoursBarChart } from "@/components/charts";
-import { BudgetHealth } from "@/components/budget-health";
 import { ShiftBoard } from "@/components/shift-board";
 import { ActivityTable } from "@/components/activity-table";
 import { CrewOperationsMap, type CrewLocation } from "@/components/crew-operations-map";
-import { dayKey, fmtHoursDecimal, fmtMoney, fmtDistance, fmtDateTime } from "@/lib/format";
+import { dayKey, fmtHoursDecimal, fmtDistance, fmtDateTime } from "@/lib/format";
 import type { EmployeeLocationPoint, EmployeeTrackingStatus, Project, TimeEntry } from "@/lib/types";
-import { getProjectLabourInvoiceSummaries } from "@/lib/invoice-queries";
-import { summarizeCompletedLabourPeriod } from "@/lib/labour-period";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +41,7 @@ export default async function OverviewPage() {
     projects,
     budgets,
     assignments,
-    labourExpenses,
     trackingStatuses,
-    invoiceSummaries,
   ] = await Promise.all([
     getTimeEntries(since),
     getEmployees(),
@@ -57,9 +49,7 @@ export default async function OverviewPage() {
     getProjects(),
     getBudgets(),
     getAssignments(),
-    getProjectLabourExpenses(),
     getEmployeeTrackingStatuses(),
-    getProjectLabourInvoiceSummaries(),
   ]);
 
   const inWindow = (from: number, to: number) => (e: { started_at: string }) => {
@@ -117,9 +107,7 @@ export default async function OverviewPage() {
     budgets,
     assignments,
     payRates,
-    labourExpenses,
     now,
-    invoiceSummaries,
   );
   const employeeRollups = rollupEmployees(entries, employees, now).filter((r) => r.loggedHours > 0);
 
@@ -133,48 +121,6 @@ export default async function OverviewPage() {
     .slice(0, 8)
     .map((r) => ({ name: r.name, hours: Math.round(r.loggedHours * 10) / 10 }));
 
-  // Jobs measurable at all: an amount is entered and some labour is recorded.
-  // `summarizeLabour` then splits them into settled and in-flight, because a
-  // part-spent job carries its full contract value and would otherwise drag the
-  // headline percentage down.
-  const jobsWithLabour = projectRollups.filter(
-    (r) =>
-      r.amountBeforeTax != null &&
-      r.labourAllowanceLow != null &&
-      r.labourAllowanceHigh != null &&
-      r.wageSharePercent != null &&
-      r.wageCost > 0,
-  );
-  const labourSummary = summarizeLabour(projectRollups, now);
-  const completionByProject = new Map(
-    projects.map((project) => [project.companycam_id, project.completed_on]),
-  );
-  const completedLabourSummary = summarizeCompletedLabourPeriod(
-    projectRollups.map((rollup) => ({
-      completedOn: completionByProject.get(rollup.projectId) ?? null,
-      amountBeforeTax: rollup.amountBeforeTax,
-      labourCost: Number(
-        invoiceSummaries.get(rollup.projectId)?.totals.CAD ?? 0,
-      ),
-      labourExcluded: rollup.labourExcluded,
-    })),
-    dayKey(new Date(now - 30 * DAY)),
-    dayKey(new Date(now)),
-  );
-  const budgetItems = jobsWithLabour.map((r) => ({
-    projectId: r.projectId,
-    name: r.name,
-    amountBeforeTax: r.amountBeforeTax!,
-    wageCost: r.wageCost,
-    wageSharePercent: r.wageSharePercent!,
-    allowanceLow: r.labourAllowanceLow!,
-    allowanceHigh: r.labourAllowanceHigh!,
-    unpricedHours: r.unpricedHours,
-    status: r.status,
-    settled: r.labourBucket === "settled",
-  }));
-  const budgetPct = completedLabourSummary.sharePercent;
-
   const attention = attentionLists(entries, now);
   const crewLocations = buildCrewLocations(movementShifts, projects, trackingStatuses, locationPoints);
 
@@ -186,7 +132,7 @@ export default async function OverviewPage() {
         actions={<Badge tone="brand">{activeShifts.length} on the clock</Badge>}
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         <Kpi label="Clocked in now" value={activeShifts.length} hint="live" tone={activeShifts.length ? "good" : "neutral"} />
         <Kpi
           label="Hours this week"
@@ -201,16 +147,6 @@ export default async function OverviewPage() {
           tone={pendingApprovals.length ? "warn" : "good"}
         />
         <Kpi label="Active crew" value={activeEmployees.length} hint={`${employees.length} total`} />
-        <Kpi
-          label="Labour share"
-          value={budgetPct != null ? `${budgetPct.toFixed(1)}%` : "—"}
-          hint={
-            budgetPct != null
-              ? `${fmtMoney(completedLabourSummary.labourCost)} on ${completedLabourSummary.count} completed`
-              : "no costed jobs completed in the last 30 days"
-          }
-          tone={budgetPct == null ? "neutral" : budgetPct >= LABOUR_ALERT_PERCENT ? "bad" : "good"}
-        />
         <Kpi
           label="On-site rate"
           value={`${onSitePct}%`}
@@ -230,10 +166,6 @@ export default async function OverviewPage() {
             <HoursByDayChart data={dayData} />
           </div>
         </Card>
-      </div>
-
-      <div className="mt-4">
-        <BudgetHealth items={budgetItems} summary={labourSummary} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">

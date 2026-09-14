@@ -1,9 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  invoiceJobCostCategory,
-  isCostingInvoice,
-  selectCostingInvoiceJobAllocations,
-} from "@/lib/invoice-allocation-selection";
 import { selectCurrentOperationalBudgets } from "@/lib/job-budget-selection";
 import type {
   Assignment,
@@ -438,41 +433,6 @@ export async function getBudgets(): Promise<ProjectBudget[]> {
   });
 }
 
-export async function getProjectLabourExpenses(): Promise<ProjectLabourExpense[]> {
-  const supabase = await createClient();
-  const rows: any[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("invoice_job_allocations")
-      .select("id,invoice_id,invoice_line_id,job_id,subtotal_cents,tax_cents,metadata,created_at,updated_at,line:invoice_lines(metadata),invoice:invoices(id,category,status,source_system,invoice_number,issued_on,contact:contacts(name),metadata)")
-      .eq("invoice.category", "labour")
-      .order("id")
-      .range(from, from + 999);
-    if (error) throw new Error(`labour expenses: ${error.message}`);
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < 1000) break;
-  }
-  return selectCostingInvoiceJobAllocations(rows).flatMap((row: any) =>
-    row.invoice && invoiceJobCostCategory(row) === "labour"
-      ? [{
-          id: row.id,
-          invoice_id: row.invoice.id,
-          companycam_project_id: row.job_id,
-          worker_user_id: row.invoice.metadata?.worker_user_id ?? null,
-          worker_name: row.invoice.metadata?.worker_name ?? row.invoice.contact?.name ?? "Painter",
-          supplier_name: row.invoice.contact?.name ?? row.invoice.metadata?.supplier_name ?? "Labour",
-          invoice_number: row.invoice.invoice_number,
-          invoice_date: row.invoice.issued_on,
-          amount_before_tax: Number(row.subtotal_cents ?? 0) / 100,
-          tax_amount: Number(row.tax_cents ?? 0) / 100,
-          notes: row.invoice.metadata?.notes ?? null,
-          inserted_at: row.created_at,
-          updated_at: row.updated_at,
-        }]
-      : [],
-  );
-}
-
 export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("job_tasks").select("*").order("sort_order");
@@ -593,9 +553,6 @@ export async function getProjectAssignments(projectId: string): Promise<Assignme
   return (await getAssignments()).filter((row) => row.companycam_project_id === projectId);
 }
 
-export async function getLabourExpensesForProject(projectId: string): Promise<ProjectLabourExpense[]> {
-  return (await getProjectLabourExpenses()).filter((row) => row.companycam_project_id === projectId);
-}
 
 export async function getLabourTasksForProject(projectId: string): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();

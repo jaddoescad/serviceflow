@@ -7,7 +7,6 @@ export type ProjectTabKey =
   | "photos"
   | "labour"
   | "tasks"
-  | "invoices"
   | "calculator";
 /** Retained for the legacy component while project routes use ProjectTabKey. */
 export type LocalTabKey = "photos" | "tasks";
@@ -32,8 +31,6 @@ export function ProjectTabs({
       ? "tasks"
       : pathname.endsWith("/labour")
         ? "labour"
-        : pathname.endsWith("/invoices")
-          ? "invoices"
           : pathname.endsWith("/calculator")
             ? "calculator"
             : "photos");
@@ -46,9 +43,8 @@ export function ProjectTabs({
     count?: number;
   }[] = [
     { key: "photos", label: "Photos", href: base, count: photoCount },
-    { key: "labour", label: "Labour & Financials", href: `${base}/labour` },
+    { key: "labour", label: "Labour budget", href: `${base}/labour` },
     { key: "tasks", label: "Tasks", href: `${base}/tasks` },
-    { key: "invoices", label: "Invoices", href: `${base}/invoices` },
     {
       key: "calculator",
       label: "Quote / Calculator",

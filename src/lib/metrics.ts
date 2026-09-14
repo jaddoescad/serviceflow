@@ -1,35 +1,27 @@
 import { computeDurations, isStaleActive, wasEdited } from "@/lib/hours";
 import { dayKey } from "@/lib/format";
-import {
-  invoicedProjectHours,
-  invoicedProjectWagesBeforeTax,
-  isLabourExcludedProject,
-  latestProjectActivity,
-} from "@/lib/invoice-activity";
 import type {
   Assignment,
   EmployeePayRate,
   EmployeeProfile,
   Project,
   ProjectBudget,
-  ProjectLabourExpense,
   ProjectLabourTask,
   TimeEntry,
 } from "@/lib/types";
-import type { ProjectLabourInvoiceSummary } from "@/lib/invoice-queries";
 
 // A clock-in this far from the job site is worth flagging for review.
 const OFFSITE_DISTANCE_METERS = 250;
 
 export type BudgetStatus = "none" | "under" | "near" | "over";
-export type LabourCostSource = "invoices" | "clocked_hours";
+export type LabourCostSource = "clocked_hours";
 
 export const LABOUR_MIN_PERCENT = 35;
 export const LABOUR_MAX_PERCENT = 37;
 export const LABOUR_ALERT_PERCENT = 40;
 
 // An open job this quiet is almost certainly finished on site and just waiting
-// for someone to confirm the last invoice landed.
+// for someone to confirm completion.
 export const LABOUR_IDLE_NUDGE_DAYS = 30;
 
 export type ProjectRollup = {
@@ -50,7 +42,7 @@ export type ProjectRollup = {
   budgetCost: number | null;
   labourAllowanceLow: number | null;
   labourAllowanceHigh: number | null;
-  /** Dollar cost of priced clocked hours only, before any invoice override. */
+  /** Dollar cost of priced clocked hours only, using the effective employee pay rate. */
   clockedWageCost: number;
   labourCostSource: LabourCostSource;
   wageCost: number;
@@ -62,12 +54,9 @@ export type ProjectRollup = {
   unpricedHours: number;
   assignedCount: number;
   lastActivity: string | null;
-  /** Latest real clock-in; excludes older manually curated invoice activity. */
+  /** Latest real clock-in; based on recorded time entries. */
   lastClockIn: string | null;
   clockedHours: number;
-  invoicedHours: number;
-  fixedLabourCost: number;
-  expenseCount: number;
   labourClosedAt: string | null;
   labourBucket: LabourBucket;
 };
@@ -113,24 +102,11 @@ export type ProjectEntryDetail = {
   wageCost: number | null;
 };
 
-export type ProjectLabourExpenseDetail = {
-  id: string;
-  invoiceId: string;
-  workerName: string;
-  supplierName: string;
-  invoiceNumber: string;
-  invoiceDate: string;
-  amountBeforeTax: number;
-  taxAmount: number;
-  notes: string | null;
-};
-
 export type ProjectDetail = {
   entryCount: number;
   activeEntryCount: number;
   crew: ProjectCrewHours[];
   recentEntries: ProjectEntryDetail[];
-  labourExpenses: ProjectLabourExpenseDetail[];
 };
 
 export type ProjectTaskProgress = {
@@ -185,7 +161,7 @@ export type LabourSummary = {
   settled: LabourPool;
   /** Costs to date against full contract values — always incomplete. */
   inFlight: LabourPool;
-  /** Job amount entered, no hours or invoices against it yet. */
+  /** Job amount entered, no hours against it yet. */
   notCosted: LabourPool;
   /** Labour recorded but no job amount, so the job cannot be measured at all. */
   missingAmount: LabourPool;
@@ -298,9 +274,7 @@ export function rollupProjects(
   budgets: ProjectBudget[],
   assignments: Assignment[],
   payRates: EmployeePayRate[],
-  labourExpenses: ProjectLabourExpense[],
   now = Date.now(),
-  invoiceSummaries?: ReadonlyMap<string, ProjectLabourInvoiceSummary>,
 ): ProjectRollup[] {
   const budgetById = new Map(budgets.map((b) => [b.companycam_project_id, b]));
   const assignedById = new Map<string, number>();
@@ -311,9 +285,6 @@ export function rollupProjects(
   const hoursById = new Map<string, number>();
   const wagesById = new Map<string, number>();
   const unpricedById = new Map<string, number>();
-  const expenseCostById = new Map<string, number>();
-  const expenseCountById = new Map<string, number>();
-  const expenseLastById = new Map<string, string>();
   const payRateIndex = buildPayRateIndex(payRates);
   const lastById = new Map<string, string>();
   const nameById = new Map<string, string>();
@@ -341,16 +312,6 @@ export function rollupProjects(
     if (!prev || new Date(e.started_at) > new Date(prev)) lastById.set(id, e.started_at);
   }
 
-  for (const expense of labourExpenses) {
-    const id = expense.companycam_project_id;
-    const amount = Math.max(0, Number(expense.amount_before_tax) || 0);
-    expenseCostById.set(id, (expenseCostById.get(id) ?? 0) + amount);
-    expenseCountById.set(id, (expenseCountById.get(id) ?? 0) + 1);
-    const activity = `${expense.invoice_date}T12:00:00.000Z`;
-    const prev = expenseLastById.get(id);
-    if (!prev || new Date(activity) > new Date(prev)) expenseLastById.set(id, activity);
-  }
-
   // A budget can outlive the active CompanyCam project it belonged to. Keep
   // that record for audit, but do not turn it into a nameless job row.
   const ids = new Set<string>([...nameById.keys(), ...hoursById.keys()]);
@@ -360,12 +321,9 @@ export function rollupProjects(
     const budget = budgetById.get(id);
     const name = nameById.get(id)?.trim();
     if (!name) continue;
-    const labourExcluded = isLabourExcludedProject(name);
+    const labourExcluded = false;
     const clockedHours = labourExcluded ? 0 : (hoursById.get(id) ?? 0);
-    const invoicedHours = labourExcluded ? 0 : invoicedProjectHours(name);
-    // The two sources describe the same labour, so use the stronger total
-    // instead of adding them and double-counting the job.
-    const logged = Math.max(clockedHours, invoicedHours);
+    const logged = clockedHours;
     const budgetedHours = budget?.budgeted_hours ?? null;
     const rate = budget?.hourly_rate ?? null;
     // `amount_including_tax` is the legacy database column name. The dashboard
@@ -373,25 +331,8 @@ export function rollupProjects(
     const storedAmount = budget?.amount_including_tax ?? null;
     const preTaxAmount = storedAmount == null ? null : Number(storedAmount);
     const clockedWageCost = labourExcluded ? 0 : (wagesById.get(id) ?? 0);
-    const invoicedWageCost = labourExcluded ? 0 : invoicedProjectWagesBeforeTax(name);
-    const fixedLabourCost = labourExcluded ? 0 : (expenseCostById.get(id) ?? 0);
-    // The linked labour-invoice archive is the source of truth once a usable
-    // pre-tax amount has been allocated to this job. Until then, fall back to
-    // timesheets and the older curated invoice sources so an unallocated shared
-    // invoice does not erase a real hours-based cost.
-    const archivedInvoiceCost = labourExcluded
-      ? 0
-      : Math.max(0, Number(invoiceSummaries?.get(id)?.totals.CAD) || 0);
-    const legacyInvoiceCost = invoicedWageCost + fixedLabourCost;
-    const invoiceCost =
-      archivedInvoiceCost > 0 ? archivedInvoiceCost : legacyInvoiceCost;
-    // The table deliberately uses the more conservative number: whichever is
-    // larger between priced clocked wages and current-job pre-tax invoices.
-    const wageCost = Math.max(clockedWageCost, invoiceCost);
-    const labourCostSource: LabourCostSource =
-      invoiceCost > 0 && invoiceCost >= clockedWageCost
-        ? "invoices"
-        : "clocked_hours";
+    const wageCost = clockedWageCost;
+    const labourCostSource = "clocked_hours" as const;
     const allowanceLow = preTaxAmount != null ? preTaxAmount * (LABOUR_MIN_PERCENT / 100) : null;
     const allowanceHigh = preTaxAmount != null ? preTaxAmount * (LABOUR_MAX_PERCENT / 100) : null;
     const wageSharePercent = labourExcluded
@@ -401,16 +342,9 @@ export function rollupProjects(
         : null;
     const allowanceUsedLowPercent = allowanceLow && allowanceLow > 0 ? (wageCost / allowanceLow) * 100 : null;
     const allowanceUsedHighPercent = allowanceHigh && allowanceHigh > 0 ? (wageCost / allowanceHigh) * 100 : null;
-    const percentUsed = allowanceUsedHighPercent;
+    const percentUsed = budgetedHours ? (clockedHours / budgetedHours) * 100 : null;
     const labourClosedAt = budget?.labour_closed_at ?? null;
-    const archivedInvoiceDate = invoiceSummaries?.get(id)?.latestInvoiceDate;
-    const lastActivity = latestActivity(
-      latestProjectActivity(
-        name,
-        latestActivity(lastById.get(id), expenseLastById.get(id)),
-      ),
-      archivedInvoiceDate ? `${archivedInvoiceDate}T12:00:00.000Z` : null,
-    );
+    const lastActivity = lastById.get(id) ?? null;
     rollups.push({
       projectId: id,
       name,
@@ -442,9 +376,6 @@ export function rollupProjects(
       lastActivity,
       lastClockIn: lastById.get(id) ?? null,
       clockedHours,
-      invoicedHours,
-      fixedLabourCost,
-      expenseCount: expenseCountById.get(id) ?? 0,
       labourClosedAt,
       labourBucket: classifyLabour({ labourExcluded, amountBeforeTax: preTaxAmount, wageCost, labourClosedAt }),
     });
@@ -511,7 +442,6 @@ export function projectTaskProgress(
 export function projectDetails(
   entries: TimeEntry[],
   payRates: EmployeePayRate[],
-  labourExpenses: ProjectLabourExpense[],
   now = Date.now(),
 ): Record<string, ProjectDetail> {
   const payRateIndex = buildPayRateIndex(payRates);
@@ -522,18 +452,16 @@ export function projectDetails(
       crew: Map<string, ProjectCrewHours>;
       ratesByCrew: Map<string, Set<number>>;
       activeEntryCount: number;
-      labourExpenses: ProjectLabourExpenseDetail[];
-    }
+        }
   >();
 
   for (const entry of entries) {
-    if (isLabourExcludedProject(entry.project_name)) continue;
     const projectId = entry.companycam_project_id;
     if (!projectId) continue;
 
     let project = byProject.get(projectId);
     if (!project) {
-      project = { entries: [], crew: new Map(), ratesByCrew: new Map(), activeEntryCount: 0, labourExpenses: [] };
+      project = { entries: [], crew: new Map(), ratesByCrew: new Map(), activeEntryCount: 0 };
       byProject.set(projectId, project);
     }
 
@@ -584,26 +512,6 @@ export function projectDetails(
     if (entry.status === "active") project.activeEntryCount += 1;
   }
 
-  for (const expense of labourExpenses) {
-    const projectId = expense.companycam_project_id;
-    let project = byProject.get(projectId);
-    if (!project) {
-      project = { entries: [], crew: new Map(), ratesByCrew: new Map(), activeEntryCount: 0, labourExpenses: [] };
-      byProject.set(projectId, project);
-    }
-    project.labourExpenses.push({
-      id: expense.id,
-      invoiceId: expense.invoice_id,
-      workerName: expense.worker_name,
-      supplierName: expense.supplier_name,
-      invoiceNumber: expense.invoice_number,
-      invoiceDate: expense.invoice_date,
-      amountBeforeTax: Number(expense.amount_before_tax),
-      taxAmount: Number(expense.tax_amount),
-      notes: expense.notes,
-    });
-  }
-
   return Object.fromEntries(
     [...byProject.entries()].map(([projectId, detail]) => [
       projectId,
@@ -619,7 +527,6 @@ export function projectDetails(
         recentEntries: detail.entries
           .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
           .slice(0, 12),
-        labourExpenses: detail.labourExpenses.sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate)),
       },
     ]),
   );

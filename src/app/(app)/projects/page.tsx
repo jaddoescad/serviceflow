@@ -1,77 +1,8 @@
-import {
-  getAssignments,
-  getBudgets,
-  getEmployeePayRates,
-  getProjectLabourExpenses,
-  getProjects,
-  getTimeEntries,
-} from "@/lib/queries";
-import { requireStaff } from "@/lib/auth";
+import { getProjects,getBudgets,getTimeEntries,getAssignments,getEmployeePayRates } from "@/lib/queries";
 import { rollupProjects } from "@/lib/metrics";
-import { PageHeader } from "@/components/kpi";
 import { ProjectsTable } from "@/components/projects-table";
-import {
-  emptyProjectLabourInvoiceSummary,
-  getProjectLabourInvoiceSummaries,
-} from "@/lib/invoice-queries";
-
-export const dynamic = "force-dynamic";
-
-const DAY = 24 * 60 * 60 * 1000;
-
-export default async function ProjectsPage() {
-  const now = Date.now();
-  const profile = await requireStaff();
-  const canManage = ["admin", "manager"].includes(profile.role);
-  const [
-    entries,
-    payRates,
-    projects,
-    budgets,
-    assignments,
-    labourExpenses,
-    invoiceSummaries,
-  ] = await Promise.all([
-    getTimeEntries(new Date(now - 180 * DAY).toISOString()),
-    getEmployeePayRates(),
-    getProjects(),
-    getBudgets(),
-    getAssignments(),
-    getProjectLabourExpenses(),
-    getProjectLabourInvoiceSummaries(),
-  ]);
-
-  const rows = rollupProjects(
-    entries,
-    projects,
-    budgets,
-    assignments,
-    payRates,
-    labourExpenses,
-    now,
-    invoiceSummaries,
-  ).map((row) => {
-    const labourInvoices =
-      invoiceSummaries.get(row.projectId) ?? emptyProjectLabourInvoiceSummary();
-
-    return {
-      ...row,
-      labourInvoices,
-      painters: labourInvoices.painterNames,
-    };
-  });
-
-  return (
-    <>
-      <PageHeader
-        title="Labour budgets"
-        subtitle="Track labour budgets, clocked hours, and labour invoices for each job"
-      />
-      <ProjectsTable
-        rows={rows}
-        now={now}
-        canManage={canManage}
-      />
-    </>
-  );
+export const dynamic="force-dynamic";
+export default async function ProjectsPage(){
+ const [projects,budgets,entries,assignments,rates]=await Promise.all([getProjects(),getBudgets(),getTimeEntries(new Date(0).toISOString()),getAssignments(),getEmployeePayRates()]);
+ return <><h1 className="mb-5 text-2xl font-semibold">Labour budgets</h1><ProjectsTable rows={rollupProjects(entries,projects,budgets,assignments,rates)} /></>;
 }

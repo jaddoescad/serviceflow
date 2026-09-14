@@ -2,7 +2,6 @@ import { cache } from "react";
 import {
   getEmployees,
   getEmployeePayRates,
-  getLabourExpensesForProject,
   getLabourTasksForProject,
   getProjectAssignments,
   getProjectBudgetRows,
@@ -16,9 +15,6 @@ import {
   rollupProjects,
   type ProjectRollup,
 } from "@/lib/metrics";
-import {
-  getProjectLabourInvoiceSummary,
-} from "@/lib/invoice-queries";
 import { createClient } from "@/lib/supabase/server";
 import { selectCanonicalJobId } from "@/lib/project-routing";
 
@@ -128,9 +124,6 @@ function emptyLeadRollup(
     lastActivity: null,
     lastClockIn: null,
     clockedHours: 0,
-    invoicedHours: 0,
-    fixedLabourCost: 0,
-    expenseCount: 0,
     labourClosedAt: null,
     labourBucket: "idle",
   };
@@ -312,7 +305,6 @@ export const getProjectData = cache(async (projectId: string) => {
         activeEntryCount: 0,
         crew: [],
         recentEntries: [],
-        labourExpenses: [],
       },
       taskProgress: [],
     };
@@ -326,10 +318,8 @@ export const getProjectData = cache(async (projectId: string) => {
     payRates,
     budgets,
     assignments,
-    labourExpenses,
     labourTasks,
     employees,
-    invoiceSummary,
   ] = await Promise.all([
     requireStaff(),
     getProjectById(projectId),
@@ -337,10 +327,8 @@ export const getProjectData = cache(async (projectId: string) => {
     getEmployeePayRates(),
     getProjectBudgetRows(projectId),
     getProjectAssignments(projectId),
-    getLabourExpensesForProject(projectId),
     getLabourTasksForProject(projectId),
     getEmployees(),
-    getProjectLabourInvoiceSummary(projectId),
   ]);
 
   if (!project) return null;
@@ -351,9 +339,7 @@ export const getProjectData = cache(async (projectId: string) => {
     budgets,
     assignments,
     payRates,
-    labourExpenses,
     now,
-    new Map([[projectId, invoiceSummary]]),
   );
   const rollup = rows.find((row) => row.projectId === projectId);
   if (!rollup) return null;
@@ -361,7 +347,7 @@ export const getProjectData = cache(async (projectId: string) => {
   return {
     canManage: ["admin", "manager"].includes(profile.role),
     project: rollup,
-    detail: projectDetails(entries, payRates, labourExpenses, now)[projectId],
+    detail: projectDetails(entries, payRates, now)[projectId],
     taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
   };
 });
