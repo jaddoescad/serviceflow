@@ -7,20 +7,12 @@ import type {
   EmployeeProfile,
   EmployeeTrackingStatus,
   MarketingLead,
-  MarketingLeadJob,
-  MarketingLeadMedia,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
   ProjectLabourTask,
   TimeEntry,
 } from "@/lib/types";
-import { selectCanonicalJobId } from "@/lib/project-routing";
-
-// PostgREST serializes `.in(...)` filters into the request URL. Keeping UUID
-// batches well below Supabase's 16 KB URL/header limit avoids network-level
-// `fetch failed` errors before the query can reach Postgres.
-const POSTGREST_IN_FILTER_BATCH_SIZE = 200;
 
 const COMPANYCAM_LEAD_JOB_EXCEPTIONS_WITH_ACCOUNTING_EVIDENCE = new Set([
   "38b6208e-12dd-5e62-b963-591a89868d91", // Graeme Archibald
@@ -162,183 +154,11 @@ export async function getProjects(): Promise<Project[]> {
     .map(project);
 }
 
-export async function getMarketingLeads(): Promise<MarketingLead[]> {
+export async function getDealsPage(search: string, page: number): Promise<{ rows: MarketingLead[]; total: number }> {
   const supabase = await createClient();
-  const rows: any[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("leads")
-      .select("*,contact:contacts(id,name,email,phone)")
-      .order("updated_at", { ascending: false })
-      .order("id", { ascending: true })
-      .range(from, from + 999);
-    if (error) throw new Error(`leads: ${error.message}`);
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < 1000) break;
-  }
-
-  const leadIds = rows.map((row) => row.id);
-  const quoteBatches = [];
-  for (let index = 0; index < leadIds.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
-    quoteBatches.push(leadIds.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE));
-  }
-  const quotes: any[] = [];
-  // Independent batches must not add one network round trip each to navigation.
-  for (let index = 0; index < quoteBatches.length; index += 4) {
-    const results = await Promise.all(quoteBatches.slice(index, index + 4).map(ids =>
-      supabase.from("quotes").select(
-        "id,lead_id,dripjobs_proposal_id,status,accepted_at,updated_at,created_at,amount_cents,job:jobs(id,name,status,started_on,completed_on,contract_amount_cents,is_feed_visible,updated_at)",
-      ).in("lead_id", ids),
-    ));
-    for (const { data, error } of results) {
-      if (error) throw new Error(`lead quotes: ${error.message}`);
-      quotes.push(...(data ?? []));
-    }
-  }
-  const quotesByLead = new Map<string, any[]>();
-  for (const quote of quotes) {
-    const list = quotesByLead.get(quote.lead_id) ?? [];
-    list.push(quote);
-    quotesByLead.set(quote.lead_id, list);
-  }
-
-  const prepared = rows.map((row) => {
-    const metadata = row.metadata ?? {};
-    const leadQuotes = quotesByLead.get(row.id) ?? [];
-    const canonicalJobId = selectCanonicalJobId(
-      leadQuotes.flatMap((quote) => {
-        const relatedJobs = Array.isArray(quote.job)
-          ? quote.job
-          : quote.job
-            ? [quote.job]
-            : [];
-        return relatedJobs.map((job: any) => ({
-          jobId: String(job.id),
-          acceptedAt: quote.accepted_at,
-          updatedAt: quote.updated_at ?? job.updated_at,
-          isFeedVisible: job.is_feed_visible,
-          quoteStatus: quote.status,
-        }));
-      }),
-    );
-    const canonicalQuote = canonicalJobId
-      ? leadQuotes.find((quote) => {
-          const relatedJobs = Array.isArray(quote.job)
-            ? quote.job
-            : quote.job
-              ? [quote.job]
-              : [];
-          return relatedJobs.some((job: any) => job.id === canonicalJobId);
-        })
-      : null;
-    const canonicalJob = canonicalQuote
-      ? Array.isArray(canonicalQuote.job)
-        ? canonicalQuote.job.find((job: any) => job.id === canonicalJobId)
-        : canonicalQuote.job
-      : null;
-    const job: MarketingLeadJob | null = canonicalJob
-      ? {
-          jobId: canonicalJob.id,
-          proposalId: canonicalQuote.dripjobs_proposal_id ?? canonicalQuote.id,
-          jobName: canonicalJob.name,
-          status: canonicalJob.status,
-          amount: Number(canonicalJob.contract_amount_cents ?? 0) / 100,
-          proposalSignedOn: canonicalQuote.accepted_at,
-          jobStartOn: canonicalJob.started_on,
-          jobCompletionOn: canonicalJob.completed_on,
-          linkMethod: "dripjobs_deal_id",
-          linkConfidence: 1,
-        }
-      : null;
-    const currentProposal = canonicalQuote ??
-      [...leadQuotes]
-        .filter((quote) => !["superseded", "declined", "expired"].includes(quote.status))
-        .sort(
-          (left, right) =>
-            Date.parse(right.updated_at ?? right.created_at ?? "") -
-            Date.parse(left.updated_at ?? left.created_at ?? ""),
-        )[0] ??
-      null;
-    const currentProposalNumber = currentProposal?.dripjobs_proposal_id ?? null;
-    const metadataProposalNumber = metadata.proposal_number ?? null;
-    const proposalNumber = currentProposalNumber ?? metadataProposalNumber;
-    const proposalAmount = job
-      ? job.amount
-      : metadata.proposal_amount != null
-        ? Number(metadata.proposal_amount)
-        : currentProposal && Number(currentProposal.amount_cents ?? 0) > 0
-          ? Number(currentProposal.amount_cents) / 100
-          : null;
-    return {
-      leadId: row.id,
-      dealId: row.dripjobs_sales_deal_id ?? row.dripjobs_deal_id ?? row.id,
-      operationalProjectId: row.id,
-      createdOn: String(row.created_at).slice(0, 10),
-      updatedAt: row.updated_at ?? row.created_at,
-      createdAtLocal: row.created_at,
-      name: row.contact?.name?.trim() || "Unnamed lead",
-      email: row.contact?.email ?? null,
-      phone: row.contact?.phone ?? null,
-      rawLeadSource: row.source,
-      normalizedChannel: row.normalized_channel,
-      address: row.address,
-      postalCode: row.postal_code,
-      estimateScheduledOn: row.estimate_scheduled_on,
-      estimateAppointmentOn: row.estimate_appointment_on,
-      proposalNumber,
-      proposalAmount,
-      proposalOn: canonicalQuote?.accepted_at ?? metadata.proposal_on ?? null,
-      jobCrew: metadata.job_crew ?? null,
-      isInterior: row.is_interior,
-      isExterior: row.is_exterior,
-      isCabinets: row.is_cabinets,
-      sourceRowNumber: metadata.source_row_number ?? null,
-      job,
-      media: [] as MarketingLeadMedia[],
-      mediaCount: 0,
-    } as MarketingLead;
-  });
-
-  const leadMediaOwners = prepared
-    .filter((lead) => !lead.job)
-    .map((lead) => lead.leadId);
-  const jobMediaOwners = prepared.flatMap((lead) =>
-    lead.job ? [lead.job.jobId] : [],
-  );
-  const mediaRequests: Array<PromiseLike<{ data: any[] | null; error: any }>> = [];
-  for (const [table, foreignKey, owners] of [
-    ["leads", "job_media_lead_id_fkey", leadMediaOwners],
-    ["jobs", "job_media_job_id_fkey", jobMediaOwners],
-  ] as const) {
-    for (let index = 0; index < owners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
-      // Limit each embedded gallery, not the combined media rows for 200 projects.
-      // The separate aggregate counts all visible media, including videos.
-      mediaRequests.push(supabase.from(table)
-        .select(`id,media:job_media!${foreignKey}(id,media_type),media_count:job_media!${foreignKey}(count)`)
-        .in("id", owners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE))
-        .eq("media.media_type", "image")
-        .order("captured_at", { referencedTable: "media", ascending: false, nullsFirst: false })
-        .order("created_at", { referencedTable: "media", ascending: false })
-        .order("id", { referencedTable: "media", ascending: true })
-        .limit(2, { referencedTable: "media" }));
-    }
-  }
-  const mediaByOwner = new Map<string, { media: MarketingLeadMedia[]; mediaCount: number }>();
-  for (const result of await Promise.all(mediaRequests)) {
-    if (result.error) throw new Error(`lead media: ${result.error.message}`);
-    for (const row of result.data ?? []) {
-      mediaByOwner.set(row.id, {
-        media: (row.media ?? []).map((item: any) => ({
-          id: item.id, ownerProjectId: row.id, mediaType: "image" as const,
-        })),
-        mediaCount: Number(row.media_count?.[0]?.count ?? 0),
-      });
-    }
-  }
-  return prepared.map(lead => ({
-    ...lead,
-    ...(mediaByOwner.get(lead.job?.jobId ?? lead.leadId) ?? { media: [], mediaCount: 0 }),
-  }));
+  const { data, error } = await supabase.rpc("get_deals_page", { search_text: search, page_number: page });
+  if (error) throw new Error(`deals: ${error.message}`);
+  return data;
 }
 
 export type DripJobsLeadCoverage = {
