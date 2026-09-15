@@ -127,7 +127,7 @@ export async function getCustomerContactsPage(search: string, page: number): Pro
 export const getContactDetail = cache(
   async (contactId: string): Promise<ContactDetail | null> => {
     const supabase = await createClient();
-    const [{ data: contact, error: contactError }, { data: leads, error: leadError }] =
+    const [{ data: contact, error: contactError }, { data: related, error: relatedError }] =
       await Promise.all([
         supabase
           .from("contacts")
@@ -135,37 +135,13 @@ export const getContactDetail = cache(
           .eq("id", contactId)
           .eq("kind", "customer")
           .maybeSingle(),
-        supabase
-          .from("leads")
-          .select(
-            "id,contact_id,dripjobs_deal_id,status,source,address,city,province,postal_code,created_at,updated_at,metadata",
-          )
-          .eq("contact_id", contactId)
-          .order("updated_at", { ascending: false }),
+        supabase.rpc("get_contact_project_records", { contact_uuid: contactId }),
       ]);
     if (contactError) throw new Error(`contact: ${contactError.message}`);
-    if (leadError) throw new Error(`contact leads: ${leadError.message}`);
+    if (relatedError) throw new Error(`contact projects: ${relatedError.message}`);
     if (!contact) return null;
 
-    const leadIds = (leads ?? []).map((lead) => lead.id);
-    let jobQuery = supabase
-      .from("jobs")
-      .select(
-        "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,lead_id,dripjobs_proposal_id,status,accepted_at)",
-      )
-      .eq("contact_id", contactId);
-    if (leadIds.length) {
-      jobQuery = supabase
-        .from("jobs")
-        .select(
-          "id,contact_id,lead_id,name,status,contract_amount_cents,formatted_address,address_line_1,city,province,postal_code,started_on,created_at,updated_at,is_feed_visible,source,accepted_quote:quotes(id,lead_id,dripjobs_proposal_id,status,accepted_at)",
-        )
-        .or(`contact_id.eq.${contactId},lead_id.in.(${leadIds.join(",")})`);
-    }
-    const { data: jobs, error: jobError } = await jobQuery.order("updated_at", {
-      ascending: false,
-    });
-    if (jobError) throw new Error(`contact jobs: ${jobError.message}`);
+    const { leads, jobs } = related as { leads: Row[]; jobs: Row[] };
 
     const knownLeadIds = new Set((leads ?? []).map((lead) => lead.id));
     const jobsByLead = new Map<string, Row[]>();

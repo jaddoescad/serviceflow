@@ -34,5 +34,15 @@ test('contact pagination retains canonical grouping, fallbacks and complete coun
     await db.exec(`insert into quotes values('quote-b','accepted','2026-05-01','lead-b'); insert into jobs values('job-b','contact-1200','quote-b','lead-b',true,'active','Montreal',null,null,'2026-01-01','2026-05-01');`);
     const both=(await page('Customer 1200')).rows[0];
     assert.equal(both.jobCount,2);assert.equal(both.leadCount,0);assert.equal(both.projectCount,2);
+    await db.exec(`alter table leads add column dripjobs_deal_id text,add column status text,add column source text,add column metadata jsonb;
+      alter table quotes add column dripjobs_proposal_id text;
+      alter table jobs add column name text,add column contract_amount_cents bigint,add column formatted_address text,add column address_line_1 text,add column started_on date,add column source text;
+      insert into leads(id,contact_id,updated_at) select 'many-lead-'||i,'contact-1','2026-09-01' from generate_series(1,1200)i;
+      insert into jobs(id,lead_id,is_feed_visible,updated_at) select 'many-job-'||i,'many-lead-'||i,true,'2026-09-01' from generate_series(1,1200)i;`);
+    // Use text IDs only in this pre-existing fixture; production IDs are UUIDs.
+    await db.exec(fs.readFileSync('supabase/migrations/20260915185236_scope_contact_project_records.sql','utf8').replaceAll('contact_uuid uuid','contact_uuid text').replaceAll('get_contact_project_records(uuid)','get_contact_project_records(text)'));
+    const related=(await db.query("select get_contact_project_records('contact-1') r")).rows[0].r;
+    assert.equal(related.leads.length,1200);assert.equal(related.jobs.length,1200);
+    assert.equal(new Set(related.jobs.map(j=>j.id)).size,1200);
   } finally { await db.close(); }
 });
