@@ -7,14 +7,15 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const profile = await requireStaff();
+  const [profile, { data: appConfig }] = await Promise.all([
+    requireStaff(),
+    createClient().then(supabase => supabase
+      .from("app_config")
+      .select("maintenance_mode")
+      .eq("id", "default")
+      .maybeSingle()),
+  ]);
   const name = profile.full_name ?? profile.email ?? "Staff";
-  const supabase = await createClient();
-  const { data: appConfig } = await supabase
-    .from("app_config")
-    .select("maintenance_mode")
-    .eq("id", "default")
-    .maybeSingle();
 
   if (appConfig?.maintenance_mode) {
     return (

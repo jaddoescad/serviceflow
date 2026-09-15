@@ -64,6 +64,7 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
               <Link
                 key={link.href}
                 href={link.href}
+                prefetch={link.href === "/deals" ? true : undefined}
                 aria-current={active ? "page" : undefined}
                 onClick={onNavigate}
                 className={cn(

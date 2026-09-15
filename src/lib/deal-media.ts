@@ -44,4 +44,3 @@ export async function getDealMedia(leads: MarketingLead[]) {
     ...(mediaByOwner.get(lead.job?.jobId ?? lead.leadId) ?? { media: [], mediaCount: 0 }),
   }));
 }
-
