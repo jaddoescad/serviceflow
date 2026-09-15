@@ -132,3 +132,11 @@ export async function removeAssignment(input: {
   revalidatePath("/employees");
   return { ok: true };
 }
+
+export async function getPayRateHistory(userId: string) {
+  await requireStaff();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_crew_pay_history", { employee: userId });
+  if (error) throw new Error("Rate history could not load.");
+  return data as { id: string; user_id: string; hourly_rate: number; effective_from: string }[];
+}

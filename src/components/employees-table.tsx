@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
 import { fmtHours, fmtMoney, fmtDate, initials } from "@/lib/format";
-import { createEmployee, setActive, setPayRate, setRole } from "@/lib/actions/employees";
-import type { EmployeePayRate, Role } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { getPayRateHistory, createEmployee, setActive, setPayRate, setRole } from "@/lib/actions/employees";
+import type { Role } from "@/lib/types";
 
 export type CrewRow = {
   userId: string;
@@ -16,7 +17,6 @@ export type CrewRow = {
   lastActivity: string | null;
   assignedCount: number;
   currentPayRate: number | null;
-  payRates: EmployeePayRate[];
 };
 
 export function EmployeesTable({
@@ -28,6 +28,7 @@ export function EmployeesTable({
   canManage: boolean;
   canManageRates: boolean;
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [showActive, setShowActive] = useState("all");
   const [creating, setCreating] = useState(false);
@@ -52,7 +53,7 @@ export function EmployeesTable({
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Action failed");
-      else done?.();
+      else { done?.(); router.refresh(); }
     });
   }
 
@@ -222,7 +223,13 @@ function PayRateDialog({
   const [rate, setRate] = useState(employee.currentPayRate?.toString() ?? "");
   const [effectiveFrom, setEffectiveFrom] = useState(localToday);
   const [notes, setNotes] = useState("");
-  const history = [...employee.payRates].sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof getPayRateHistory>> | null>(null);
+  const [historyError, setHistoryError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getPayRateHistory(employee.userId).then(rows => { if (!cancelled) setHistory(rows); }).catch(() => { if (!cancelled) setHistoryError(true); });
+    return () => { cancelled = true; };
+  }, [employee.userId]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
@@ -249,7 +256,7 @@ function PayRateDialog({
 
           <div className="mt-5">
             <div className="mb-2 text-xs font-medium text-[var(--color-muted)]">Rate history</div>
-            {history.length === 0 ? (
+            {historyError ? <div role="alert" className="text-sm text-[var(--color-bad)]">Rate history could not load. Reopen to retry.</div> : history === null ? <div role="status" className="text-xs text-[var(--color-muted)]">Loading…</div> : history.length === 0 ? (
               <div className="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-4 text-center text-xs text-[var(--color-muted)]">
                 No rate history yet.
               </div>

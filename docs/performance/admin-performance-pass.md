@@ -95,3 +95,10 @@ The App Router can commit a loading boundary before the content. Instrumentation
 - `get_photo_feed_page` first EXPLAIN: 2,845 ms. Underlying scan sorted 7,713 visible media rows. Added `(captured_at DESC NULLS LAST, created_at DESC, id DESC)` index; RPC then 175 ms. Existing indexes began with job/lead and did not cover the global order.
 - Full filtered count and filter choices stay separate from 60-item cursor batches. Query fixture traverses 1,205 records with identical timestamps and null capture dates without loss/duplicates; media filters run before pagination; invoker view/RPC respects restricted RLS. Passed.
 - Gallery images use the existing thumbnail endpoint; viewer uses originals. Video bytes load on demand. Obsolete filter requests abort and cannot overwrite newer state.
+- Photos release `ae09ed8` is Ready on Vercel. Live page shows 60 images, all 60 with thumbnail URLs and loaded image dimensions; total is 7,713. Rapid video→image filters exercised; full batch/filter verification continues.
+
+### Crew prepared release
+
+- Replaced time-entry, assignment and rate-history downloads with a compact invoker summary. Rate history loads only for the opened editor. Existing actions remain authoritative; success refreshes summary rows.
+- Fixture: 1,200 employees, 1,200 shifts/assignments, old active shift, excluded old completed shift, future rate and scoped history all pass. Authenticated live summary execution 5.023 ms.
+- Pre-release content-ready observations: 744, 633, 1,655, 630, 529 ms (median 633 ms). First sample is prior initial load, remaining samples warm-asset reloads; not a controlled cold run.
