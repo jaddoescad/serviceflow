@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PhotoTagPicker } from "./photo-tag-picker";
 import { savePhotoDetails } from "@/lib/actions/photo-details";
 
-export function PhotoDetailsEditor({ projectId, mediaId, description, tags, revision, onDirtyChange }: {
+export function PhotoDetailsEditor({ projectId, mediaId, description, tags, availableTags = [], revision, onDirtyChange }: {
   projectId: string; mediaId: string; description: string | null;
-  tags: string[]; revision: string | null; onDirtyChange: (dirty: boolean) => void;
+  tags: string[]; availableTags?: string[]; revision: string | null; onDirtyChange: (dirty: boolean) => void;
 }) {
   const [editing,setEditing]=useState<'description'|'tags'|null>(null);
   const [draft, setDraft] = useState(description ?? "");
-  const [tagText, setTagText] = useState(tags.join(", "));
-  const [saved, setSaved] = useState({ description: description ?? "", tags: tags.join(", "), revision });
+  const [draftTags, setDraftTags] = useState(tags);
+  const [saved, setSaved] = useState({ description: description ?? "", tags, revision });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [conflict, setConflict] = useState(false);
   const attempt = useRef<{ content: string; revision: string } | null>(null);
-  const dirty = draft !== saved.description || tagText !== saved.tags;
+  const dirty = draft !== saved.description || JSON.stringify(draftTags) !== JSON.stringify(saved.tags);
   useEffect(() => { onDirtyChange(dirty || busy); }, [dirty, busy, onDirtyChange]);
   useEffect(() => {
     if (!dirty && !busy) return;
@@ -25,7 +26,7 @@ export function PhotoDetailsEditor({ projectId, mediaId, description, tags, revi
   }, [dirty, busy]);
 
   async function save() {
-    const nextTags = [...new Set(tagText.split(",").map((tag) => tag.trim()).filter(Boolean))];
+    const nextTags = [...new Set(draftTags.map(tag=>tag.trim()).filter(Boolean))];
     if (nextTags.length > 30 || nextTags.some((tag) => tag.length > 60)) {
       setMessage("Use up to 30 tags, with no more than 60 characters per tag."); return;
     }
@@ -36,17 +37,17 @@ export function PhotoDetailsEditor({ projectId, mediaId, description, tags, revi
       const result = await savePhotoDetails({ projectId, mediaId, expectedRevision: saved.revision,
         revision: attempt.current.revision, description: draft, tags: nextTags });
       if (!result.ok) { setMessage(result.error); setConflict(result.conflict); return; }
-      setDraft(result.description); setTagText(result.tags.join(", "));
-      setSaved({ description: result.description, tags: result.tags.join(", "), revision: result.revision });
+      setDraft(result.description); setDraftTags(result.tags);
+      setSaved({ description: result.description, tags: result.tags, revision: result.revision });
       setMessage("");setEditing(null);setConflict(false); attempt.current = null;
     } catch { setMessage("Could not confirm the save. Try again to check it safely."); }
     finally { setBusy(false); }
   }
 
-  function cancel() {setDraft(saved.description);setTagText(saved.tags);setMessage("");setEditing(null);}
+  function cancel() {setDraft(saved.description);setDraftTags(saved.tags);setMessage("");setEditing(null);}
   return <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="text-sm">
     <div className="border-b border-slate-200 px-5 pb-5">
-      {editing==='tags'?<div className="space-y-3"><input autoFocus aria-label="Photo tags" value={tagText} disabled={busy||conflict} onChange={event=>setTagText(event.target.value)} placeholder="Tags, separated by commas" className="w-full rounded border border-slate-300 p-2"/>{controls()}</div>:<div className="flex flex-wrap gap-2">{saved.tags.split(', ').filter(Boolean).map(tag=><button type="button" key={tag} disabled={editing!==null} onClick={()=>setEditing('tags')} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">{tag}</button>)}<button type="button" disabled={editing!==null} onClick={()=>setEditing('tags')} className="text-xs font-semibold text-blue-600">{saved.tags?'Edit Tags':'Add Tags'}</button></div>}
+      {editing==='tags'?<div className="space-y-3"><PhotoTagPicker value={draftTags} options={availableTags} disabled={busy||conflict} onChange={setDraftTags}/>{controls()}</div>:<div className="flex flex-wrap gap-2">{saved.tags.map(tag=><button type="button" key={tag} disabled={editing!==null} onClick={()=>setEditing('tags')} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">{tag}</button>)}<button type="button" disabled={editing!==null} onClick={()=>setEditing('tags')} className="text-xs font-semibold text-blue-600">{saved.tags.length?'Edit Tags':'Add Tags'}</button></div>}
     </div>
     <div className="flex items-center justify-between bg-slate-50 px-5 py-2 text-xs font-semibold"><span>Description</span><button type="button" disabled={editing!==null} onClick={()=>setEditing('description')} className="text-blue-600 disabled:opacity-40">Edit</button></div>
     <div className="min-h-32 p-5">

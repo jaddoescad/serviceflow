@@ -10,8 +10,8 @@ export type PhotoBatchItem = {
 };
 
 /** Freeze the values and request IDs so uncertain results can be replayed safely. */
-export function preparePhotoBatch(items: ProjectMediaItem[], operation: PhotoBatchOperation, text: string): PhotoBatchItem[] {
-  const tags = [...new Set(text.split(',').map(tag => tag.trim()).filter(Boolean))];
+export function preparePhotoBatch(items: ProjectMediaItem[], operation: PhotoBatchOperation, inputTags: string[]): PhotoBatchItem[] {
+  const tags = [...new Set(inputTags.map(tag => tag.trim()).filter(Boolean))];
   if (operation !== 'trash' && !tags.length) throw new Error('Enter at least one tag.');
   if (tags.some(tag => tag.length > 60)) throw new Error('Tags must be 60 characters or fewer.');
   return [...new Map(items.map(item => [item.id, item])).values()].map(item => {

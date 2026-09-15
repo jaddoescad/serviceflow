@@ -307,7 +307,7 @@ export function ProjectPhotosPanel({
           </div>
         )}
         {gallery.page.hasMore?<div className="mt-8 text-center"><button type="button" disabled={gallery.loading} onClick={()=>void gallery.more()} className="rounded-lg border border-[var(--color-border)] px-5 py-2 text-sm disabled:opacity-50">{gallery.loading?'Loading…':`Load more · ${visibleMedia.length} of ${gallery.page.total}`}</button></div>:null}
-        <ProjectPhotoBatch projectId={projectId} selected={[...selected.values()]} onClear={()=>setSelected(new Map())} onBusy={setSelectionLocked} onSaved={()=>{gallery.reload();router.refresh();}}/>
+        <ProjectPhotoBatch availableTags={gallery.page.options?.tags??[]} projectId={projectId} selected={[...selected.values()]} onClear={()=>setSelected(new Map())} onBusy={setSelectionLocked} onSaved={()=>{gallery.reload();router.refresh();}}/>
       </section>
 
       <ProjectProfilePanel
@@ -386,7 +386,7 @@ export function ProjectPhotosPanel({
                 <div className="mt-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500">{(activeImage.creatorName??'').split(' ').map(part=>part[0]).slice(0,2).join('')}</span><div><p className="text-xs font-medium">{activeImage.creatorName??'Unknown uploader'}</p><p className="mt-0.5 text-[11px] text-slate-500">{new Intl.DateTimeFormat('en-CA',{dateStyle:'short',timeStyle:'short',timeZone:PROJECT_TIME_ZONE}).format(new Date(activeImage.capturedAt??activeImage.createdAt))}</p></div></div>
               </div>
               <PhotoDetailsEditor key={activeImage.id} projectId={projectId} mediaId={activeImage.id}
-                description={activeImage.description} tags={activeImage.tags} revision={activeImage.revision}
+                description={activeImage.description} availableTags={gallery.page.options?.tags??[]} tags={activeImage.tags} revision={activeImage.revision}
                 onDirtyChange={trackDirty} />
               {activeImage.mediaType==='video'?<div className="flex items-center gap-3 px-5"><a href={`/api/jobs/${projectId}/media/${activeImage.id}`} download={activeImage.originalFilename??activeImage.id} className="text-sm text-blue-600">Download</a><PhotoTrashAction projectId={projectId} item={activeImage} beforeAction={mayLeave} onSuccess={()=>{setActiveImageId(null);router.refresh();}}/></div>:null}
             </aside>

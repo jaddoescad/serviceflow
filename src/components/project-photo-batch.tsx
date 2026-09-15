@@ -1,16 +1,17 @@
 "use client";
 
+import { PhotoTagPicker } from "./photo-tag-picker";
 import { useEffect, useRef, useState } from 'react';
 import type { ProjectMediaItem } from '@/lib/project-data';
 import { preparePhotoBatch, runPhotoBatch, type PhotoBatchItem, type PhotoBatchOperation } from '@/lib/photo-batch';
 import { savePhotoDetails, setPhotoTrash } from '@/lib/actions/photo-details';
 
-export function ProjectPhotoBatch({projectId, selected, onClear, onBusy, onSaved}: {
-  projectId:string; selected:ProjectMediaItem[]; onClear:()=>void;
+export function ProjectPhotoBatch({projectId, selected, availableTags = [], onClear, onBusy, onSaved}: {
+  availableTags?:string[]; projectId:string; selected:ProjectMediaItem[]; onClear:()=>void;
   onBusy:(busy:boolean)=>void; onSaved:()=>void;
 }) {
   const [operation,setOperation]=useState<PhotoBatchOperation>('add-tags');
-  const [tags,setTags]=useState('');
+  const [tags,setTags]=useState<string[]>([]);
   const dialog=useRef<HTMLDialogElement>(null);
   const menu=useRef<HTMLDetailsElement>(null);
   const [busy,setBusy]=useState(false);
@@ -53,7 +54,7 @@ export function ProjectPhotoBatch({projectId, selected, onClear, onBusy, onSaved
     dialog.current?.close();
   }
   function choose(next:PhotoBatchOperation) {
-    setOperation(next);setTags('');setMessage('');setConfirming(next==='trash');
+    setOperation(next);setTags([]);setMessage('');setConfirming(next==='trash');
     if(menu.current)menu.current.open=false;
     dialog.current?.showModal();
   }
@@ -76,10 +77,10 @@ export function ProjectPhotoBatch({projectId, selected, onClear, onBusy, onSaved
         <h2 className="text-lg font-semibold">{operation==='trash'?'Move to Trash':operation==='add-tags'?'Select Tags':'Remove Tags'}</h2>
         <button aria-label="Close photo action" disabled={busy} onClick={dismiss} className="rounded p-1 text-2xl text-slate-500">×</button>
       </div>
-      {operation==='trash'?<p className="mb-5 text-sm">Move {selected.length} selected photos/videos to trash?</p>:<input autoFocus aria-label="Tags for selected photos" value={tags} disabled={busy||!!batch} onChange={event=>setTags(event.target.value)} placeholder="Tags, separated by commas" className="mb-5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>}
+      {operation==='trash'?<p className="mb-5 text-sm">Move {selected.length} selected photos/videos to trash?</p>:<div className="mb-5"><PhotoTagPicker key={operation} value={tags} options={operation==='remove-tags'?selected.flatMap(item=>item.tags):availableTags} allowCreate={operation==='add-tags'} disabled={busy||!!batch} onChange={setTags}/></div>}
       <div className="flex justify-end gap-3">
         <button disabled={busy} onClick={dismiss} className="rounded-md border border-slate-300 px-4 py-2 text-sm">{batch?'Finish':'Cancel'}</button>
-        <button disabled={busy} onClick={()=>{if(confirming&&!pending.current){pending.current=preparePhotoBatch(selected,'trash','');}void apply();}} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy?`Saving ${batch?.filter(item=>item.done).length??0}/${batch?.length??0}…`:batch?'Retry unfinished':operation==='trash'?'Move to Trash':operation==='add-tags'?'Tag Photos':'Remove Tags'}</button>
+        <button disabled={busy} onClick={()=>{if(confirming&&!pending.current){pending.current=preparePhotoBatch(selected,'trash',[]);}void apply();}} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy?`Saving ${batch?.filter(item=>item.done).length??0}/${batch?.length??0}…`:batch?'Retry unfinished':operation==='trash'?'Move to Trash':operation==='add-tags'?'Tag Photos':'Remove Tags'}</button>
       </div>
       {message?<p role="status" className="mt-3 text-sm">{message}</p>:null}
       {batch?.some(item=>item.error)?<ul className="mt-2 max-h-32 overflow-auto text-sm text-red-700">{batch.filter(item=>item.error).map(item=><li key={item.item.id}>{item.item.originalFilename??'Photo'}: {item.error}</li>)}</ul>:null}
