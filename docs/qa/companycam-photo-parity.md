@@ -190,3 +190,15 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Browser unlocked. Published097c319; Vercel8ukDizaxGtjhdQ5ohoDsUe8x4RhL Ready39s. Canonical QA direct-link viewer loads three photos and Edit photo, uploader Jad Slim. This confirms deployment, not editor acceptance.
 - Captured actual CompanyCam QA editor through native Chrome. It uses a48px white icon rail, charcoal full-height canvas, and upper-right circular close control. No header/properties sidebar/footer. Corrected our editor to that structure, removed persistent helper copy and shape-count UI, made colour/thickness contextual, and retained revision-safe save/undo.
 - CompanyCam editor reference still includes additional capabilities (timestamp, stickers, rotate/crop/adjustment) not implemented. Gallery/viewer fidelity and complete functionality remain outstanding. Do not declare CompanyCam parity.
+
+- Correction14ec14d deployed through GitHub; VercelG6EgHgqX3keRGfFxZJzAPv5CBD3E Ready49s. Canonical QA editor screenshot confirms compact white rail, charcoal canvas, full-height image and circular close; rejected header/sidebar/footer are gone. TypeScript and production build passed.
+- Native Chrome foreground changes repeatedly interrupted gesture tests; one attempted gesture encountered gallery/overview navigation rather than a stable editor. No successful drawing/save claim. Browser extension tab access returned Debugger unattached; native control worked for reference/layout inspection. Need stable QA-tab interaction to complete end-to-end drawing/reopen and upload recovery tests.
+
+## Stable browser control and drawing persistence — 2026-09-15
+
+- Created fresh controlled Chrome QA tab580656665 through CUA; extension DOM and semantic controls work on it. Native foreground switching is unnecessary. Do not keep interfering with the user's active tabs.
+- Fixture now has4 photos, including a user-added screenshot. That screenshot was not modified. Tested only known disposable icon a37b4ca2-76af-447b-85eb-b56096286743.
+- Existing drawing contained1 shape. Added text `QA drawing save test` via Text control and canvas click; Save drawing enabled. Exercised Undo/Redo (text count also included textarea, so that count alone is not an undo assertion). Saved, waited for editor to close, reloaded page, reopened editor:2 shapes and exact text persisted in rendered drawing canvas. Closed editor successfully.
+- Accessibility controls work in the dedicated tab after lazy editor load. A contemplated native-dialog change was withdrawn because the suspected missing controls were not reproduced with reliable tab access.
+- Still pending: verified undo geometry, discard/conflict paths, arrow drag/move, photo-gallery/viewer fidelity, uploads under failure/navigation/reload, remaining scope in this report. Not complete.
+- Arrow gesture verified with dedicated-tab drag: rendered shape count2→3. Undo→2;Redo→3. Close shows discard dialog;Keep editing retains3. Close→Discard→reopen returns persisted2. This verifies both undo/redo and unsaved discard without altering the saved QA drawing. Tab580656665 retained for continuing tests.
