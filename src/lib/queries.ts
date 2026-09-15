@@ -80,6 +80,17 @@ export async function getTimeEntries(sinceIso?: string): Promise<TimeEntry[]> {
   return (data ?? []).map(timeEntry);
 }
 
+export type TimesheetFilters = { search: string; employee: string; project: string; status: string };
+export async function getTimesheetsPage(filters: TimesheetFilters, page: number) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_timesheets_page", {
+    search_text: filters.search, employee_filter: filters.employee === "all" ? null : filters.employee,
+    project_filter: filters.project === "all" ? null : filters.project, status_filter: filters.status, page_number: page,
+  });
+  if (error) throw new Error(`timesheets: ${error.message}`);
+  return { rows: (data.rows ?? []).map(timeEntry), total: Number(data.total), totalHours: Number(data.totalHours), activeCount: Number(data.activeCount), calculatedAt: String(data.calculatedAt) };
+}
+
 export async function getActiveEntries(): Promise<TimeEntry[]> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("time_entries").select("*").eq("status", "active").order("started_at");

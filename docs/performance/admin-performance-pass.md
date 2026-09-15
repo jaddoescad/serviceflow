@@ -54,3 +54,14 @@ Unrelated project-note cleanup files must remain excluded from performance commi
 Five distinct post-release Contacts reload/hydration samples (warm asset cache): 497, 1584, 379, 411, 775 ms. One duplicate console entry was excluded. Median 497ms versus baseline 537ms; the 1584ms outlier prevents claiming uniformly faster loads. New RPC measured 43.316ms under authenticated role. Cold scenarios, full document bytes, and 20-interaction acceptance runs remain outstanding.
 
 Contact-detail previews are now prepared locally: shared two-image/count query, streamed separately from contact/project cards. Not yet deployed or live-tested.
+
+f999333 deployed successfully. Live contact detail for the previously observed Lydia record retained its project link and exact one-photo count; thumbnail DOM confirmed loaded with `preview=1`. No contact or project data was changed for this verification. Independent media failure behavior, larger contact histories, and complete acceptance interaction counts remain pending.
+
+## Timesheets preparation
+
+- Additive get_timesheets_page RPC applied; caller RLS retained. Fifty entry rows, exact full-filter total hours/count, and global active count within the existing recent-or-active scope.
+- Production read comparison at 2026-09-15T18:00:00Z: 144 total, 50 returned, counts and hours match the full SQL result.
+- PGlite fixture passes with 1200 completed entries plus an old active shift, older completed exclusion, crew/job/name/status filters, negative-duration protection and unchanged totals between pages.
+- Baseline warm-asset-cache document load/hydration: 1078, 666, 530, 593, 549 ms. No cold/cache-empty claim.
+- Build passed. New page footer uses generated reference docs/design/timesheets-pagination-reference.png and existing table styles. Refresh after successful mutations is explicit.
+- Jobs & Budgets aggregate work, option-list payload trimming, live edit verification, and 20-interaction acceptance remain outstanding.

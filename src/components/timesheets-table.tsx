@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import type { TimesheetFilters } from "@/lib/queries";
 import { Badge, Button, Card, EmptyState, Field, Input, Select } from "@/components/ui";
 import { computeDurations, isStaleActive, wasEdited } from "@/lib/hours";
 import { fmtHours, fmtDate, fmtTime, fmtDistance } from "@/lib/format";
@@ -102,42 +104,51 @@ export function TimesheetsTable({
   entries,
   employees,
   projects,
-  canDelete,
+  canDelete, result, filters, currentPage,
 }: {
   entries: TimeEntry[];
   employees: EmployeeProfile[];
   projects: Project[];
   canDelete: boolean;
+  result: { total: number; totalHours: number; activeCount: number; calculatedAt: string };
+  filters: TimesheetFilters;
+  currentPage: number;
 }) {
-  const [employee, setEmployee] = useState("all");
-  const [project, setProject] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [search, setSearch] = useState("");
+  const [employee, setEmployee] = useState(filters.employee);
+  const [project, setProject] = useState(filters.project);
+  const [status, setStatus] = useState(filters.status);
+  const [search, setSearch] = useState(filters.search);
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [clockingOut, setClockingOut] = useState<TimeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const now = Date.now();
-  const activeCount = entries.filter((entry) => entry.status === "active").length;
-
-  const filtered = useMemo(() => {
-    return entries.filter((e) => {
-      if (employee !== "all" && e.user_id !== employee) return false;
-      if (project !== "all" && e.companycam_project_id !== project) return false;
-      if (status !== "all" && e.status !== status) return false;
-      if (search) {
-        const hay = `${e.user_name ?? ""} ${e.project_name ?? ""}`.toLowerCase();
-        if (!hay.includes(search.toLowerCase())) return false;
-      }
-      return true;
-    });
-  }, [entries, employee, project, status, search]);
-
-  const totalHours = useMemo(
-    () => filtered.reduce((acc, e) => acc + computeDurations(e, now).totalHours, 0),
-    [filtered, now],
-  );
+  const router = useRouter();
+  const now = Date.parse(result.calculatedAt);
+  const { activeCount, totalHours } = result;
+  const filtered = entries;
+  const previousFilters = useRef(filters);
+  useEffect(() => {
+    const old = previousFilters.current;
+    previousFilters.current = filters;
+    setEmployee(value => value === old.employee ? filters.employee : value);
+    setProject(value => value === old.project ? filters.project : value);
+    setStatus(value => value === old.status ? filters.status : value);
+    setSearch(value => value === old.search ? filters.search : value);
+  }, [filters]);
+  function navigate(page: number, next: TimesheetFilters) {
+    const params = new URLSearchParams();
+    if (next.search) params.set("q", next.search);
+    for (const key of ["employee", "project", "status"] as const) if (next[key] !== "all") params.set(key, next[key]);
+    if (page > 1) params.set("page", String(page));
+    startTransition(() => router.replace(`/timesheets${params.size ? `?${params}` : ""}`, { scroll: false }));
+  }
+  useEffect(() => {
+    if (search === filters.search && employee === filters.employee && project === filters.project && status === filters.status) return;
+    const timer = setTimeout(() => navigate(1, { search, employee, project, status }), 300);
+    return () => clearTimeout(timer);
+  }, [search, employee, project, status, filters]);
+  const totalPages = Math.max(1, Math.ceil(result.total / 50));
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, successMessage: string) {
     setError(null);
@@ -149,6 +160,7 @@ export function TimesheetsTable({
         setEditing(null);
         setClockingOut(null);
         setNotice(successMessage);
+        router.refresh();
       }
     });
   }
@@ -201,7 +213,7 @@ export function TimesheetsTable({
         </Button>
         <div className="ml-auto text-right">
           <div className="text-xs text-[var(--color-muted)]">
-            {filtered.length} entries
+            {result.total} entries
           </div>
           <div className="text-lg font-semibold tabular-nums">{fmtHours(totalHours)}</div>
         </div>
@@ -335,6 +347,14 @@ export function TimesheetsTable({
         </div>
       )}
 
+      {result.total > 0 ? <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3">
+        <span className="text-xs text-[var(--color-muted)]">{(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, result.total)} of {result.total}</span>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="subtle" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, filters)}>Previous</Button>
+          <span className="text-xs">Page {currentPage} of {totalPages}</span>
+          <Button size="sm" variant="subtle" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, filters)}>Next</Button>
+        </div>
+      </div> : null}
       {editing ? (
         <EditDialog
           entry={editing}
