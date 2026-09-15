@@ -90,7 +90,7 @@ async function proxyMedia(
     "Cache-Control": "private, no-cache",
     "X-Content-Type-Options": "nosniff",
   });
-  for (const name of ["accept-ranges", "content-length", "content-range", "etag"]) {
+  for (const name of ["accept-ranges", "content-length", "content-range", "content-disposition", "etag"]) {
     const value = upstream.headers.get(name);
     if (value) headers.set(name, value);
   }

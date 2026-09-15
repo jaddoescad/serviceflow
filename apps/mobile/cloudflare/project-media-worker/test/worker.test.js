@@ -289,7 +289,7 @@ test("successful upload stores R2 object, inserts metadata, returns row", async 
   assert.equal(row.height, 3024);
   assert.equal(row.captured_at, "2026-08-17T12:00:00.000Z");
   assert.match(row.object_key, new RegExp(`^jobs/${JOB_ID}/${row.id}\\.jpg$`));
-  assert.equal(row.original_filename, "weird_name_.jpg");
+  assert.equal(row.original_filename, "weird name!!.jpg");
 
   assert.ok(bucket.objects.has(row.object_key), "object stored in R2");
   const stored = bucket.objects.get(row.object_key);
@@ -455,6 +455,8 @@ test("multipart upload assembles parts and records metadata once", async () => {
         Authorization: `Bearer ${fakeJwt()}`,
         "x-media-content-type": "video/mp4",
         "x-file-size": "12",
+        "x-original-filename": encodeURIComponent("chantier été 🎥.mp4"),
+        "x-filename-encoding": "uri",
       },
     }),
     env,
@@ -489,6 +491,7 @@ test("multipart upload assembles parts and records metadata once", async () => {
       body: JSON.stringify({
         objectKey,
         mimeType: "video/mp4",
+        originalFilename: "chantier été 🎥.mp4",
         parts: [
           { partNumber: 1, etag: "etag-1" },
           { partNumber: 2, etag: "etag-2" },
@@ -499,6 +502,9 @@ test("multipart upload assembles parts and records metadata once", async () => {
     env,
   );
   assert.equal(complete.status, 201);
+  const inserted=supabaseRequests.find(record=>record.method==='POST');
+  assert.equal(inserted.body.original_filename,"chantier été 🎥.mp4");
+  assert.equal(inserted.body.source_metadata.filename_version,2);
   const stored = bucket.objects.get(objectKey);
   assert.equal(new TextDecoder().decode(stored.body), "aaaabbbbcccc");
 });
@@ -804,4 +810,48 @@ test('unknown commit state preserves bytes until status can be resolved', async 
   const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
   assert.equal(response.status, 503);
   assert.equal(bucket.objects.size, 1);
+});
+
+test('encoded Unicode filename survives upload and safe download headers',async()=>{
+ const name='cuisine été 🏠.jpg';
+ queueSupabase(200,[{id:JOB_ID}]);
+ supabaseHandlers.push(record=>new Response(JSON.stringify([record.body]),{status:201}));
+ const response=await worker.fetch(uploadRequest({headers:{'x-original-filename':encodeURIComponent(name),'x-filename-encoding':'uri'}}),env);
+ assert.equal(response.status,201);const row=await response.json();
+ assert.equal(row.original_filename,name);assert.equal(row.source_metadata.filename_version,2);
+ queueSupabase(200,[row]);
+ const downloaded=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}`,{headers:{Authorization:`Bearer ${fakeJwt()}`}}),env);
+ assert.equal(downloaded.status,200);
+ assert.ok(downloaded.headers.get('Content-Disposition').endsWith(`filename*=UTF-8''${encodeURIComponent(name)}`));
+ assert.equal((await downloaded.arrayBuffer()).byteLength,4);
+});
+
+test('legacy sanitized filenames still recognize an existing upload retry',async()=>{
+ queueSupabase(200,[{id:JOB_ID}]);
+ queueSupabase(200,[savedUpload({original_filename:'cuisine_t_.jpg'})]);
+ const response=await worker.fetch(uploadRequest({headers:{'x-upload-id':UPLOAD_ID,'x-original-filename':encodeURIComponent('cuisine été.jpg'),'x-filename-encoding':'uri'}}),env);
+ assert.equal(response.status,200);assert.equal(bucket.objects.size,0);
+});
+
+test('new filename records do not accept a different name with the same sanitized value',async()=>{
+ queueSupabase(200,[{id:JOB_ID}]);
+ queueSupabase(200,[savedUpload({original_filename:'cuisine_t_.jpg',source_metadata:{filename_version:2}})]);
+ const response=await worker.fetch(uploadRequest({headers:{'x-upload-id':UPLOAD_ID,'x-original-filename':encodeURIComponent('cuisine été.jpg'),'x-filename-encoding':'uri'}}),env);
+ assert.equal(response.status,409);assert.equal(bucket.objects.size,0);
+});
+
+test('invalid filename encoding fails before writing an object',async()=>{
+ queueSupabase(200,[{id:JOB_ID}]);
+ const response=await worker.fetch(uploadRequest({headers:{'x-original-filename':'%ZZ','x-filename-encoding':'uri'}}),env);
+ assert.equal(response.status,400);assert.equal(bucket.objects.size,0);
+});
+
+test('download filename cannot inject headers or include parent paths',async()=>{
+ const {row}=await seedMediaRow();row.original_filename='../été"\r\nInjected: yes.jpg';
+ queueSupabase(200,[row]);
+ const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}`,{headers:{Authorization:`Bearer ${fakeJwt()}`}}),env);
+ assert.equal(response.status,200);assert.equal(response.headers.get('Injected'),null);
+ const disposition=response.headers.get('Content-Disposition');
+ assert.ok(!/[\r\n]/.test(disposition));assert.ok(!disposition.includes('../'));
+ assert.ok(disposition.endsWith(`filename*=UTF-8''${encodeURIComponent('été"Injected: yes.jpg')}`));
 });

@@ -102,6 +102,23 @@ function sanitizeFilename(value) {
   return cleaned ? cleaned.slice(0, MAX_FILENAME_LENGTH) : null;
 }
 
+// Display names never determine object keys. Strip paths/control characters,
+// while retaining Unicode and punctuation in the stored filename.
+function preserveFilename(value) {
+  const name = String(value || "").split(/[\\/]/).pop()
+    .replace(/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/gu, "");
+  return name && name !== "." && name !== ".." ? [...name].slice(0, MAX_FILENAME_LENGTH).join("") : null;
+}
+
+function requestFilename(request) {
+  const raw = request.headers.get("x-original-filename") || "";
+  return preserveFilename(request.headers.get("x-filename-encoding") === "uri" ? decodeURIComponent(raw) : raw);
+}
+
+function encodedFilename(name) {
+  return encodeURIComponent(name).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
 function parsePositiveInteger(value, max) {
   if (value === null || value === undefined || value === "") return null;
   if (!/^\d+$/.test(String(value))) return null;
@@ -188,7 +205,7 @@ function mediaResponseHeaders(row, etag, size) {
     "Content-Type": row.mime_type || "application/octet-stream",
     "Cache-Control": "private, max-age=300",
     "X-Content-Type-Options": "nosniff",
-    "Content-Disposition": `inline; filename="${filename}"`,
+    "Content-Disposition": `inline; filename="${filename}"; filename*=UTF-8''${encodedFilename(preserveFilename(row.original_filename) || filename)}`,
     "Accept-Ranges": "bytes",
     "Content-Length": String(size),
   };
@@ -270,17 +287,15 @@ async function handleUpload(request, env, projectKind, projectId) {
   const uploadId = request.headers.get("x-upload-id");
   if (uploadId && !UUID_PATTERN.test(uploadId)) return errorResponse(400, "Invalid upload id.");
   const mediaId = uploadId || crypto.randomUUID();
-  let rawFilename = request.headers.get("x-original-filename");
-  if (request.headers.get("x-filename-encoding") === "uri") {
-    try { rawFilename = decodeURIComponent(rawFilename || ""); }
-    catch { return errorResponse(400, "Invalid filename encoding."); }
-  }
-  const originalFilename = sanitizeFilename(rawFilename);
+  let originalFilename;
+  try { originalFilename = requestFilename(request); }
+  catch { return errorResponse(400, "Invalid filename encoding."); }
   function sameUpload(row) {
     return row.uploaded_by === uploadedBy &&
       row[projectKind === "lead" ? "lead_id" : "job_id"] === projectId &&
       row.mime_type === contentType && Number(row.byte_size) === contentLength &&
-      (row.original_filename || null) === originalFilename;
+      ((row.original_filename || null) === originalFilename ||
+        (row.source_metadata?.filename_version !== 2 && (row.original_filename || null) === sanitizeFilename(originalFilename)));
   }
   if (uploadId) {
     const existing = await fetchMediaRow(env, token, mediaId);
@@ -304,7 +319,7 @@ async function handleUpload(request, env, projectKind, projectId) {
         project_id: projectId,
         media_id: mediaId,
         uploaded_by: uploadedBy,
-        ...(originalFilename ? { original_filename: originalFilename } : {}),
+        ...(sanitizeFilename(originalFilename) ? { original_filename: sanitizeFilename(originalFilename) } : {}),
       },
     });
   } catch (_error) {
@@ -326,6 +341,7 @@ async function handleUpload(request, env, projectKind, projectId) {
     media_type: mediaInfo.kind,
     mime_type: contentType,
     original_filename: originalFilename,
+    source_metadata: { filename_version: 2 },
     byte_size: contentLength,
     width: parsePositiveInteger(request.headers.get("x-media-width"), 100000),
     height: parsePositiveInteger(request.headers.get("x-media-height"), 100000),
@@ -466,7 +482,9 @@ async function handleMultipartStart(request, env, projectKind, projectId) {
   const mediaId = crypto.randomUUID();
   const objectPrefix = projectKind === "lead" ? "leads" : "jobs";
   const objectKey = `${objectPrefix}/${projectId}/${mediaId}.${mediaInfo.extension}`;
-  const originalFilename = sanitizeFilename(request.headers.get("x-original-filename"));
+  let originalFilename;
+  try { originalFilename = requestFilename(request); }
+  catch { return errorResponse(400, "Invalid filename encoding."); }
 
   let upload;
   try {
@@ -477,7 +495,7 @@ async function handleMultipartStart(request, env, projectKind, projectId) {
         project_id: projectId,
         media_id: mediaId,
         uploaded_by: uploadedBy,
-        ...(originalFilename ? { original_filename: originalFilename } : {}),
+        ...(sanitizeFilename(originalFilename) ? { original_filename: sanitizeFilename(originalFilename) } : {}),
       },
     });
   } catch (_error) {
@@ -559,7 +577,8 @@ async function handleMultipartComplete(request, env, uploadId) {
     object_key: objectKey,
     media_type: mediaInfo.kind,
     mime_type: contentType,
-    original_filename: sanitizeFilename(payload.originalFilename),
+    original_filename: preserveFilename(payload.originalFilename),
+    source_metadata: { filename_version: 2 },
     byte_size: object?.size ?? parsePositiveInteger(payload.byteSize, Number.MAX_SAFE_INTEGER),
     width: parsePositiveInteger(payload.width, 100000),
     height: parsePositiveInteger(payload.height, 100000),
