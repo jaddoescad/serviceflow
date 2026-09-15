@@ -178,23 +178,22 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
   }
 
   const leadIds = rows.map((row) => row.id);
+  const quoteBatches = [];
+  for (let index = 0; index < leadIds.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
+    quoteBatches.push(leadIds.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE));
+  }
   const quotes: any[] = [];
-  for (
-    let index = 0;
-    index < leadIds.length;
-    index += POSTGREST_IN_FILTER_BATCH_SIZE
-  ) {
-    const { data, error } = await supabase
-      .from("quotes")
-      .select(
-        "*,job:jobs(id,name,status,started_on,completed_on,contract_amount_cents,is_feed_visible,updated_at)",
-      )
-      .in(
-        "lead_id",
-        leadIds.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
-      );
-    if (error) throw new Error(`lead quotes: ${error.message}`);
-    quotes.push(...(data ?? []));
+  // Independent batches must not add one network round trip each to navigation.
+  for (let index = 0; index < quoteBatches.length; index += 4) {
+    const results = await Promise.all(quoteBatches.slice(index, index + 4).map(ids =>
+      supabase.from("quotes").select(
+        "id,lead_id,dripjobs_proposal_id,status,accepted_at,updated_at,created_at,amount_cents,job:jobs(id,name,status,started_on,completed_on,contract_amount_cents,is_feed_visible,updated_at)",
+      ).in("lead_id", ids),
+    ));
+    for (const { data, error } of results) {
+      if (error) throw new Error(`lead quotes: ${error.message}`);
+      quotes.push(...(data ?? []));
+    }
   }
   const quotesByLead = new Map<string, any[]>();
   for (const quote of quotes) {
@@ -353,7 +352,7 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
   return prepared.map((lead) => {
     const ownerProjectId = lead.job?.jobId ?? lead.leadId;
     const media = mediaByOwner.get(ownerProjectId) ?? [];
-    return { ...lead, media, mediaCount: media.length };
+    return { ...lead, media: media.filter(item => item.mediaType === "image").slice(0, 2), mediaCount: media.length };
   });
 }
 

@@ -94,7 +94,7 @@ function LeadMediaPreview({ lead }: { lead: MarketingLead }) {
           className="relative h-[52px] w-[52px] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]"
         >
           <Image
-            src={`/api/jobs/${encodeURIComponent(photo.ownerProjectId)}/media/${encodeURIComponent(photo.id)}`}
+            src={`/api/jobs/${encodeURIComponent(photo.ownerProjectId)}/media/${encodeURIComponent(photo.id)}?preview=1`}
             alt=""
             fill
             unoptimized
