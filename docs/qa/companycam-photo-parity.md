@@ -272,3 +272,9 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Reproduced Escape in tag picker opening viewer's native unsaved-change confirm. Added native viewer key-handler boundary for picker events (Tab retains modal focus handling). Old QA tab580656710 confirm was dismissed/no longer active.
 - Correction to prior report: Before tag cleanup on a37b had not actually completed; reopened picker showed it persisted. Dropdown overlapped Save, and prior assertion did not inspect final saved state. Current run removes it with dropdown dismissed and verifies post-save/refreshed state.
 - 1066c56 TypeScript/build passed, deployed Vercel6hNPK4jJwrSL8ho1tCyD7wD9p5kN Ready35s. Fresh canonical QA tab580656712: remove Before, Escape closes dropdown with viewer/editor still open and no native confirm; Save returns Add Tags, retains exact #photo=a37b... URL and description. Full reload retains that URL and reopens photo3of4 with no tags and original description. No real media touched.
+
+## Waiting-upload cancellation — 2026-09-15
+
+- CUA fresh-tab creation and two getState retries each timed out30s with kernel reset. No usable new browser handle or live upload test obtained. This is the first goal turn with this browser timeout condition, not a completed blocked audit.
+- Inspected transfer limiter: waiting promises were uncancellable, keeping cancelled/unmounted uploads in the internal queue until an active transfer released. Added optional AbortSignal to existing limiter and abort controllers in upload session; cancellation/unmount removes waiters promptly. Active XHR cancellation and stable upload IDs unchanged.
+- Four limiter tests passed: shared capacity/fair ordering, prompt waiting cancellation, already-aborted acquisition and no premature release after admission. TypeScript/build/diff checks passed. Local change only; deployment and real browser cancellation/navigation checks pending.

@@ -20,6 +20,7 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
   const router=useRouter();
   const input=useRef<HTMLInputElement>(null);
   const requests=useRef(new Map<string,XMLHttpRequest>());
+  const waiting=useRef(new Map<string,AbortController>());
   const active=useRef(new Map<string,symbol>());
   const mounted=useRef(true);
 
@@ -40,7 +41,7 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
   }
   useEffect(()=>{
     mounted.current=true;
-    return ()=>{ mounted.current=false; requests.current.forEach(xhr=>xhr.abort()); };
+    return ()=>{ mounted.current=false; waiting.current.forEach(controller=>controller.abort()); requests.current.forEach(xhr=>xhr.abort()); };
   },[]);
   useEffect(()=>{
     let disposed=false;
@@ -76,12 +77,14 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
     if(!scope?.endsWith(`/${isLead?'leads':'jobs'}/${projectId}`))return;
     async function send(item:UploadItem) {
       const attempt=Symbol();
+      const controller=new AbortController();
+      waiting.current.set(item.id,controller);
       active.current.set(item.id,attempt);
       const attempts=(item.attempts??0)+1;
       patch(item.id,{status:'uploading',error:undefined,attempts,retryAt:undefined});
       let release:(()=>void)|undefined;
       try {
-        release=await projectUploadSlots.acquire();
+        release=await projectUploadSlots.acquire(controller.signal);
         if(!mounted.current||active.current.get(item.id)!==attempt)return;
         const {data:{session},error}=await createClient().auth.getSession();
         if (error||!session) throw new Error('Session expired. Sign in again, then retry.');
@@ -136,6 +139,7 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
       } finally {
         release?.();
         if(active.current.get(item.id)===attempt) {
+          waiting.current.delete(item.id);
           requests.current.delete(item.id);
           active.current.delete(item.id);
         }
@@ -150,9 +154,11 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
   },[items,projectId,isLead,router,scope]);
 
   function cancel(id:string) {
+    waiting.current.get(id)?.abort();
     const xhr=requests.current.get(id);
     if(xhr)xhr.abort();
     else {
+      waiting.current.delete(id);
       active.current.delete(id);patch(id,{status:'cancelled',error:'Upload cancelled.'});
       const item=items.find(i=>i.id===id);
       if(scope&&item)void storeUploads(scope,[{...item,status:'cancelled'}]).catch(()=>setStorageError('Could not retain cancellation. Clear the queue before leaving.'));
