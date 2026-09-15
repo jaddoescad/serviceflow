@@ -111,3 +111,12 @@ The App Router can commit a loading boundary before the content. Instrumentation
 - Fixture verifies 1,200 shifts, complete activity counts, chart parity, missing/overlapping/invalid segments, millisecond bounds and active clocks against existing JavaScript. Live fixed-time comparison on 44 records also matches on-site percentage and both weekly totals. No stored data changed.
 - Overview baseline content-ready samples: 3,067, 1,397, 1,473, 896, 1,357 ms (median 1,397 ms). First includes new deployment assets; cold-server state was not controlled.
 - Timesheet option props now contain only labels/IDs, and project option queries page beyond API row limits.
+
+### End-to-end verification and remaining latency
+
+- Overview `49e2597` and contact relationship fix `0b10bc1` are Ready; the live Overview retains all summary/chart/shift/map sections. Contact relationships now use a database join and pass a 1,200-related-project fixture without an oversized UUID URL.
+- Dedicated temporary Hermes QA job/time entry created for edit verification. A browser correction changed 30m→45m in both the row and complete filtered total; database clock-out matched. Job amount save refreshed the row and labour allowance. Lazy pay-rate editor loaded the QA employee's empty history. Temporary entry, its two generated budget versions, and job were removed by exact ID; existing employee retained. No real operational/historical amounts edited.
+- Anonymous Photos API redirects to login (307). New functions remain invoker-rights; security advisor reports no warning on these new functions/view. Existing unrelated sync/legacy function advisories were not changed.
+- Browser acceptance remains in progress: early non-prefetched visits exposed multi-second outliers; they are not hidden behind successful builds or DB timings. Added data-fetch, route-duration and commit/frame-wait diagnostics. Examples: Timesheets initial data fetch 807ms; Photos fetch 1,475ms / route 1,797ms.
+- Root cause found in photo optional-filter generic plans: indexed literal query 4.7ms versus RPC 175ms. Per-request plans retain RLS and reduce batch RPC to 12.7ms; full filter-summary RPC reduced from 321ms to 154ms. The photo fixture still traverses 1,205 rows with correct filters and RLS.
+- Prepared final read optimization: Timesheet dropdowns use a compact database result (tested with 1,200 jobs), and Photos authorizes in parallel with RLS-protected reads. Full browser timing reruns follow deployment.

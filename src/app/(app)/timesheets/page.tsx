@@ -1,4 +1,5 @@
-import { getTimesheetsPage, getEmployees, getProjects } from "@/lib/queries";
+import { getTimesheetsPage } from "@/lib/queries";
+import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/auth";
 import { PageHeader } from "@/components/kpi";
 import { TimesheetsTable } from "@/components/timesheets-table";
@@ -12,12 +13,13 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   const filters = { search: (params.q ?? "").slice(0, 200), employee: UUID.test(params.employee ?? "") ? params.employee! : "all", project: UUID.test(params.project ?? "") ? params.project! : "all", status: ["active", "complete"].includes(params.status ?? "") ? params.status! : "all" };
   const requestedPage = Math.max(1, Math.min(1000000, Number.parseInt(params.page ?? "1", 10) || 1));
   const fetchStarted = performance.now();
-  const [profile, result, employees, projects] = await Promise.all([
+  const [profile, result, options] = await Promise.all([
     requireStaff(),
     getTimesheetsPage(filters, requestedPage),
-    getEmployees(),
-    getProjects(),
+    createClient().then(client => client.rpc("get_timesheet_options")),
   ]);
+
+  if (options.error) throw new Error(`timesheet filters: ${options.error.message}`);
 
   return (
     <>
@@ -31,8 +33,8 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         result={result}
         filters={filters}
         currentPage={Math.min(requestedPage, Math.max(1, Math.ceil(result.total / 50)))}
-        employees={employees.map(({ user_id, full_name, email }) => ({ user_id, full_name, email }))}
-        projects={projects.map(({ companycam_id, name }) => ({ companycam_id, name }))}
+        employees={options.data.employees}
+        projects={options.data.projects}
         canDelete={profile.role === "admin"}
       />
     </>

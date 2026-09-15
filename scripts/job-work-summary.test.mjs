@@ -33,6 +33,9 @@ test('database labour summaries and pages match existing clock/rate calculations
  insert into job_budgets values(md5('2')::uuid,'manual','active','2026-09-01',1,null,120,3500,200000),(md5('2')::uuid,'project_budget','closed','2026-09-01',9,'2026-09-01',999,9000,999999);
  `);
  for(const file of ['20260915182306_summarize_job_work.sql','20260915182926_paginate_labour_budgets.sql']) await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8').replaceAll('"en-CA-x-icu"','"C"'));
+ await db.exec("alter table jobs add column updated_at timestamptz default now();create table employees(id uuid primary key,full_name text,email text);");
+ await db.exec(fs.readFileSync('supabase/migrations/20260915190659_summarize_timesheet_options.sql','utf8'));
+ const options=(await db.query('select get_timesheet_options() r')).rows[0].r;assert.equal(options.projects.length,1200);assert.deepEqual(Object.keys(options.projects[0]).sort(),['companycam_id','name']);
  const at='2026-09-15T12:00:00.456Z',now=Date.parse(at);
  const summaries=(await db.query('select get_job_work_summary($1) r',[at])).rows[0].r.rows;
  const raw=(await db.query('select * from time_entries order by started_at desc,id')).rows.map(e=>({...e,started_at:new Date(e.started_at).toISOString(),ended_at:e.ended_at?new Date(e.ended_at).toISOString():null,companycam_project_id:e.job_id,user_id:e.employee_id,project_name:e.job_name}));

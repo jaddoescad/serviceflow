@@ -16,6 +16,7 @@ test('photo cursors retain null dates, ties, complete filters and RLS past 1000 
  insert into job_media select md5(i::text)::uuid,case when i%2=0 then md5('job')::uuid end,case when i%2=1 then md5('lead')::uuid end,null,case when i%3=0 then 'video' else 'image' end,'image/jpeg',null,case when i<=1000 then '2026-09-01T00:00Z'::timestamptz end,'2026-09-02T00:00Z','{"creator_name":"Painter"}' from generate_series(1,1205)i;
  `);
  await db.exec(fs.readFileSync('supabase/migrations/20260915183402_paginate_photo_feed.sql','utf8').replaceAll('"en-CA-x-icu"','"C"'));
+ await db.exec(fs.readFileSync('supabase/migrations/20260915190833_plan_photo_filters_per_request.sql','utf8').replaceAll('"en-CA-x-icu"','"C"'));
  const page=async(cursor=null,media=null)=>(await db.query('select get_photo_feed_page(null,null,$1,null,$2) r',[media,cursor?JSON.stringify(cursor):null])).rows[0].r;
  const expected=(await db.query('select id from job_media order by captured_at desc nulls last,created_at desc,id desc')).rows.map(r=>r.id);
  let cursor=null,seen=[];
