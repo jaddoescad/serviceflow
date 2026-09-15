@@ -11,6 +11,8 @@ export function ProjectPhotoBatch({projectId, selected, onClear, onBusy, onSaved
 }) {
   const [operation,setOperation]=useState<PhotoBatchOperation>('add-tags');
   const [tags,setTags]=useState('');
+  const dialog=useRef<HTMLDialogElement>(null);
+  const menu=useRef<HTMLDetailsElement>(null);
   const [busy,setBusy]=useState(false);
   const [confirming,setConfirming]=useState(false);
   const [message,setMessage]=useState('');
@@ -39,26 +41,48 @@ export function ProjectPhotoBatch({projectId, selected, onClear, onBusy, onSaved
           description:entry.item.description??'',tags:entry.tags}),()=>render(value=>value+1));
       const failed=batch.filter(entry=>!entry.done).length;
       if(failed)setMessage(`${batch.length-failed} saved · ${failed} need attention. Retry safely, or finish and reselect photos with conflicting edits.`);
-      else {pending.current=null;onClear();setMessage(`${batch.length} photos/videos updated.`);}
+      else {pending.current=null;dialog.current?.close();onClear();setMessage(`${batch.length} photos/videos updated.`);}
       onSaved();
     } finally {setBusy(false);onBusy(pending.current!==null);}
   }
   const batch=pending.current;
   if(!selected.length&&!batch)return message?<p role="status" className="mb-3 text-sm text-teal-700">{message}</p>:null;
-  return <div className="sticky bottom-4 z-30 my-4 rounded-xl border border-slate-300 bg-white p-4 shadow-lg" aria-label="Selected photo actions">
-    {confirming?<div role="group" aria-label="Confirm selected photo trash" className="space-y-3">
-      <p className="text-sm">Move {batch?.length} selected photos/videos to trash? Their original files are retained and can be restored.</p>
-      <div className="flex gap-3"><button onClick={()=>void apply()} className="rounded-lg bg-red-700 px-3 py-2 text-sm text-white">Confirm move to trash</button><button onClick={()=>{pending.current=null;setConfirming(false);onBusy(false);}} className="text-sm underline">Cancel</button></div>
-    </div>:<div className="flex flex-wrap items-center gap-3">
-      <strong className="text-sm">{batch?batch.length:selected.length} selected</strong>
-      <select aria-label="Selected photo action" disabled={busy||!!batch} value={operation} onChange={event=>{setOperation(event.target.value as PhotoBatchOperation);setMessage('');}} className="rounded-lg border p-2 text-sm">
-        <option value="add-tags">Add tags</option><option value="remove-tags">Remove tags</option><option value="trash">Move to trash</option>
-      </select>
-      {operation!=='trash'?<input aria-label="Tags for selected photos" value={tags} disabled={busy||!!batch} onChange={event=>setTags(event.target.value)} placeholder="Kitchen, Before" className="min-w-0 flex-1 rounded-lg border p-2 text-sm"/>:null}
-      <button disabled={busy} onClick={()=>void apply()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy?`Saving ${batch?.filter(item=>item.done).length??0}/${batch?.length??0}…`:batch?'Retry unfinished':'Apply'}</button>
-      <button disabled={busy} onClick={()=>{pending.current=null;onBusy(false);onClear();setMessage('');onSaved();}} className="px-2 py-2 text-sm underline">{batch?'Finish':'Clear selection'}</button>
-    </div>}
-    {message?<p role="status" className="mt-3 text-sm">{message}</p>:null}
-    {batch?.some(item=>item.error)?<ul className="mt-2 max-h-32 overflow-auto text-sm text-red-700">{batch.filter(item=>item.error).map(item=><li key={item.item.id}>{item.item.originalFilename??'Photo'}: {item.error}</li>)}</ul>:null}
-  </div>;
+  function dismiss() {
+    if(busy)return;
+    pending.current=null;setConfirming(false);onBusy(false);setMessage('');
+    dialog.current?.close();
+  }
+  function choose(next:PhotoBatchOperation) {
+    setOperation(next);setTags('');setMessage('');setConfirming(next==='trash');
+    if(menu.current)menu.current.open=false;
+    dialog.current?.showModal();
+  }
+  return <>
+    <div className="sticky bottom-4 z-30 my-4 flex items-center gap-5 rounded-lg bg-[#1c2d41] px-4 py-3 text-white shadow-lg" aria-label="Selected photo actions">
+      <button aria-label="Clear selection" disabled={busy||!!batch} onClick={()=>{dismiss();onClear();}} className="rounded p-2 text-xl hover:bg-white/10 disabled:opacity-50">×</button>
+      <strong className="border-r border-white/30 pr-5 text-sm">{batch?batch.length:selected.length} Selected</strong>
+      <details ref={menu} className="relative" onKeyDown={event=>{if(event.key==='Escape'&&menu.current){menu.current.open=false;menu.current.querySelector('summary')?.focus();}}}>
+        <summary className="cursor-pointer list-none rounded-md px-3 py-2 text-sm font-semibold hover:bg-white/10">Actions <span aria-hidden="true">⌄</span></summary>
+        <div className="absolute bottom-full left-0 mb-2 w-56 rounded-lg border border-slate-200 bg-white py-2 text-sm text-slate-800 shadow-xl">
+          <button disabled={busy||!!batch} onClick={()=>choose('add-tags')} className="block w-full px-4 py-2 text-left hover:bg-slate-100">Tag</button>
+          <button disabled={busy||!!batch} onClick={()=>choose('remove-tags')} className="block w-full px-4 py-2 text-left hover:bg-slate-100">Remove Tags</button>
+          <hr className="my-2 border-slate-200"/>
+          <button disabled={busy||!!batch} onClick={()=>choose('trash')} className="block w-full px-4 py-2 text-left hover:bg-slate-100">Move to Trash</button>
+        </div>
+      </details>
+    </div>
+    <dialog ref={dialog} aria-label={operation==='trash'?'Move to Trash':operation==='add-tags'?'Tag Photos':'Remove Tags'} onCancel={event=>{event.preventDefault();dismiss();}} className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-md rounded-lg bg-white p-6 text-slate-800 shadow-xl backdrop:bg-black/50">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">{operation==='trash'?'Move to Trash':operation==='add-tags'?'Select Tags':'Remove Tags'}</h2>
+        <button aria-label="Close photo action" disabled={busy} onClick={dismiss} className="rounded p-1 text-2xl text-slate-500">×</button>
+      </div>
+      {operation==='trash'?<p className="mb-5 text-sm">Move {selected.length} selected photos/videos to trash?</p>:<input autoFocus aria-label="Tags for selected photos" value={tags} disabled={busy||!!batch} onChange={event=>setTags(event.target.value)} placeholder="Tags, separated by commas" className="mb-5 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"/>}
+      <div className="flex justify-end gap-3">
+        <button disabled={busy} onClick={dismiss} className="rounded-md border border-slate-300 px-4 py-2 text-sm">{batch?'Finish':'Cancel'}</button>
+        <button disabled={busy} onClick={()=>{if(confirming&&!pending.current){pending.current=preparePhotoBatch(selected,'trash','');}void apply();}} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy?`Saving ${batch?.filter(item=>item.done).length??0}/${batch?.length??0}…`:batch?'Retry unfinished':operation==='trash'?'Move to Trash':operation==='add-tags'?'Tag Photos':'Remove Tags'}</button>
+      </div>
+      {message?<p role="status" className="mt-3 text-sm">{message}</p>:null}
+      {batch?.some(item=>item.error)?<ul className="mt-2 max-h-32 overflow-auto text-sm text-red-700">{batch.filter(item=>item.error).map(item=><li key={item.item.id}>{item.item.originalFilename??'Photo'}: {item.error}</li>)}</ul>:null}
+    </dialog>
+  </>;
 }
