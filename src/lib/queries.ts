@@ -306,54 +306,39 @@ export async function getMarketingLeads(): Promise<MarketingLead[]> {
     lead.job ? [lead.job.jobId] : [],
   );
   const mediaRequests: Array<PromiseLike<{ data: any[] | null; error: any }>> = [];
-  for (let index = 0; index < leadMediaOwners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
-    mediaRequests.push(
-      supabase
-        .from("job_media")
-        .select("id,job_id,lead_id,media_type,captured_at,created_at")
-        .in(
-          "lead_id",
-          leadMediaOwners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
-        )
-        .order("captured_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false }),
-    );
+  for (const [table, foreignKey, owners] of [
+    ["leads", "job_media_lead_id_fkey", leadMediaOwners],
+    ["jobs", "job_media_job_id_fkey", jobMediaOwners],
+  ] as const) {
+    for (let index = 0; index < owners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
+      // Limit each embedded gallery, not the combined media rows for 200 projects.
+      // The separate aggregate counts all visible media, including videos.
+      mediaRequests.push(supabase.from(table)
+        .select(`id,media:job_media!${foreignKey}(id,media_type),media_count:job_media!${foreignKey}(count)`)
+        .in("id", owners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE))
+        .eq("media.media_type", "image")
+        .order("captured_at", { referencedTable: "media", ascending: false, nullsFirst: false })
+        .order("created_at", { referencedTable: "media", ascending: false })
+        .order("id", { referencedTable: "media", ascending: true })
+        .limit(2, { referencedTable: "media" }));
+    }
   }
-  for (let index = 0; index < jobMediaOwners.length; index += POSTGREST_IN_FILTER_BATCH_SIZE) {
-    mediaRequests.push(
-      supabase
-        .from("job_media")
-        .select("id,job_id,lead_id,media_type,captured_at,created_at")
-        .in(
-          "job_id",
-          jobMediaOwners.slice(index, index + POSTGREST_IN_FILTER_BATCH_SIZE),
-        )
-        .order("captured_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false }),
-    );
-  }
-
-  const mediaByOwner = new Map<string, MarketingLeadMedia[]>();
+  const mediaByOwner = new Map<string, { media: MarketingLeadMedia[]; mediaCount: number }>();
   for (const result of await Promise.all(mediaRequests)) {
     if (result.error) throw new Error(`lead media: ${result.error.message}`);
     for (const row of result.data ?? []) {
-      const ownerProjectId = row.job_id ?? row.lead_id;
-      if (!ownerProjectId) continue;
-      const list = mediaByOwner.get(ownerProjectId) ?? [];
-      list.push({
-        id: row.id,
-        ownerProjectId,
-        mediaType: row.media_type === "video" ? "video" : "image",
+      mediaByOwner.set(row.id, {
+        media: (row.media ?? []).map((item: any) => ({
+          id: item.id, ownerProjectId: row.id, mediaType: "image" as const,
+        })),
+        mediaCount: Number(row.media_count?.[0]?.count ?? 0),
       });
-      mediaByOwner.set(ownerProjectId, list);
     }
   }
-
-  return prepared.map((lead) => {
-    const ownerProjectId = lead.job?.jobId ?? lead.leadId;
-    const media = mediaByOwner.get(ownerProjectId) ?? [];
-    return { ...lead, media: media.filter(item => item.mediaType === "image").slice(0, 2), mediaCount: media.length };
-  });
+  return prepared.map(lead => ({
+    ...lead,
+    ...(mediaByOwner.get(lead.job?.jobId ?? lead.leadId) ?? { media: [], mediaCount: 0 }),
+  }));
 }
 
 export type DripJobsLeadCoverage = {
