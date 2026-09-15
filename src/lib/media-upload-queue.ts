@@ -1,5 +1,5 @@
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'failed' | 'cancelled';
-export type UploadItem = { id: string; file: File; status: UploadStatus; progress: number; error?: string };
+export type UploadItem = { id: string; file: File; status: UploadStatus; progress: number; error?: string; attempts?: number; retryAt?: number };
 const MIME_BY_EXTENSION: Record<string,string> = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', heic:'image/heic', heif:'image/heif', mp4:'video/mp4', m4v:'video/mp4', mov:'video/quicktime', qt:'video/quicktime' };
 export function mediaMime(file: Pick<File,'name'|'type'>): string | null {
   const type = file.type.toLowerCase().split(';')[0].trim();
@@ -27,5 +27,5 @@ export function appendUploadFiles(current: UploadItem[], files: File[], createId
 export function retryUploadItem(item: UploadItem): UploadItem {
   if (item.status !== 'failed' && item.status !== 'cancelled') return item;
   const error=validateMediaFile(item.file);
-  return error ? {...item,error} : {...item,status:'queued',error:undefined,progress:0};
+  return error ? {...item,error} : {...item,status:'queued',error:undefined,progress:0,attempts:0,retryAt:undefined};
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ProjectModal } from "@/components/project-profile-panel";
 import { Button } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { uploadFailure, uploadRetryAt } from "@/lib/upload-retry";
 import { projectUploadSlots } from "@/lib/upload-slots";
 import { appendUploadFiles, mediaMime, retryUploadItem, validateMediaFile, type UploadItem } from "@/lib/media-upload-queue";
 import { forgetUploads, loadUploads, storeUploads } from "@/lib/media-upload-storage";
@@ -64,11 +65,20 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
   },[remaining]);
 
   useEffect(()=>{
+    const delayed=items.filter(item=>item.status==='queued'&&(item.retryAt??0)>Date.now());
+    if(!delayed.length)return;
+    const next=Math.min(...delayed.map(item=>item.retryAt!));
+    const timer=setTimeout(()=>setItems(current=>[...current]),Math.max(1,next-Date.now()));
+    return ()=>clearTimeout(timer);
+  },[items]);
+
+  useEffect(()=>{
     if(!scope?.endsWith(`/${isLead?'leads':'jobs'}/${projectId}`))return;
     async function send(item:UploadItem) {
       const attempt=Symbol();
       active.current.set(item.id,attempt);
-      patch(item.id,{status:'uploading',error:undefined});
+      const attempts=(item.attempts??0)+1;
+      patch(item.id,{status:'uploading',error:undefined,attempts,retryAt:undefined});
       let release:(()=>void)|undefined;
       try {
         release=await projectUploadSlots.acquire();
@@ -77,7 +87,7 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
         if (error||!session) throw new Error('Session expired. Sign in again, then retry.');
         if(!scope!.startsWith(`${session.user.id}/`))throw new Error('The signed-in account changed. Reload before uploading.');
         if (!mounted.current || active.current.get(item.id)!==attempt) return;
-        await storeUploads(scope!,[{...item,status:'uploading'}]);
+        await storeUploads(scope!,[{...item,status:'uploading',attempts,retryAt:undefined}]);
         if (!mounted.current || active.current.get(item.id)!==attempt) return;
         await new Promise<void>((resolve,reject)=>{
           const xhr=new XMLHttpRequest();
@@ -99,15 +109,15 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
           xhr.onload=()=>{
             if(xhr.status>=200&&xhr.status<300) {
               try {const row=JSON.parse(xhr.responseText);if(row.id!==item.id)throw new Error(); resolve();}
-              catch {reject(new Error('Could not confirm this upload. Retry to check its status.'));}
+              catch {reject(uploadFailure('Could not confirm this upload. Retrying will check its status.',0));}
             } else {
               let message=`Upload failed (${xhr.status}). Retry this file.`;
               try {message=JSON.parse(xhr.responseText).error||message;}catch{}
-              reject(new Error(message));
+              reject(uploadFailure(message,xhr.status,xhr.getAllResponseHeaders().toLowerCase().includes('retry-after:')?xhr.getResponseHeader('Retry-After'):null));
             }
           };
-          xhr.onerror=()=>reject(new Error('Connection interrupted. Retry this file.'));
-          xhr.ontimeout=()=>reject(new Error('Upload timed out. Retry to check its status.'));
+          xhr.onerror=()=>reject(uploadFailure('Connection interrupted.',0));
+          xhr.ontimeout=()=>reject(uploadFailure('Upload timed out. Retrying will check its status.',0));
           xhr.onabort=()=>reject(new DOMException('Upload cancelled','AbortError'));
           xhr.send(item.file);
         });
@@ -116,7 +126,10 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
         router.refresh();
       } catch(error) {
         if(active.current.get(item.id)===attempt) {
-          const changes={status:error instanceof DOMException&&error.name==='AbortError'?'cancelled' as const:'failed' as const,error:error instanceof Error?error.message:'Upload failed.'};
+          const retryAt=uploadRetryAt(error,attempts);
+          const changes:Partial<UploadItem>={attempts,retryAt:retryAt??undefined,progress:0,
+            status:error instanceof DOMException&&error.name==='AbortError'?'cancelled':retryAt!==null?'queued':'failed',
+            error:retryAt!==null?`Connection unavailable. Retrying automatically (${attempts}/3)…`:error instanceof Error?error.message:'Upload failed.'};
           patch(item.id,changes);
           if(mounted.current)await storeUploads(scope!,[{...item,...changes}]).catch(()=>setStorageError('Could not save the latest queue status. Keep this page open until uploads finish.'));
         }
@@ -132,7 +145,7 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
     }
     for(const item of items) {
       if(active.current.size>=2)break;
-      if(item.status==='queued'&&!active.current.has(item.id))void send(item);
+      if(item.status==='queued'&&(item.retryAt??0)<=Date.now()&&!active.current.has(item.id))void send(item);
     }
   },[items,projectId,isLead,router,scope]);
 

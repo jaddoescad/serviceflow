@@ -53,3 +53,10 @@ test('global recovery discovers only the signed-in account scopes without duplic
  await forgetUploads('recover-user/jobs/one',['a','b']);
  assert.deepEqual(await listUploadScopes('recover-user'),['recover-user/leads/two']);
 });
+
+
+test('recovery retains retry budget and backoff so reopening does not reset failed attempts',async()=>{
+ await storeUploads('retry-owner/jobs/one',[{...photo('retrying'),attempts:3,retryAt:123456789}]);
+ const [saved]=await loadUploads('retry-owner/jobs/one');
+ assert.equal(saved.attempts,3);assert.equal(saved.retryAt,123456789);assert.equal(saved.id,'retrying');
+});
