@@ -88,3 +88,10 @@ f999333 deployed successfully. Live contact detail for the previously observed L
 ### Measurement correction
 
 The App Router can commit a loading boundary before the content. Instrumentation now waits for the destination heading and includes document transfer bytes. Earlier measurements without `contentReady: true` may stop early on streamed loads; retain them as historical observations, not acceptance evidence. Re-baseline outstanding modules with the corrected instrument. Resource transfer numbers still cover the measured interval; `routeBytes` separately records the most recent matching RSC response, including a prior prefetch where available.
+
+### Photos baseline and prepared release
+
+- Corrected content-ready warm-asset baseline: 1,377, 1,064, 2,294, 3,711, 5,359 ms; median 2,294 ms. These were measured after adding the order index but before replacing the 600-row UI. Not a pre-index end-to-end baseline.
+- `get_photo_feed_page` first EXPLAIN: 2,845 ms. Underlying scan sorted 7,713 visible media rows. Added `(captured_at DESC NULLS LAST, created_at DESC, id DESC)` index; RPC then 175 ms. Existing indexes began with job/lead and did not cover the global order.
+- Full filtered count and filter choices stay separate from 60-item cursor batches. Query fixture traverses 1,205 records with identical timestamps and null capture dates without loss/duplicates; media filters run before pagination; invoker view/RPC respects restricted RLS. Passed.
+- Gallery images use the existing thumbnail endpoint; viewer uses originals. Video bytes load on demand. Obsolete filter requests abort and cannot overwrite newer state.

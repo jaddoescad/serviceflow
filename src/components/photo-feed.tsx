@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/components/ui";
-import type { PhotoFeedItem } from "@/lib/photo-feed";
+import type { PhotoFeedItem, PhotoBatch, PhotoSummary } from "@/lib/photo-feed";
 
 const OTTAWA_TIME_ZONE = "America/Toronto";
 const DAY = 24 * 60 * 60 * 1000;
@@ -114,47 +114,67 @@ function FilterSelect({
   );
 }
 
-export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
+export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch; summary: PhotoSummary }) {
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [projectId, setProjectId] = useState("all");
   const [creatorName, setCreatorName] = useState("all");
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
   const [viewDensity, setViewDensity] = useState<ViewDensity>("compact");
-  const [visibleLimit, setVisibleLimit] = useState(120);
+  const [batch, setBatch] = useState(initialBatch);
+  const [total, setTotal] = useState(summary.total);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const photos = batch.items;
   const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const projectOptions = useMemo(() => {
-    const projects = new Map<string, string>();
-    photos.forEach((photo) => projects.set(photo.ownerProjectId, photo.projectName));
-    return [...projects].sort((left, right) => left[1].localeCompare(right[1], "en-CA"));
-  }, [photos]);
-
-  const creatorOptions = useMemo(() => {
-    const counts = new Map<string, number>();
-    photos.forEach((photo) => counts.set(photo.creatorName, (counts.get(photo.creatorName) ?? 0) + 1));
-    return [...counts].sort((left, right) => left[0].localeCompare(right[0], "en-CA"));
-  }, [photos]);
-
-  const filteredPhotos = useMemo(() => {
-    const cutoff = dateRange === "all" ? null : Date.now() - Number(dateRange) * DAY;
-    return photos.filter((photo) => {
-      if (cutoff !== null && new Date(photo.capturedAt).getTime() < cutoff) return false;
-      if (projectId !== "all" && photo.ownerProjectId !== projectId) return false;
-      if (creatorName !== "all" && photo.creatorName !== creatorName) return false;
-      if (mediaFilter !== "all" && photo.mediaType !== mediaFilter) return false;
-      return true;
-    });
-  }, [creatorName, dateRange, mediaFilter, photos, projectId]);
-
+  const projectOptions = summary.projects;
+  const creatorOptions = summary.creators;
+  const since = useMemo(() => dateRange === "all" ? null : new Date(Date.now() - Number(dateRange) * DAY).toISOString(), [dateRange]);
+  const filterParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (projectId !== "all") params.set("project", projectId);
+    if (creatorName !== "all") params.set("creator", creatorName);
+    if (mediaFilter !== "all") params.set("media", mediaFilter);
+    if (since) params.set("since", since);
+    return params.toString();
+  }, [projectId, creatorName, mediaFilter, since]);
+  const lastFilters = useRef("");
+  const loadedFilters = useRef("");
+  async function load(append: boolean) {
+    append = append && loadedFilters.current === filterParams;
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams(filterParams);
+    if (append && batch.nextCursor) params.set("cursor", JSON.stringify(batch.nextCursor));
+    try {
+      const response = await fetch(`/api/photos?${params}`, { signal: controller.signal, cache: "no-store" });
+      if (!response.ok) throw new Error("Photos could not load. Try again.");
+      const data = await response.json() as { batch: PhotoBatch; summary?: PhotoSummary };
+      if (controller.signal.aborted || requestRef.current !== controller) return;
+      loadedFilters.current = filterParams;
+      setBatch(previous => append ? { ...data.batch, items: [...previous.items, ...data.batch.items.filter(item => !previous.items.some(existing => existing.id === item.id))] } : data.batch);
+      if (data.summary) setTotal(data.summary.total);
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Photos could not load.");
+    } finally {
+      if (requestRef.current === controller) setLoading(false);
+    }
+  }
   useEffect(() => {
-    setVisibleLimit(120);
-  }, [creatorName, dateRange, mediaFilter, projectId]);
+    if (lastFilters.current === filterParams) return;
+    lastFilters.current = filterParams;
+    setActivePhotoId(null);
+    void load(false);
+  }, [filterParams]);
+  useEffect(() => () => requestRef.current?.abort(), []);
 
-  const visiblePhotos = useMemo(
-    () => filteredPhotos.slice(0, visibleLimit),
-    [filteredPhotos, visibleLimit],
-  );
+  const filteredPhotos = photos;
+  const visiblePhotos = photos;
 
   const groups = useMemo(() => {
     const byDate = new Map<string, PhotoFeedItem[]>();
@@ -214,7 +234,7 @@ export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
               Photos
             </h1>
             <p className="mt-2 text-sm text-[#7b8798]">
-              {filteredPhotos.length.toLocaleString("en-CA")} {filteredPhotos.length === 1 ? "photo or video" : "photos and videos"}
+              {total.toLocaleString("en-CA")} {total === 1 ? "photo or video" : "photos and videos"}
             </p>
           </div>
         </div>
@@ -278,6 +298,7 @@ export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
           </FilterSelect>
         </div>
 
+        {error ? <div role="alert" className="mt-4 text-sm text-red-700">{error} <button type="button" onClick={() => void load(false)} className="underline">Retry</button></div> : null}
         {groups.length ? (
           <div className="mt-6 space-y-10">
             {groups.map((items) => (
@@ -307,7 +328,7 @@ export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
                             <video
                               controls
                               playsInline
-                              preload="metadata"
+                              preload="none"
                               aria-label={photoAlt(photo)}
                               className="h-full w-full object-cover"
                             >
@@ -321,7 +342,7 @@ export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
                               className="relative block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4f91ed]"
                             >
                               <Image
-                                src={url}
+                                src={`${url}?preview=1`}
                                 alt={photoAlt(photo)}
                                 fill
                                 unoptimized
@@ -362,11 +383,12 @@ export function PhotoFeed({ photos }: { photos: PhotoFeedItem[] }) {
                 </div>
               </section>
             ))}
-            {visiblePhotos.length < filteredPhotos.length ? (
+            {batch.nextCursor ? (
               <div className="flex justify-center pt-1">
                 <button
                   type="button"
-                  onClick={() => setVisibleLimit((current) => current + 120)}
+                  disabled={loading}
+                  onClick={() => void load(true)}
                   className="h-10 rounded-lg border border-[#d8dde5] bg-white px-5 text-[13px] font-semibold text-[#4a5568] shadow-sm hover:border-[#b8c2d0] hover:bg-[#f8f9fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5794ea]/30"
                 >
                   Load more photos
