@@ -46,3 +46,11 @@ Unrelated project-note cleanup files must remain excluded from performance commi
 - 1485 visible customer contacts; first page 50, final page 35; known-name search 1, absent-name search 0 under authenticated staff role.
 - Local PGlite test covers 1200 customers, separate projects, canonical archived fallback, hidden jobs, address search, boundaries, and non-overlapping pages. Build passed.
 - Before release Contacts document load/hydration samples with warm browser asset cache: 537, 672, 502, 447, 563 ms. These are NOT cold browser/server measurements. Resource-only transfer bytes were zero; document bytes are not yet included by the instrumentation.
+
+## First Contacts/project-scoping release
+
+327543c deployed successfully; live Contacts pages show 1–50 and 51–100 of 1485; search from page two returned the correct contact and reset pagination. Project-scoped queries released with this commit; live labour verification remains pending.
+
+Five distinct post-release Contacts reload/hydration samples (warm asset cache): 497, 1584, 379, 411, 775 ms. One duplicate console entry was excluded. Median 497ms versus baseline 537ms; the 1584ms outlier prevents claiming uniformly faster loads. New RPC measured 43.316ms under authenticated role. Cold scenarios, full document bytes, and 20-interaction acceptance runs remain outstanding.
+
+Contact-detail previews are now prepared locally: shared two-image/count query, streamed separately from contact/project cards. Not yet deployed or live-tested.

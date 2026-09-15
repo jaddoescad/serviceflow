@@ -243,50 +243,7 @@ export const getContactDetail = cache(
       });
     }
 
-    const jobIds = projects.filter((project) => project.kind === "job").map((project) => project.id);
-    const projectLeadIds = projects
-      .filter((project) => project.kind === "lead")
-      .map((project) => project.id);
-    const mediaResults = await Promise.all([
-      jobIds.length
-        ? supabase
-            .from("job_media")
-            .select("id,job_id,lead_id,media_type,captured_at,created_at")
-            .in("job_id", jobIds)
-            .order("captured_at", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
-      projectLeadIds.length
-        ? supabase
-            .from("job_media")
-            .select("id,job_id,lead_id,media_type,captured_at,created_at")
-            .in("lead_id", projectLeadIds)
-            .order("captured_at", { ascending: false, nullsFirst: false })
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    const mediaByOwner = new Map<string, ContactProjectMedia[]>();
-    for (const result of mediaResults) {
-      if (result.error) throw new Error(`contact media: ${result.error.message}`);
-      for (const item of result.data ?? []) {
-        const ownerProjectId = item.job_id ?? item.lead_id;
-        if (!ownerProjectId) continue;
-        const list = mediaByOwner.get(ownerProjectId) ?? [];
-        list.push({
-          id: item.id,
-          ownerProjectId,
-          mediaType: item.media_type === "video" ? "video" : "image",
-        });
-        mediaByOwner.set(ownerProjectId, list);
-      }
-    }
-
-    const hydratedProjects = projects
-      .map((project) => {
-        const media = mediaByOwner.get(project.id) ?? [];
-        return { ...project, media, mediaCount: media.length };
-      })
-      .sort((left, right) => milliseconds(right.updatedAt) - milliseconds(left.updatedAt));
+    const hydratedProjects = projects.sort((left, right) => milliseconds(right.updatedAt) - milliseconds(left.updatedAt));
     const metadata = contact.metadata ?? {};
     return {
       address: text(contact.metadata?.address),

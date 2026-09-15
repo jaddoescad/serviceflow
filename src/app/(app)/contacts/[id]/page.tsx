@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+import { createClient } from "@/lib/supabase/server";
+import { getProjectMediaPreviews } from "@/lib/project-media-previews";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -20,8 +23,18 @@ function statusLabel(status: string): string {
   return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function ProjectPhotos({ project }: { project: ContactProject }) {
-  const images = project.media.filter((item) => item.mediaType === "image").slice(0, 3);
+type PreviewResult = Awaited<ReturnType<typeof getProjectMediaPreviews>> | null;
+async function ProjectPhotoCount({ id, previews }: { id: string; previews: Promise<PreviewResult> }) {
+  const result = await previews;
+  if (!result) return null;
+  const count = result.get(id)?.mediaCount ?? 0;
+  return <>{count} {count === 1 ? "photo or video" : "photos and videos"} · </>;
+}
+async function ProjectPhotos({ project: original, previews }: { project: ContactProject; previews: Promise<PreviewResult> }) {
+  const result = await previews;
+  if (!result) return <div className="flex h-24 items-center justify-center text-xs text-[var(--color-muted)]">Photos unavailable</div>;
+  const project = { ...original, ...(result.get(original.id) ?? { media: [], mediaCount: 0 }) };
+  const images = project.media.filter((item) => item.mediaType === "image").slice(0, 2);
   if (!images.length) {
     return (
       <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs text-[var(--color-muted)]">
@@ -38,7 +51,7 @@ function ProjectPhotos({ project }: { project: ContactProject }) {
           className="relative aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
         >
           <Image
-            src={`/api/jobs/${encodeURIComponent(image.ownerProjectId)}/media/${encodeURIComponent(image.id)}`}
+            src={`/api/jobs/${encodeURIComponent(image.ownerProjectId)}/media/${encodeURIComponent(image.id)}?preview=1`}
             alt=""
             fill
             unoptimized
@@ -59,6 +72,7 @@ export default async function ContactDetailPage({
   const { id } = await params;
   const contact = await getContactDetail(decodeURIComponent(id));
   if (!contact) notFound();
+  const previews = createClient().then(client => getProjectMediaPreviews(client, contact.projects)).catch(() => null);
   const jobs = contact.projects.filter((project) => project.kind === "job").length;
   const leads = contact.projects.length - jobs;
 
@@ -113,13 +127,13 @@ export default async function ContactDetailPage({
                     </div>
 
                     <div className="mt-4">
-                      <ProjectPhotos project={project} />
+                      <Suspense fallback={<div className="h-24 rounded-xl bg-[var(--color-surface-2)]" />}><ProjectPhotos project={project} previews={previews} /></Suspense>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--color-muted)]">
                       <span>{project.source || (project.kind === "job" ? "Job" : "Deal")}</span>
                       <span>
-                        {project.mediaCount} {project.mediaCount === 1 ? "photo or video" : "photos and videos"} · {fmtDate(project.createdAt)}
+                        <Suspense fallback={null}><ProjectPhotoCount id={project.id} previews={previews} /></Suspense>{fmtDate(project.createdAt)}
                       </span>
                     </div>
                   </Link>
