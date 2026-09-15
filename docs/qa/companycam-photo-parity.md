@@ -249,3 +249,10 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - This fixes recovery resurrection only. Old deployed tabs unaware of markers and simultaneous active uploads are not fully coordinated. Live multi-tab upload acceptance remains outstanding; do not claim complete upload reliability.
 - 71cd5dd deployed via GitHub; VercelH9grk4FbXhYquxZkDGCLTvEP5gYi Ready44s. Canonical QA tab580656695 loads Photos(4) and opens uploader with empty queue, no recovery-storage error. This is an uploader-opening smoke check, not an end-to-end or multi-tab upload pass.
 - Next UI reference check should include the upload dialog: current implementation still has project name in title, persistent continuation helper copy, empty uploaded count, and file constraints. Compare CompanyCam before simplifying; retain essential file limits and meaningful failure feedback.
+
+## Upload dialog reference cleanup — 2026-09-15
+
+- CompanyCam QA tab580656698 upload dialog inspected: compact Add Photos heading, X, rectangular dashed dropzone; no project title, empty count or Done footer. Actual desktop screenshot available1512px. Reference includes CompanyCam legal text, not appropriate to copy into ServiceFlow.
+- Built-in imagegen reference docs/design/photo-upload-reference-v2.png: centered compact Add Photos dialog, X, single dashed dropzone, small real file-size limits, no extra cards/count/footer. Actual screenshot controls implementation.
+- Simplified ServiceFlow empty uploader accordingly; retained file constraints, error feedback and queue controls once files exist. Removed unused projectLabel prop from upload session; provider labels for identifying project queues retained. No upload transport changes.
+- Build and TypeScript passed. Live verification pending. File-selection/active-transfer reference remains unverified; this pass covers empty dialog only.

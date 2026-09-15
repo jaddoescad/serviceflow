@@ -56,7 +56,7 @@ export function ProjectUploadProvider({children}:{children:React.ReactNode}) {
   const remaining=active.reduce((sum,[,queue])=>sum+(queue.summary?.remaining??0),0);
   return <UploadContext.Provider value={{register,open:setOpenKey,ready:!!userId}}>
     {children}
-    {userId?[...queues.entries()].map(([key,queue])=><ProjectUploadSession key={`${userId}/${key}`} projectId={queue.projectId} isLead={queue.isLead} projectLabel={queue.label} open={key===openKey} onOpen={open=>setOpenKey(open?key:null)} onSummary={summary}/>):null}
+    {userId?[...queues.entries()].map(([key,queue])=><ProjectUploadSession key={`${userId}/${key}`} projectId={queue.projectId} isLead={queue.isLead} open={key===openKey} onOpen={open=>setOpenKey(open?key:null)} onSummary={summary}/>):null}
     {!openKey&&active.length?<div className="fixed bottom-5 right-5 z-40 max-w-xs rounded-xl border border-slate-300 bg-white p-3 shadow-lg">
       <button onClick={()=>setExpanded(value=>!value)} className="px-2 py-1 text-sm font-semibold" aria-expanded={expanded} aria-live="polite">{remaining?`${remaining} uploads in progress`:'Uploads'} · {active.length} {active.length===1?'project':'projects'}</button>
       {expanded?<ul className="mt-2 max-h-56 overflow-auto">{active.map(([key,queue])=><li key={key}><button onClick={()=>setOpenKey(key)} className="block w-full rounded-lg p-2 text-left text-sm hover:bg-slate-100"><span className="block truncate font-medium">{queue.label}</span><span className="text-xs text-slate-500">{queue.summary?.complete}/{queue.summary?.total} uploaded{queue.summary?.failed?` · ${queue.summary.failed} need attention`:''}</span></button></li>)}</ul>:null}

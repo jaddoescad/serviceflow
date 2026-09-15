@@ -13,8 +13,8 @@ import { forgetUploads, loadUploads, storeUploads } from "@/lib/media-upload-sto
 const MEDIA_API_URL = (process.env.NEXT_PUBLIC_PROJECT_MEDIA_API_URL || "https://project-media-worker.jadslim-fai.workers.dev").replace(/\/+$/, "");
 
 export type UploadSummary = {total:number;remaining:number;complete:number;failed:number};
-export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,onSummary}: {
-  projectId:string;isLead:boolean;projectLabel:string;open:boolean;onOpen:(open:boolean)=>void;
+export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
+  projectId:string;isLead:boolean;open:boolean;onOpen:(open:boolean)=>void;
   onSummary:(projectId:string,isLead:boolean,summary:UploadSummary)=>void;
 }) {
   const router=useRouter();
@@ -182,14 +182,14 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
   }
 
   return <>
-    {open?<ProjectModal title={`Add photos and videos · ${projectLabel}`} subtitle="Uploads continue as you move between projects. Keep this browser tab open while they finish." onClose={()=>onOpen(false)} wide>
+    {open?<ProjectModal title="Add Photos" onClose={()=>onOpen(false)}>
       <div className="space-y-4 p-6">
         <input ref={input} aria-label="Choose photos and videos" type="file" multiple className="sr-only" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mov,.m4v" onChange={event=>{add(Array.from(event.target.files??[]));event.target.value='';}} />
-        <button type="button" disabled={!scope||preparing} onClick={()=>input.current?.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);void add(Array.from(e.dataTransfer.files));}} className={`w-full rounded-xl border-2 border-dashed p-9 text-center disabled:opacity-50 ${drag?'border-[var(--color-brand)] bg-[var(--color-brand-soft)]':'border-[var(--color-border)]'}`}>
-          <span className="block text-base font-semibold">Drag photos here or choose files</span>
-          <span className="mt-2 block text-sm text-[var(--color-muted)]">JPG, PNG, WebP, HEIC, MP4 or MOV · photos up to 25 MB · videos up to 95 MB</span>
+        <button type="button" disabled={!scope||preparing} onClick={()=>input.current?.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);void add(Array.from(e.dataTransfer.files));}} className={`min-h-44 w-full border border-dashed p-9 text-center disabled:opacity-50 ${drag?'border-[var(--color-brand)] bg-[var(--color-brand-soft)]':'border-blue-700'}`}>
+          <span className="block text-base text-[var(--color-muted)]">Drag &amp; drop photos here or click to upload to this project.</span>
         </button>
-        {preparing?<p role="status" className="text-sm">Saving files locally for upload recovery…</p>:null}
+        <p className="text-xs text-[var(--color-muted)]">Photos up to 25 MB · videos up to 95 MB</p>
+        {preparing?<p role="status" className="text-sm">Preparing uploads…</p>:null}
         {storageError?<p role="alert" className="text-sm text-red-700">{storageError}</p>:null}
         {items.length?<ul className="max-h-80 divide-y divide-[var(--color-border)] overflow-y-auto" aria-label="Upload queue">{items.map(item=><li key={item.id} className="flex items-center gap-3 py-3">
           <div className="min-w-0 flex-1">
@@ -200,10 +200,10 @@ export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,
           {item.status==='failed'||item.status==='cancelled'?<Button size="sm" variant="subtle" disabled={!!validateMediaFile(item.file)} onClick={()=>void retry(item)}>Retry</Button>:null}
           {item.status==='uploading'||item.status==='queued'?<Button size="sm" variant="ghost" onClick={()=>cancel(item.id)}>Cancel</Button>:null}
         </li>)}</ul>:null}
-        <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
+        {items.length>0?<div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
           <span className="text-sm text-[var(--color-muted)]" aria-live="polite">{complete} uploaded{failed?` · ${failed} failed`:''}</span>
           <div className="flex gap-2">{!remaining&&!preparing&&items.length?<Button variant="ghost" onClick={()=>void clear()}>Clear list</Button>:null}<Button onClick={()=>onOpen(false)}>Done</Button></div>
-        </div>
+        </div>:null}
       </div>
     </ProjectModal>:null}
   </>;
