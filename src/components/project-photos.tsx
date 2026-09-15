@@ -2,6 +2,7 @@
 
 import { SITE_NAME } from "@/lib/site-brand";
 
+import { ProjectPhotoBatch } from "@/components/project-photo-batch";
 import { ProjectPhotoCanvas } from "@/components/project-photo-canvas";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PhotoDetailsEditor } from "@/components/photo-details-editor";
@@ -88,6 +89,11 @@ export function ProjectPhotosPanel({
   isLead: boolean;
 }) {
   const router=useRouter();
+  const [selected,setSelected]=useState<Map<string,ProjectMediaItem>>(()=>new Map());
+  const [selectionLocked,setSelectionLocked]=useState(false);
+  function toggleSelection(item:ProjectMediaItem) {
+    setSelected(current=>{const next=new Map(current);if(next.has(item.id))next.delete(item.id);else next.set(item.id,item);return next;});
+  }
   const [mediaType,setMediaType]=useState<GalleryFilters['type']>('all');
   const [order,setOrder]=useState<GalleryFilters['order']>('newest');
   const [size,setSize]=useState('medium');
@@ -223,6 +229,10 @@ export function ProjectPhotosPanel({
           <label className="flex items-center gap-2">To<input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"/></label>
           {creator||tag||from||to||mediaType!=='all'?<button onClick={()=>{setCreator('');setTag('');setFrom('');setTo('');setMediaType('all');}} className="px-2 text-teal-700 underline">Clear filters</button>:null}
         </div>:null}
+        {visibleMedia.length?<div className="mb-3 flex items-center gap-4 text-sm">
+          <button disabled={selectionLocked} onClick={()=>setSelected(current=>new Map([...current,...visibleMedia.map(item=>[item.id,item] as const)]))} className="text-teal-700 underline disabled:opacity-40">Select loaded photos ({visibleMedia.length})</button>
+          {selected.size?<span>{selected.size} selected across this project</span>:null}
+        </div>:null}
         {gallery.loading?<p role="status" className="mb-3 text-sm text-slate-500">Loading photos…</p>:null}
         {gallery.error?<p role="alert" className="mb-3 text-sm text-red-700">{gallery.error} <button onClick={gallery.reload} className="underline">Retry</button></p>:null}
         {galleryPage.total === 0 ? (
@@ -258,6 +268,9 @@ export function ProjectPhotosPanel({
                       return (
                         <figure key={item.id} className="min-w-0">
                           <div className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-sm">
+                              <label className="absolute left-2 top-2 z-10 flex rounded-md bg-white/95 p-2 shadow">
+                                <input type="checkbox" aria-label={`Select ${item.originalFilename??mediaAlt(item)}`} checked={selected.has(item.id)} disabled={selectionLocked} onChange={()=>toggleSelection(item)} className="h-4 w-4 accent-teal-700"/>
+                              </label>
                               <button
                                 type="button"
                                 onClick={() => setActiveImageId(item.id)}
@@ -298,6 +311,7 @@ export function ProjectPhotosPanel({
           </div>
         )}
         {gallery.page.hasMore?<div className="mt-8 text-center"><button type="button" disabled={gallery.loading} onClick={()=>void gallery.more()} className="rounded-lg border border-[var(--color-border)] px-5 py-2 text-sm disabled:opacity-50">{gallery.loading?'Loading…':`Load more · ${visibleMedia.length} of ${gallery.page.total}`}</button></div>:null}
+        <ProjectPhotoBatch projectId={projectId} selected={[...selected.values()]} onClear={()=>setSelected(new Map())} onBusy={setSelectionLocked} onSaved={()=>{gallery.reload();router.refresh();}}/>
       </section>
 
       <ProjectProfilePanel
