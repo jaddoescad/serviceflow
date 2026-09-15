@@ -10,6 +10,7 @@ export async function PhotosSlot({ projectId }: { projectId: string }) {
   return (
     <ProjectPhotosPanel
       projectId={projectId}
+      projectName={data.name}
       contact={data.contact}
       description={data.description}
       notes={data.notes}

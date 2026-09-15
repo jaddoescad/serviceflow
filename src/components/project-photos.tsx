@@ -76,6 +76,7 @@ function mediaAlt(item: ProjectMediaItem): string {
 
 export function ProjectPhotosPanel({
   projectId,
+  projectName,
   contact,
   description,
   notes,
@@ -83,6 +84,7 @@ export function ProjectPhotosPanel({
   isLead,
 }: {
   projectId: string;
+  projectName: string;
   contact: ProjectContact;
   description: string | null;
   notes: string | null;
@@ -97,7 +99,7 @@ export function ProjectPhotosPanel({
   }
   const [mediaType,setMediaType]=useState<GalleryFilters['type']>('all');
   const [order,setOrder]=useState<GalleryFilters['order']>('newest');
-  const [size,setSize]=useState('medium');
+  const [size,setSize]=useState('small');
   const [showTags,setShowTags]=useState(true);
   const [creator,setCreator]=useState('');
   const [tag,setTag]=useState('');
@@ -201,21 +203,19 @@ export function ProjectPhotosPanel({
   return (
     <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
       <section aria-label="Project photos" className="min-w-0">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-lg font-semibold text-[var(--color-heading)]">
-              Photos <span className="text-[var(--color-muted)]">({gallery.page.total})</span>
-            </h2>
-            <p className="mt-0.5 text-sm text-[var(--color-muted)]">
-              Site photos and videos, grouped by the day they were captured.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ProjectPhotoTrash projectId={projectId}/>
-            <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} label={contact.name??"Project photos"} />
-          </div>
-        </div>
-        {galleryPage.total>0?<div className="mb-6 flex flex-wrap items-center gap-2 text-sm">
+        <h2 className="sr-only">Photos ({gallery.page.total})</h2>
+        <div className="mb-7 flex flex-wrap items-center gap-2 text-sm">
+          <details className="relative">
+            <summary className="cursor-pointer rounded-md border border-slate-300 bg-white px-4 py-2 font-medium">{from||to?'Date Range •':'Date Range'}</summary>
+            <div className="absolute left-0 top-full z-20 mt-2 space-y-3 rounded-md border border-slate-200 bg-white p-4 shadow-lg">
+              <label className="block text-xs">From<input aria-label="From" type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)} className="mt-1 block rounded border border-slate-300 p-2"/></label>
+              <label className="block text-xs">To<input aria-label="To" type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)} className="mt-1 block rounded border border-slate-300 p-2"/></label>
+            </div>
+          </details>
+          <select aria-label="Uploaded by" value={creator} onChange={e=>setCreator(e.target.value)} className="max-w-48 rounded-md border border-slate-300 bg-white px-3 py-2"><option value="">Users</option>{gallery.page.options?.creators.map(name=><option key={name}>{name}</option>)}</select>
+          <select aria-label="Filter by tag" value={tag} onChange={e=>setTag(e.target.value)} className="max-w-40 rounded-md border border-slate-300 bg-white px-3 py-2"><option value="">Tags</option>{gallery.page.options?.tags.map(name=><option key={name}>{name}</option>)}</select>
+          {creator||tag||from||to||mediaType!=='all'?<button onClick={()=>{setCreator('');setTag('');setFrom('');setTo('');setMediaType('all');}} className="px-2 text-blue-600">Clear filters</button>:null}
+          <div className="ml-auto flex items-center gap-2">
           <details className="relative">
             <summary className="cursor-pointer rounded-lg border border-[var(--color-border)] px-3 py-2">View</summary>
             <div className="absolute left-0 top-full z-20 mt-2 w-60 space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-xl">
@@ -225,18 +225,10 @@ export function ProjectPhotosPanel({
               <label className="block">Order<select aria-label="Photo order" value={order} onChange={e=>setOrder(e.target.value as GalleryFilters['order'])} className="mt-1 block w-full rounded border p-2"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
             </div>
           </details>
-          <label className="sr-only" htmlFor="photo-creator">Uploaded by</label>
-          <select id="photo-creator" value={creator} onChange={e=>setCreator(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"><option value="">All users</option>{gallery.page.options?.creators.map(name=><option key={name}>{name}</option>)}</select>
-          <label className="sr-only" htmlFor="photo-tag">Filter by tag</label>
-          <select id="photo-tag" value={tag} onChange={e=>setTag(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"><option value="">All tags</option>{gallery.page.options?.tags.map(name=><option key={name}>{name}</option>)}</select>
-          <label className="flex items-center gap-2">From<input type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"/></label>
-          <label className="flex items-center gap-2">To<input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"/></label>
-          {creator||tag||from||to||mediaType!=='all'?<button onClick={()=>{setCreator('');setTag('');setFrom('');setTo('');setMediaType('all');}} className="px-2 text-teal-700 underline">Clear filters</button>:null}
-        </div>:null}
-        {visibleMedia.length?<div className="mb-3 flex items-center gap-4 text-sm">
-          <button disabled={selectionLocked} onClick={()=>setSelected(current=>new Map([...current,...visibleMedia.map(item=>[item.id,item] as const)]))} className="text-teal-700 underline disabled:opacity-40">Select loaded photos ({visibleMedia.length})</button>
-          {selected.size?<span>{selected.size} selected across this project</span>:null}
-        </div>:null}
+            <ProjectPhotoTrash projectId={projectId}/>
+            <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} label={projectName}/>
+          </div>
+        </div>
         {linked.loading?<p role="status" className="mb-3 text-sm text-slate-500">Opening photo…</p>:null}
         {linked.error?<p role="alert" className="mb-3 text-sm text-red-700">{linked.error} <button onClick={linked.retry} className="underline">Retry</button> <button onClick={()=>setActiveImageId(null)} className="underline">Dismiss</button></p>:null}
         {gallery.loading?<p role="status" className="mb-3 text-sm text-slate-500">Loading photos…</p>:null}
@@ -263,18 +255,19 @@ export function ProjectPhotosPanel({
                   key={localDateKey(firstCapturedAt)}
                   className="[content-visibility:auto] [contain-intrinsic-size:500px]"
                 >
-                  <h2 className="mb-4 font-display text-base font-semibold text-[var(--color-heading)]">
+                  <h2 className="mb-5 flex items-center gap-2 text-base font-semibold text-[var(--color-heading)]">
+                    <input type="checkbox" aria-label={`Select photos from ${dateHeading(firstCapturedAt)}`} disabled={selectionLocked} checked={items.every(item=>selected.has(item.id))} onChange={event=>{const checked=event.target.checked;setSelected(current=>{const next=new Map(current);for(const item of items){if(checked)next.set(item.id,item);else next.delete(item.id);}return next;});}} className="h-5 w-5 accent-blue-600"/>
                     {dateHeading(firstCapturedAt)}
                   </h2>
-                  <div className={`grid gap-x-4 gap-y-6 ${size==='small'?'grid-cols-3 lg:grid-cols-5':size==='large'?'grid-cols-1 sm:grid-cols-2':'grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'}`}>
+                  <div className="grid gap-x-2 gap-y-5" style={{gridTemplateColumns:`repeat(auto-fill, minmax(min(100%, ${size==='small'?140:size==='large'?300:220}px), ${size==='small'?140:size==='large'?300:220}px))`}}>
                     {items.map((item) => {
                       const capturedAt = item.capturedAt ?? item.createdAt;
                       const mediaUrl = `/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(item.id)}`;
                       const duration = durationLabel(item.durationMs);
                       return (
                         <figure key={item.id} className="min-w-0">
-                          <div className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-sm">
-                              <label className="absolute left-2 top-2 z-10 flex rounded-md bg-white/95 p-2 shadow">
+                          <div className="group relative aspect-square overflow-hidden rounded-md bg-[var(--color-surface-2)]">
+                              <label className={`absolute left-2 top-2 z-10 flex rounded bg-white/95 p-1 transition-opacity ${selected.has(item.id)?'opacity-100':'opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100'}`}>
                                 <input type="checkbox" aria-label={`Select ${item.originalFilename??mediaAlt(item)}`} checked={selected.has(item.id)} disabled={selectionLocked} onChange={()=>toggleSelection(item)} className="h-4 w-4 accent-teal-700"/>
                               </label>
                               <button
@@ -288,9 +281,7 @@ export function ProjectPhotosPanel({
                                   alt={mediaAlt(item)}
                                   video={item.mediaType === "video"}
                                 />
-                                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pb-2.5 pt-8 text-left text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                  {item.mediaType === "video" ? "▶ Play video" : "View gallery"}
-                                </span>
+                                <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-2 pb-2 pt-7 text-left"><span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10px] text-slate-600">{(item.creatorName??SITE_NAME).split(' ').map(part=>part[0]).slice(0,2).join('')}</span></span>
                               </button>
                             {duration ? (
                               <span className="absolute bottom-2 right-2 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold text-white">
@@ -392,7 +383,7 @@ export function ProjectPhotosPanel({
 
             <aside className="overflow-y-auto bg-white text-slate-900" aria-label="Photo details">
               <div className="p-5">
-                <div className="flex items-start justify-between gap-3"><h2 className="truncate text-sm font-semibold">{contact.name??'Project'}</h2><button ref={closeButtonRef} onClick={closeGallery} aria-label="Close gallery" className="-mt-1 text-2xl leading-none text-slate-500">×</button></div>
+                <div className="flex items-start justify-between gap-3"><h2 className="truncate text-sm font-semibold">{projectName}</h2><button ref={closeButtonRef} onClick={closeGallery} aria-label="Close gallery" className="-mt-1 text-2xl leading-none text-slate-500">×</button></div>
                 <div className="mt-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500">{(activeImage.creatorName??'').split(' ').map(part=>part[0]).slice(0,2).join('')}</span><div><p className="text-xs font-medium">{activeImage.creatorName??'Unknown uploader'}</p><p className="mt-0.5 text-[11px] text-slate-500">{new Intl.DateTimeFormat('en-CA',{dateStyle:'short',timeStyle:'short',timeZone:PROJECT_TIME_ZONE}).format(new Date(activeImage.capturedAt??activeImage.createdAt))}</p></div></div>
               </div>
               <PhotoDetailsEditor key={activeImage.id} projectId={projectId} mediaId={activeImage.id}
