@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProjectModal } from "@/components/project-profile-panel";
+import { UploadPhotoTile } from "./upload-photo-tile";
 import { Button } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFailure, uploadRetryAt } from "@/lib/upload-retry";
@@ -197,15 +198,7 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
         <p className="text-xs text-[var(--color-muted)]">Photos up to 25 MB · videos up to 95 MB</p>
         {preparing?<p role="status" className="text-sm">Preparing uploads…</p>:null}
         {storageError?<p role="alert" className="text-sm text-red-700">{storageError}</p>:null}
-        {items.length?<ul className="max-h-80 divide-y divide-[var(--color-border)] overflow-y-auto" aria-label="Upload queue">{items.map(item=><li key={item.id} className="flex items-center gap-3 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{item.file.name}</div>
-            <div className="text-xs text-[var(--color-muted)]" role="status">{item.status==='uploading'?(item.progress>=99?'Finishing…':`${item.progress}%`):item.status==='complete'?'Uploaded':item.error||item.status}</div>
-            {item.status==='uploading'?<progress aria-label={`Uploading ${item.file.name}`} value={item.progress} max={100} className="mt-1 h-1.5 w-full accent-[var(--color-brand)]"/>:null}
-          </div>
-          {item.status==='failed'||item.status==='cancelled'?<Button size="sm" variant="subtle" disabled={!!validateMediaFile(item.file)} onClick={()=>void retry(item)}>Retry</Button>:null}
-          {item.status==='uploading'||item.status==='queued'?<Button size="sm" variant="ghost" onClick={()=>cancel(item.id)}>Cancel</Button>:null}
-        </li>)}</ul>:null}
+        {items.length?<ul className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4" aria-label="Upload queue">{items.map(item=><UploadPhotoTile key={item.id} item={item} onCancel={()=>cancel(item.id)} onRetry={()=>void retry(item)}/>)}</ul>:null}
         {items.length>0?<div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
           <span className="text-sm text-[var(--color-muted)]" aria-live="polite">{complete} uploaded{failed?` · ${failed} failed`:''}</span>
           <div className="flex gap-2">{!remaining&&!preparing&&items.length?<Button variant="ghost" onClick={()=>void clear()}>Clear list</Button>:null}<Button onClick={()=>onOpen(false)}>Done</Button></div>
