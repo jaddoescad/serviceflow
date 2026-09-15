@@ -11,6 +11,9 @@ export function NavigationTiming() {
   useEffect(() => {
     enabled.current = new URLSearchParams(location.search).get("__perf") === "1";
     if (!enabled.current) return;
+    // Long QA sessions otherwise exhaust the browser's default 250 entries,
+    // making later requests look like cached navigation.
+    performance.setResourceTimingBufferSize(10000);
     let observer: MutationObserver | null = null;
     function record(path: string, start: number, kind: string) {
       observer?.disconnect();
