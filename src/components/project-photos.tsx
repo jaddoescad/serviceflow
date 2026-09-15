@@ -145,6 +145,7 @@ export function ProjectPhotosPanel({
     closeButtonRef.current?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
+      if ((event.target as Element)?.closest?.("[data-photo-editor]")) return;
       const images=navigationItems.current;
       if (event.key === "Escape") {
         if(document.fullscreenElement)return;
@@ -382,6 +383,7 @@ export function ProjectPhotosPanel({
                 src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`}
                 className="absolute inset-0 h-full w-full object-contain px-2 py-3 sm:px-16" aria-label={mediaAlt(activeImage)} /> : <ProjectPhotoCanvas
                 key={activeImage.id}
+                projectId={projectId} mediaId={activeImage.id}
                 src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`}
                 alt={mediaAlt(activeImage)}
               />}
