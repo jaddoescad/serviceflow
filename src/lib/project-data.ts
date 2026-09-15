@@ -136,15 +136,14 @@ function emptyLeadRollup(
 
 /** Shared presentation fields for both unconverted leads and operational jobs. */
 export const getProjectPresentation = cache(async (projectId: string) => {
-  await requireStaff();
   const supabase = await createClient();
-  const { data: job, error } = await supabase
+  const [{ data: job, error }] = await Promise.all([supabase
     .from("jobs")
     .select(
       "id,name,status,formatted_address,address_line_1,lead_id,contact_id,metadata,contact:contacts(name,email,phone,metadata)",
     )
     .eq("id", projectId)
-    .maybeSingle();
+    .maybeSingle(), requireStaff()]);
 
   if (error) throw new Error(`project presentation: ${error.message}`);
 
