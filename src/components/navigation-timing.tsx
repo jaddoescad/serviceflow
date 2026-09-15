@@ -26,6 +26,7 @@ export function NavigationTiming() {
         observer.observe(document.body, { childList: true, subtree: true });
         return;
       }
+      const contentCommitted = performance.now();
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const end = performance.now();
         const resources = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
@@ -35,7 +36,7 @@ export function NavigationTiming() {
         const lastRouteRequest = routeRequests.at(-1);
         const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
         console.info("SERVICEFLOW_PERF " + JSON.stringify({
-          path, kind, visibleMs: Math.round(end - start),
+          path, kind, visibleMs: Math.round(end - start), contentCommitMs: Math.round(contentCommitted - start), frameWaitMs: Math.round(end - contentCommitted), visibility: document.visibilityState,
           prefetched: kind === "navigation" && !!lastRouteRequest && lastRouteRequest.responseEnd <= start,
           routeDurationMs: lastRouteRequest ? Math.round(lastRouteRequest.duration) : null,
           dataFetchMs: Number(document.querySelector("main [data-perf-fetch-ms]")?.getAttribute("data-perf-fetch-ms")) || null,
