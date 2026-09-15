@@ -1,14 +1,15 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import {PhotoAnnotationSurface} from './photo-annotation-surface';
 import dynamic from 'next/dynamic';
+import {PhotoToolIcon} from './photo-tool-icon';
 import {loadPhotoAnnotations} from '@/lib/actions/photo-annotations';
 import {emptyAnnotations,type AnnotationDocument} from '@/lib/photo-annotations';
 
 const PhotoAnnotationEditor=dynamic(()=>import('./photo-annotation-editor').then(module=>module.PhotoAnnotationEditor),{ssr:false});
 
-export function ProjectPhotoCanvas({src,alt,projectId,mediaId}:{src:string;alt:string;projectId:string;mediaId:string}) {
+export function ProjectPhotoCanvas({src,alt,projectId,mediaId,downloadName,actions}:{src:string;alt:string;projectId:string;mediaId:string;downloadName:string;actions:ReactNode}) {
   const [annotations,setAnnotations]=useState<AnnotationDocument>(emptyAnnotations);
   const [revision,setRevision]=useState<string|null>(null);
   const [loaded,setLoaded]=useState(false);
@@ -30,13 +31,14 @@ export function ProjectPhotoCanvas({src,alt,projectId,mediaId}:{src:string;alt:s
   }
   return <div ref={viewport} className="relative h-full w-full bg-black" onTouchStart={event=>{if(zoom>1)event.stopPropagation();}}>
     {editing?<PhotoAnnotationEditor src={src} alt={alt} projectId={projectId} mediaId={mediaId} initial={annotations} revision={revision} onClose={()=>setEditing(false)} onSaved={(document,nextRevision)=>{setAnnotations(document);setRevision(nextRevision);setEditing(false);}}/>:null}
-    <div className="absolute inset-x-0 top-3 z-10 flex flex-wrap justify-center gap-1">
-      <button disabled={!loaded||failed} onClick={async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();setEditing(true);}catch{setAnnotationError(true);}}} className="rounded bg-black/75 px-3 py-2 text-xs text-white disabled:opacity-40">Edit photo</button>
-      {annotationError?<button onClick={()=>setLoadAttempt(value=>value+1)} className="rounded bg-black/75 px-3 py-2 text-xs text-amber-200">Drawings unavailable · Retry</button>:null}
-      <button onClick={()=>setZoom(value=>Math.max(1,value-0.5))} disabled={zoom===1} aria-label="Zoom out" className="rounded bg-black/75 px-3 py-2 text-white disabled:opacity-40">−</button>
-      <button onClick={()=>{setZoom(1);scroll.current?.scrollTo(0,0);}} aria-label="Reset zoom" className="rounded bg-black/75 px-3 py-2 text-xs text-white">{Math.round(zoom*100)}%</button>
-      <button onClick={()=>setZoom(value=>Math.min(4,value+0.5))} disabled={zoom===4} aria-label="Zoom in" className="rounded bg-black/75 px-3 py-2 text-white disabled:opacity-40">＋</button>
-      <button onClick={()=>void fullscreen()} aria-label="Toggle fullscreen photo" className="rounded bg-black/75 px-3 py-2 text-xs text-white">Fullscreen</button>
+    <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded bg-black/70 p-1">
+      <button title="Edit Photo" aria-label="Edit photo" disabled={!loaded||failed} onClick={async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();setEditing(true);}catch{setAnnotationError(true);}}} className="p-2 text-white disabled:opacity-40"><PhotoToolIcon name="edit"/></button>
+      <button title="Fullscreen" onClick={()=>void fullscreen()} aria-label="Toggle fullscreen photo" className="p-2 text-white"><PhotoToolIcon name="fullscreen"/></button>
+      <button title="Zoom out" onClick={()=>setZoom(value=>Math.max(1,value-0.5))} disabled={zoom===1} aria-label="Zoom out" className="p-2 text-white disabled:opacity-40"><PhotoToolIcon name="minus"/></button>
+      <button title="Zoom in" onClick={()=>setZoom(value=>Math.min(4,value+0.5))} disabled={zoom===4} aria-label="Zoom in" className="p-2 text-white disabled:opacity-40"><PhotoToolIcon name="plus"/></button>
+      <a title="Download original" aria-label="Download original" href={src} download={downloadName} className="p-2 text-white"><PhotoToolIcon name="download"/></a>
+      {actions}
+      {annotationError?<button onClick={()=>setLoadAttempt(value=>value+1)} className="px-2 text-xs text-amber-200">Retry drawings</button>:null}
     </div>
     <div ref={scroll} className={`h-full w-full overflow-auto ${zoom>1?'touch-auto cursor-grab active:cursor-grabbing':''}`}
       onPointerDown={event=>{if(zoom<=1||event.pointerType!=='mouse')return;const el=event.currentTarget;drag.current={x:event.clientX,y:event.clientY,left:el.scrollLeft,top:el.scrollTop};el.setPointerCapture(event.pointerId);}}

@@ -1,13 +1,14 @@
 "use client";
 
+import {PhotoToolIcon} from './photo-tool-icon';
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProjectModal } from "@/components/project-profile-panel";
 import { loadPhotoTrash, setPhotoTrash } from "@/lib/actions/photo-details";
 import type { ProjectMediaItem } from "@/lib/project-data";
 
-export function PhotoTrashAction({projectId,item,restore=false,onSuccess,beforeAction}: {
-  projectId:string;item:ProjectMediaItem;restore?:boolean;onSuccess:()=>void;beforeAction?:()=>boolean;
+export function PhotoTrashAction({projectId,item,restore=false,onSuccess,beforeAction,compact=false}: {
+  compact?:boolean;projectId:string;item:ProjectMediaItem;restore?:boolean;onSuccess:()=>void;beforeAction?:()=>boolean;
 }) {
   const [busy,setBusy]=useState(false);
   const [confirming,setConfirming]=useState(false);
@@ -24,11 +25,11 @@ export function PhotoTrashAction({projectId,item,restore=false,onSuccess,beforeA
     }catch{setError('Could not confirm the change. Retry to check safely.');}
     finally{setBusy(false);}
   }
-  return <div>
-    <button type="button" disabled={busy} onClick={()=>restore?void act():setConfirming(true)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50">
-      {busy?'Saving…':restore?'Restore photo':'Move to trash'}
+  return <div className="relative">
+    <button type="button" disabled={busy} onClick={()=>restore?void act():setConfirming(true)} aria-label={restore?'Restore photo':'Move to trash'} title={restore?'Restore photo':'Move to trash'} className={compact?"p-2 text-white disabled:opacity-50":"rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50"}>
+      {compact?<PhotoToolIcon name="trash"/>:busy?'Saving…':restore?'Restore photo':'Move to trash'}
     </button>
-    {confirming?<div role="group" aria-label="Confirm photo trash" className="mt-3 space-y-3 rounded-lg border border-slate-300 p-3">
+    {confirming?<div role="group" aria-label="Confirm photo trash" className={`${compact?"absolute bottom-12 right-0 w-64 bg-white text-slate-900 shadow-lg":"mt-3"} space-y-3 rounded-lg border border-slate-300 p-3`}>
       <p className="text-sm">Move this photo to trash? Its original file is retained and can be restored.</p>
       <div className="flex gap-3"><button disabled={busy} onClick={()=>void act()} className="rounded-lg bg-red-700 px-3 py-2 text-sm text-white">{busy?'Moving…':'Confirm move to trash'}</button><button disabled={busy} onClick={()=>setConfirming(false)} className="text-sm underline">Cancel</button></div>
     </div>:null}

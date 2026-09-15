@@ -329,7 +329,7 @@ export function ProjectPhotosPanel({
 
       {activeImage ? (
         <div
-          className="fixed inset-0 z-[70] bg-black/95 text-white"
+          className="fixed inset-0 z-[70] bg-slate-900/70 p-0 text-white sm:p-3"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target) closeGallery();
           }}
@@ -339,31 +339,9 @@ export function ProjectPhotosPanel({
             role="dialog"
             aria-modal="true"
             aria-label={activeImageIndex>=0?`Photo gallery, ${activeImage.mediaType==='video'?'video':'photo'} ${activeImageIndex + 1} of ${galleryItems.length}`:`Photo gallery, linked ${activeImage.mediaType==='video'?'video':'photo'}`}
-            className="flex h-full min-h-0 flex-col"
+            className="flex h-full min-h-0 flex-col overflow-hidden bg-black sm:rounded-lg"
           >
-            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-4 py-3 sm:px-6">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">
-                  {activeImage.mediaType==='video'?'Video':'Photo'} {activeImageIndex>=0?`${activeImageIndex+1} of ${galleryItems.length}`:''}
-                </div>
-                <div className="mt-0.5 truncate text-xs text-white/60">
-                  {dateHeading(activeImage.capturedAt ?? activeImage.createdAt)} · {captureTime(activeImage.capturedAt ?? activeImage.createdAt)}
-                  {activeImage.creatorName ? ` · ${activeImage.creatorName}` : ""}
-                </div>
-              </div>
-              <a href={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`} download={activeImage.originalFilename??activeImage.id} className="ml-auto rounded-lg bg-white/10 px-3 py-2 text-sm text-white">Download</a>
-              <button
-                ref={closeButtonRef}
-                type="button"
-                onClick={closeGallery}
-                aria-label="Close gallery"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl leading-none transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-              >
-                ×
-              </button>
-            </header>
-
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,1fr)_minmax(0,45%)] sm:grid-cols-[minmax(0,1fr)_320px] sm:grid-rows-1">
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,1fr)_minmax(0,45%)] sm:grid-cols-[minmax(0,1fr)_340px] sm:grid-rows-1">
             <div
               className="relative min-h-0 flex-1 touch-auto select-none"
               onTouchStart={(event) => {
@@ -386,6 +364,8 @@ export function ProjectPhotosPanel({
                 projectId={projectId} mediaId={activeImage.id}
                 src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`}
                 alt={mediaAlt(activeImage)}
+                downloadName={activeImage.originalFilename??activeImage.id}
+                actions={<PhotoTrashAction compact key={activeImage.id} projectId={projectId} item={activeImage} beforeAction={mayLeave} onSuccess={()=>{setActiveImageId(null);router.refresh();}}/>}
               />}
 
               {galleryItems.length > 1 ? (
@@ -411,42 +391,17 @@ export function ProjectPhotosPanel({
             </div>
 
             <aside className="overflow-y-auto bg-white text-slate-900" aria-label="Photo details">
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-3"><h2 className="truncate text-sm font-semibold">{contact.name??'Project'}</h2><button ref={closeButtonRef} onClick={closeGallery} aria-label="Close gallery" className="-mt-1 text-2xl leading-none text-slate-500">×</button></div>
+                <div className="mt-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-500">{(activeImage.creatorName??'').split(' ').map(part=>part[0]).slice(0,2).join('')}</span><div><p className="text-xs font-medium">{activeImage.creatorName??'Unknown uploader'}</p><p className="mt-0.5 text-[11px] text-slate-500">{new Intl.DateTimeFormat('en-CA',{dateStyle:'short',timeStyle:'short',timeZone:PROJECT_TIME_ZONE}).format(new Date(activeImage.capturedAt??activeImage.createdAt))}</p></div></div>
+              </div>
               <PhotoDetailsEditor key={activeImage.id} projectId={projectId} mediaId={activeImage.id}
                 description={activeImage.description} tags={activeImage.tags} revision={activeImage.revision}
                 onDirtyChange={trackDirty} />
-              <div className="border-t border-slate-200 p-5">
-                <PhotoTrashAction key={activeImage.id} projectId={projectId} item={activeImage}
-                  beforeAction={mayLeave} onSuccess={()=>{setActiveImageId(null);router.refresh();}}/>
-              </div>
+              {activeImage.mediaType==='video'?<div className="flex items-center gap-3 px-5"><a href={`/api/jobs/${projectId}/media/${activeImage.id}`} download={activeImage.originalFilename??activeImage.id} className="text-sm text-blue-600">Download</a><PhotoTrashAction projectId={projectId} item={activeImage} beforeAction={mayLeave} onSuccess={()=>{setActiveImageId(null);router.refresh();}}/></div>:null}
             </aside>
             </div>
 
-            {galleryItems.length > 1 ? (
-              <div className="shrink-0 border-t border-white/15 bg-black/60 px-3 py-3 sm:px-6">
-                <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1" aria-label="Gallery thumbnails">
-                  {galleryItems.map((item, index) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => { if (item.id !== activeImageId && mayLeave()) setActiveImageId(item.id); }}
-                      aria-label={`View photo ${index + 1}`}
-                      aria-current={index === activeImageIndex ? "true" : undefined}
-                      className={`relative h-14 w-[72px] shrink-0 overflow-hidden rounded-md border-2 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:h-16 sm:w-20 ${
-                        index === activeImageIndex
-                          ? "border-white opacity-100"
-                          : "border-transparent opacity-55 hover:opacity-100"
-                      }`}
-                    >
-                      <ProjectMediaPreview
-                        src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(item.id)}`}
-                        alt=""
-                        video={item.mediaType === "video"}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
