@@ -105,11 +105,18 @@ export async function getEmployees(): Promise<EmployeeProfile[]> {
   return (data ?? []).map((row: any) => ({ ...row, user_id: row.id }));
 }
 
-export async function getEmployeeTrackingStatuses(): Promise<EmployeeTrackingStatus[]> {
+export async function getEmployeeTrackingStatuses(userIds: string[]): Promise<EmployeeTrackingStatus[]> {
+  if (!userIds.length) return [];
   const supabase = await createClient();
-  const { data, error } = await supabase.from("employee_tracking_status").select("*").order("last_location_at", { ascending: false, nullsFirst: false });
-  if (error) throw new Error(`tracking status: ${error.message}`);
-  return (data ?? []).map((row: any) => ({
+  const users = [...new Set(userIds)];
+  const data: any[] = [];
+  for (let offset = 0; offset < users.length; offset += 50) {
+    const result = await supabase.from("employee_tracking_status").select("*")
+      .in("employee_id", users.slice(offset, offset + 50));
+    if (result.error) throw new Error(`tracking status: ${result.error.message}`);
+    data.push(...(result.data ?? []));
+  }
+  return data.map((row: any) => ({
     ...row,
     user_id: row.employee_id,
     user_email: row.employee_email,

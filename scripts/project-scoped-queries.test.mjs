@@ -12,12 +12,13 @@ function moduleAt(path, require) {
 }
 function fixture() {
   const budgets = moduleAt('src/lib/job-budget-selection.ts', () => { throw Error('Unexpected import'); });
-  const tables = { jobs: [], job_budgets: [], job_assignments: [], employee_location_points: [] };
+  const tables = { jobs: [], job_budgets: [], job_assignments: [], employee_location_points: [], employee_tracking_status: [] };
   for (let i = 0; i < 1200; i++) {
     const id = `job-${i}`;
     tables.jobs.push({ id, name: id, is_feed_visible: true, contract_amount_cents: 50000, updated_at: '2026-09-01' });
     tables.job_budgets.push({ job_id: id, source: 'manual', status: 'active', version: 1, updated_at: '2026-09-01', amount_including_tax_cents: 12345, budget_minutes: 120, hourly_rate_cents: 3500 });
     tables.employee_location_points.push({ id: `point-${i}`, employee_id: 'employee', captured_at: '2026-09-01' });
+    tables.employee_tracking_status.push({ employee_id: `employee-${i}`, job_id: id });
     tables.job_assignments.push({ id: `assignment-${i}`, job_id: id, employee_id: 'employee', status: 'active' });
   }
   const reads = [];
@@ -53,6 +54,20 @@ test('project beyond the API row cap gets its own budget and assignments', async
   assert.equal(budget[0].hourly_rate, 35);
   assert.equal(assignments.length, 1);
   assert.ok(reads.every(read => read.rows === 1 && read.filters.some(([,value]) => value === 'job-1199')));
+});
+
+test('map tracking status reads only displayed employees, including beyond the API cap', async () => {
+  const { queries, reads } = fixture();
+  assert.equal((await queries.getEmployeeTrackingStatuses([])).length, 0);
+  assert.equal(reads.length, 0);
+  const selected = await queries.getEmployeeTrackingStatuses(['employee-1199', 'employee-1199']);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].user_id, 'employee-1199');
+  assert.equal(selected[0].companycam_project_id, 'job-1199');
+  const all = await queries.getEmployeeTrackingStatuses(Array.from({length: 1200}, (_, i) => `employee-${i}`));
+  assert.equal(all.length, 1200);
+  assert.equal(new Set(all.map(row => row.user_id)).size, 1200);
+  assert.ok(reads.every(read => read.rows <= 50));
 });
 test('scoping preserves budget precedence and ignores published task budgets', async () => {
   const { queries, tables } = fixture();

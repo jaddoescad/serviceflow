@@ -77,6 +77,8 @@ Authenticated database execution observations (distinct from network/server/page
 
 Remaining bottleneck: intermittent end-to-end response delays remain much larger than these database execution times. The follow-up Contacts outlier spent 3356 of 3449 ms in its RSC response. Streamed routes and authentication/network work need separate trace attribution before choosing another optimization. No unsupported root cause or cold-start claim is made.
 
+Follow-up audit: Overview's tracking-status query now selects only employees represented in its displayed shifts, in 50-ID batches. Empty shift lists issue no tracking-status query. The fixture verifies a target beyond the first 1,000 employees and all 1,200 requested employees without duplicates; build passed. This closes an unbounded map read, but is not evidence that the primary-content latency outlier is resolved.
+
 ## Correctness and live verification
 
 - Eight test files pass, including >1,000-record fixtures: 1,200 contacts/related projects, 1,200 jobs/entries/employees, 1,205 cursor-paged media records, and scoped location/assignment reads beyond API limits.

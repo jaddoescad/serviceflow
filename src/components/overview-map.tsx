@@ -10,11 +10,12 @@ export async function OverviewMap({ now }: { now: number }) {
     const { data, error } = await supabase.rpc("get_overview_movement", { calculated_at: new Date(now).toISOString() });
     if (error) throw error;
     const shifts = data as TimeEntry[];
+    const userIds = [...new Set(shifts.flatMap(entry => entry.user_id ? [entry.user_id] : []))];
     const since = new Date(shifts.reduce((earliest, entry) => Math.min(earliest, Date.parse(entry.started_at)), now) - LOCATION_MATCH_TOLERANCE_MS).toISOString();
     const [projects, tracking, points] = await Promise.all([
       getProjects([...new Set(shifts.flatMap(entry => entry.companycam_project_id ? [entry.companycam_project_id] : []))]),
-      getEmployeeTrackingStatuses(),
-      getEmployeeLocationPoints(shifts.flatMap(entry => entry.user_id ? [entry.user_id] : []), since),
+      getEmployeeTrackingStatuses(userIds),
+      getEmployeeLocationPoints(userIds, since),
     ]);
     return <CrewOperationsMap locations={buildCrewLocations(shifts, projects, tracking, points)} snapshotNow={now} />;
   } catch {
