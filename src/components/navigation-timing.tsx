@@ -11,7 +11,21 @@ export function NavigationTiming() {
   useEffect(() => {
     enabled.current = new URLSearchParams(location.search).get("__perf") === "1";
     if (!enabled.current) return;
+    let observer: MutationObserver | null = null;
     function record(path: string, start: number, kind: string) {
+      observer?.disconnect();
+      // App Router may commit its loading boundary before page data arrives.
+      // Stop the clock only once the destination's content heading is mounted.
+      if (!document.querySelector("main h1")) {
+        observer = new MutationObserver(() => {
+          if (location.pathname === path && document.querySelector("main h1")) {
+            observer?.disconnect();
+            record(path, start, kind);
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        return;
+      }
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const end = performance.now();
         const resources = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
@@ -24,8 +38,11 @@ export function NavigationTiming() {
           path, kind, visibleMs: Math.round(end - start),
           prefetched: kind === "navigation" && !!lastRouteRequest && lastRouteRequest.responseEnd <= start,
           routeResponseWaitMs: lastRouteRequest ? Math.round(lastRouteRequest.responseStart - lastRouteRequest.requestStart) : null,
-          requests: resources.length,
-          transferredBytes: resources.reduce((sum, row) => sum + row.transferSize, 0),
+          requests: resources.length + (kind === "load" && navigation ? 1 : 0),
+          transferredBytes: resources.reduce((sum, row) => sum + row.transferSize, 0) + (kind === "load" ? navigation?.transferSize ?? 0 : 0),
+          documentBytes: kind === "load" ? navigation?.transferSize ?? 0 : null,
+          routeBytes: lastRouteRequest?.transferSize ?? null,
+          contentReady: true,
           responseWaitMs: kind === "load" && navigation ? Math.round(navigation.responseStart - navigation.requestStart) : null,
           resourceResponseWaitMs: resources.filter(row => row.responseStart > 0)
             .map(row => Math.round(row.responseStart - row.requestStart)),
@@ -50,6 +67,7 @@ export function NavigationTiming() {
     document.addEventListener("click", click, true);
     window.addEventListener("serviceflow:route-committed", committed);
     return () => {
+      observer?.disconnect();
       document.removeEventListener("click", click, true);
       window.removeEventListener("serviceflow:route-committed", committed);
     };

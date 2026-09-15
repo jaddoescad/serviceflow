@@ -83,3 +83,8 @@ f999333 deployed successfully. Live contact detail for the previously observed L
 - Warm-asset baseline page loads captured separately from prefetched navigation. First visit 2,758 ms (not a controlled cold-cache measurement); reload samples recorded below.
 - Five warm-asset reload baseline samples: 827, 686, 675, 478, 661 ms (median 675 ms). Initial document transfer bytes are not yet captured by instrumentation; do not treat the zero cached-resource bytes as a zero-byte page.
 - Invoker RPC with authenticated role but no user sees zero records. Anonymous execute denied in fixture. No stored business data changed.
+- Jobs release `a16fe47`: Vercel Ready; canonical site renders 1–50 of 220, then 51–100 of 220 with the existing labour columns and edit buttons.
+
+### Measurement correction
+
+The App Router can commit a loading boundary before the content. Instrumentation now waits for the destination heading and includes document transfer bytes. Earlier measurements without `contentReady: true` may stop early on streamed loads; retain them as historical observations, not acceptance evidence. Re-baseline outstanding modules with the corrected instrument. Resource transfer numbers still cover the measured interval; `routeBytes` separately records the most recent matching RSC response, including a prior prefetch where available.
