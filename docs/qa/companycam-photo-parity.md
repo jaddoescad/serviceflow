@@ -241,3 +241,9 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Removed gallery Trash entry and ProjectPhotoTrash component, its loading/empty/recovery panel and unused client restore branch. Shortened single-photo confirmation. Retained underlying files, soft-trash storage and backend recovery capability; no database writes or deletions.
 - Commit d817dc8 deployed via GitHub: Vercel36RyakFUgXRWUJAJauiS2qpUE9Ud Ready37s. TypeScript/build passed. Canonical QA tab580656690 confirms no standalone Trash button or Photo trash panel, Photos(4), upload control present, and disposable icon viewer opens.
 - CompanyCam QA project menu inspected read-only. No standalone gallery trash interface observed. Continue deriving remaining controls from actual reference interactions; do not recreate an invented recovery panel elsewhere.
+
+## Upload recovery retirement race — 2026-09-15
+
+- Completed the pending IndexedDB fix: completion/clear writes a terminal marker in the same store; later status writes check it within their readwrite transaction. Delayed writes cannot restore retired file bytes to the recovery queue.
+- All11 storage tests passed, including both competing transaction orders, fresh IDs/other scopes, retained retry budgets, and direct raw-record verification that only key/retired remain (no File, filename, or metadata). TypeScript passed. The marker is intentionally retained to reject delayed writes; no new service or coordination layer added.
+- This fixes recovery resurrection only. Old deployed tabs unaware of markers and simultaneous active uploads are not fully coordinated. Live multi-tab upload acceptance remains outstanding; do not claim complete upload reliability.

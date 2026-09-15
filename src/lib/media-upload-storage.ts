@@ -23,8 +23,17 @@ export async function storeUploads(scope: string, items: UploadItem[]): Promise<
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(STORE, "readwrite");
       const store = transaction.objectStore(STORE);
-      for (const item of items) store.put({ ...item, scope, key: `${scope}/${item.id}`,
-        fileName: item.file.name, fileLastModified: item.file.lastModified } satisfies StoredUpload);
+      for (const item of items) {
+        const key = `${scope}/${item.id}`;
+        // Read and write in the same transaction: another tab's completion or
+        // clear must win over any delayed status write from this tab.
+        const existing = store.get(key);
+        existing.onsuccess = () => {
+          if (existing.result?.retired === true) return;
+          store.put({ ...item, scope, key,
+            fileName: item.file.name, fileLastModified: item.file.lastModified } satisfies StoredUpload);
+        };
+      }
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error ?? new Error("Upload recovery storage failed."));
       transaction.onerror = () => reject(transaction.error);
@@ -56,7 +65,11 @@ export async function forgetUploads(scope: string, ids: string[]): Promise<void>
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(STORE, "readwrite");
-      for (const id of ids) transaction.objectStore(STORE).delete(`${scope}/${id}`);
+      for (const id of ids) {
+        // Keep only a tiny terminal marker. No file bytes, names or scope index:
+        // retired uploads must neither recover nor rediscover an empty queue.
+        transaction.objectStore(STORE).put({key:`${scope}/${id}`,retired:true});
+      }
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error);
       transaction.onerror = () => reject(transaction.error);

@@ -60,3 +60,49 @@ test('recovery retains retry budget and backoff so reopening does not reset fail
  const [saved]=await loadUploads('retry-owner/jobs/one');
  assert.equal(saved.attempts,3);assert.equal(saved.retryAt,123456789);assert.equal(saved.id,'retrying');
 });
+
+
+test('late writes cannot resurrect completed or cleared recovery files',async()=>{
+ const scope='racing-user/jobs/one';
+ await storeUploads(scope,[photo('finished','uploading')]);
+ await forgetUploads(scope,['finished']);
+ await storeUploads(scope,[photo('finished','failed')]);
+ assert.deepEqual(await loadUploads(scope),[]);
+ assert.deepEqual(await listUploadScopes('racing-user'),[]);
+});
+
+test('retirement wins in either concurrent transaction order',async()=>{
+ for(const reverse of [false,true]) {
+  const scope=`concurrent-${reverse}/jobs/one`;
+  await storeUploads(scope,[photo('same','uploading')]);
+  const write=()=>storeUploads(scope,[photo('same','failed')]);
+  const retire=()=>forgetUploads(scope,['same']);
+  await Promise.all(reverse?[retire(),write()]:[write(),retire()]);
+  assert.deepEqual(await loadUploads(scope),[]);
+ }
+});
+
+test('retired IDs do not prevent a fresh upload or affect another project',async()=>{
+ await forgetUploads('retired-owner/jobs/one',['old']);
+ await storeUploads('retired-owner/jobs/one',[photo('old'),photo('new')]);
+ await storeUploads('retired-owner/jobs/two',[photo('old')]);
+ assert.deepEqual((await loadUploads('retired-owner/jobs/one')).map(item=>item.id),['new']);
+ assert.deepEqual((await loadUploads('retired-owner/jobs/two')).map(item=>item.id),['old']);
+});
+
+test('retirement removes the saved file bytes and metadata',async()=>{
+ const scope='cleanup-bytes/jobs/one';
+ await storeUploads(scope,[photo('done')]);
+ await forgetUploads(scope,['done']);
+ const db=await new Promise((resolve,reject)=>{
+  const request=indexedDB.open('serviceflow-photo-uploads',1);
+  request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+ });
+ try {
+  const record=await new Promise((resolve,reject)=>{
+   const request=db.transaction('files','readonly').objectStore('files').get(`${scope}/done`);
+   request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+  });
+  assert.deepEqual(record,{key:`${scope}/done`,retired:true});
+ } finally {db.close();}
+});
