@@ -176,3 +176,10 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Six model/history/geometry tests passed; Next.js production build and TypeScript passed.
 - Browser verification was attempted but the Mac is locked. This editor is not deployed or runtime-verified yet. Test drawing, moving, saving/reopening, conflict handling, modal focus, touch, and original downloads after unlock.
 - Gallery thumbnails and downloads still show original images, not rendered annotations. Annotated export and thumbnail representation remain outstanding.
+
+### Linked-photo follow-up while browser access is unavailable
+
+- Mac remains locked on the next continuation; no browser verification or deployment attempted beyond the access check.
+- Fixed linked-only viewer accessibility label so a photo outside the current loaded results is identified as a linked photo/video, never item0.
+- Direct-photo lookup now falls back to the uploader's employee name when imported creator metadata is absent, matching normal gallery semantics. It retains the same session client and RLS; only full_name is selected, and unavailable employee information remains null.
+- Read-only source fixture query confirmed a37b... has no creator_name and resolves uploaded_by to Jad Slim. Authenticated-role employee lookup succeeded inside a rolled-back transaction. TypeScript passed. Actual direct-link browser recheck remains pending.

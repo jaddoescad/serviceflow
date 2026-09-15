@@ -338,7 +338,7 @@ export function ProjectPhotosPanel({
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={`Photo gallery, image ${activeImageIndex + 1} of ${galleryItems.length}`}
+            aria-label={activeImageIndex>=0?`Photo gallery, ${activeImage.mediaType==='video'?'video':'photo'} ${activeImageIndex + 1} of ${galleryItems.length}`:`Photo gallery, linked ${activeImage.mediaType==='video'?'video':'photo'}`}
             className="flex h-full min-h-0 flex-col"
           >
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-4 py-3 sm:px-6">
