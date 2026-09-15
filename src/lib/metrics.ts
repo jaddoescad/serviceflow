@@ -267,6 +267,8 @@ export function payRateAt(index: PayRateIndex, userId: string | null, at: string
   return applicable;
 }
 
+export type JobWorkSummary = { projectId: string; hours: number; wages: number; unpricedHours: number; lastClockIn: string | null; name: string | null; assignedCount: number };
+
 /** Per-project logged hours joined with budgets. */
 export function rollupProjects(
   entries: TimeEntry[],
@@ -275,6 +277,7 @@ export function rollupProjects(
   assignments: Assignment[],
   payRates: EmployeePayRate[],
   now = Date.now(),
+  workSummary?: JobWorkSummary[],
 ): ProjectRollup[] {
   const budgetById = new Map(budgets.map((b) => [b.companycam_project_id, b]));
   const assignedById = new Map<string, number>();
@@ -310,6 +313,16 @@ export function rollupProjects(
     if (!nameById.has(id)) nameById.set(id, e.project_name);
     const prev = lastById.get(id);
     if (!prev || new Date(e.started_at) > new Date(prev)) lastById.set(id, e.started_at);
+  }
+
+  for (const summary of workSummary ?? []) {
+    const id = summary.projectId;
+    hoursById.set(id, summary.hours);
+    wagesById.set(id, summary.wages);
+    unpricedById.set(id, summary.unpricedHours);
+    assignedById.set(id, summary.assignedCount);
+    if (summary.lastClockIn) lastById.set(id, summary.lastClockIn);
+    if (!nameById.has(id) && summary.name) nameById.set(id, summary.name);
   }
 
   // A budget can outlive the active CompanyCam project it belonged to. Keep

@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
-import { Badge, Card, CardHeader, EmptyState, Field, Input } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Badge, Button, Card, CardHeader, EmptyState, Field, Input } from "@/components/ui";
 import { fmtMoney, fmtHours } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import {
   LABOUR_ALERT_PERCENT,
   budgetStatus,
-  summarizeLabour,
 } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
-import { compareJobsTableRows } from "@/lib/project-sort";
 import { AmountDialog } from "@/components/job-amount-dialog";
 
 type ProjectTableRow = ProjectRollup;
@@ -58,33 +57,45 @@ function labourShare(amountBeforeTax: number | null, cost: number): number | nul
 
 export function ProjectsTable({
   rows,
-  now,
+  totals, total, currentPage, query,
   canManage,
 }: {
   rows: ProjectTableRow[];
-  now: number;
+  totals: { overCount: number; readyToCloseCount: number };
+  total: number; currentPage: number; query: string;
   canManage: boolean;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(query);
   const [budgetFor, setBudgetFor] = useState<ProjectRollup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const filtered = useMemo(() => {
-    const matches = rows.filter((r) => {
-        if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
-        return true;
-      });
-    return matches.sort(compareJobsTableRows);
-  }, [rows, search]);
-
-  const totals = useMemo(() => summarizeLabour(rows, now), [rows, now]);
+  const router = useRouter();
+  const previousQuery = useRef(query);
+  useEffect(() => {
+    const previous = previousQuery.current;
+    previousQuery.current = query;
+    setSearch(value => value === previous ? query : value);
+  }, [query]);
+  function navigate(page: number, value: string) {
+    const params = new URLSearchParams();
+    if (value) params.set("q", value);
+    if (page > 1) params.set("page", String(page));
+    startTransition(() => router.replace(`/jobs${params.size ? `?${params}` : ""}`, { scroll: false }));
+  }
+  useEffect(() => {
+    if (search === query) return;
+    const timer = setTimeout(() => navigate(1, search), 300);
+    return () => clearTimeout(timer);
+  }, [search, query]);
+  const filtered = rows;
+  const totalPages = Math.max(1, Math.ceil(total / 50));
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
     setError(null);
     startTransition(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Action failed");
-      else done?.();
+      else { done?.(); router.refresh(); }
     });
   }
 
@@ -222,6 +233,10 @@ export function ProjectsTable({
             </table>
           </div>
         )}
+        {total > 0 ? <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3">
+          <span className="text-xs text-[var(--color-muted)]">{(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, total)} of {total}</span>
+          <div className="flex items-center gap-2"><Button size="sm" variant="subtle" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, query)}>Previous</Button><span className="text-xs">Page {currentPage} of {totalPages}</span><Button size="sm" variant="subtle" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, query)}>Next</Button></div>
+        </div> : null}
       </Card>
 
       {budgetFor ? (

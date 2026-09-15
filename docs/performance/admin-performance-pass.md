@@ -65,3 +65,21 @@ f999333 deployed successfully. Live contact detail for the previously observed L
 - Baseline warm-asset-cache document load/hydration: 1078, 666, 530, 593, 549 ms. No cold/cache-empty claim.
 - Build passed. New page footer uses generated reference docs/design/timesheets-pagination-reference.png and existing table styles. Refresh after successful mutations is explicit.
 - Jobs & Budgets aggregate work, option-list payload trimming, live edit verification, and 20-interaction acceptance remain outstanding.
+
+404a3bb deployed successfully. Live Timesheets verified page 1 (1–50 of 144), page 2 (51–100), empty search (0 entries, 0m), reset to first page, and Active status (two active records, 1–2 of 2). No real entries were edited. Full mutation/permission verification and post-release reload samples remain outstanding.
+
+## Jobs & Budgets work in progress
+
+- Additive get_job_work_summary migration 20260915182306 applied. Aggregates explicit clock bounds and effective-at-start employee rates, unpriced hours, last clock-in, assignment counts.
+- Local metrics optional summary input preserves existing rollup formulas; jobs route prepares 50-row server pages and filtered summary badges without downloading time-entry histories. Existing job sort comparator is reused.
+- Current implementation still retrieves project/budget lists for server-side joining; row-cap and parity tests must be completed before deployment. No Jobs & Budgets code release yet.
+- Production build passes for this prepared code. Need validate UTC rate/date and active durations, >1000 records, preserved budget precedence/amounts, aggregate parity against existing JS, then baseline/deploy/live checks.
+
+### Jobs & Budgets release verification
+
+- Replaced raw all-history entries/rates/assignments and all-project/all-budget downloads with authenticated database aggregates and a 50-row database page. Existing rollup display formulas remain in TypeScript; filtering, ordering, current-budget selection and full-result alert totals run in the database.
+- Fixture compares database hours/wages/unpriced hours/assignments to the existing calculation on 1,200 entries and checks all 24 pages of 1,200 projects without duplicates. Includes historical rate changes, active milliseconds, zero rates, missing rates, manual-budget precedence and empty search. Passed.
+- Authenticated production RPC execution: 32.033 ms in EXPLAIN ANALYZE. This is database execution, not end-to-end page timing. No index added.
+- Warm-asset baseline page loads captured separately from prefetched navigation. First visit 2,758 ms (not a controlled cold-cache measurement); reload samples recorded below.
+- Five warm-asset reload baseline samples: 827, 686, 675, 478, 661 ms (median 675 ms). Initial document transfer bytes are not yet captured by instrumentation; do not treat the zero cached-resource bytes as a zero-byte page.
+- Invoker RPC with authenticated role but no user sees zero records. Anonymous execute denied in fixture. No stored business data changed.
