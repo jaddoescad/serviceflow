@@ -20,7 +20,7 @@ export function PhotoTagPicker({value,options,onChange,disabled=false,allowCreat
     if(disabled||value.length>=30)return;
     onChange([...value,tag]);setQuery('');setActive(0);setOpen(false);input.current?.focus();
   }
-  return <div className="relative" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setOpen(false);}}>
+  return <div data-photo-tag-picker className="relative" onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setOpen(false);}}>
     <div className="flex min-h-11 flex-wrap items-center gap-1 rounded-md border border-slate-300 bg-white p-2 focus-within:border-blue-600">
       {value.map(tag=><span key={tag} className="inline-flex max-w-full items-center gap-1 rounded bg-slate-100 px-2 py-1 text-sm text-slate-700"><span className="truncate">{tag}</span><button type="button" aria-label={`Remove tag ${tag}`} disabled={disabled} onClick={()=>onChange(value.filter(item=>item!==tag))} className="px-1 text-slate-500">×</button></span>)}
       <input ref={input} autoFocus role="combobox" aria-label="Find tags" aria-autocomplete="list" aria-expanded={open&&!disabled} aria-controls={`${id}-list`} aria-activedescendant={open&&choices.length?`${id}-${highlighted}`:undefined} value={query} disabled={disabled} maxLength={60} placeholder={value.length?'':allowCreate?'Find tags or create them…':'Find tags…'} onFocus={()=>setOpen(true)} onChange={event=>{setQuery(event.target.value);setActive(0);setOpen(true);}} onKeyDown={event=>{

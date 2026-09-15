@@ -15,7 +15,7 @@ export function useLinkedPhoto(projectId:string,items:ProjectMediaItem[],canLeav
     function read() {
       const next=photoIdFromHash(window.location.hash);
       if(next!==current.current&&!canLeave()) {
-        window.history.replaceState(window.history.state,'',photoLink(window.location.pathname,window.location.search,current.current));
+        window.history.replaceState(null,'',photoLink(window.location.pathname,window.location.search,current.current));
         return;
       }
       current.current=next;setId(next);
@@ -26,7 +26,9 @@ export function useLinkedPhoto(projectId:string,items:ProjectMediaItem[],canLeav
   const select=useCallback((value:SetStateAction<string|null>)=>{
     const next=typeof value==='function'?value(current.current):value;
     current.current=next;setId(next);
-    window.history.replaceState(window.history.state,'',photoLink(window.location.pathname,window.location.search,next));
+    // Let Next.js synchronize its canonical URL. Reusing its internal history
+    // markers bypasses that synchronization and revalidation drops the fragment.
+    window.history.replaceState(null,'',photoLink(window.location.pathname,window.location.search,next));
   },[]);
   useEffect(()=>{
     if(!id||found)return;

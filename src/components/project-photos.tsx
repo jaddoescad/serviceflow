@@ -148,6 +148,7 @@ export function ProjectPhotosPanel({
 
     function onKeyDown(event: KeyboardEvent) {
       if ((event.target as Element)?.closest?.("[data-photo-editor]")) return;
+      if (event.key !== "Tab" && (event.target as Element)?.closest?.("[data-photo-tag-picker]")) return;
       const images=navigationItems.current;
       if (event.key === "Escape") {
         if(document.fullscreenElement)return;
