@@ -1,122 +1,109 @@
-# Admin performance pass — in progress
+# ServiceFlow admin performance report
 
-Scope: ServiceFlow admin only. Full user plan remains active: measurement, Contacts/project details, Jobs & Budgets/Timesheets, Photos, Crew/Overview, incremental deployment and complete verification.
+Date: 2026-09-15. Production: https://serviceflow-admin.vercel.app.
+Functional release: `eadb2e8`; diagnostic resource-buffer correction: `495322c`.
 
-## Measurement baseline (2026-09-15)
+The read-path changes are deployed through GitHub → Vercel. Mobile and Ottawa Painters were not changed. Historical business data was not rewritten. Verification found significant improvements, with occasional slow responses and incomplete cold-baseline evidence described below. This is not a claim that every measurement requirement or every latency target is universally satisfied.
 
-Production instrumentation commit: af8650f. Opt in by opening a route with `?__perf=1`. Records appear in browser console as `SERVICEFLOW_PERF`. No telemetry is transmitted. Measures actual click to route commit plus two animation frames; it excludes automation overhead. Resource transfer totals currently describe resources begun during the interval, not earlier prefetch bytes. Cold load and non-prefetched samples remain to be collected. Initial load measurements end at client hydration; do not label them paint/LCP.
+## Shipped changes
 
-Earlier reported 3-second sidebar timings included automation overhead and are superseded by these browser-native measurements. Prefetch/cached navigation does not establish uncached server performance.
-
-Five baseline sidebar runs, milliseconds (same authenticated Chrome session):
-
-| Module | Samples |
+| Module | Change |
 |---|---|
-| Deals | 43, 24, 29, 29, 200 |
-| Contacts | 39, 37, 31, 39, 35 |
-| Jobs & Budgets | 32, 28, 36, 28, 36 |
-| Timesheets | 62, 57, 61, 65, 59 |
-| Crew | 36, 45, 43, 52, 44 |
-| Photos | 41, 35, 33, 33, 32 |
-| Overview | 88, 42, 41, 31, 182 |
+| Contacts | Database search and 50-row pages, canonical project counts/latest activity, complete multi-project relationships. Contact details join related records in the database rather than building oversized UUID URLs. |
+| Project details | Budgets and assignments scoped to the selected project; two image previews and separate accurate media counts; previews stream independently. Staff authorization runs alongside the RLS-protected presentation lookup. |
+| Jobs & Budgets | Database summaries and 50-row pages replace all-history downloads. Full filtered totals, current-budget selection, ordering, historical effective rates, zero/missing rates, rounding and active clocks preserved. |
+| Timesheets | Database search/filters and 50-row pages, full-filter totals, recent 90-day scope plus active entries, compact dropdown options. Successful edits refresh rows and totals. |
+| Photos | 60-record cursor batches instead of 600 initial records; filters before pagination; UUID tie-breaker; thumbnails in galleries and originals in viewer; obsolete requests cancelled and stale responses ignored. |
+| Crew | Purpose-specific summary; individual rate history loads when its editor opens. |
+| Overview | Purpose-specific summary; map/location data loads independently. Scoped location reads paginate past API limits. |
+| Navigation | Browser-native opt-in timing of click-to-content, excluding automation execution time. No broad prefetch or shared private-response cache introduced. |
 
-All samples had a prior completed RSC request classified as prefetched except the first Deals sample (router-cached, no matching resource). All recorded zero newly completed request bytes during the click interval. One Deals initial load was 2383ms to hydration and 221379 resource transfer bytes; insufficient for a cold-load distribution. A prior RSC response is not proof of a current request cache hit; inspect this classification before final reporting.
+All new RPCs use caller rights and authenticated execution. The photo view uses security-invoker semantics. Browser code receives no service credentials. Database changes are additive; reverting code does not require undoing data migrations.
 
-## Prepared changes (not yet deployed)
+## Navigation measurements
 
-- Project budget and assignment queries accept a project ID and apply it in PostgREST instead of fetching every job and filtering afterward.
-- Budget projection reduced to fields required by existing selection and mapping.
-- Two fixture tests pass (`node --test scripts/project-scoped-queries.test.mjs`): target job beyond a simulated 1000-row API limit; budget precedence/closed budgets/task exclusion/unchanged values/missing ID.
-- Production build passes. Live project verification and deployment still pending.
+Browser-native click → destination heading mounted → two animation frames, visible Chrome tab. This measures primary content readiness, not every thumbnail/map tile or LCP. Median uses the two middle observations; p95 uses nearest rank. Samples are production observations in one session, not a guarantee for every device/network.
 
-## Remaining work
+Primary acceptance sample: 20 sidebar interactions per module on `93c8a5c`, followed by 20 recorded detail interactions on `eadb2e8`.
 
-- Complete baseline cold/warm/non-prefetched measurements and request/byte accounting; database plans and timings.
-- Contacts database pagination/search/counts/latest activity preserving canonical semantics; contact detail media scoping/defer.
-- Job list exact aggregate parity, paginated jobs; Timesheets server filters/pages/full-filter totals; edit refresh tests.
-- Photo cursor batching and filter/search parity; independent thumbnail failure behavior.
-- Crew summaries and lazy rate history; Overview summaries and deferred map details.
-- >1000-record and authorization checks, mutation verification on QA fixtures only, staged production deployments, at least 20 warm interactions/module after changes, final requirement-by-requirement audit.
+| Module | Median | p95 | Maximum |
+|---|---:|---:|---:|
+| Deals | 99 ms | 432 ms | 694 ms |
+| Contacts | 441 ms | 996 ms | 1,138 ms |
+| Jobs & Budgets | 593 ms | 1,300 ms | 3,545 ms |
+| Timesheets | 654 ms | 1,752 ms | 1,766 ms |
+| Photos | 656 ms | 1,584 ms | 4,094 ms |
+| Crew | 398 ms | 1,065 ms | 1,899 ms |
+| Overview | 399 ms | 574 ms | 3,090 ms |
+| Contact detail | 450 ms | 1,121 ms | 1,818 ms |
+| Project detail | 556 ms | 1,822 ms | 2,688 ms |
 
-Unrelated project-note cleanup files must remain excluded from performance commits.
+Each primary sample meets median ≤1 second and p95 ≤2 seconds. Individual outliers remain. Five additional request-accounting runs caught Contacts at 3,449 ms and Overview at 2,181 ms; combining the 25 sidebar observations puts Overview p95 at 2,181 ms, above target. Do not describe the entire rollout as uniformly meeting the target.
 
-## Contacts release preparation
+Project-detail p95 before the final parallel-read adjustment was 3,147 ms (median 758 ms); afterward it was 1,822 ms (median 556 ms). These are separate live windows, so timing variability contributes to the difference.
 
-- Added get_contacts_page invoker-rights RPC; deployed additive migration 20260915180938.
-- 1485 visible customer contacts; first page 50, final page 35; known-name search 1, absent-name search 0 under authenticated staff role.
-- Local PGlite test covers 1200 customers, separate projects, canonical archived fallback, hidden jobs, address search, boundaries, and non-overlapping pages. Build passed.
-- Before release Contacts document load/hydration samples with warm browser asset cache: 537, 672, 502, 447, 563 ms. These are NOT cold browser/server measurements. Resource-only transfer bytes were zero; document bytes are not yet included by the instrumentation.
+### Reload observations and improvement limits
 
-## First Contacts/project-scoping release
+Five after-release full navigations with warm browser assets (not controlled cold loads):
 
-327543c deployed successfully; live Contacts pages show 1–50 and 51–100 of 1485; search from page two returned the correct contact and reset pagination. Project-scoped queries released with this commit; live labour verification remains pending.
+| Module | After samples, ms | Median | Earlier baseline interpretation |
+|---|---|---:|---|
+| Contacts | 1653, 3314, 592, 710, 748 | 748 | Earlier 537 ms median used the incomplete content-ready instrument; no valid improvement claim. |
+| Jobs & Budgets | 886, 653, 467, 707, 528 | 653 | Earlier 675 ms median used the incomplete instrument; no valid improvement claim. |
+| Timesheets | 907, 601, 576, 1182, 844 | 844 | Earlier 593 ms median used the incomplete instrument; no valid improvement claim. |
+| Photos | 450, 615, 485, 484, 620 | 485 | Content-ready baseline 2294 ms median: about 79% lower in this small sample. Baseline was already after the order index. |
+| Crew | 663, 491, 574, 431, 521 | 521 | Earlier 633 ms median mixed initial load and reloads; suggestive, not a controlled comparison. |
+| Overview | 352, 349, 314, 270, 496 | 349 | Earlier 1397 ms median included a first new-assets load; suggestive, not a controlled comparison. |
 
-Five distinct post-release Contacts reload/hydration samples (warm asset cache): 497, 1584, 379, 411, 775 ms. One duplicate console entry was excluded. Median 497ms versus baseline 537ms; the 1584ms outlier prevents claiming uniformly faster loads. New RPC measured 43.316ms under authenticated role. Cold scenarios, full document bytes, and 20-interaction acceptance runs remain outstanding.
+A first new-release Overview load was 1,881 ms with 331,569 measured bytes; cache/server coldness was not controlled. Controlled five-run cold baselines, five matched prefetch/non-prefetch before/after scenarios for every release, and equivalent before/after detail baselines were not completed. Earlier page timing omitted streamed content or document bytes; those observations remain in the historical notes but are excluded from acceptance claims.
 
-Contact-detail previews are now prepared locally: shared two-image/count query, streamed separately from contact/project cards. Not yet deployed or live-tested.
+### Requests, bytes and server/database time
 
-f999333 deployed successfully. Live contact detail for the previously observed Lydia record retained its project link and exact one-photo count; thumbnail DOM confirmed loaded with `preview=1`. No contact or project data was changed for this verification. Independent media failure behavior, larger contact histories, and complete acceptance interaction counts remain pending.
+The first long session exhausted the browser's default resource-timing buffer. Its click-to-content durations remain usable, but later zero-request and prefetch classifications do not. `495322c` enlarges the opt-in buffer; five follow-up runs per sidebar module verify request accounting.
 
-## Timesheets preparation
+Typical warmed-assets, uncached route navigation after the first visit used one page-data request:
 
-- Additive get_timesheets_page RPC applied; caller RLS retained. Fifty entry rows, exact full-filter total hours/count, and global active count within the existing recent-or-active scope.
-- Production read comparison at 2026-09-15T18:00:00Z: 144 total, 50 returned, counts and hours match the full SQL result.
-- PGlite fixture passes with 1200 completed entries plus an old active shift, older completed exclusion, crew/job/name/status filters, negative-duration protection and unchanged totals between pages.
-- Baseline warm-asset-cache document load/hydration: 1078, 666, 530, 593, 549 ms. No cold/cache-empty claim.
-- Build passed. New page footer uses generated reference docs/design/timesheets-pagination-reference.png and existing table styles. Refresh after successful mutations is explicit.
-- Jobs & Budgets aggregate work, option-list payload trimming, live edit verification, and 20-interaction acceptance remain outstanding.
+| Module | RSC response bytes | Typical observed RSC duration |
+|---|---:|---:|
+| Contacts | ~4,874 | 269–550 ms, plus 3,356 ms outlier |
+| Jobs & Budgets | ~11,960 | 220–285 ms |
+| Timesheets | ~21,675 | 240–280 ms, plus 1,459 ms outlier |
+| Photos | ~12,410 | 409–809 ms, first 1,231 ms |
+| Crew | ~2,220 | 207–255 ms |
 
-404a3bb deployed successfully. Live Timesheets verified page 1 (1–50 of 144), page 2 (51–100), empty search (0 entries, 0m), reset to first page, and Active status (two active records, 1–2 of 2). No real entries were edited. Full mutation/permission verification and post-release reload samples remain outstanding.
+Deals used cached/prefetched data after the first visit (~6,314-byte RSC). Overview starts work before the click and streams map data, so its route duration is not equivalent to primary content readiness. Initial visits also load component chunks. Byte totals cover completed measured resources, not all later images/map traffic. An unfinished streamed document can report 300 bytes; that is not its final size. Prefetch classification indicates a prior matching completed resource, not proof that all current content was prefetched.
 
-## Jobs & Budgets work in progress
+Authenticated database execution observations (distinct from network/server/page time): Contacts 43.3 ms; Jobs summary page 32.0 ms; Crew 5.0 ms; Overview 14.3 ms. Photo batch initially 2845 ms; query-plan evidence justified the global media order index, then per-request plans reduced batch RPC from 175 ms to 12.7 ms and filter summary from 321 ms to 154 ms. No speculative indexes were added.
 
-- Additive get_job_work_summary migration 20260915182306 applied. Aggregates explicit clock bounds and effective-at-start employee rates, unpriced hours, last clock-in, assignment counts.
-- Local metrics optional summary input preserves existing rollup formulas; jobs route prepares 50-row server pages and filtered summary badges without downloading time-entry histories. Existing job sort comparator is reused.
-- Current implementation still retrieves project/budget lists for server-side joining; row-cap and parity tests must be completed before deployment. No Jobs & Budgets code release yet.
-- Production build passes for this prepared code. Need validate UTC rate/date and active durations, >1000 records, preserved budget precedence/amounts, aggregate parity against existing JS, then baseline/deploy/live checks.
+Remaining bottleneck: intermittent end-to-end response delays remain much larger than these database execution times. The follow-up Contacts outlier spent 3356 of 3449 ms in its RSC response. Streamed routes and authentication/network work need separate trace attribution before choosing another optimization. No unsupported root cause or cold-start claim is made.
 
-### Jobs & Budgets release verification
+## Correctness and live verification
 
-- Replaced raw all-history entries/rates/assignments and all-project/all-budget downloads with authenticated database aggregates and a 50-row database page. Existing rollup display formulas remain in TypeScript; filtering, ordering, current-budget selection and full-result alert totals run in the database.
-- Fixture compares database hours/wages/unpriced hours/assignments to the existing calculation on 1,200 entries and checks all 24 pages of 1,200 projects without duplicates. Includes historical rate changes, active milliseconds, zero rates, missing rates, manual-budget precedence and empty search. Passed.
-- Authenticated production RPC execution: 32.033 ms in EXPLAIN ANALYZE. This is database execution, not end-to-end page timing. No index added.
-- Warm-asset baseline page loads captured separately from prefetched navigation. First visit 2,758 ms (not a controlled cold-cache measurement); reload samples recorded below.
-- Five warm-asset reload baseline samples: 827, 686, 675, 478, 661 ms (median 675 ms). Initial document transfer bytes are not yet captured by instrumentation; do not treat the zero cached-resource bytes as a zero-byte page.
-- Invoker RPC with authenticated role but no user sees zero records. Anonymous execute denied in fixture. No stored business data changed.
-- Jobs release `a16fe47`: Vercel Ready; canonical site renders 1–50 of 220, then 51–100 of 220 with the existing labour columns and edit buttons.
+- Eight test files pass, including >1,000-record fixtures: 1,200 contacts/related projects, 1,200 jobs/entries/employees, 1,205 cursor-paged media records, and scoped location/assignment reads beyond API limits.
+- Verified canonical project selection, separate projects per contact, complete pagination without duplicates, empty searches, filters, full-result totals, historical/zero/missing rates, active milliseconds, budget precedence, and duration-segment parity.
+- Contact links render with a stalled or rejected photo-preview promise. Live contact/project links, preview counts and photo sections render correctly.
+- Production Timesheets page boundaries, empty/active filters, Jobs page boundaries, Photos 60→120 distinct items, rapid filter changes, thumbnails/original viewer, Crew lazy rate editor and Overview sections verified.
+- A dedicated temporary Hermes QA entry changed 30→45 minutes through the UI; both row and full filtered total refreshed. A QA budget save refreshed its row. Exact temporary entry/job/budget records were cleaned up; the existing QA employee and real records were unchanged.
+- Fixed-time Overview comparison matched existing JavaScript totals and on-site percentage on 44 production entries.
+- All 13 new functions were checked as invoker-rights and not executable by anon. Anonymous Photos API redirects to login. Restricted-RLS fixtures and no-user authenticated query checks pass.
+- Production builds succeeded. Intended changes were committed separately; unrelated project-note/profile work remains uncommitted and excluded.
 
-### Measurement correction
+Tests: `contacts-page.test.mjs`, `contact-preview-isolation.test.mjs`, `job-work-summary.test.mjs`, `timesheets-page.test.mjs`, `photo-feed-page.test.mjs`, `crew-summary.test.mjs`, `overview-summary.test.mjs`, `project-scoped-queries.test.mjs` under `scripts/`.
 
-The App Router can commit a loading boundary before the content. Instrumentation now waits for the destination heading and includes document transfer bytes. Earlier measurements without `contentReady: true` may stop early on streamed loads; retain them as historical observations, not acceptance evidence. Re-baseline outstanding modules with the corrected instrument. Resource transfer numbers still cover the measured interval; `routeBytes` separately records the most recent matching RSC response, including a prior prefetch where available.
+## Rollback and unresolved acceptance items
 
-### Photos baseline and prepared release
+Revert individual code commits through the same GitHub production path; retain additive RPCs/index/view. No destructive schema/data migration is necessary for rollback. Main functional release sequence: `327543c`, `f999333`, `404a3bb`, `a16fe47`, `ae09ed8`, `5cd2af7`, `49e2597`, `0b10bc1`, `93c8a5c`, `eadb2e8`.
 
-- Corrected content-ready warm-asset baseline: 1,377, 1,064, 2,294, 3,711, 5,359 ms; median 2,294 ms. These were measured after adding the order index but before replacing the 600-row UI. Not a pre-index end-to-end baseline.
-- `get_photo_feed_page` first EXPLAIN: 2,845 ms. Underlying scan sorted 7,713 visible media rows. Added `(captured_at DESC NULLS LAST, created_at DESC, id DESC)` index; RPC then 175 ms. Existing indexes began with job/lead and did not cover the global order.
-- Full filtered count and filter choices stay separate from 60-item cursor batches. Query fixture traverses 1,205 records with identical timestamps and null capture dates without loss/duplicates; media filters run before pagination; invoker view/RPC respects restricted RLS. Passed.
-- Gallery images use the existing thumbnail endpoint; viewer uses originals. Video bytes load on demand. Obsolete filter requests abort and cannot overwrite newer state.
-- Photos release `ae09ed8` is Ready on Vercel. Live page shows 60 images, all 60 with thumbnail URLs and loaded image dimensions; total is 7,713. Rapid video→image filters exercised; full batch/filter verification continues.
+Outstanding evidence: controlled cold-load and fully matched before/after scenarios, complete post-stream transfer sizes, and repeated confirmation of tail latency across environments. Overview's combined 25-run p95 misses the target; occasional >2-second visits remain elsewhere. These are measurement/latency limitations, not failed data-copy or calculation checks.
 
-### Crew prepared release
+## Raw primary navigation samples (ms)
 
-- Replaced time-entry, assignment and rate-history downloads with a compact invoker summary. Rate history loads only for the opened editor. Existing actions remain authoritative; success refreshes summary rows.
-- Fixture: 1,200 employees, 1,200 shifts/assignments, old active shift, excluded old completed shift, future rate and scoped history all pass. Authenticated live summary execution 5.023 ms.
-- Pre-release content-ready observations: 744, 633, 1,655, 630, 529 ms (median 633 ms). First sample is prior initial load, remaining samples warm-asset reloads; not a controlled cold run.
-- Photos load-more verified: 120 distinct thumbnail URLs after second batch. Five post-release content-ready warm-asset loads: 2,626, 1,577, 1,586, 1,619, 1,754 ms; median 1,619 ms versus 2,294 ms baseline (~29% lower). This is not the 20-interaction navigation acceptance test.
-- Crew `5cd2af7` is Ready on Vercel.
-
-### Overview prepared release
-
-- Replaced raw entries/rates/budgets/assignments with a purpose-specific summary, chart series, current shifts, the existing seven activity days, and six off-site entries. Map data starts within its own streamed boundary; location failures no longer block the primary page. Map project reads are scoped and location history is paged past API row limits.
-- Fixture verifies 1,200 shifts, complete activity counts, chart parity, missing/overlapping/invalid segments, millisecond bounds and active clocks against existing JavaScript. Live fixed-time comparison on 44 records also matches on-site percentage and both weekly totals. No stored data changed.
-- Overview baseline content-ready samples: 3,067, 1,397, 1,473, 896, 1,357 ms (median 1,397 ms). First includes new deployment assets; cold-server state was not controlled.
-- Timesheet option props now contain only labels/IDs, and project option queries page beyond API row limits.
-
-### End-to-end verification and remaining latency
-
-- Overview `49e2597` and contact relationship fix `0b10bc1` are Ready; the live Overview retains all summary/chart/shift/map sections. Contact relationships now use a database join and pass a 1,200-related-project fixture without an oversized UUID URL.
-- Dedicated temporary Hermes QA job/time entry created for edit verification. A browser correction changed 30m→45m in both the row and complete filtered total; database clock-out matched. Job amount save refreshed the row and labour allowance. Lazy pay-rate editor loaded the QA employee's empty history. Temporary entry, its two generated budget versions, and job were removed by exact ID; existing employee retained. No real operational/historical amounts edited.
-- Anonymous Photos API redirects to login (307). New functions remain invoker-rights; security advisor reports no warning on these new functions/view. Existing unrelated sync/legacy function advisories were not changed.
-- Browser acceptance remains in progress: early non-prefetched visits exposed multi-second outliers; they are not hidden behind successful builds or DB timings. Added data-fetch, route-duration and commit/frame-wait diagnostics. Examples: Timesheets initial data fetch 807ms; Photos fetch 1,475ms / route 1,797ms.
-- Root cause found in photo optional-filter generic plans: indexed literal query 4.7ms versus RPC 175ms. Per-request plans retain RLS and reduce batch RPC to 12.7ms; full filter-summary RPC reduced from 321ms to 154ms. The photo fixture still traverses 1,205 rows with correct filters and RLS.
-- Prepared final read optimization: Timesheet dropdowns use a compact database result (tested with 1,200 jobs), and Photos authorizes in parallel with RLS-protected reads. Full browser timing reruns follow deployment.
+- Deals: 109,95,99,251,694,79,107,66,95,114,137,432,81,98,80,64,89,65,119,120
+- Contacts: 817,777,594,460,677,390,397,416,400,609,1138,409,372,996,601,419,422,658,395,418
+- Jobs: 627,710,439,852,1300,535,3545,542,529,456,687,691,457,436,579,437,581,604,709,824
+- Timesheets: 1752,550,732,1766,1093,671,1322,425,752,637,448,712,423,1090,699,488,627,433,446,456
+- Photos: 1584,604,565,1272,682,615,4094,604,581,592,596,724,683,717,796,594,1506,1120,569,629
+- Crew: 450,864,358,1003,397,397,1899,342,351,357,351,399,443,437,359,430,437,1065,359,370
+- Overview: 343,441,412,522,547,3090,571,387,394,393,432,193,348,574,398,399,394,522,381,393
+- Contact detail after final release: 475,1121,651,316,237,563,345,553,1818,209,284,294,440,339,231,612,472,290,459,477
+- Project detail after final release: 643,620,733,616,1772,1822,2688,438,1150,404,457,407,380,500,630,415,580,390,532,420
