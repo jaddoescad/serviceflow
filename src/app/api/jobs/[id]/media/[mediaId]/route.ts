@@ -43,7 +43,10 @@ async function proxyMedia(
   // asking Cloudflare for bytes.
   // Supabase RLS also confirms the signed-in user may see the row.
   const supabase = await createClient();
-  const { data: media, error } = await supabase
+  const trash = new URL(request.url).searchParams.get('view') === 'trash';
+  const { data: media, error } = trash ? await supabase.rpc('get_photo_trash',{
+    requested_project_id:projectId,requested_media_id:mediaId,
+  }).maybeSingle() : await supabase
     .from("job_media")
     .select("id")
     .eq("id", mediaId)
@@ -55,14 +58,16 @@ async function proxyMedia(
   if (!workerUrl) return new Response("Media service unavailable", { status: 503 });
 
   const range = request.headers.get("range");
-  const upstream = await fetch(`${workerUrl}/v1/media/${encodeURIComponent(mediaId)}`, {
+  let upstream: Response;
+  try { upstream = await fetch(`${workerUrl}/v1/media/${encodeURIComponent(mediaId)}${trash?'/trash':''}`, {
     method: headOnly ? "HEAD" : "GET",
     headers: {
       Authorization: `Bearer ${token}`,
       ...(range ? { Range: range } : {}),
     },
     cache: "no-store",
-  });
+    signal: AbortSignal.timeout(30000),
+  }); } catch { return new Response('Media service unavailable. Try again.',{status:503}); }
 
   if (!upstream.ok && upstream.status !== 206) {
     return new Response(upstream.status === 404 ? "Not found" : "Media unavailable", {
@@ -81,7 +86,7 @@ async function proxyMedia(
 
   const headers = new Headers({
     "Content-Type": contentType,
-    "Cache-Control": "private, max-age=300",
+    "Cache-Control": "private, no-cache",
     "X-Content-Type-Options": "nosniff",
   });
   for (const name of ["accept-ranges", "content-length", "content-range", "etag"]) {

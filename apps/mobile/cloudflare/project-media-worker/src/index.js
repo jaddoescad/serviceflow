@@ -24,7 +24,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Authorization, Content-Type, Range, x-media-type, x-file-size, x-original-filename, x-media-width, x-media-height, x-media-duration-ms, x-captured-at",
+    "Authorization, Content-Type, Range, x-media-type, x-file-size, x-original-filename, x-media-width, x-media-height, x-media-duration-ms, x-captured-at, x-upload-id, x-filename-encoding",
   "Access-Control-Expose-Headers":
     "ETag, Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Content-Type",
   "Access-Control-Max-Age": "86400",
@@ -143,12 +143,13 @@ function hasValidConfiguration(env) {
 
 // Resolve a job_media row visible to this caller. RLS makes "not yours" and
 // "does not exist" both look like an empty result, which is what we want.
-async function fetchMediaRow(env, token, mediaId) {
+async function fetchMediaRow(env, token, mediaId, trash = false) {
   const response = await supabaseRest(
     env,
     token,
-    `/job_media?id=eq.${mediaId}&select=*&limit=1`,
-    { headers: { Accept: "application/json" } },
+    trash ? '/rpc/get_photo_trash' : `/job_media?id=eq.${mediaId}&select=*&limit=1`,
+    { headers: { Accept: "application/json", ...(trash ? {"Content-Type":"application/json"} : {}) },
+      ...(trash ? {method:"POST",body:JSON.stringify({requested_media_id:mediaId})} : {}) },
   );
   if (response.status === 401 || response.status === 403) {
     return { status: 401, row: null };
@@ -265,10 +266,34 @@ async function handleUpload(request, env, projectKind, projectId) {
   const denied = await assertProjectAccess(env, token, projectKind, projectId);
   if (denied) return denied;
 
-  const mediaId = crypto.randomUUID();
+  // Stable ID per logical file; callers without it retain the legacy behavior.
+  const uploadId = request.headers.get("x-upload-id");
+  if (uploadId && !UUID_PATTERN.test(uploadId)) return errorResponse(400, "Invalid upload id.");
+  const mediaId = uploadId || crypto.randomUUID();
+  let rawFilename = request.headers.get("x-original-filename");
+  if (request.headers.get("x-filename-encoding") === "uri") {
+    try { rawFilename = decodeURIComponent(rawFilename || ""); }
+    catch { return errorResponse(400, "Invalid filename encoding."); }
+  }
+  const originalFilename = sanitizeFilename(rawFilename);
+  function sameUpload(row) {
+    return row.uploaded_by === uploadedBy &&
+      row[projectKind === "lead" ? "lead_id" : "job_id"] === projectId &&
+      row.mime_type === contentType && Number(row.byte_size) === contentLength &&
+      (row.original_filename || null) === originalFilename;
+  }
+  if (uploadId) {
+    const existing = await fetchMediaRow(env, token, mediaId);
+    if (existing.status !== 200) return errorResponse(503, "Could not check upload status. Retry with the same upload id.");
+    if (existing.row) return sameUpload(existing.row)
+      ? jsonResponse(200, existing.row)
+      : errorResponse(409, "Upload id is already used for another file.");
+  }
   const objectPrefix = projectKind === "lead" ? "leads" : "jobs";
-  const objectKey = `${objectPrefix}/${projectId}/${mediaId}.${mediaInfo.extension}`;
-  const originalFilename = sanitizeFilename(request.headers.get("x-original-filename"));
+  // Isolated attempt objects prevent a losing concurrent request from deleting
+  // or overwriting the object referenced by the winning database row.
+  const objectId = uploadId ? `${mediaId}~${crypto.randomUUID()}` : mediaId;
+  const objectKey = `${objectPrefix}/${projectId}/${objectId}.${mediaInfo.extension}`;
 
   let object;
   try {
@@ -322,32 +347,38 @@ async function handleUpload(request, env, projectKind, projectId) {
     body: JSON.stringify(insertBody),
   });
 
-  if (!insert.ok) {
-    // Keep storage consistent with metadata: no orphaned R2 objects.
-    await env.MEDIA_BUCKET.delete(objectKey).catch(() => {});
-    if (insert.status === 401 || insert.status === 403) {
-      return errorResponse(403, "Not allowed to add media to this project.");
-    }
-    if (insert.status === 409) return errorResponse(409, "Duplicate media upload.");
-    return errorResponse(502, "Saving media details failed. Try again.");
-  }
-
-  const rows = await insert.json().catch(() => null);
+  const rows = insert.ok ? await insert.json().catch(() => null) : null;
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row) {
+    // A network error can follow a DB commit. Resolve before removing bytes.
+    if (uploadId || insert.status >= 500 || insert.ok) {
+      const committed = await fetchMediaRow(env, token, mediaId);
+      if (committed.status !== 200) return errorResponse(503, "Upload confirmation unavailable. Retry with the same upload id.");
+      if (committed.row) {
+        if (committed.row.object_key !== objectKey) await env.MEDIA_BUCKET.delete(objectKey).catch(() => {});
+        return sameUpload(committed.row)
+          ? jsonResponse(200, committed.row)
+          : errorResponse(409, "Upload id is already used for another file.");
+      }
+    }
+    // A timed-out upstream transaction may still commit after the read above.
+    // Retain this attempt for reconciliation instead of risking a broken photo.
+    if (insert.status >= 500 || insert.ok) return errorResponse(503, "Upload confirmation unavailable. Retry with the same upload id.");
     await env.MEDIA_BUCKET.delete(objectKey).catch(() => {});
+    if (insert.status === 401 || insert.status === 403) return errorResponse(403, "Not allowed to add media to this project.");
+    if (insert.status === 409) return errorResponse(409, "Duplicate media upload.");
     return errorResponse(502, "Saving media details failed. Try again.");
   }
 
   return jsonResponse(201, row);
 }
 
-async function handleMediaFetch(request, env, mediaId, { headOnly }) {
+async function handleMediaFetch(request, env, mediaId, { headOnly, trash = false }) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
   if (!UUID_PATTERN.test(mediaId)) return errorResponse(400, "Invalid media id.");
 
-  const { status, row } = await fetchMediaRow(env, token, mediaId);
+  const { status, row } = await fetchMediaRow(env, token, mediaId, trash);
   if (status === 401) return errorResponse(401, "Not authorized.");
   if (status !== 200) return errorResponse(502, "Could not verify media access.");
   if (!row) return errorResponse(404, "Media not found.");
@@ -636,23 +667,24 @@ async function handleMediaDelete(request, env, mediaId) {
   if (status !== 200) return errorResponse(502, "Could not verify media access.");
   if (!row) return errorResponse(404, "Media not found.");
 
-  const deletion = await supabaseRest(env, token, `/job_media?id=eq.${mediaId}`, {
-    method: "DELETE",
-    headers: { Accept: "application/json", Prefer: "return=representation" },
+  const deletion = await supabaseRest(env, token, '/rpc/set_photo_trash', {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type":"application/json" },
+    body: JSON.stringify({requested_project_id:row.job_id||row.lead_id,
+      requested_media_id:mediaId,requested_trashed:true,
+      expected_revision:row.source_metadata?.photo_trash_revision||null,
+      requested_revision:crypto.randomUUID()}),
   });
   if (deletion.status === 401 || deletion.status === 403) {
     return errorResponse(403, "Not allowed to delete this media.");
   }
   if (!deletion.ok) return errorResponse(502, "Deleting media details failed. Try again.");
-  const deletedRows = await deletion.json().catch(() => null);
-  if (!Array.isArray(deletedRows) || !deletedRows.length) {
-    // RLS filtered the delete: the caller can see the row but not remove it.
-    return errorResponse(403, "Not allowed to delete this media.");
+  const details = await deletion.json().catch(() => null);
+  if (!details?.photo_trashed_at) {
+    return errorResponse(502, "Could not confirm this photo was moved to trash.");
   }
-
-  await env.MEDIA_BUCKET.delete(row.object_key).catch(() => {});
-  // Remove any cached still frame too, so deleting a video leaves nothing behind.
-  await env.MEDIA_BUCKET.delete(thumbnailObjectKey(row.object_key)).catch(() => {});
+  // Keep originals and derived previews. Managers can restore the same row
+  // and storage key; no R2 operation belongs in a trash request.
   return new Response(null, { status: 204, headers: withCors() });
 }
 
@@ -730,6 +762,11 @@ export default {
       return handleMediaThumbnail(request, env, decodeURIComponent(thumbnailMatch[1]));
     }
 
+    const trashMatch = pathname.match(/^\/v1\/media\/([^/]+)\/trash$/);
+    if (trashMatch) {
+      if (!["GET","HEAD"].includes(method)) return errorResponse(405,"Method not allowed.");
+      return handleMediaFetch(request,env,decodeURIComponent(trashMatch[1]),{headOnly:method==="HEAD",trash:true});
+    }
     const mediaMatch = pathname.match(/^\/v1\/media\/([^/]+)$/);
     if (mediaMatch) {
       const mediaId = decodeURIComponent(mediaMatch[1]);

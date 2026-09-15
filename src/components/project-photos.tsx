@@ -3,7 +3,12 @@
 import { SITE_NAME } from "@/lib/site-brand";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PhotoDetailsEditor } from "@/components/photo-details-editor";
+import { PhotoTrashAction, ProjectPhotoTrash } from "@/components/project-photo-trash";
+import { useRouter } from "next/navigation";
+import { useGalleryPages } from "@/lib/use-gallery-pages";
+import type { GalleryPage, GalleryFilters } from "@/lib/gallery-page";
 import { ProjectMediaUpload } from "@/components/project-media-upload";
 import { ProjectProfilePanel } from "@/components/project-profile-panel";
 import { Card } from "@/components/ui";
@@ -71,35 +76,52 @@ export function ProjectPhotosPanel({
   contact,
   description,
   notes,
-  media,
+  galleryPage,
   isLead,
 }: {
   projectId: string;
   contact: ProjectContact;
   description: string | null;
   notes: string | null;
-  media: ProjectMediaItem[];
+  galleryPage: GalleryPage;
   isLead: boolean;
 }) {
-  const imageItems = media.filter((item) => item.mediaType === "image");
-  const imageIndexById = new Map(imageItems.map((item, index) => [item.id, index]));
-  const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const router=useRouter();
+  const [mediaType,setMediaType]=useState<GalleryFilters['type']>('all');
+  const [order,setOrder]=useState<GalleryFilters['order']>('newest');
+  const [size,setSize]=useState('medium');
+  const [showTags,setShowTags]=useState(true);
+  const [creator,setCreator]=useState('');
+  const [tag,setTag]=useState('');
+  const [from,setFrom]=useState('');
+  const [to,setTo]=useState('');
+  const gallery=useGalleryPages(projectId,galleryPage,{type:mediaType,order,creator,tag,from,to});
+  const visibleMedia=gallery.page.items;
+  const imageItems = useMemo(() => visibleMedia.filter((item) => item.mediaType === "image"), [visibleMedia]);
+  const [activeImageId, setActiveImageId] = useState<string | null>(null);
+  const [activeSnapshot,setActiveSnapshot]=useState<ProjectMediaItem|null>(null);
+  const activeImageIndex = imageItems.findIndex((item) => item.id === activeImageId);
+  const currentImage=imageItems[activeImageIndex];
+  useEffect(()=>{if(currentImage)setActiveSnapshot(currentImage);},[currentImage]);
+  const dirtyDetails = useRef(false);
+  const trackDirty = useCallback((dirty: boolean) => { dirtyDetails.current = dirty; }, []);
+  const mayLeave = useCallback(() => {
+    if (dirtyDetails.current && !window.confirm("Leave this photo without saving your changes?")) return false;
+    return true;
+  }, []);
+  const closeGallery = useCallback(() => { if (mayLeave()) setActiveImageId(null); }, [mayLeave]);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartX = useRef<number | null>(null);
-  const galleryOpen = activeImageIndex !== null;
-  const activeImage = activeImageIndex === null ? null : imageItems[activeImageIndex];
+  const activeImage = currentImage??(activeSnapshot?.id===activeImageId?activeSnapshot:null);
+  const galleryOpen = !!activeImage;
 
   function showPrevious() {
-    setActiveImageIndex((current) =>
-      current === null ? null : (current - 1 + imageItems.length) % imageItems.length,
-    );
+    if (mayLeave()) setActiveImageId(imageItems[(activeImageIndex - 1 + imageItems.length) % imageItems.length]?.id ?? null);
   }
 
   function showNext() {
-    setActiveImageIndex((current) =>
-      current === null ? null : (current + 1) % imageItems.length,
-    );
+    if (mayLeave()) setActiveImageId(imageItems[(activeImageIndex + 1) % imageItems.length]?.id ?? null);
   }
 
   useEffect(() => {
@@ -112,27 +134,24 @@ export function ProjectPhotosPanel({
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setActiveImageIndex(null);
+        closeGallery();
         return;
       }
+      if (event.key !== "Tab" && (event.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) return;
       if (event.key === "ArrowLeft" && imageItems.length > 1) {
         event.preventDefault();
-        setActiveImageIndex((current) =>
-          current === null ? null : (current - 1 + imageItems.length) % imageItems.length,
-        );
+        if (mayLeave()) setActiveImageId((current) => imageItems[(imageItems.findIndex((item) => item.id === current) - 1 + imageItems.length) % imageItems.length]?.id ?? null);
         return;
       }
       if (event.key === "ArrowRight" && imageItems.length > 1) {
         event.preventDefault();
-        setActiveImageIndex((current) =>
-          current === null ? null : (current + 1) % imageItems.length,
-        );
+        if (mayLeave()) setActiveImageId((current) => imageItems[(imageItems.findIndex((item) => item.id === current) + 1) % imageItems.length]?.id ?? null);
         return;
       }
       if (event.key !== "Tab") return;
 
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable?.length) return;
       const first = focusable[0];
@@ -152,10 +171,10 @@ export function ProjectPhotosPanel({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [galleryOpen, imageItems.length]);
+  }, [galleryOpen, imageItems, closeGallery, mayLeave]);
 
   const groups = new Map<string, ProjectMediaItem[]>();
-  for (const item of media) {
+  for (const item of visibleMedia) {
     const capturedAt = item.capturedAt ?? item.createdAt;
     const key = localDateKey(capturedAt);
     const group = groups.get(key);
@@ -169,15 +188,38 @@ export function ProjectPhotosPanel({
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-semibold text-[var(--color-heading)]">
-              Photos <span className="text-[var(--color-muted)]">({media.length})</span>
+              Photos <span className="text-[var(--color-muted)]">({gallery.page.total})</span>
             </h2>
             <p className="mt-0.5 text-sm text-[var(--color-muted)]">
               Site photos and videos, grouped by the day they were captured.
             </p>
           </div>
-          <ProjectMediaUpload projectId={projectId} isLead={isLead} />
+          <div className="flex items-center gap-2">
+            <ProjectPhotoTrash projectId={projectId}/>
+            <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} />
+          </div>
         </div>
-        {media.length === 0 ? (
+        {galleryPage.total>0?<div className="mb-6 flex flex-wrap items-center gap-2 text-sm">
+          <details className="relative">
+            <summary className="cursor-pointer rounded-lg border border-[var(--color-border)] px-3 py-2">View</summary>
+            <div className="absolute left-0 top-full z-20 mt-2 w-60 space-y-4 rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-xl">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={showTags} onChange={e=>setShowTags(e.target.checked)}/>Show tags</label>
+              <label className="block">Type<select aria-label="Media type" value={mediaType} onChange={e=>setMediaType(e.target.value as GalleryFilters['type'])} className="mt-1 block w-full rounded border p-2"><option value="all">All photos and videos</option><option value="image">Photos only</option><option value="video">Videos only</option></select></label>
+              <label className="block">Photo size<select aria-label="Photo size" value={size} onChange={e=>setSize(e.target.value)} className="mt-1 block w-full rounded border p-2"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
+              <label className="block">Order<select aria-label="Photo order" value={order} onChange={e=>setOrder(e.target.value as GalleryFilters['order'])} className="mt-1 block w-full rounded border p-2"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+            </div>
+          </details>
+          <label className="sr-only" htmlFor="photo-creator">Uploaded by</label>
+          <select id="photo-creator" value={creator} onChange={e=>setCreator(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"><option value="">All users</option>{gallery.page.options?.creators.map(name=><option key={name}>{name}</option>)}</select>
+          <label className="sr-only" htmlFor="photo-tag">Filter by tag</label>
+          <select id="photo-tag" value={tag} onChange={e=>setTag(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"><option value="">All tags</option>{gallery.page.options?.tags.map(name=><option key={name}>{name}</option>)}</select>
+          <label className="flex items-center gap-2">From<input type="date" value={from} max={to||undefined} onChange={e=>setFrom(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"/></label>
+          <label className="flex items-center gap-2">To<input type="date" value={to} min={from||undefined} onChange={e=>setTo(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-white p-2"/></label>
+          {creator||tag||from||to||mediaType!=='all'?<button onClick={()=>{setCreator('');setTag('');setFrom('');setTo('');setMediaType('all');}} className="px-2 text-teal-700 underline">Clear filters</button>:null}
+        </div>:null}
+        {gallery.loading?<p role="status" className="mb-3 text-sm text-slate-500">Loading photos…</p>:null}
+        {gallery.error?<p role="alert" className="mb-3 text-sm text-red-700">{gallery.error} <button onClick={gallery.reload} className="underline">Retry</button></p>:null}
+        {galleryPage.total === 0 ? (
           <Card className="flex min-h-72 items-center justify-center p-8 text-center">
             <div>
               <div className="font-display text-lg font-semibold text-[var(--color-heading)]">
@@ -188,6 +230,8 @@ export function ProjectPhotosPanel({
               </p>
             </div>
           </Card>
+        ) : visibleMedia.length===0 ? (
+          <Card className="p-12 text-center text-[var(--color-muted)]">No photos or videos match these filters.</Card>
         ) : (
           <div className="space-y-9">
             {[...groups.values()].map((items) => {
@@ -200,7 +244,7 @@ export function ProjectPhotosPanel({
                   <h2 className="mb-4 font-display text-base font-semibold text-[var(--color-heading)]">
                     {dateHeading(firstCapturedAt)}
                   </h2>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-6 lg:grid-cols-3 2xl:grid-cols-4">
+                  <div className={`grid gap-x-4 gap-y-6 ${size==='small'?'grid-cols-3 lg:grid-cols-5':size==='large'?'grid-cols-1 sm:grid-cols-2':'grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'}`}>
                     {items.map((item) => {
                       const capturedAt = item.capturedAt ?? item.createdAt;
                       const mediaUrl = `/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(item.id)}`;
@@ -221,7 +265,7 @@ export function ProjectPhotosPanel({
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => setActiveImageIndex(imageIndexById.get(item.id) ?? 0)}
+                                onClick={() => setActiveImageId(item.id)}
                                 aria-label={`View ${mediaAlt(item).toLocaleLowerCase("en-CA")} in gallery`}
                                 className="block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)]"
                               >
@@ -252,6 +296,7 @@ export function ProjectPhotosPanel({
                               <span className="ml-auto font-medium text-[var(--color-heading)]">Video</span>
                             ) : null}
                           </figcaption>
+                          {showTags&&item.tags.length>0?<div className="mt-2 flex flex-wrap gap-1">{item.tags.map(value=><button key={value} onClick={()=>setTag(value)} className="rounded bg-teal-50 px-2 py-0.5 text-xs text-teal-800">{value}</button>)}</div>:null}
                         </figure>
                       );
                     })}
@@ -261,6 +306,7 @@ export function ProjectPhotosPanel({
             })}
           </div>
         )}
+        {gallery.page.hasMore?<div className="mt-8 text-center"><button type="button" disabled={gallery.loading} onClick={()=>void gallery.more()} className="rounded-lg border border-[var(--color-border)] px-5 py-2 text-sm disabled:opacity-50">{gallery.loading?'Loading…':`Load more · ${visibleMedia.length} of ${gallery.page.total}`}</button></div>:null}
       </section>
 
       <ProjectProfilePanel
@@ -270,11 +316,11 @@ export function ProjectPhotosPanel({
         notes={notes}
       />
 
-      {activeImage && activeImageIndex !== null ? (
+      {activeImage ? (
         <div
           className="fixed inset-0 z-[70] bg-black/95 text-white"
           onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setActiveImageIndex(null);
+            if (event.currentTarget === event.target) closeGallery();
           }}
         >
           <div
@@ -287,7 +333,7 @@ export function ProjectPhotosPanel({
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-4 py-3 sm:px-6">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">
-                  Photo {activeImageIndex + 1} of {imageItems.length}
+                  {activeImageIndex>=0?`Photo ${activeImageIndex+1} of ${imageItems.length}`:'Photo'}
                 </div>
                 <div className="mt-0.5 truncate text-xs text-white/60">
                   {dateHeading(activeImage.capturedAt ?? activeImage.createdAt)} · {captureTime(activeImage.capturedAt ?? activeImage.createdAt)}
@@ -297,7 +343,7 @@ export function ProjectPhotosPanel({
               <button
                 ref={closeButtonRef}
                 type="button"
-                onClick={() => setActiveImageIndex(null)}
+                onClick={closeGallery}
                 aria-label="Close gallery"
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl leading-none transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
@@ -305,6 +351,7 @@ export function ProjectPhotosPanel({
               </button>
             </header>
 
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,1fr)_minmax(0,45%)] sm:grid-cols-[minmax(0,1fr)_320px] sm:grid-rows-1">
             <div
               className="relative min-h-0 flex-1 touch-pan-y select-none"
               onTouchStart={(event) => {
@@ -351,11 +398,16 @@ export function ProjectPhotosPanel({
               ) : null}
             </div>
 
-            {activeImage.description ? (
-              <p className="shrink-0 border-t border-white/10 px-4 py-2 text-center text-sm text-white/80 sm:px-6">
-                {activeImage.description}
-              </p>
-            ) : null}
+            <aside className="overflow-y-auto bg-white text-slate-900" aria-label="Photo details">
+              <PhotoDetailsEditor key={activeImage.id} projectId={projectId} mediaId={activeImage.id}
+                description={activeImage.description} tags={activeImage.tags} revision={activeImage.revision}
+                onDirtyChange={trackDirty} />
+              <div className="border-t border-slate-200 p-5">
+                <PhotoTrashAction key={activeImage.id} projectId={projectId} item={activeImage}
+                  beforeAction={mayLeave} onSuccess={()=>{setActiveImageId(null);router.refresh();}}/>
+              </div>
+            </aside>
+            </div>
 
             {imageItems.length > 1 ? (
               <div className="shrink-0 border-t border-white/15 bg-black/60 px-3 py-3 sm:px-6">
@@ -364,7 +416,7 @@ export function ProjectPhotosPanel({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => setActiveImageIndex(index)}
+                      onClick={() => { if (item.id !== activeImageId && mayLeave()) setActiveImageId(item.id); }}
                       aria-label={`View photo ${index + 1}`}
                       aria-current={index === activeImageIndex ? "true" : undefined}
                       className={`relative h-14 w-[72px] shrink-0 overflow-hidden rounded-md border-2 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:h-16 sm:w-20 ${

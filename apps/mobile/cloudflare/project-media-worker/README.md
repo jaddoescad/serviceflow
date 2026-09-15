@@ -19,10 +19,10 @@ no R2 credentials (bucket binding only) and no service-role key.
 | Route | Auth | Behaviour |
 | --- | --- | --- |
 | `GET /health` | none | Liveness only, no internals. |
-| `PUT /v1/jobs/:jobId/media` | Bearer JWT | Validates UUID/content type/`x-media-type` and a known body size (`Content-Length` or browser `x-file-size`; 25 MB images, 95 MB videos), confirms the caller can SELECT the job, writes `jobs/{jobId}/{mediaId}.{ext}` to R2, inserts `public.job_media` with the same JWT, deletes the R2 object if the insert fails, returns the created row (201). |
+| `PUT /v1/jobs/:jobId/media` | Bearer JWT | Validates UUID/content type/`x-media-type` and a known body size (`Content-Length` or browser `x-file-size`; 25 MB images, 95 MB videos), confirms the caller can SELECT the job, writes `jobs/{jobId}/{mediaId}.{ext}` to R2, inserts `public.job_media` with the same JWT, resolves uncertain database commits before cleanup, returns the created row (201). Optional `x-upload-id` makes retries idempotent and uses `{mediaId}~{attemptId}.{ext}` keys to isolate concurrent requests. |
 | `PUT /v1/leads/:leadId/media` | Bearer JWT | Same authenticated upload flow for an unconverted lead, using `leads/{leadId}/{mediaId}.{ext}` and `job_media.lead_id`. |
 | `GET`/`HEAD /v1/media/:mediaId` | Bearer JWT | Looks up `job_media` by id with the caller's JWT (RLS), streams the R2 object with `Content-Type`, `ETag`, `Cache-Control: private`, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline`, `Content-Length`, and `Range` support (206/416) for video scrubbing. HEAD returns headers only. |
-| `DELETE /v1/media/:mediaId` | Bearer JWT | Deletes the metadata row via the Data API (RLS decides; zero rows deleted → 403), then deletes the R2 object (204). |
+| `DELETE /v1/media/:mediaId` | Bearer JWT | Moves the photo to recoverable trash through the restricted database RPC (204). Keeps the metadata row and R2 bytes; managers can restore it. |
 | `OPTIONS *` | none | CORS preflight for `Authorization`, `Content-Type`, `Range`, and the `x-*` metadata headers. `Allow-Origin: *`, never credentials. |
 
 Accepted upload types: `image/jpeg`, `image/png`, `image/webp`, `image/heic`,
@@ -57,3 +57,15 @@ sanitized and stored as display metadata only.
   no deployed infrastructure needed).
 - Copy `.dev.vars.example` to `.dev.vars`, fill in the local values, then run
   `npm run dev`. Never commit `.dev.vars`.
+
+## Photo workflow rollout
+
+Deploy the upload-key constraint to the read-only copy first, then ServiceFlow.
+Deploy ServiceFlow photo editing, gallery paging and recoverable trash migrations
+before this worker. After this worker is live, apply
+`finalize_photo_trash_permissions` to revoke direct client DELETE access.
+Then push the admin changes to main for the GitHub/Vercel deployment.
+
+`GET/HEAD /v1/media/:id/trash` serves retained originals only through the
+manager-only trash RPC. No automatic purge is configured. Uncertain upload
+attempts may retain unreferenced objects; reconciliation is still pending.

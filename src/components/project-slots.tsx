@@ -13,7 +13,7 @@ export async function PhotosSlot({ projectId }: { projectId: string }) {
       contact={data.contact}
       description={data.description}
       notes={data.notes}
-      media={data.media}
+      galleryPage={data.galleryPage}
       isLead={data.isLead}
     />
   );

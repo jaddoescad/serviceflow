@@ -1,285 +1,190 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProjectModal } from "@/components/project-profile-panel";
 import { Button } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { appendUploadFiles, mediaMime, retryUploadItem, validateMediaFile, type UploadItem } from "@/lib/media-upload-queue";
+import { forgetUploads, loadUploads, storeUploads } from "@/lib/media-upload-storage";
 
-const MEDIA_API_URL = (
-  process.env.NEXT_PUBLIC_PROJECT_MEDIA_API_URL ||
-  "https://project-media-worker.jadslim-fai.workers.dev"
-).replace(/\/+$/, "");
+const MEDIA_API_URL = (process.env.NEXT_PUBLIC_PROJECT_MEDIA_API_URL || "https://project-media-worker.jadslim-fai.workers.dev").replace(/\/+$/, "");
 
-const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 95 * 1024 * 1024;
-const MIME_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  heic: "image/heic",
-  heif: "image/heif",
-  mp4: "video/mp4",
-  m4v: "video/mp4",
-  mov: "video/quicktime",
-  qt: "video/quicktime",
-};
-const IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
-const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime"]);
+export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:boolean}) {
+  const router=useRouter();
+  const input=useRef<HTMLInputElement>(null);
+  const requests=useRef(new Map<string,XMLHttpRequest>());
+  const active=useRef(new Map<string,symbol>());
+  const mounted=useRef(true);
+  const [open,setOpen]=useState(false);
+  const [drag,setDrag]=useState(false);
+  const [items,setItems]=useState<UploadItem[]>([]);
+  const [scope,setScope]=useState<string|null>(null);
+  const [storageError,setStorageError]=useState<string|null>(null);
+  const [preparing,setPreparing]=useState(false);
+  const adding=useRef(false);
+  const remaining=items.filter(i=>i.status==='queued'||i.status==='uploading').length;
+  const complete=items.filter(i=>i.status==='complete').length;
+  const failed=items.filter(i=>i.status==='failed').length;
 
-function inferMimeType(file: File): string | null {
-  const declared = file.type.toLowerCase().split(";")[0].trim();
-  if (IMAGE_TYPES.has(declared) || VIDEO_TYPES.has(declared)) return declared;
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  return MIME_BY_EXTENSION[extension] ?? null;
-}
-
-function sizeLabel(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function validateFile(file: File): string | null {
-  const mimeType = inferMimeType(file);
-  if (!mimeType) return `${file.name}: unsupported file type.`;
-  const kind = VIDEO_TYPES.has(mimeType) ? "video" : "image";
-  const limit = kind === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
-  if (file.size <= 0) return `${file.name}: the file is empty.`;
-  if (file.size > limit) {
-    return `${file.name}: ${kind}s must be under ${Math.floor(limit / (1024 * 1024))} MB.`;
+  function patch(id:string,changes:Partial<UploadItem>) {
+    if (mounted.current) setItems(current=>current.map(i=>i.id===id?{...i,...changes}:i));
   }
-  return null;
-}
-
-async function responseError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: string };
-    if (body.error?.trim()) return body.error.trim();
-  } catch {
-    // Keep a stable message when an upstream error body is not JSON.
-  }
-  return `Upload failed (HTTP ${response.status}).`;
-}
-
-export function ProjectMediaUpload({
-  projectId,
-  isLead,
-}: {
-  projectId: string;
-  isLead: boolean;
-}) {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  function addFiles(nextFiles: File[]) {
-    setError(null);
-    const invalid = nextFiles.map(validateFile).find(Boolean);
-    if (invalid) {
-      setError(invalid);
-      return;
+  useEffect(()=>{
+    mounted.current=true;
+    return ()=>{ mounted.current=false; requests.current.forEach(xhr=>xhr.abort()); };
+  },[]);
+  useEffect(()=>{
+    let disposed=false;
+    async function recover() {
+      try {
+        const {data:{session}}=await createClient().auth.getSession();
+        if(!session)throw new Error('Sign in to upload photos.');
+        const nextScope=`${session.user.id}/${isLead?'leads':'jobs'}/${projectId}`;
+        const saved=await loadUploads(nextScope);
+        if(disposed)return;
+        setItems(saved); setScope(nextScope);
+      } catch {if(!disposed)setStorageError('Upload recovery storage is unavailable. Allow this site to store data, then reload.');}
     }
-    setFiles((current) => {
-      const known = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
-      return [
-        ...current,
-        ...nextFiles.filter((file) => !known.has(`${file.name}:${file.size}:${file.lastModified}`)),
-      ];
-    });
+    void recover();
+    return()=>{disposed=true;};
+  },[projectId,isLead]);
+  useEffect(()=>{
+    if (!remaining) return;
+    const warn=(event:BeforeUnloadEvent)=>{event.preventDefault(); event.returnValue='';};
+    window.addEventListener('beforeunload',warn);
+    return ()=>window.removeEventListener('beforeunload',warn);
+  },[remaining]);
+
+  useEffect(()=>{
+    if(!scope?.endsWith(`/${isLead?'leads':'jobs'}/${projectId}`))return;
+    async function send(item:UploadItem) {
+      const attempt=Symbol();
+      active.current.set(item.id,attempt);
+      patch(item.id,{status:'uploading',error:undefined});
+      try {
+        const {data:{session},error}=await createClient().auth.getSession();
+        if (error||!session) throw new Error('Session expired. Sign in again, then retry.');
+        if(!scope!.startsWith(`${session.user.id}/`))throw new Error('The signed-in account changed. Reload before uploading.');
+        if (!mounted.current || active.current.get(item.id)!==attempt) return;
+        await storeUploads(scope!,[{...item,status:'uploading'}]);
+        if (!mounted.current || active.current.get(item.id)!==attempt) return;
+        await new Promise<void>((resolve,reject)=>{
+          const xhr=new XMLHttpRequest();
+          requests.current.set(item.id,xhr);
+          xhr.open('PUT',`${MEDIA_API_URL}/v1/${isLead?'leads':'jobs'}/${encodeURIComponent(projectId)}/media`);
+          xhr.timeout=180000;
+          const mime=mediaMime(item.file)!;
+          xhr.setRequestHeader('Authorization',`Bearer ${session.access_token}`);
+          xhr.setRequestHeader('Content-Type',mime);
+          xhr.setRequestHeader('x-media-type',mime.startsWith('video/')?'video':'image');
+          xhr.setRequestHeader('x-upload-id',item.id);
+          xhr.setRequestHeader('x-file-size',String(item.file.size));
+          // HTTP headers accept Latin-1 only. The original filename is displayed
+          // locally; encode non-ASCII names for safe transport.
+          xhr.setRequestHeader('x-original-filename',encodeURIComponent(item.file.name));
+          xhr.setRequestHeader('x-filename-encoding','uri');
+          xhr.setRequestHeader('x-captured-at',new Date(item.file.lastModified||Date.now()).toISOString());
+          xhr.upload.onprogress=event=>{if(event.lengthComputable)patch(item.id,{progress:Math.min(99,Math.round(event.loaded/event.total*100))});};
+          xhr.onload=()=>{
+            if(xhr.status>=200&&xhr.status<300) {
+              try {const row=JSON.parse(xhr.responseText);if(row.id!==item.id)throw new Error(); resolve();}
+              catch {reject(new Error('Could not confirm this upload. Retry to check its status.'));}
+            } else {
+              let message=`Upload failed (${xhr.status}). Retry this file.`;
+              try {message=JSON.parse(xhr.responseText).error||message;}catch{}
+              reject(new Error(message));
+            }
+          };
+          xhr.onerror=()=>reject(new Error('Connection interrupted. Retry this file.'));
+          xhr.ontimeout=()=>reject(new Error('Upload timed out. Retry to check its status.'));
+          xhr.onabort=()=>reject(new DOMException('Upload cancelled','AbortError'));
+          xhr.send(item.file);
+        });
+        patch(item.id,{status:'complete',progress:100});
+        await forgetUploads(scope!,[item.id]).catch(()=>{setStorageError('Upload saved. Local recovery cleanup will retry when you reopen this page.');});
+        router.refresh();
+      } catch(error) {
+        if(active.current.get(item.id)===attempt) {
+          const changes={status:error instanceof DOMException&&error.name==='AbortError'?'cancelled' as const:'failed' as const,error:error instanceof Error?error.message:'Upload failed.'};
+          patch(item.id,changes);
+          if(mounted.current)await storeUploads(scope!,[{...item,...changes}]).catch(()=>setStorageError('Could not save the latest queue status. Keep this page open until uploads finish.'));
+        }
+      } finally {
+        if(active.current.get(item.id)===attempt) {
+          requests.current.delete(item.id);
+          active.current.delete(item.id);
+        }
+        // Release the next queue slot even when authentication failed.
+        if(mounted.current)setItems(current=>[...current]);
+      }
+    }
+    for(const item of items) {
+      if(active.current.size>=2)break;
+      if(item.status==='queued'&&!active.current.has(item.id))void send(item);
+    }
+  },[items,projectId,isLead,router,scope]);
+
+  function cancel(id:string) {
+    const xhr=requests.current.get(id);
+    if(xhr)xhr.abort();
+    else {
+      active.current.delete(id);patch(id,{status:'cancelled',error:'Upload cancelled.'});
+      const item=items.find(i=>i.id===id);
+      if(scope&&item)void storeUploads(scope,[{...item,status:'cancelled'}]).catch(()=>setStorageError('Could not retain cancellation. Clear the queue before leaving.'));
+    }
   }
-
-  function drop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    addFiles(Array.from(event.dataTransfer.files));
-  }
-
-  function close() {
-    if (uploading) return;
-    setOpen(false);
-    setFiles([]);
-    setError(null);
-    setProgress(null);
-  }
-
-  async function upload() {
-    if (!files.length || uploading) return;
-    setUploading(true);
-    setError(null);
-
+  async function add(files:File[]) {
+    if(!scope||adding.current)return;
+    adding.current=true;setPreparing(true);setStorageError(null);
+    const next=appendUploadFiles(items,files);
+    const added=next.filter(item=>!items.some(existing=>existing.id===item.id));
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) {
-        throw new Error("Your session expired. Sign in again before uploading.");
-      }
-
-      const projectKind = isLead ? "leads" : "jobs";
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        const mimeType = inferMimeType(file);
-        if (!mimeType) throw new Error(`${file.name}: unsupported file type.`);
-        const mediaType = VIDEO_TYPES.has(mimeType) ? "video" : "image";
-        setProgress(`Uploading ${index + 1} of ${files.length}: ${file.name}`);
-
-        const response = await fetch(
-          `${MEDIA_API_URL}/v1/${projectKind}/${encodeURIComponent(projectId)}/media`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              "Content-Type": mimeType,
-              "x-media-type": mediaType,
-              "x-file-size": String(file.size),
-              "x-original-filename": file.name,
-              "x-captured-at": new Date(file.lastModified || Date.now()).toISOString(),
-            },
-            body: file,
-          },
-        );
-        if (!response.ok) throw new Error(await responseError(response));
-      }
-
-      setProgress(`${files.length} ${files.length === 1 ? "file" : "files"} uploaded.`);
-      router.refresh();
-      setFiles([]);
-      setOpen(false);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Upload failed. Try again.");
-    } finally {
-      setUploading(false);
-    }
+      await storeUploads(scope,added);
+      if(mounted.current)setItems(current=>[...current,...added]);
+    } catch {setStorageError('Not enough local storage to prepare these files. Free some space or choose a smaller batch. No new uploads were started.');}
+    finally {adding.current=false;if(mounted.current)setPreparing(false);}
+  }
+  async function retry(item:UploadItem) {
+    if(!scope)return;
+    const next=retryUploadItem(item);
+    try {await storeUploads(scope,[next]);patch(item.id,next);}
+    catch {setStorageError('Could not prepare the retry. Check available browser storage.');}
+  }
+  async function clear() {
+    if(!scope)return;
+    try {await forgetUploads(scope,items.map(item=>item.id));setItems([]);}
+    catch {setStorageError('Could not clear the local queue. Try again.');}
   }
 
-  return (
-    <>
-      <Button type="button" onClick={() => setOpen(true)} className="shrink-0">
-        <span aria-hidden="true" className="text-base leading-none">＋</span>
-        Upload photos
-      </Button>
-
-      {open ? (
-        <ProjectModal
-          title="Add photos and videos"
-          subtitle="Upload directly to this project. Originals stay private in Cloudflare."
-          onClose={close}
-          wide
-        >
-          <div className="space-y-5 p-6">
-            <input
-              ref={inputRef}
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mov,.m4v"
-              className="sr-only"
-              onChange={(event) => {
-                addFiles(Array.from(event.target.files ?? []));
-                event.target.value = "";
-              }}
-            />
-            <div
-              onDragEnter={(event) => {
-                event.preventDefault();
-                setDragActive(true);
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDragLeave={(event) => {
-                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                  setDragActive(false);
-                }
-              }}
-              onDrop={drop}
-              className={`flex min-h-56 flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
-                dragActive
-                  ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)]"
-                  : "border-[var(--color-border)] bg-[var(--color-bg)]"
-              }`}
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-2xl text-[var(--color-brand-strong)]">
-                ↑
-              </div>
-              <h3 className="mt-4 font-display text-base font-semibold text-[var(--color-heading)]">
-                Drag and drop photos or videos here
-              </h3>
-              <p className="mt-1 max-w-md text-sm text-[var(--color-muted)]">
-                JPEG, PNG, WebP, HEIC, MP4, or MOV. Images up to 25 MB; videos up to 95 MB.
-              </p>
-              <Button
-                type="button"
-                variant="subtle"
-                className="mt-5"
-                onClick={() => inputRef.current?.click()}
-                disabled={uploading}
-              >
-                Choose files
-              </Button>
-            </div>
-
-            {files.length ? (
-              <div className="overflow-hidden rounded-xl border border-[var(--color-border)]">
-                <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                  Ready to upload · {files.length}
-                </div>
-                <ul className="max-h-52 divide-y divide-[var(--color-border)] overflow-y-auto">
-                  {files.map((file, index) => (
-                    <li key={`${file.name}:${file.size}:${file.lastModified}`} className="flex items-center gap-3 px-4 py-3 text-sm">
-                      <span aria-hidden="true" className="text-lg">
-                        {VIDEO_TYPES.has(inferMimeType(file) ?? "") ? "▶" : "▧"}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-[var(--color-text)]">{file.name}</span>
-                      <span className="shrink-0 text-xs text-[var(--color-muted)]">{sizeLabel(file.size)}</span>
-                      <button
-                        type="button"
-                        className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-heading)]"
-                        onClick={() => setFiles((current) => current.filter((_file, itemIndex) => itemIndex !== index))}
-                        disabled={uploading}
-                        aria-label={`Remove ${file.name}`}
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {progress ? <p className="text-sm text-[var(--color-muted)]">{progress}</p> : null}
-            {error ? (
-              <p role="alert" className="rounded-lg bg-[var(--color-bad-soft)] px-3 py-2 text-sm text-[var(--color-bad)]">
-                {error}
-              </p>
-            ) : null}
-
-            <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-5">
-              <Button type="button" variant="subtle" onClick={close} disabled={uploading}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={upload} disabled={!files.length || uploading}>
-                {uploading
-                  ? "Uploading…"
-                  : files.length
-                    ? `Upload ${files.length} ${files.length === 1 ? "file" : "files"}`
-                    : "Upload files"}
-              </Button>
-            </div>
+  return <>
+    <Button type="button" onClick={()=>setOpen(true)}>＋ Upload photos</Button>
+    {items.length>0&&!open?<button type="button" onClick={()=>setOpen(true)} className="fixed bottom-5 right-5 z-40 rounded-xl border border-[var(--color-border)] bg-white px-5 py-3 text-sm shadow-lg" aria-live="polite">
+      {remaining?`Uploading ${complete} of ${items.length}`:`${complete} uploaded`}{failed?` · ${failed} need attention`:''} · View uploads
+    </button>:null}
+    {open?<ProjectModal title="Add photos and videos" subtitle="Uploads start automatically. You can close this panel while they finish." onClose={()=>setOpen(false)} wide>
+      <div className="space-y-4 p-6">
+        <input ref={input} aria-label="Choose photos and videos" type="file" multiple className="sr-only" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mov,.m4v" onChange={event=>{add(Array.from(event.target.files??[]));event.target.value='';}} />
+        <button type="button" disabled={!scope||preparing} onClick={()=>input.current?.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);void add(Array.from(e.dataTransfer.files));}} className={`w-full rounded-xl border-2 border-dashed p-9 text-center disabled:opacity-50 ${drag?'border-[var(--color-brand)] bg-[var(--color-brand-soft)]':'border-[var(--color-border)]'}`}>
+          <span className="block text-base font-semibold">Drag photos here or choose files</span>
+          <span className="mt-2 block text-sm text-[var(--color-muted)]">JPG, PNG, WebP, HEIC, MP4 or MOV · photos up to 25 MB · videos up to 95 MB</span>
+        </button>
+        {preparing?<p role="status" className="text-sm">Saving files locally for upload recovery…</p>:null}
+        {storageError?<p role="alert" className="text-sm text-red-700">{storageError}</p>:null}
+        {items.length?<ul className="max-h-80 divide-y divide-[var(--color-border)] overflow-y-auto" aria-label="Upload queue">{items.map(item=><li key={item.id} className="flex items-center gap-3 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{item.file.name}</div>
+            <div className="text-xs text-[var(--color-muted)]" role="status">{item.status==='uploading'?(item.progress>=99?'Finishing…':`${item.progress}%`):item.status==='complete'?'Uploaded':item.error||item.status}</div>
+            {item.status==='uploading'?<progress aria-label={`Uploading ${item.file.name}`} value={item.progress} max={100} className="mt-1 h-1.5 w-full accent-[var(--color-brand)]"/>:null}
           </div>
-        </ProjectModal>
-      ) : null}
-    </>
-  );
+          {item.status==='failed'||item.status==='cancelled'?<Button size="sm" variant="subtle" disabled={!!validateMediaFile(item.file)} onClick={()=>void retry(item)}>Retry</Button>:null}
+          {item.status==='uploading'||item.status==='queued'?<Button size="sm" variant="ghost" onClick={()=>cancel(item.id)}>Cancel</Button>:null}
+        </li>)}</ul>:null}
+        <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
+          <span className="text-sm text-[var(--color-muted)]" aria-live="polite">{complete} uploaded{failed?` · ${failed} failed`:''}</span>
+          <div className="flex gap-2">{!remaining&&!preparing&&items.length?<Button variant="ghost" onClick={()=>void clear()}>Clear list</Button>:null}<Button onClick={()=>setOpen(false)}>Done</Button></div>
+        </div>
+      </div>
+    </ProjectModal>:null}
+  </>;
 }

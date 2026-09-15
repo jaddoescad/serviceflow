@@ -1,4 +1,6 @@
 import { cache } from "react";
+import { loadGalleryPage } from "@/lib/actions/gallery-page";
+import { DEFAULT_GALLERY_FILTERS } from "@/lib/gallery-page";
 import {
   getEmployees,
   getEmployeePayRates,
@@ -32,6 +34,9 @@ export type ProjectMediaItem = {
   createdAt: string;
   creatorName: string | null;
   description: string | null;
+  tags: string[];
+  revision: string | null;
+  trashRevision: string | null;
 };
 
 export type ProjectContact = {
@@ -253,40 +258,12 @@ export const getProjectPresentation = cache(async (projectId: string) => {
 });
 
 export const getProjectMediaData = cache(async (projectId: string) => {
-  const [presentation, mediaResult] = await Promise.all([
+  const [presentation, galleryPage] = await Promise.all([
     getProjectPresentation(projectId),
-    (async () => {
-      const supabase = await createClient();
-      return supabase
-        .from("job_media")
-        .select(
-          "id,media_type,mime_type,original_filename,duration_ms,captured_at,created_at,source_metadata",
-        )
-        .or(`job_id.eq.${projectId},lead_id.eq.${projectId}`)
-        .order("captured_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false });
-    })(),
+    loadGalleryPage(projectId, DEFAULT_GALLERY_FILTERS),
   ]);
-
   if (!presentation) return null;
-  if (mediaResult.error) throw new Error(`project media: ${mediaResult.error.message}`);
-
-  const media: ProjectMediaItem[] = (mediaResult.data ?? []).map((row: any) => {
-    const sourceMetadata = asRecord(row.source_metadata);
-    return {
-      id: row.id,
-      mediaType: row.media_type === "video" ? "video" : "image",
-      mimeType: row.mime_type,
-      originalFilename: row.original_filename ?? null,
-      durationMs: row.duration_ms == null ? null : Number(row.duration_ms),
-      capturedAt: row.captured_at ?? null,
-      createdAt: row.created_at,
-      creatorName: firstText(sourceMetadata.creator_name),
-      description: firstText(sourceMetadata.description),
-    };
-  });
-
-  return { ...presentation, media };
+  return { ...presentation, media: galleryPage.items, galleryPage };
 });
 
 /**

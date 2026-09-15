@@ -637,10 +637,10 @@ test("thumbnail falls back with 422 when the transformer cannot read the video",
   assert.equal(response.status, 422);
 });
 
-test("delete treats a zero-row REST delete as forbidden and keeps R2", async () => {
+test("trash permission failure keeps the original R2 object", async () => {
   const { row } = await seedMediaRow();
   queueSupabase(200, [row]);
-  queueSupabase(200, []);
+  queueSupabase(403, {message:'Not permitted'});
 
   const response = await worker.fetch(
     new Request(`${BASE}/v1/media/${row.id}`, {
@@ -653,10 +653,10 @@ test("delete treats a zero-row REST delete as forbidden and keeps R2", async () 
   assert.ok(bucket.objects.has(row.object_key), "R2 object retained");
 });
 
-test("delete removes metadata first, then the R2 object", async () => {
+test("delete moves the photo to recoverable trash without removing bytes", async () => {
   const { row } = await seedMediaRow();
   queueSupabase(200, [row]);
-  queueSupabase(200, [row]);
+  queueSupabase(200, {photo_trashed_at:new Date().toISOString()});
 
   const response = await worker.fetch(
     new Request(`${BASE}/v1/media/${row.id}`, {
@@ -666,7 +666,25 @@ test("delete removes metadata first, then the R2 object", async () => {
     env,
   );
   assert.equal(response.status, 204);
-  assert.equal(bucket.objects.has(row.object_key), false);
+  assert.equal(bucket.objects.has(row.object_key), true);
+});
+
+test('trash preview is gated by the manager-only database RPC',async()=>{
+  const {row}=await seedMediaRow();
+  queueSupabase(403,{message:'Managers only'});
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}/trash`,{
+    headers:{Authorization:`Bearer ${fakeJwt()}`}}),env);
+  assert.equal(response.status,401);
+  assert.ok(bucket.objects.has(row.object_key));
+});
+
+test('authorized trash preview serves the retained original',async()=>{
+  const {row}=await seedMediaRow();
+  queueSupabase(200,[{...row,source_metadata:{photo_trashed_at:new Date().toISOString()}}]);
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}/trash`,{
+    headers:{Authorization:`Bearer ${fakeJwt()}`}}),env);
+  assert.equal(response.status,200);
+  assert.ok((await response.arrayBuffer()).byteLength>0);
 });
 
 function ottawaJwt() {
@@ -698,4 +716,63 @@ test('A forged Ottawa Painters issuer cannot bypass destination token validation
   globalThis.fetch=async()=>new Response('{}',{status:401});
   const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}`,{headers:{Authorization:`Bearer ${ottawaJwt()}`}}),env);
   assert.equal(response.status,401);
+});
+
+const UPLOAD_ID = 'abcdefab-1234-4567-8123-abcdefabcdef';
+function savedUpload(overrides = {}) {
+  return { id: UPLOAD_ID, job_id: JOB_ID, uploaded_by: USER_ID, mime_type: 'image/jpeg', byte_size: 4, original_filename: null, object_key: 'jobs/saved.jpg', ...overrides };
+}
+
+test('retry returns committed photo without writing another object', async () => {
+  queueSupabase(200, [{ id: JOB_ID }]);
+  queueSupabase(200, [savedUpload()]);
+  const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).id, UPLOAD_ID);
+  assert.equal(bucket.objects.size, 0);
+  assert.equal(supabaseRequests.filter(r => r.method === 'POST').length, 0);
+});
+
+test('upload id cannot be reused for another uploader or project', async () => {
+  for (const mismatch of [{uploaded_by: JOB_ID}, {job_id: LEAD_ID}, {byte_size: 9}]) {
+    queueSupabase(200, [{ id: JOB_ID }]);
+    queueSupabase(200, [savedUpload(mismatch)]);
+    const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
+    assert.equal(response.status, 409);
+  }
+  assert.equal(bucket.objects.size, 0);
+});
+
+test('concurrent losing upload removes only its attempt object', async () => {
+  const winner = savedUpload();
+  await bucket.put(winner.object_key, new Uint8Array([1,2,3,4]));
+  queueSupabase(200, [{ id: JOB_ID }]);
+  queueSupabase(200, []);
+  queueSupabase(409, {});
+  queueSupabase(200, [winner]);
+  const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual([...bucket.objects.keys()], [winner.object_key]);
+});
+
+test('database response loss after commit preserves uploaded bytes', async () => {
+  queueSupabase(200, [{ id: JOB_ID }]);
+  queueSupabase(200, []);
+  let saved;
+  supabaseHandlers.push(record => { saved = record.body; return new Response(null, { status: 502 }); });
+  supabaseHandlers.push(() => new Response(JSON.stringify([saved]), {status:200}));
+  const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
+  assert.equal(response.status, 200);
+  assert.equal(bucket.objects.size, 1);
+  assert.ok(bucket.objects.has(saved.object_key));
+});
+
+test('unknown commit state preserves bytes until status can be resolved', async () => {
+  queueSupabase(200, [{ id: JOB_ID }]);
+  queueSupabase(200, []);
+  queueSupabase(502, {});
+  queueSupabase(503, {});
+  const response = await worker.fetch(uploadRequest({headers: {'x-upload-id': UPLOAD_ID}}), env);
+  assert.equal(response.status, 503);
+  assert.equal(bucket.objects.size, 1);
 });
