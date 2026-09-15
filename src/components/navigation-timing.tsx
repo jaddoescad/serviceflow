@@ -37,6 +37,8 @@ export function NavigationTiming() {
         console.info("SERVICEFLOW_PERF " + JSON.stringify({
           path, kind, visibleMs: Math.round(end - start),
           prefetched: kind === "navigation" && !!lastRouteRequest && lastRouteRequest.responseEnd <= start,
+          routeDurationMs: lastRouteRequest ? Math.round(lastRouteRequest.duration) : null,
+          dataFetchMs: Number(document.querySelector("main [data-perf-fetch-ms]")?.getAttribute("data-perf-fetch-ms")) || null,
           routeResponseWaitMs: lastRouteRequest ? Math.round(lastRouteRequest.responseStart - lastRouteRequest.requestStart) : null,
           requests: resources.length + (kind === "load" && navigation ? 1 : 0),
           transferredBytes: resources.reduce((sum, row) => sum + row.transferSize, 0) + (kind === "load" ? navigation?.transferSize ?? 0 : 0),
