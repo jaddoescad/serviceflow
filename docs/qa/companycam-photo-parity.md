@@ -202,3 +202,25 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Accessibility controls work in the dedicated tab after lazy editor load. A contemplated native-dialog change was withdrawn because the suspected missing controls were not reproduced with reliable tab access.
 - Still pending: verified undo geometry, discard/conflict paths, arrow drag/move, photo-gallery/viewer fidelity, uploads under failure/navigation/reload, remaining scope in this report. Not complete.
 - Arrow gesture verified with dedicated-tab drag: rendered shape count2→3. Undo→2;Redo→3. Close shows discard dialog;Keep editing retains3. Close→Discard→reopen returns persisted2. This verifies both undo/redo and unsaved discard without altering the saved QA drawing. Tab580656665 retained for continuing tests.
+
+## Viewer fidelity pass — 2026-09-15
+
+- Generated/retained photo-viewer-reference-v2.png based on observed CompanyCam modal. Removed full-width metadata header and thumbnail filmstrip, moved uploader/date/name/close to white sidebar, consolidated image tools in a compact icon toolbar, and made description/tags read-only until explicitly edited. Save retry/revision logic and recoverable trash preserved.
+- Production build and TypeScript passed. Commitc87d873 pushed through existing GitHub deployment. Live acceptance pending below. Tasks/comments and other unimplemented parity features are not represented by nonfunctional controls.
+- Vercel2xY83BpxfxDHwCGju6K29Ljfcu5M Ready46s for c87d873. Canonical QA viewer shows icon toolbar, metadata sidebar (stacked on narrow viewport), read-only description/Add Tags and no filmstrip/header.
+- Browser fixture a37b... description changed through inline editor to `QA only: inline description save check.` Save returned read-only display; full refresh retained exact text. Opened tags, typed disposable tag, Cancel restored Add Tags without adding it. Compact trash opened its confirmation; Cancel left photo active.
+- Browser viewport override1366x900 did not yield a desktop-sized existing-tab screenshot (still629px-wide). Do not claim desktop visual acceptance. Reset override after test. Dedicated QA tab580656665 retained; no real media modified. Broader gallery fidelity and other remaining acceptance work continue.
+
+## Gallery fidelity pass — 2026-09-15
+
+- Fresh CompanyCam QA gallery screenshot confirmed Small selected, square140px tiles, narrow gaps, date checkbox, compact Date Range/Users/Tags row with View/Upload on right. Generated/retained gallery-reference-v2; implementation uses only observed gallery structure, not invented navigation in mockup.
+- Added date-group selection over currently loaded items, compact square sizes140/220/300, small default, uploader initials overlay, hover/focus selection controls, Date Range popover; removed repeated heading/subtitle and select-loaded prose. Existing selection/revision backend retained.
+- Fixed upload queue/viewer title to use actual project presentation name, preserving separate deals for one contact.
+- Production build/typecheck passed. fc961da pushed; pending live verification. No additional backend mutations.
+- fc961da Vercel861E1JDYRzSXq7xjS2DagNmjP8X6 Ready47s. Live QA tab580656675: Monday date checkbox selects3 fixture icons, uncheck clears; Date Range reveals From field; thumbnail a37b opens correct3of4 viewer; ArrowLeft navigates2of4;close returns gallery. No file mutation. Viewport override reset. Gallery QA tab retained.
+
+## Upload lifecycle verification gate — 2026-09-15
+
+- Inspected current queue implementation: transfer semaphore is tab-local. Saved queue recovery has no cross-tab ownership coordination. Worker stable request IDs protect server record identity, but this does not prove cross-tab queue-state consistency; that remains an explicit reliability gap.
+- Opened QA upload modal through dedicated tab580656675. Queue empty, choose-files control present. Standard filechooser flow timed out before supplying the harmless icon. DOM confirms the file input exists (1px sr-only input, accessible label Choose photos and videos). Native foreground is a separate real CompanyCam project; did not operate that project's picker or upload files there.
+- Browser upload troubleshooting requires Allow access to file URLs for the ChatGPT Chrome extension. User was given the documented instruction. No successful new upload or in-flight lifecycle test is claimed. Need working upload bridge or native picker in the known QA tab, then test navigation/reload/cancel and multi-tab coordination.
