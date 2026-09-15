@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { useGalleryPages } from "@/lib/use-gallery-pages";
 import type { GalleryPage, GalleryFilters } from "@/lib/gallery-page";
 import { ProjectMediaPreview } from "@/components/project-media-preview";
-import { ProjectMediaUpload } from "@/components/project-media-upload";
+import { ProjectMediaUpload } from "@/components/project-upload-provider";
 import { ProjectProfilePanel } from "@/components/project-profile-panel";
 import { Card } from "@/components/ui";
 import type { ProjectContact, ProjectMediaItem } from "@/lib/project-data";
@@ -208,7 +208,7 @@ export function ProjectPhotosPanel({
           </div>
           <div className="flex items-center gap-2">
             <ProjectPhotoTrash projectId={projectId}/>
-            <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} />
+            <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} label={contact.name??"Project photos"} />
           </div>
         </div>
         {galleryPage.total>0?<div className="mb-6 flex flex-wrap items-center gap-2 text-sm">

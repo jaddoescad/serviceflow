@@ -5,18 +5,23 @@ import { useRouter } from "next/navigation";
 import { ProjectModal } from "@/components/project-profile-panel";
 import { Button } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import { projectUploadSlots } from "@/lib/upload-slots";
 import { appendUploadFiles, mediaMime, retryUploadItem, validateMediaFile, type UploadItem } from "@/lib/media-upload-queue";
 import { forgetUploads, loadUploads, storeUploads } from "@/lib/media-upload-storage";
 
 const MEDIA_API_URL = (process.env.NEXT_PUBLIC_PROJECT_MEDIA_API_URL || "https://project-media-worker.jadslim-fai.workers.dev").replace(/\/+$/, "");
 
-export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:boolean}) {
+export type UploadSummary = {total:number;remaining:number;complete:number;failed:number};
+export function ProjectUploadSession({projectId,isLead,projectLabel,open,onOpen,onSummary}: {
+  projectId:string;isLead:boolean;projectLabel:string;open:boolean;onOpen:(open:boolean)=>void;
+  onSummary:(projectId:string,isLead:boolean,summary:UploadSummary)=>void;
+}) {
   const router=useRouter();
   const input=useRef<HTMLInputElement>(null);
   const requests=useRef(new Map<string,XMLHttpRequest>());
   const active=useRef(new Map<string,symbol>());
   const mounted=useRef(true);
-  const [open,setOpen]=useState(false);
+
   const [drag,setDrag]=useState(false);
   const [items,setItems]=useState<UploadItem[]>([]);
   const [scope,setScope]=useState<string|null>(null);
@@ -26,6 +31,8 @@ export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:b
   const remaining=items.filter(i=>i.status==='queued'||i.status==='uploading').length;
   const complete=items.filter(i=>i.status==='complete').length;
   const failed=items.filter(i=>i.status==='failed').length;
+
+  useEffect(()=>{onSummary(projectId,isLead,{total:items.length,remaining,complete,failed});},[projectId,isLead,items.length,remaining,complete,failed,onSummary]);
 
   function patch(id:string,changes:Partial<UploadItem>) {
     if (mounted.current) setItems(current=>current.map(i=>i.id===id?{...i,...changes}:i));
@@ -62,7 +69,10 @@ export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:b
       const attempt=Symbol();
       active.current.set(item.id,attempt);
       patch(item.id,{status:'uploading',error:undefined});
+      let release:(()=>void)|undefined;
       try {
+        release=await projectUploadSlots.acquire();
+        if(!mounted.current||active.current.get(item.id)!==attempt)return;
         const {data:{session},error}=await createClient().auth.getSession();
         if (error||!session) throw new Error('Session expired. Sign in again, then retry.');
         if(!scope!.startsWith(`${session.user.id}/`))throw new Error('The signed-in account changed. Reload before uploading.');
@@ -111,6 +121,7 @@ export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:b
           if(mounted.current)await storeUploads(scope!,[{...item,...changes}]).catch(()=>setStorageError('Could not save the latest queue status. Keep this page open until uploads finish.'));
         }
       } finally {
+        release?.();
         if(active.current.get(item.id)===attempt) {
           requests.current.delete(item.id);
           active.current.delete(item.id);
@@ -158,11 +169,7 @@ export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:b
   }
 
   return <>
-    <Button type="button" onClick={()=>setOpen(true)}>＋ Upload photos</Button>
-    {items.length>0&&!open?<button type="button" onClick={()=>setOpen(true)} className="fixed bottom-5 right-5 z-40 rounded-xl border border-[var(--color-border)] bg-white px-5 py-3 text-sm shadow-lg" aria-live="polite">
-      {remaining?`Uploading ${complete} of ${items.length}`:`${complete} uploaded`}{failed?` · ${failed} need attention`:''} · View uploads
-    </button>:null}
-    {open?<ProjectModal title="Add photos and videos" subtitle="Uploads start automatically. You can close this panel while they finish." onClose={()=>setOpen(false)} wide>
+    {open?<ProjectModal title={`Add photos and videos · ${projectLabel}`} subtitle="Uploads continue as you move between projects. Keep this browser tab open while they finish." onClose={()=>onOpen(false)} wide>
       <div className="space-y-4 p-6">
         <input ref={input} aria-label="Choose photos and videos" type="file" multiple className="sr-only" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mov,.m4v" onChange={event=>{add(Array.from(event.target.files??[]));event.target.value='';}} />
         <button type="button" disabled={!scope||preparing} onClick={()=>input.current?.click()} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);void add(Array.from(e.dataTransfer.files));}} className={`w-full rounded-xl border-2 border-dashed p-9 text-center disabled:opacity-50 ${drag?'border-[var(--color-brand)] bg-[var(--color-brand-soft)]':'border-[var(--color-border)]'}`}>
@@ -182,7 +189,7 @@ export function ProjectMediaUpload({projectId,isLead}:{projectId:string;isLead:b
         </li>)}</ul>:null}
         <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
           <span className="text-sm text-[var(--color-muted)]" aria-live="polite">{complete} uploaded{failed?` · ${failed} failed`:''}</span>
-          <div className="flex gap-2">{!remaining&&!preparing&&items.length?<Button variant="ghost" onClick={()=>void clear()}>Clear list</Button>:null}<Button onClick={()=>setOpen(false)}>Done</Button></div>
+          <div className="flex gap-2">{!remaining&&!preparing&&items.length?<Button variant="ghost" onClick={()=>void clear()}>Clear list</Button>:null}<Button onClick={()=>onOpen(false)}>Done</Button></div>
         </div>
       </div>
     </ProjectModal>:null}

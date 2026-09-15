@@ -1,3 +1,4 @@
+import { ProjectUploadProvider } from "@/components/project-upload-provider";
 import { SITE_NAME, SITE_TITLE } from "@/lib/site-brand";
 import type { Metadata } from "next";
 import "leaflet/dist/leaflet.css";
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-design="1">
-      <body>{children}</body>
+      <body><ProjectUploadProvider>{children}</ProjectUploadProvider></body>
     </html>
   );
 }

@@ -63,3 +63,24 @@ export async function forgetUploads(scope: string, ids: string[]): Promise<void>
     });
   } finally { db.close(); }
 }
+
+/** Discover this account's pending projects without loading file bytes. */
+export async function listUploadScopes(userId: string): Promise<string[]> {
+  const db = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const scopes: string[] = [];
+      const transaction = db.transaction(STORE, "readonly");
+      const prefix = `${userId}/`;
+      const request = transaction.objectStore(STORE).index("scope").openKeyCursor(
+        IDBKeyRange.bound(prefix, `${prefix}\uffff`), "nextunique",
+      );
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) { resolve(scopes); return; }
+        scopes.push(String(cursor.key)); cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } finally { db.close(); }
+}

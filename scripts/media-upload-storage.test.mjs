@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { storeUploads, loadUploads, forgetUploads } from '../src/lib/media-upload-storage.ts';
+import { storeUploads, loadUploads, forgetUploads, listUploadScopes } from '../src/lib/media-upload-storage.ts';
 
 function photo(id, status='queued') {
   return { id, file:new File(['fixture bytes'],'cuisine été.jpg',{type:'image/jpeg',lastModified:12345}),status,progress:63 };
@@ -41,4 +41,15 @@ test('completed-file cleanup removes only the requested account/project item',as
   await forgetUploads('user-a/cleanup',['one']);
   assert.deepEqual((await loadUploads('user-a/cleanup')).map(item=>item.id),['two']);
   assert.equal((await loadUploads('user-b/cleanup')).length,1);
+});
+
+
+test('global recovery discovers only the signed-in account scopes without duplicate projects',async()=>{
+ await storeUploads('recover-user/jobs/one',[photo('a'),photo('b')]);
+ await storeUploads('recover-user/leads/two',[photo('c','cancelled')]);
+ await storeUploads('recover-user-other/jobs/secret',[photo('d')]);
+ assert.deepEqual(await listUploadScopes('recover-user'),['recover-user/jobs/one','recover-user/leads/two']);
+ assert.deepEqual(await listUploadScopes('no-such-user'),[]);
+ await forgetUploads('recover-user/jobs/one',['a','b']);
+ assert.deepEqual(await listUploadScopes('recover-user'),['recover-user/leads/two']);
 });
