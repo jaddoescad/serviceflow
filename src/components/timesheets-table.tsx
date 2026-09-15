@@ -107,8 +107,8 @@ export function TimesheetsTable({
   canDelete, result, filters, currentPage,
 }: {
   entries: TimeEntry[];
-  employees: EmployeeProfile[];
-  projects: Project[];
+  employees: Pick<EmployeeProfile, "user_id" | "full_name" | "email">[];
+  projects: Pick<Project, "companycam_id" | "name">[];
   canDelete: boolean;
   result: { total: number; totalHours: number; activeCount: number; calculatedAt: string };
   filters: TimesheetFilters;

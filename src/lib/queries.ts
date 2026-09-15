@@ -123,14 +123,18 @@ export async function getEmployeeTrackingStatuses(): Promise<EmployeeTrackingSta
 export async function getEmployeeLocationPoints(userIds: string[], sinceIso: string): Promise<EmployeeLocationPoint[]> {
   if (!userIds.length) return [];
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("employee_location_points")
-    .select("*")
-    .in("employee_id", [...new Set(userIds)])
-    .gte("captured_at", sinceIso)
-    .order("captured_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(`location points: ${error.message}`);
+  const data: any[] = [];
+  const users = [...new Set(userIds)];
+  for (let userOffset = 0; userOffset < users.length; userOffset += 50) {
+    for (let offset = 0; ; offset += 500) {
+      const result = await supabase.from("employee_location_points").select("*")
+        .in("employee_id", users.slice(userOffset, userOffset + 50)).gte("captured_at", sinceIso)
+        .order("captured_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 499);
+      if (result.error) throw new Error(`location points: ${result.error.message}`);
+      data.push(...(result.data ?? []));
+      if ((result.data?.length ?? 0) < 500) break;
+    }
+  }
   return (data ?? []).map((row: any) => ({
     ...row,
     user_id: row.employee_id,
@@ -151,15 +155,24 @@ export async function getEmployeePayRates(): Promise<EmployeePayRate[]> {
   }));
 }
 
-export async function getProjects(): Promise<Project[]> {
+export async function getProjects(projectIds?: string[]): Promise<Project[]> {
+  if (projectIds && !projectIds.length) return [];
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("is_feed_visible", true)
-    .order("updated_at", { ascending: false })
-    .limit(2000);
-  if (error) throw new Error(`jobs: ${error.message}`);
+  const data: any[] = [];
+  const batches = projectIds ? Array.from({ length: Math.ceil(projectIds.length / 100) }, (_, i) => projectIds.slice(i * 100, i * 100 + 100)) : [null];
+  for (const ids of batches) {
+    for (let offset = 0; ; offset += 500) {
+      let query = supabase.from("jobs")
+        .select("id,name,started_on,completed_on,production_month,formatted_address,address_line_1,city,province,postal_code,latitude,longitude,status,updated_at,source,contract_amount_cents,accepted_quote_id,metadata")
+        .eq("is_feed_visible", true).order("updated_at", { ascending: false }).order("id").range(offset, offset + 499);
+      if (ids) query = query.in("id", ids);
+      const result = await query;
+      if (result.error) throw new Error(`jobs: ${result.error.message}`);
+      data.push(...(result.data ?? []));
+      if ((result.data?.length ?? 0) < 500) break;
+    }
+  }
+  data.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
   return (data ?? [])
     .filter((row) => !isMisclassifiedCompanyCamLeadJob(row))
     .map(project);

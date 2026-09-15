@@ -29,8 +29,8 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         result={result}
         filters={filters}
         currentPage={Math.min(requestedPage, Math.max(1, Math.ceil(result.total / 50)))}
-        employees={employees}
-        projects={projects}
+        employees={employees.map(({ user_id, full_name, email }) => ({ user_id, full_name, email }))}
+        projects={projects.map(({ companycam_id, name }) => ({ companycam_id, name }))}
         canDelete={profile.role === "admin"}
       />
     </>

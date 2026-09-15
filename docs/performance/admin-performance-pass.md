@@ -102,3 +102,12 @@ The App Router can commit a loading boundary before the content. Instrumentation
 - Replaced time-entry, assignment and rate-history downloads with a compact invoker summary. Rate history loads only for the opened editor. Existing actions remain authoritative; success refreshes summary rows.
 - Fixture: 1,200 employees, 1,200 shifts/assignments, old active shift, excluded old completed shift, future rate and scoped history all pass. Authenticated live summary execution 5.023 ms.
 - Pre-release content-ready observations: 744, 633, 1,655, 630, 529 ms (median 633 ms). First sample is prior initial load, remaining samples warm-asset reloads; not a controlled cold run.
+- Photos load-more verified: 120 distinct thumbnail URLs after second batch. Five post-release content-ready warm-asset loads: 2,626, 1,577, 1,586, 1,619, 1,754 ms; median 1,619 ms versus 2,294 ms baseline (~29% lower). This is not the 20-interaction navigation acceptance test.
+- Crew `5cd2af7` is Ready on Vercel.
+
+### Overview prepared release
+
+- Replaced raw entries/rates/budgets/assignments with a purpose-specific summary, chart series, current shifts, the existing seven activity days, and six off-site entries. Map data starts within its own streamed boundary; location failures no longer block the primary page. Map project reads are scoped and location history is paged past API row limits.
+- Fixture verifies 1,200 shifts, complete activity counts, chart parity, missing/overlapping/invalid segments, millisecond bounds and active clocks against existing JavaScript. Live fixed-time comparison on 44 records also matches on-site percentage and both weekly totals. No stored data changed.
+- Overview baseline content-ready samples: 3,067, 1,397, 1,473, 896, 1,357 ms (median 1,397 ms). First includes new deployment assets; cold-server state was not controlled.
+- Timesheet option props now contain only labels/IDs, and project option queries page beyond API row limits.
