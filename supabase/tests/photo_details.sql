@@ -24,11 +24,11 @@ begin
   begin
     perform public.edit_photo_details(project,photo,null,gen_random_uuid(),'stale overwrite','{}');
     raise exception 'Stale write was accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.edit_photo_details(project,photo,revision::text,revision,'revision reuse','{}');
     raise exception 'Revision reused with different content';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.edit_photo_details(gen_random_uuid(),photo,revision::text,gen_random_uuid(),'wrong project','{}');
     raise exception 'Cross-project edit accepted';

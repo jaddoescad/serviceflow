@@ -29,7 +29,7 @@ begin
   begin
     perform public.set_photo_trash(f.project,f.photo,true,null,f.revision);
     raise exception 'Delayed trash request undid restore';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.set_photo_trash(gen_random_uuid(),f.photo,true,restored_revision::text,gen_random_uuid());
     raise exception 'Wrong project accepted';

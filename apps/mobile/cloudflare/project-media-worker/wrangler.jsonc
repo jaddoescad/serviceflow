@@ -14,6 +14,9 @@
   "media": {
     "binding": "MEDIA"
   },
+  "images": {
+    "binding": "IMAGES"
+  },
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",

@@ -22,7 +22,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, HEAD, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
     "Authorization, Content-Type, Range, x-media-type, x-file-size, x-original-filename, x-media-width, x-media-height, x-media-duration-ms, x-captured-at, x-upload-id, x-filename-encoding",
   "Access-Control-Expose-Headers":
@@ -45,10 +45,10 @@ function thumbnailObjectKey(objectKey) {
   return `${objectKey}.thumb.jpg`;
 }
 
-function thumbnailHeaders(etag) {
+function thumbnailHeaders(etag, contentType = "image/jpeg") {
   const headers = {
-    "Content-Type": "image/jpeg",
-    "Cache-Control": "private, max-age=31536000, immutable",
+    "Content-Type": contentType,
+    "Cache-Control": "private, max-age=300",
     "X-Content-Type-Options": "nosniff",
   };
   if (etag) headers.ETag = etag;
@@ -609,31 +609,35 @@ async function handleMediaThumbnail(request, env, mediaId) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
   if (!UUID_PATTERN.test(mediaId)) return errorResponse(400, "Invalid media id.");
-  if (!env.MEDIA) return errorResponse(501, "Media transformations are not enabled.");
 
   const { status, row } = await fetchMediaRow(env, token, mediaId);
   if (status === 401) return errorResponse(401, "Not authorized.");
   if (status !== 200) return errorResponse(502, "Could not verify media access.");
   if (!row) return errorResponse(404, "Media not found.");
-  if (row.media_type !== "video") return errorResponse(400, "Media is not a video.");
+  const isImage = row.media_type === "image";
+  const contentType = isImage ? "image/webp" : "image/jpeg";
 
   // Serve a previously generated frame if we have one. A stored frame costs
   // nothing to serve, so each video is transformed once ever rather than once
   // per month, and repeat views skip the transformer entirely.
-  const cacheKey = thumbnailObjectKey(row.object_key);
+  const cacheKey = isImage ? `${row.object_key}.preview-v1.webp` : thumbnailObjectKey(row.object_key);
   const cached = await env.MEDIA_BUCKET.get(cacheKey);
   if (cached) {
     return new Response(cached.body, {
       status: 200,
-      headers: withCors(thumbnailHeaders(cached.httpEtag)),
+      headers: withCors(thumbnailHeaders(cached.httpEtag,contentType)),
     });
   }
 
   const object = await env.MEDIA_BUCKET.get(row.object_key);
   if (!object) return errorResponse(404, "Media file not found.");
+  if (isImage && !env.IMAGES || !isImage && !env.MEDIA) return errorResponse(501, "Preview transformations are not enabled.");
+  if (isImage && object.size > 20 * 1024 * 1024) return errorResponse(422,"This original exceeds the preview processor limit.");
 
   try {
-    const frame = await env.MEDIA.input(object.body)
+    const frame = isImage ? (await env.IMAGES.input(object.body)
+      .transform({ width: 640, height: 480, fit: "cover" })
+      .output({ format:"image/webp", quality:78, anim:false })).response() : await env.MEDIA.input(object.body)
       .transform({ width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT, fit: "cover" })
       .output({ mode: "frame", time: THUMBNAIL_TIME, format: "jpg" })
       .response();
@@ -641,19 +645,22 @@ async function handleMediaThumbnail(request, env, mediaId) {
     // Buffer so the same bytes can be stored and returned; a frame is tens of
     // kilobytes, well within a Worker's memory.
     const bytes = await frame.arrayBuffer();
+    if (!frame.ok || bytes.byteLength === 0 || bytes.byteLength > 5 * 1024 * 1024) {
+      return errorResponse(422,"Could not generate a valid preview.");
+    }
     await env.MEDIA_BUCKET.put(cacheKey, bytes, {
-      httpMetadata: { contentType: "image/jpeg" },
+      httpMetadata: { contentType },
     });
 
     return new Response(bytes, {
       status: 200,
-      headers: withCors(thumbnailHeaders(null)),
+      headers: withCors(thumbnailHeaders(null,contentType)),
     });
   } catch (error) {
     // A frame is a nicety: fall back to the placeholder tile rather than an error
     // that would make the whole grid look broken.
     console.warn("Thumbnail generation failed", error?.message);
-    return errorResponse(422, "Could not extract a frame from this video.");
+    return errorResponse(422, "Could not generate a preview for this file.");
   }
 }
 

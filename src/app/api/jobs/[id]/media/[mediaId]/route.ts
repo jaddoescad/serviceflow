@@ -44,6 +44,7 @@ async function proxyMedia(
   // Supabase RLS also confirms the signed-in user may see the row.
   const supabase = await createClient();
   const trash = new URL(request.url).searchParams.get('view') === 'trash';
+  const preview = !trash && new URL(request.url).searchParams.get('preview') === '1';
   const { data: media, error } = trash ? await supabase.rpc('get_photo_trash',{
     requested_project_id:projectId,requested_media_id:mediaId,
   }).maybeSingle() : await supabase
@@ -59,11 +60,11 @@ async function proxyMedia(
 
   const range = request.headers.get("range");
   let upstream: Response;
-  try { upstream = await fetch(`${workerUrl}/v1/media/${encodeURIComponent(mediaId)}${trash?'/trash':''}`, {
-    method: headOnly ? "HEAD" : "GET",
+  try { upstream = await fetch(`${workerUrl}/v1/media/${encodeURIComponent(mediaId)}${trash?'/trash':preview?'/thumbnail':''}`, {
+    method: headOnly && !preview ? "HEAD" : "GET",
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(range ? { Range: range } : {}),
+      ...(range && !preview ? { Range: range } : {}),
     },
     cache: "no-store",
     signal: AbortSignal.timeout(30000),
@@ -94,6 +95,7 @@ async function proxyMedia(
     if (value) headers.set(name, value);
   }
 
+  if(headOnly)await upstream.body?.cancel();
   return new Response(headOnly ? null : upstream.body, {
     status: upstream.status,
     headers,

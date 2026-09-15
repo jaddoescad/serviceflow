@@ -2,13 +2,14 @@
 
 import { SITE_NAME } from "@/lib/site-brand";
 
-import Image from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ProjectPhotoCanvas } from "@/components/project-photo-canvas";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PhotoDetailsEditor } from "@/components/photo-details-editor";
 import { PhotoTrashAction, ProjectPhotoTrash } from "@/components/project-photo-trash";
 import { useRouter } from "next/navigation";
 import { useGalleryPages } from "@/lib/use-gallery-pages";
 import type { GalleryPage, GalleryFilters } from "@/lib/gallery-page";
+import { ProjectMediaPreview } from "@/components/project-media-preview";
 import { ProjectMediaUpload } from "@/components/project-media-upload";
 import { ProjectProfilePanel } from "@/components/project-profile-panel";
 import { Card } from "@/components/ui";
@@ -97,11 +98,13 @@ export function ProjectPhotosPanel({
   const [to,setTo]=useState('');
   const gallery=useGalleryPages(projectId,galleryPage,{type:mediaType,order,creator,tag,from,to});
   const visibleMedia=gallery.page.items;
-  const imageItems = useMemo(() => visibleMedia.filter((item) => item.mediaType === "image"), [visibleMedia]);
+  const galleryItems = visibleMedia;
+  const navigationItems=useRef(galleryItems);
+  useEffect(()=>{navigationItems.current=galleryItems;},[galleryItems]);
   const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [activeSnapshot,setActiveSnapshot]=useState<ProjectMediaItem|null>(null);
-  const activeImageIndex = imageItems.findIndex((item) => item.id === activeImageId);
-  const currentImage=imageItems[activeImageIndex];
+  const activeImageIndex = galleryItems.findIndex((item) => item.id === activeImageId);
+  const currentImage=galleryItems[activeImageIndex];
   useEffect(()=>{if(currentImage)setActiveSnapshot(currentImage);},[currentImage]);
   const dirtyDetails = useRef(false);
   const trackDirty = useCallback((dirty: boolean) => { dirtyDetails.current = dirty; }, []);
@@ -117,11 +120,11 @@ export function ProjectPhotosPanel({
   const galleryOpen = !!activeImage;
 
   function showPrevious() {
-    if (mayLeave()) setActiveImageId(imageItems[(activeImageIndex - 1 + imageItems.length) % imageItems.length]?.id ?? null);
+    if (mayLeave()) setActiveImageId(galleryItems[(activeImageIndex - 1 + galleryItems.length) % galleryItems.length]?.id ?? null);
   }
 
   function showNext() {
-    if (mayLeave()) setActiveImageId(imageItems[(activeImageIndex + 1) % imageItems.length]?.id ?? null);
+    if (mayLeave()) setActiveImageId(galleryItems[(activeImageIndex + 1) % galleryItems.length]?.id ?? null);
   }
 
   useEffect(() => {
@@ -133,26 +136,29 @@ export function ProjectPhotosPanel({
     closeButtonRef.current?.focus();
 
     function onKeyDown(event: KeyboardEvent) {
+      const images=navigationItems.current;
       if (event.key === "Escape") {
+        if(document.fullscreenElement)return;
         closeGallery();
         return;
       }
-      if (event.key !== "Tab" && (event.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) return;
-      if (event.key === "ArrowLeft" && imageItems.length > 1) {
+      if (event.key !== "Tab" && (event.target as HTMLElement).closest("input, textarea, video, [contenteditable=true]")) return;
+      if (event.key === "ArrowLeft" && images.length > 1) {
         event.preventDefault();
-        if (mayLeave()) setActiveImageId((current) => imageItems[(imageItems.findIndex((item) => item.id === current) - 1 + imageItems.length) % imageItems.length]?.id ?? null);
+        if (mayLeave()) setActiveImageId((current) => images[(images.findIndex((item) => item.id === current) - 1 + images.length) % images.length]?.id ?? null);
         return;
       }
-      if (event.key === "ArrowRight" && imageItems.length > 1) {
+      if (event.key === "ArrowRight" && images.length > 1) {
         event.preventDefault();
-        if (mayLeave()) setActiveImageId((current) => imageItems[(imageItems.findIndex((item) => item.id === current) + 1) % imageItems.length]?.id ?? null);
+        if (mayLeave()) setActiveImageId((current) => images[(images.findIndex((item) => item.id === current) + 1) % images.length]?.id ?? null);
         return;
       }
       if (event.key !== "Tab") return;
 
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      const candidates = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), video[controls], [href], [tabindex]:not([tabindex="-1"])',
       );
+      const focusable = candidates ? [...candidates].filter(element=>!document.fullscreenElement||document.fullscreenElement.contains(element)) : [];
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -171,7 +177,7 @@ export function ProjectPhotosPanel({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [galleryOpen, imageItems, closeGallery, mayLeave]);
+  }, [galleryOpen, closeGallery, mayLeave]);
 
   const groups = new Map<string, ProjectMediaItem[]>();
   for (const item of visibleMedia) {
@@ -252,36 +258,21 @@ export function ProjectPhotosPanel({
                       return (
                         <figure key={item.id} className="min-w-0">
                           <div className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-sm">
-                            {item.mediaType === "video" ? (
-                              <video
-                                controls
-                                playsInline
-                                preload="metadata"
-                                aria-label={mediaAlt(item)}
-                                className="h-full w-full object-cover"
-                              >
-                                <source src={mediaUrl} type={item.mimeType} />
-                              </video>
-                            ) : (
                               <button
                                 type="button"
                                 onClick={() => setActiveImageId(item.id)}
                                 aria-label={`View ${mediaAlt(item).toLocaleLowerCase("en-CA")} in gallery`}
                                 className="block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)]"
                               >
-                                <Image
+                                <ProjectMediaPreview
                                   src={mediaUrl}
                                   alt={mediaAlt(item)}
-                                  fill
-                                  unoptimized
-                                  sizes="(max-width: 640px) 50vw, (max-width: 1279px) 33vw, 22vw"
-                                  className="object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                                  video={item.mediaType === "video"}
                                 />
                                 <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pb-2.5 pt-8 text-left text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                  View gallery
+                                  {item.mediaType === "video" ? "▶ Play video" : "View gallery"}
                                 </span>
                               </button>
-                            )}
                             {duration ? (
                               <span className="absolute bottom-2 right-2 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold text-white">
                                 {duration}
@@ -327,19 +318,20 @@ export function ProjectPhotosPanel({
             ref={dialogRef}
             role="dialog"
             aria-modal="true"
-            aria-label={`Photo gallery, image ${activeImageIndex + 1} of ${imageItems.length}`}
+            aria-label={`Photo gallery, image ${activeImageIndex + 1} of ${galleryItems.length}`}
             className="flex h-full min-h-0 flex-col"
           >
             <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-4 py-3 sm:px-6">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">
-                  {activeImageIndex>=0?`Photo ${activeImageIndex+1} of ${imageItems.length}`:'Photo'}
+                  {activeImage.mediaType==='video'?'Video':'Photo'} {activeImageIndex>=0?`${activeImageIndex+1} of ${galleryItems.length}`:''}
                 </div>
                 <div className="mt-0.5 truncate text-xs text-white/60">
                   {dateHeading(activeImage.capturedAt ?? activeImage.createdAt)} · {captureTime(activeImage.capturedAt ?? activeImage.createdAt)}
                   {activeImage.creatorName ? ` · ${activeImage.creatorName}` : ""}
                 </div>
               </div>
+              <a href={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`} download={activeImage.originalFilename??activeImage.id} className="ml-auto rounded-lg bg-white/10 px-3 py-2 text-sm text-white">Download</a>
               <button
                 ref={closeButtonRef}
                 type="button"
@@ -353,12 +345,13 @@ export function ProjectPhotosPanel({
 
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,1fr)_minmax(0,45%)] sm:grid-cols-[minmax(0,1fr)_320px] sm:grid-rows-1">
             <div
-              className="relative min-h-0 flex-1 touch-pan-y select-none"
+              className="relative min-h-0 flex-1 touch-auto select-none"
               onTouchStart={(event) => {
+                if((event.target as HTMLElement).closest('video'))return;
                 touchStartX.current = event.changedTouches[0]?.clientX ?? null;
               }}
               onTouchEnd={(event) => {
-                if (touchStartX.current === null || imageItems.length < 2) return;
+                if (touchStartX.current === null || galleryItems.length < 2) return;
                 const distance = (event.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
                 touchStartX.current = null;
                 if (Math.abs(distance) < 50) return;
@@ -366,17 +359,15 @@ export function ProjectPhotosPanel({
                 else showNext();
               }}
             >
-              <Image
+              {activeImage.mediaType === 'video' ? <video key={activeImage.id} controls playsInline
+                src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`}
+                className="absolute inset-0 h-full w-full object-contain px-2 py-3 sm:px-16" aria-label={mediaAlt(activeImage)} /> : <ProjectPhotoCanvas
                 key={activeImage.id}
                 src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(activeImage.id)}`}
                 alt={mediaAlt(activeImage)}
-                fill
-                unoptimized
-                sizes="100vw"
-                className="object-contain px-2 py-3 sm:px-20 sm:py-6"
-              />
+              />}
 
-              {imageItems.length > 1 ? (
+              {galleryItems.length > 1 ? (
                 <>
                   <button
                     type="button"
@@ -409,10 +400,10 @@ export function ProjectPhotosPanel({
             </aside>
             </div>
 
-            {imageItems.length > 1 ? (
+            {galleryItems.length > 1 ? (
               <div className="shrink-0 border-t border-white/15 bg-black/60 px-3 py-3 sm:px-6">
                 <div className="mx-auto flex max-w-5xl gap-2 overflow-x-auto pb-1" aria-label="Gallery thumbnails">
-                  {imageItems.map((item, index) => (
+                  {galleryItems.map((item, index) => (
                     <button
                       key={item.id}
                       type="button"
@@ -425,13 +416,10 @@ export function ProjectPhotosPanel({
                           : "border-transparent opacity-55 hover:opacity-100"
                       }`}
                     >
-                      <Image
+                      <ProjectMediaPreview
                         src={`/api/jobs/${encodeURIComponent(projectId)}/media/${encodeURIComponent(item.id)}`}
                         alt=""
-                        fill
-                        unoptimized
-                        sizes="80px"
-                        className="object-cover"
+                        video={item.mediaType === "video"}
                       />
                     </button>
                   ))}

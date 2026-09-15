@@ -580,7 +580,7 @@ test("thumbnail extracts a frame from a video without exposing the bucket", asyn
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Type"), "image/jpeg");
-  assert.match(response.headers.get("Cache-Control"), /immutable/);
+  assert.match(response.headers.get("Cache-Control"), /private/);
   assert.equal(calls[0].hasBody, true);
   assert.equal(calls[2].options.mode, "frame");
   assert.equal(calls[2].options.format, "jpg");
@@ -598,7 +598,7 @@ test("thumbnail extracts a frame from a video without exposing the bucket", asyn
   assert.equal(second.headers.get("Content-Type"), "image/jpeg");
 });
 
-test("thumbnail requires auth and refuses photos", async () => {
+test("thumbnail requires auth and reports a missing image binding", async () => {
   const anonymous = await worker.fetch(
     new Request(`${BASE}/v1/media/${crypto.randomUUID()}/thumbnail`),
     env,
@@ -614,7 +614,36 @@ test("thumbnail requires auth and refuses photos", async () => {
     }),
     env,
   );
-  assert.equal(photo.status, 400);
+  assert.equal(photo.status, 501);
+});
+
+test('image preview resizes private bytes and caches only the derivative',async()=>{
+  const {row}=await seedMediaRow();
+  queueSupabase(200,[row]);
+  const calls=[];
+  env.IMAGES={input(stream){
+    assert.ok(stream);return {transform(options){calls.push(options);return this;},
+      async output(options){calls.push(options);return {response:()=>new Response(new Uint8Array([82,73,70,70]))};}};
+  }};
+  const request=()=>new Request(`${BASE}/v1/media/${row.id}/thumbnail`,{headers:{Authorization:`Bearer ${fakeJwt()}`}});
+  const response=await worker.fetch(request(),env);
+  assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'image/webp');
+  assert.equal(calls[0].width,640);assert.equal(calls[1].format,'image/webp');
+  assert.ok(bucket.objects.has(row.object_key));
+  assert.ok(bucket.objects.has(`${row.object_key}.preview-v1.webp`));
+  queueSupabase(200,[row]);
+  env.IMAGES.input=()=>assert.fail('Cached preview should not transform again');
+  assert.equal((await worker.fetch(request(),env)).status,200);
+  queueSupabase(200,[]);
+  assert.equal((await worker.fetch(request(),env)).status,404,'cached file must still pass access checks');
+});
+
+test('failed image transform does not poison the preview cache',async()=>{
+  const {row}=await seedMediaRow();queueSupabase(200,[row]);
+  env.IMAGES={input(){return {transform(){return this;},async output(){return {response:()=>new Response('failed',{status:500})};}};}};
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${row.id}/thumbnail`,{headers:{Authorization:`Bearer ${fakeJwt()}`}}),env);
+  assert.equal(response.status,422);assert.ok(bucket.objects.has(row.object_key));
+  assert.equal(bucket.objects.has(`${row.object_key}.preview-v1.webp`),false);
 });
 
 test("thumbnail falls back with 422 when the transformer cannot read the video", async () => {
