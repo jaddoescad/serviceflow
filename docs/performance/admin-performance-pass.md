@@ -79,6 +79,8 @@ Remaining bottleneck: intermittent end-to-end response delays remain much larger
 
 Follow-up audit: Overview's tracking-status query now selects only employees represented in its displayed shifts, in 50-ID batches. Empty shift lists issue no tracking-status query. The fixture verifies a target beyond the first 1,000 employees and all 1,200 requested employees without duplicates; build passed. This closes an unbounded map read, but is not evidence that the primary-content latency outlier is resolved.
 
+Post-`ef08925` verification: 20 additional Contacts → Overview sidebar navigations measured a 384.5 ms median, 544 ms p95 and 1,043 ms maximum for primary content. Samples (ms): 384,480,389,373,362,359,544,417,373,351,367,406,335,1043,411,394,385,392,379,382. This sample meets the target; earlier outliers remain recorded rather than discarded. Full streamed response durations include independently loading map data and must not be substituted for primary-content latency. The before-deployment cold baseline cannot be reconstructed exactly; acceptance of documented current-only cold measurements versus a separate historical-code benchmark has been asked of the user and remains unanswered.
+
 ## Correctness and live verification
 
 - Eight test files pass, including >1,000-record fixtures: 1,200 contacts/related projects, 1,200 jobs/entries/employees, 1,205 cursor-paged media records, and scoped location/assignment reads beyond API limits.
