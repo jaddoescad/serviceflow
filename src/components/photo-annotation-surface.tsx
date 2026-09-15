@@ -4,7 +4,7 @@ import {useEffect,useRef,useState,type SVGProps} from 'react';
 import {fittedPhoto} from '@/lib/annotation-history';
 import type {AnnotationDocument,AnnotationShape} from '@/lib/photo-annotations';
 
-type SurfaceProps={src:string;alt:string;document:AnnotationDocument;selected?:string|null;onError?:()=>void;
+type SurfaceProps={src:string;alt:string;document:AnnotationDocument;padding?:number;selected?:string|null;onError?:()=>void;
   handlers?:Pick<SVGProps<SVGSVGElement>,'onPointerDown'|'onPointerMove'|'onPointerUp'|'onPointerCancel'|'onKeyDown'>};
 function Drawing({shape,aspect,selected}:{shape:AnnotationShape;aspect:number;selected:boolean}) {
   const h=1000/aspect,unit=Math.min(1000,h),width=shape.width*unit;
@@ -23,7 +23,7 @@ function Drawing({shape,aspect,selected}:{shape:AnnotationShape;aspect:number;se
   }
   return <g data-shape-id={shape.id} stroke={shape.color} strokeWidth={width} fill="none" strokeLinecap="round" strokeLinejoin="round" style={selected?{filter:'drop-shadow(0 0 3px white)'}:undefined}>{element}</g>;
 }
-export function PhotoAnnotationSurface({src,alt,document,selected=null,onError,handlers}:SurfaceProps) {
+export function PhotoAnnotationSurface({src,alt,document,padding=12,selected=null,onError,handlers}:SurfaceProps) {
   const root=useRef<HTMLDivElement>(null);
   const [size,setSize]=useState({width:0,height:0});
   const [aspect,setAspect]=useState(1);
@@ -33,7 +33,7 @@ export function PhotoAnnotationSurface({src,alt,document,selected=null,onError,h
     const observer=new ResizeObserver(entries=>{const rect=entries[0].contentRect;setSize({width:rect.width,height:rect.height});});
     observer.observe(root.current);return()=>observer.disconnect();
   },[]);
-  const bounds=fittedPhoto(size.width,size.height,aspect);
+  const bounds=fittedPhoto(size.width,size.height,aspect,padding);
   return <div ref={root} className="absolute inset-0">
     <div className="absolute" style={bounds}>
       <img src={src} alt={alt} draggable={false} onError={onError} onLoad={event=>{setAspect(event.currentTarget.naturalWidth/event.currentTarget.naturalHeight);setLoaded(true);}} className="absolute inset-0 h-full w-full"/>

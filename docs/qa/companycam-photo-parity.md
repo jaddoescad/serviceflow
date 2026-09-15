@@ -183,3 +183,10 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - Fixed linked-only viewer accessibility label so a photo outside the current loaded results is identified as a linked photo/video, never item0.
 - Direct-photo lookup now falls back to the uploader's employee name when imported creator metadata is absent, matching normal gallery semantics. It retains the same session client and RLS; only full_name is selected, and unavailable employee information remains null.
 - Read-only source fixture query confirmed a37b... has no creator_name and resolves uploaded_by to Jad Slim. Authenticated-role employee lookup succeeded inside a rolled-back transaction. TypeScript passed. Actual direct-link browser recheck remains pending.
+
+## Fidelity correction after user rejection — 2026-09-15
+
+- User explicitly rejected generic UI additions and requires closer CompanyCam UI/UX fidelity, not a feature checklist. Previous editor reference is superseded by photo-annotation-editor-reference-v2.png.
+- Browser unlocked. Published097c319; Vercel8ukDizaxGtjhdQ5ohoDsUe8x4RhL Ready39s. Canonical QA direct-link viewer loads three photos and Edit photo, uploader Jad Slim. This confirms deployment, not editor acceptance.
+- Captured actual CompanyCam QA editor through native Chrome. It uses a48px white icon rail, charcoal full-height canvas, and upper-right circular close control. No header/properties sidebar/footer. Corrected our editor to that structure, removed persistent helper copy and shape-count UI, made colour/thickness contextual, and retained revision-safe save/undo.
+- CompanyCam editor reference still includes additional capabilities (timestamp, stickers, rotate/crop/adjustment) not implemented. Gallery/viewer fidelity and complete functionality remain outstanding. Do not declare CompanyCam parity.
