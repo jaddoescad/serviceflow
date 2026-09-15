@@ -1,34 +1,38 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Avatar, Badge, Button, Card, EmptyState, Input } from "@/components/ui";
 import { fmtDate, initials } from "@/lib/format";
 import type { ContactSummary } from "@/lib/contacts";
 
 const PAGE_SIZE = 50;
 
-export function ContactsTable({ contacts }: { contacts: ContactSummary[] }) {
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase("en-CA");
-    const rows = needle
-      ? contacts.filter((contact) =>
-          [contact.name, contact.email, contact.phone, contact.address].some((value) =>
-            value?.toLocaleLowerCase("en-CA").includes(needle),
-          ),
-        )
-      : contacts;
-    return [...rows].sort(
-      (left, right) =>
-        Date.parse(right.lastActivityAt) - Date.parse(left.lastActivityAt) ||
-        left.name.localeCompare(right.name, "en-CA"),
-    );
-  }, [contacts, search]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+export function ContactsTable({ contacts, total, currentPage, query }: { contacts: ContactSummary[]; total: number; currentPage: number; query: string }) {
+  const router = useRouter();
+  const [search, setSearch] = useState(query);
+  const [pending, startTransition] = useTransition();
+  const previousQuery = useRef(query);
+  useEffect(() => {
+    const previous = previousQuery.current;
+    previousQuery.current = query;
+    setSearch(value => value.trim() === previous ? query : value);
+  }, [query]);
+  function navigate(page: number, value: string) {
+    const params = new URLSearchParams();
+    if (value.trim()) params.set("q", value.trim());
+    if (page > 1) params.set("page", String(page));
+    startTransition(() => router.replace(`/contacts${params.size ? `?${params}` : ""}`, { scroll: false }));
+  }
+  useEffect(() => {
+    if (search.trim() === query) return;
+    const timer = setTimeout(() => navigate(1, search), 300);
+    return () => clearTimeout(timer);
+  }, [search, query]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const safePage = currentPage;
+  const visible = contacts;
 
   return (
     <>
@@ -44,14 +48,13 @@ export function ContactsTable({ contacts }: { contacts: ContactSummary[] }) {
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              setPage(1);
             }}
             className="bg-[var(--color-surface)]"
           />
         </div>
       </div>
 
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden" aria-busy={pending}>
         {visible.length === 0 ? (
           <EmptyState>No contacts match this search.</EmptyState>
         ) : (
@@ -104,15 +107,15 @@ export function ContactsTable({ contacts }: { contacts: ContactSummary[] }) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 sm:px-5">
               <div className="text-xs text-[var(--color-muted)]">
                 {((safePage - 1) * PAGE_SIZE + 1).toLocaleString("en-CA")}–
-                {Math.min(safePage * PAGE_SIZE, filtered.length).toLocaleString("en-CA")} of{" "}
-                {filtered.length.toLocaleString("en-CA")}
+                {Math.min(safePage * PAGE_SIZE, total).toLocaleString("en-CA")} of{" "}
+                {total.toLocaleString("en-CA")}
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="subtle"
                   size="sm"
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                  disabled={pending || safePage <= 1}
+                  onClick={() => navigate(Math.max(1, safePage - 1), query)}
                 >
                   Previous
                 </Button>
@@ -122,8 +125,8 @@ export function ContactsTable({ contacts }: { contacts: ContactSummary[] }) {
                 <Button
                   variant="subtle"
                   size="sm"
-                  disabled={safePage >= totalPages}
-                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                  disabled={pending || safePage >= totalPages}
+                  onClick={() => navigate(Math.min(totalPages, safePage + 1), query)}
                 >
                   Next
                 </Button>

@@ -2,8 +2,6 @@ import { cache } from "react";
 import { selectCanonicalJobId } from "@/lib/project-routing";
 import { createClient } from "@/lib/supabase/server";
 
-const PAGE_SIZE = 1000;
-
 type Row = Record<string, any>;
 
 export type ContactSummary = {
@@ -119,110 +117,12 @@ function currentJob(jobs: Row[]): Row | null {
   );
 }
 
-async function getAllCustomerRows() {
+export async function getCustomerContactsPage(search: string, page: number): Promise<{ rows: ContactSummary[]; total: number }> {
   const supabase = await createClient();
-  const contacts: Row[] = [];
-  const leads: Row[] = [];
-  const jobs: Row[] = [];
-
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select("id,name,email,phone,metadata,created_at,updated_at")
-      .eq("kind", "customer")
-      .order("updated_at", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(`contacts: ${error.message}`);
-    contacts.push(...(data ?? []));
-    if ((data ?? []).length < PAGE_SIZE) break;
-  }
-
-  const [leadResult, jobResult] = await Promise.all([
-    supabase
-      .from("leads")
-      .select("id,contact_id,status,address,city,province,postal_code,created_at,updated_at")
-      .not("contact_id", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(5000),
-    supabase
-      .from("jobs")
-      .select(
-        "id,contact_id,lead_id,status,is_feed_visible,formatted_address,address_line_1,city,province,postal_code,created_at,updated_at,accepted_quote:quotes(lead_id,status,accepted_at)",
-      )
-      .not("contact_id", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(5000),
-  ]);
-  if (leadResult.error) throw new Error(`contact leads: ${leadResult.error.message}`);
-  if (jobResult.error) throw new Error(`contact jobs: ${jobResult.error.message}`);
-  leads.push(...(leadResult.data ?? []));
-  jobs.push(...(jobResult.data ?? []));
-  return { contacts, leads, jobs };
+  const { data, error } = await supabase.rpc("get_contacts_page", { search_text: search, page_number: page });
+  if (error) throw new Error(`contacts: ${error.message}`);
+  return data;
 }
-
-export const getCustomerContacts = cache(async (): Promise<ContactSummary[]> => {
-  const { contacts, leads, jobs } = await getAllCustomerRows();
-  const leadsByContact = new Map<string, Row[]>();
-  const jobsByContact = new Map<string, Row[]>();
-  for (const lead of leads) {
-    const list = leadsByContact.get(lead.contact_id) ?? [];
-    list.push(lead);
-    leadsByContact.set(lead.contact_id, list);
-  }
-  for (const job of jobs) {
-    const list = jobsByContact.get(job.contact_id) ?? [];
-    list.push(job);
-    jobsByContact.set(job.contact_id, list);
-  }
-
-  return contacts.map((contact) => {
-    const contactLeads = leadsByContact.get(contact.id) ?? [];
-    const contactJobs = jobsByContact.get(contact.id) ?? [];
-    const jobsByProject = new Map<string, Row[]>();
-    for (const job of contactJobs) {
-      const projectLeadId = relation(job.accepted_quote)?.lead_id ?? job.lead_id;
-      const key = projectLeadId ? `lead:${projectLeadId}` : `job:${job.id}`;
-      const list = jobsByProject.get(key) ?? [];
-      list.push(job);
-      jobsByProject.set(key, list);
-    }
-    const selectedJobs = [...jobsByProject.values()]
-      .map(currentJob)
-      .filter((job): job is Row => Boolean(job));
-    const convertedLeadIds = new Set(
-      selectedJobs.flatMap((job) => {
-        const projectLeadId = relation(job.accepted_quote)?.lead_id ?? job.lead_id;
-        return projectLeadId ? [projectLeadId] : [];
-      }),
-    );
-    const openLeads = contactLeads.filter((lead) => !convertedLeadIds.has(lead.id));
-    const recent = [...selectedJobs, ...openLeads].sort(
-      (left, right) =>
-        milliseconds(right.updated_at ?? right.created_at) -
-        milliseconds(left.updated_at ?? left.created_at),
-    );
-    const latest = recent[0];
-    const lastActivityAt =
-      text(latest?.updated_at ?? latest?.created_at) ??
-      text(contact.updated_at ?? contact.created_at) ??
-      new Date(0).toISOString();
-    return {
-      id: contact.id,
-      name: text(contact.name) ?? "Unnamed contact",
-      email: text(contact.email),
-      phone: text(contact.phone),
-      address: latest
-        ? latest.name
-          ? jobAddress(latest)
-          : leadAddress(latest)
-        : text(contact.metadata?.address),
-      jobCount: selectedJobs.length,
-      leadCount: openLeads.length,
-      projectCount: selectedJobs.length + openLeads.length,
-      lastActivityAt,
-    };
-  });
-});
 
 export const getContactDetail = cache(
   async (contactId: string): Promise<ContactDetail | null> => {

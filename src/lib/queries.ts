@@ -207,17 +207,19 @@ export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
   return { total: rows.length, confirmed, needsReview: 0, missingSource: rows.length - confirmed };
 }
 
-export async function getBudgets(): Promise<ProjectBudget[]> {
+export async function getBudgets(projectId?: string): Promise<ProjectBudget[]> {
   const supabase = await createClient();
-  const [{ data: jobs, error: jobError }, { data: budgets, error: budgetError }] = await Promise.all([
-    supabase.from("jobs").select("id,contract_amount_cents,status,completed_on,updated_at"),
-    supabase
-      .from("job_budgets")
-      .select("*")
-      .in("source", ["manual", "project_budget"])
-      .in("status", ["active", "closed"])
-      .order("updated_at", { ascending: false }),
-  ]);
+  let jobQuery = supabase.from("jobs").select("id,contract_amount_cents,status,completed_on,updated_at");
+  let budgetQuery = supabase.from("job_budgets")
+    .select("job_id,source,status,version,updated_at,amount_including_tax_cents,budget_minutes,hourly_rate_cents,notes,closed_at,metadata")
+    .in("source", ["manual", "project_budget"])
+    .in("status", ["active", "closed"])
+    .order("updated_at", { ascending: false });
+  if (projectId) {
+    jobQuery = jobQuery.eq("id", projectId);
+    budgetQuery = budgetQuery.eq("job_id", projectId);
+  }
+  const [{ data: jobs, error: jobError }, { data: budgets, error: budgetError }] = await Promise.all([jobQuery, budgetQuery]);
   if (jobError) throw new Error(`job amounts: ${jobError.message}`);
   if (budgetError) throw new Error(`budgets: ${budgetError.message}`);
   const latest = selectCurrentOperationalBudgets(budgets ?? []);
@@ -256,9 +258,11 @@ export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   }));
 }
 
-export async function getAssignments(): Promise<Assignment[]> {
+export async function getAssignments(projectId?: string): Promise<Assignment[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("job_assignments").select("*").eq("status", "active");
+  let query = supabase.from("job_assignments").select("id,job_id,employee_id,status").eq("status", "active");
+  if (projectId) query = query.eq("job_id", projectId);
+  const { data, error } = await query;
   if (error) throw new Error(`assignments: ${error.message}`);
   return (data ?? []).map((row: any) => ({
     id: row.id,
@@ -352,11 +356,11 @@ export async function getProjectTimeEntries(projectId: string, sinceIso?: string
 }
 
 export async function getProjectBudgetRows(projectId: string): Promise<ProjectBudget[]> {
-  return (await getBudgets()).filter((row) => row.companycam_project_id === projectId);
+  return getBudgets(projectId);
 }
 
 export async function getProjectAssignments(projectId: string): Promise<Assignment[]> {
-  return (await getAssignments()).filter((row) => row.companycam_project_id === projectId);
+  return getAssignments(projectId);
 }
 
 
