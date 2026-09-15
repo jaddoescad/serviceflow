@@ -1,0 +1,59 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+
+/** Opt-in QA only: append ?__perf=1 on arrival. No data leaves the browser. */
+export function NavigationTiming() {
+  const pathname = usePathname();
+  const enabled = useRef(false);
+  const pending = useRef<{ path: string; start: number } | null>(null);
+  useEffect(() => {
+    enabled.current = new URLSearchParams(location.search).get("__perf") === "1";
+    if (!enabled.current) return;
+    function record(path: string, start: number, kind: string) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const end = performance.now();
+        const resources = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+          .filter(row => row.startTime >= start && row.startTime <= end);
+        const routeRequests = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+          .filter(row => { const url = new URL(row.name); return url.origin === location.origin && url.pathname === path && url.searchParams.has("_rsc"); });
+        const lastRouteRequest = routeRequests.at(-1);
+        const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+        console.info("SERVICEFLOW_PERF " + JSON.stringify({
+          path, kind, visibleMs: Math.round(end - start),
+          prefetched: kind === "navigation" && !!lastRouteRequest && lastRouteRequest.responseEnd <= start,
+          routeResponseWaitMs: lastRouteRequest ? Math.round(lastRouteRequest.responseStart - lastRouteRequest.requestStart) : null,
+          requests: resources.length,
+          transferredBytes: resources.reduce((sum, row) => sum + row.transferSize, 0),
+          responseWaitMs: kind === "load" && navigation ? Math.round(navigation.responseStart - navigation.requestStart) : null,
+          resourceResponseWaitMs: resources.filter(row => row.responseStart > 0)
+            .map(row => Math.round(row.responseStart - row.requestStart)),
+        }));
+      }));
+    }
+    record(location.pathname, 0, "load");
+    function click(event: MouseEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+      if (!link || link.target === "_blank") return;
+      const url = new URL(link.href);
+      if (url.origin !== location.origin || url.pathname === location.pathname) return;
+      pending.current = { path: url.pathname, start: performance.now() };
+    }
+    function committed() {
+      const entry = pending.current;
+      if (!entry || entry.path !== location.pathname) return;
+      pending.current = null;
+      record(entry.path, entry.start, "navigation");
+    }
+    document.addEventListener("click", click, true);
+    window.addEventListener("serviceflow:route-committed", committed);
+    return () => {
+      document.removeEventListener("click", click, true);
+      window.removeEventListener("serviceflow:route-committed", committed);
+    };
+  }, []);
+  useEffect(() => { window.dispatchEvent(new Event("serviceflow:route-committed")); }, [pathname]);
+  return null;
+}
