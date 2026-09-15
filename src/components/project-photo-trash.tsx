@@ -10,24 +10,28 @@ export function PhotoTrashAction({projectId,item,restore=false,onSuccess,beforeA
   projectId:string;item:ProjectMediaItem;restore?:boolean;onSuccess:()=>void;beforeAction?:()=>boolean;
 }) {
   const [busy,setBusy]=useState(false);
+  const [confirming,setConfirming]=useState(false);
   const [error,setError]=useState<string|null>(null);
   const requestId=useRef<string|null>(null);
   async function act() {
     if(beforeAction&&!beforeAction())return;
-    if(!restore&&!window.confirm('Move this photo to trash? Its original file will be retained so a manager can restore it.'))return;
     setBusy(true);setError(null);
     requestId.current??=crypto.randomUUID();
     try {
       const result=await setPhotoTrash({projectId,mediaId:item.id,trashed:!restore,
         expectedRevision:item.trashRevision,revision:requestId.current});
-      if(result.ok)onSuccess();else setError(result.error??'Could not update photo.');
+      if(result.ok){setConfirming(false);onSuccess();}else setError(result.error??'Could not update photo.');
     }catch{setError('Could not confirm the change. Retry to check safely.');}
     finally{setBusy(false);}
   }
   return <div>
-    <button type="button" disabled={busy} onClick={()=>void act()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50">
+    <button type="button" disabled={busy} onClick={()=>restore?void act():setConfirming(true)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50">
       {busy?'Saving…':restore?'Restore photo':'Move to trash'}
     </button>
+    {confirming?<div role="group" aria-label="Confirm photo trash" className="mt-3 space-y-3 rounded-lg border border-slate-300 p-3">
+      <p className="text-sm">Move this photo to trash? Its original file is retained and can be restored.</p>
+      <div className="flex gap-3"><button disabled={busy} onClick={()=>void act()} className="rounded-lg bg-red-700 px-3 py-2 text-sm text-white">{busy?'Moving…':'Confirm move to trash'}</button><button disabled={busy} onClick={()=>setConfirming(false)} className="text-sm underline">Cancel</button></div>
+    </div>:null}
     {error?<p role="alert" className="mt-2 text-sm text-red-700">{error}</p>:null}
   </div>;
 }
