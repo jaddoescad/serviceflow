@@ -2,6 +2,7 @@
 
 import { SITE_NAME } from "@/lib/site-brand";
 
+import { useLinkedPhoto } from "@/lib/use-linked-photo";
 import { ProjectPhotoBatch } from "@/components/project-photo-batch";
 import { ProjectPhotoCanvas } from "@/components/project-photo-canvas";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -107,18 +108,20 @@ export function ProjectPhotosPanel({
   const galleryItems = visibleMedia;
   const navigationItems=useRef(galleryItems);
   useEffect(()=>{navigationItems.current=galleryItems;},[galleryItems]);
-  const [activeImageId, setActiveImageId] = useState<string | null>(null);
-  const [activeSnapshot,setActiveSnapshot]=useState<ProjectMediaItem|null>(null);
-  const activeImageIndex = galleryItems.findIndex((item) => item.id === activeImageId);
-  const currentImage=galleryItems[activeImageIndex];
-  useEffect(()=>{if(currentImage)setActiveSnapshot(currentImage);},[currentImage]);
   const dirtyDetails = useRef(false);
   const trackDirty = useCallback((dirty: boolean) => { dirtyDetails.current = dirty; }, []);
   const mayLeave = useCallback(() => {
     if (dirtyDetails.current && !window.confirm("Leave this photo without saving your changes?")) return false;
     return true;
   }, []);
-  const closeGallery = useCallback(() => { if (mayLeave()) setActiveImageId(null); }, [mayLeave]);
+  const linked=useLinkedPhoto(projectId,galleryItems,mayLeave);
+  const activeImageId=linked.id;
+  const setActiveImageId=linked.select;
+  const [activeSnapshot,setActiveSnapshot]=useState<ProjectMediaItem|null>(null);
+  const activeImageIndex = galleryItems.findIndex((item) => item.id === activeImageId);
+  const currentImage=galleryItems[activeImageIndex]??linked.item;
+  useEffect(()=>{if(currentImage)setActiveSnapshot(currentImage);},[currentImage]);
+  const closeGallery = useCallback(() => { if (mayLeave()) setActiveImageId(null); }, [mayLeave,setActiveImageId]);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const touchStartX = useRef<number | null>(null);
@@ -126,7 +129,7 @@ export function ProjectPhotosPanel({
   const galleryOpen = !!activeImage;
 
   function showPrevious() {
-    if (mayLeave()) setActiveImageId(galleryItems[(activeImageIndex - 1 + galleryItems.length) % galleryItems.length]?.id ?? null);
+    if (mayLeave()) setActiveImageId(galleryItems[activeImageIndex<0?galleryItems.length-1:(activeImageIndex - 1 + galleryItems.length) % galleryItems.length]?.id ?? null);
   }
 
   function showNext() {
@@ -151,7 +154,7 @@ export function ProjectPhotosPanel({
       if (event.key !== "Tab" && (event.target as HTMLElement).closest("input, textarea, video, [contenteditable=true]")) return;
       if (event.key === "ArrowLeft" && images.length > 1) {
         event.preventDefault();
-        if (mayLeave()) setActiveImageId((current) => images[(images.findIndex((item) => item.id === current) - 1 + images.length) % images.length]?.id ?? null);
+        if (mayLeave()) setActiveImageId((current) => {const index=images.findIndex(item=>item.id===current);return images[index<0?images.length-1:(index-1+images.length)%images.length]?.id??null;});
         return;
       }
       if (event.key === "ArrowRight" && images.length > 1) {
@@ -183,7 +186,7 @@ export function ProjectPhotosPanel({
       document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus();
     };
-  }, [galleryOpen, closeGallery, mayLeave]);
+  }, [galleryOpen, closeGallery, mayLeave, setActiveImageId]);
 
   const groups = new Map<string, ProjectMediaItem[]>();
   for (const item of visibleMedia) {
@@ -233,6 +236,8 @@ export function ProjectPhotosPanel({
           <button disabled={selectionLocked} onClick={()=>setSelected(current=>new Map([...current,...visibleMedia.map(item=>[item.id,item] as const)]))} className="text-teal-700 underline disabled:opacity-40">Select loaded photos ({visibleMedia.length})</button>
           {selected.size?<span>{selected.size} selected across this project</span>:null}
         </div>:null}
+        {linked.loading?<p role="status" className="mb-3 text-sm text-slate-500">Opening photo…</p>:null}
+        {linked.error?<p role="alert" className="mb-3 text-sm text-red-700">{linked.error} <button onClick={linked.retry} className="underline">Retry</button> <button onClick={()=>setActiveImageId(null)} className="underline">Dismiss</button></p>:null}
         {gallery.loading?<p role="status" className="mb-3 text-sm text-slate-500">Loading photos…</p>:null}
         {gallery.error?<p role="alert" className="mb-3 text-sm text-red-700">{gallery.error} <button onClick={gallery.reload} className="underline">Retry</button></p>:null}
         {galleryPage.total === 0 ? (
