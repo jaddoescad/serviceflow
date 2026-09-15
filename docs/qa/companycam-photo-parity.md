@@ -234,3 +234,10 @@ No production code changes made for this objective yet. Pre-existing untracked m
 - a7a0f03 deployed through existing GitHub integration: Vercel GYDM6te7CBHqUyAWXnKf8QWeCyCR Ready35s, canonical serviceflow-admin.vercel.app. Live Chrome QA tab580656684 shows navy selection toolbar and white Actions menu.
 - Selected Monday's3 disposable icons; Tag dialog saved `QA selection menu` to all3, retained existing Before/QA tags, and cleared selection. Remove Tags removed that test tag from all3. Trash Cancel kept all4 photos active. Tag draft Escape discarded the unsaved draft; Clear selection worked. User-added screenshot never selected or modified. No failed-batch injection or desktop-width visual acceptance in this run.
 - Separate pending upload-storage race change passes all10 persistence tests, including retirement versus delayed writes in both transaction orders. This has not been deployed and is not full cross-tab ownership coordination.
+
+## Remove unrequested trash interface — 2026-09-15
+
+- User rejected standalone Photo trash panel and requested ongoing removal of UI slop, duplicates and overengineering. Added explicit reference-fidelity and simplicity rules to root AGENTS.md.
+- Removed gallery Trash entry and ProjectPhotoTrash component, its loading/empty/recovery panel and unused client restore branch. Shortened single-photo confirmation. Retained underlying files, soft-trash storage and backend recovery capability; no database writes or deletions.
+- Commit d817dc8 deployed via GitHub: Vercel36RyakFUgXRWUJAJauiS2qpUE9Ud Ready37s. TypeScript/build passed. Canonical QA tab580656690 confirms no standalone Trash button or Photo trash panel, Photos(4), upload control present, and disposable icon viewer opens.
+- CompanyCam QA project menu inspected read-only. No standalone gallery trash interface observed. Continue deriving remaining controls from actual reference interactions; do not recreate an invented recovery panel elsewhere.
