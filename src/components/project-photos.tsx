@@ -7,7 +7,7 @@ import { ProjectPhotoBatch } from "@/components/project-photo-batch";
 import { ProjectPhotoCanvas } from "@/components/project-photo-canvas";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PhotoDetailsEditor } from "@/components/photo-details-editor";
-import { PhotoTrashAction, ProjectPhotoTrash } from "@/components/project-photo-trash";
+import { PhotoTrashAction } from "@/components/project-photo-trash";
 import { useRouter } from "next/navigation";
 import { useGalleryPages } from "@/lib/use-gallery-pages";
 import type { GalleryPage, GalleryFilters } from "@/lib/gallery-page";
@@ -225,7 +225,6 @@ export function ProjectPhotosPanel({
               <label className="block">Order<select aria-label="Photo order" value={order} onChange={e=>setOrder(e.target.value as GalleryFilters['order'])} className="mt-1 block w-full rounded border p-2"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
             </div>
           </details>
-            <ProjectPhotoTrash projectId={projectId}/>
             <ProjectMediaUpload key={projectId} projectId={projectId} isLead={isLead} label={projectName}/>
           </div>
         </div>

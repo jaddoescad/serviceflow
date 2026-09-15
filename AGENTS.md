@@ -54,3 +54,13 @@ This is ServiceFlow. Operational edits belong here. Sync only the approved opera
 - Follow `apps/mobile/AGENTS.md` for mobile release requirements.
 - Before UI/UX design work, use the imagegen skill for a visual reference.
 - Ottawa Painters admin stays in its separate repository.
+
+## UI fidelity and simplicity
+
+- Follow the user's reference product and observed workflows. For CompanyCam parity, inspect the actual screen and interaction before implementing it; generated mockups support that evidence and must not invent features.
+- Remove UI slop: unnecessary helper text, repeated headings/counts, duplicate controls, decorative panels, and unrequested dashboards or workflows. Every visible element must serve a demonstrated user need.
+- Keep one clear place for each action. Reveal secondary controls when needed instead of exposing every form and action at once.
+- Do not overengineer. Reuse existing components and backend paths; add abstractions, dependencies, configuration, or infrastructure only for a concrete requirement or reproduced failure.
+- Preserve necessary authorization, data integrity, and retry protections while simplifying presentation. Removing UI does not authorize deleting underlying user data.
+- During each change, remove obsolete code within its scope and check for duplicates. Avoid unrelated cleanup or redesign.
+- Verify the resulting screen and interaction against the reference in a browser. A successful build or feature checklist does not establish UI/UX fidelity.
