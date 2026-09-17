@@ -16,12 +16,9 @@ import {
 import { QuoteOp, applyOp } from "@/lib/calculator/operations";
 import {
   loadCalculator,
-  makeCalculatorDefault,
   saveCalculator,
   saveCompanyRates,
-  setLabourTaskBudgetHours,
 } from "@/lib/actions/calculator";
-import type { DefaultCalculatorSelection } from "@/lib/actions/calculator";
 
 const docKey = (projectId: string) => `op-calculator:v2:${projectId}`;
 const legacyKey = (projectId: string) => `op-calculator:v1:${projectId}`;
@@ -60,26 +57,15 @@ function writeLocal(key: string, value: unknown) {
 
 export function useCalculator(
   projectId: string,
-  { allowTaskTransfer = true, initialData }: { allowTaskTransfer?: boolean; initialData?: import("@/lib/actions/calculator").LoadCalculatorResult } = {},
+  { initialData }: { initialData?: import("@/lib/actions/calculator").LoadCalculatorResult } = {},
 ) {
   const [doc, setDoc] = useState<ProjectCalculator>(emptyProjectCalculator);
   const [hydrated, setHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
-  const [defaultCalculator, setDefaultCalculator] = useState<DefaultCalculatorSelection | null>(null);
-  const [defaultCalculatorError, setDefaultCalculatorError] = useState<string | null>(null);
-  const [makingDefault, setMakingDefault] = useState(false);
-  const [updatingTaskBudgetId, setUpdatingTaskBudgetId] = useState<string | null>(null);
-  const [taskBudgetError, setTaskBudgetError] = useState<string | null>(null);
   const companyRates = useRef<CalculatorRates>(structuredClone(DEFAULT_RATES));
   const saveTimer = useRef<number | null>(null);
   const serverAvailable = useRef(true);
   const loadedDoc = useRef<ProjectCalculator | null>(null);
-  const defaultCalculatorRef = useRef<DefaultCalculatorSelection | null>(null);
-
-  useEffect(() => {
-    defaultCalculatorRef.current = defaultCalculator;
-  }, [defaultCalculator]);
-
   // Load: server first, fall back to (and migrate from) localStorage.
   useEffect(() => {
     let cancelled = false;
@@ -93,8 +79,6 @@ export function useCalculator(
         writeLocal(DEFAULTS_KEY, result.companyRates);
         const initialDoc = result.doc ?? local ?? emptyProjectCalculator(result.companyRates);
         setDoc(initialDoc);
-        setDefaultCalculator(result.defaultCalculator);
-        setDefaultCalculatorError(result.defaultCalculatorError ?? null);
 
         loadedDoc.current = initialDoc;
         serverAvailable.current = true;
@@ -109,7 +93,6 @@ export function useCalculator(
         setSyncStatus("offline");
       } finally {
         if (!cancelled) {
-          setMakingDefault(false);
           setHydrated(true);
         }
       }
@@ -120,8 +103,6 @@ export function useCalculator(
   }, [initialData, projectId]);
 
   // Save: debounced; localStorage always (cache), Supabase when reachable.
-  // Saving never touches painter tasks — the calculator and the task list are
-  // decoupled; tasks only change on an explicit "Transfer to tasks".
   useEffect(() => {
     if (!hydrated || doc === loadedDoc.current) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -245,80 +226,12 @@ export function useCalculator(
     }
   }, [quote.rates]);
 
-  const makeDefault = useCallback(async () => {
-    if (!allowTaskTransfer) {
-      const result = {
-        ok: false as const,
-        error: "Approve this lead in DripJobs before transferring painter tasks.",
-      };
-      setDefaultCalculatorError(result.error);
-      return result;
-    }
-
-    setMakingDefault(true);
-    setDefaultCalculatorError(null);
-    try {
-      const result = await makeCalculatorDefault(projectId, doc, doc.activeQuoteId);
-      if (!result.ok) {
-        setDefaultCalculatorError(result.error);
-        return result;
-      }
-      setDefaultCalculator(result.defaultCalculator);
-      setSyncStatus("synced");
-      writeLocal(docKey(projectId), doc);
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not make this calculator the default.";
-      setDefaultCalculatorError(message);
-      return { ok: false as const, error: message };
-    } finally {
-      setMakingDefault(false);
-    }
-  }, [allowTaskTransfer, doc, projectId]);
-
-  const updateTaskBudgetHours = useCallback(
-    async (taskId: string, budgetedHours: number | null) => {
-      if (!allowTaskTransfer) {
-        const result = {
-          ok: false as const,
-          error: "Approve this lead in DripJobs before changing painter task budgets.",
-        };
-        setTaskBudgetError(result.error);
-        return result;
-      }
-
-      setUpdatingTaskBudgetId(taskId);
-      setTaskBudgetError(null);
-      try {
-        const result = await setLabourTaskBudgetHours(projectId, taskId, budgetedHours);
-        if (!result.ok) {
-          setTaskBudgetError(result.error);
-          return result;
-        }
-        setDefaultCalculator(result.defaultCalculator);
-        return result;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Could not update the task budget.";
-        setTaskBudgetError(message);
-        return { ok: false as const, error: message };
-      } finally {
-        setUpdatingTaskBudgetId(null);
-      }
-    },
-    [allowTaskTransfer, projectId],
-  );
-
   return {
     doc,
     quote,
     totals,
     hydrated,
     syncStatus,
-    defaultCalculator,
-    defaultCalculatorError,
-    makingDefault,
-    updatingTaskBudgetId,
-    taskBudgetError,
     dispatch,
     applyOps,
     addRoom,
@@ -329,7 +242,5 @@ export function useCalculator(
     deleteQuote,
     useCompanyDefaults,
     saveAsCompanyDefaults,
-    makeDefault,
-    updateTaskBudgetHours,
   };
 }

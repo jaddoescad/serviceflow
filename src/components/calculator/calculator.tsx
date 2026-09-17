@@ -1,12 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
 import { ProjectTabs } from "@/components/project-tabs";
 import { Badge, Select } from "@/components/ui";
-import type { LabourBudgetTaskSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
   CATALOG_BY_ID,
@@ -38,8 +36,7 @@ export function CalculatorPage({
   isLead: boolean;
   initialData?: import("@/lib/actions/calculator").LoadCalculatorResult;
 }) {
-  const router = useRouter();
-  const calc = useCalculator(projectId, { allowTaskTransfer: !isLead, initialData });
+  const calc = useCalculator(projectId, { initialData });
   const [ratesOpen, setRatesOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
@@ -76,17 +73,6 @@ export function CalculatorPage({
   const hasInterior = quote.rooms.length > 0;
   const hasExterior = quote.exterior.length > 0 || quote.washing !== "none";
   const isEmpty = !hasInterior && !hasExterior;
-  const currentLabourTasks = useMemo(() => {
-    const selection = calc.defaultCalculator;
-    if (
-      !selection ||
-      selection.quoteId !== quote.id ||
-      new Date(selection.sourceQuoteUpdatedAt).getTime() !== new Date(quote.updatedAt).getTime()
-    ) {
-      return new Map<string, LabourBudgetTaskSelection>();
-    }
-    return new Map(selection.tasks.map((task) => [`${task.sourceKind}:${task.sourceItemId}`, task]));
-  }, [calc.defaultCalculator, quote.id, quote.updatedAt]);
 
   return (
     <div
@@ -114,20 +100,8 @@ export function CalculatorPage({
             isLead={isLead}
           />
 
-          {isLead ? (
-            <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-4 py-3">
-              <div className="text-sm font-medium text-[var(--color-brand-strong)]">
-                Lead estimate
-              </div>
-              <p className="mt-0.5 text-xs leading-5 text-[var(--color-muted)]">
-                This estimate autosaves to the lead and stays attached to the same record when the proposal is approved.
-              </p>
-            </div>
-          ) : null}
-
           <QuoteBar
             doc={doc}
-            defaultQuoteId={calc.defaultCalculator?.quoteId ?? null}
             onSwitch={calc.switchQuote}
             onAdd={calc.addQuote}
             onDuplicate={calc.duplicateQuote}
@@ -149,12 +123,6 @@ export function CalculatorPage({
                   setLastAddedId(calc.addExteriorLine(itemId));
                 }}
               />
-
-              {calc.taskBudgetError ? (
-                <p role="alert" className="-mt-5 text-xs leading-4 text-[var(--color-bad)]">
-                  {calc.taskBudgetError}
-                </p>
-              ) : null}
 
               {isEmpty && calc.hydrated ? (
                 <div className="rounded-xl border border-dashed border-[var(--color-border)] px-6 py-14 text-center">
@@ -194,7 +162,6 @@ export function CalculatorPage({
                   </div>
                   <div className="space-y-3">
                     {quote.rooms.map((room) => {
-                      const labourTask = currentLabourTasks.get(`room:${room.id}`);
                       return (
                         <RoomCard
                           key={room.id}
@@ -202,10 +169,6 @@ export function CalculatorPage({
                           tier={quote.paintTier}
                           rates={quote.rates.interior}
                           autoFocus={room.id === lastAddedId}
-                          labourTask={labourTask}
-                          taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
-                          taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
-                          onTaskBudgetChange={calc.updateTaskBudgetHours}
                           onChange={(patch) => dispatch({ type: "updateRoom", roomId: room.id, patch })}
                           onRemove={() => dispatch({ type: "removeRoom", roomId: room.id })}
                           onDuplicate={() => dispatch({ type: "duplicateRoom", roomId: room.id })}
@@ -238,17 +201,12 @@ export function CalculatorPage({
                           </div>
                           <div className="space-y-3">
                             {lines.map((line) => {
-                              const labourTask = currentLabourTasks.get(`exterior:${line.id}`);
                               return (
                                 <ExteriorCard
                                   key={line.id}
                                   line={line}
                                   rates={quote.rates.exterior}
                                   autoFocus={line.id === lastAddedId}
-                                  labourTask={labourTask}
-                                  taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
-                                  taskBudgetSaving={calc.updatingTaskBudgetId === labourTask?.id}
-                                  onTaskBudgetChange={calc.updateTaskBudgetHours}
                                   onChange={(patch) => dispatch({ type: "updateExteriorLine", lineId: line.id, patch })}
                                   onRemove={() => dispatch({ type: "removeExteriorLine", lineId: line.id })}
                                 />
@@ -258,12 +216,6 @@ export function CalculatorPage({
                               <WashingCard
                                 choice={quote.washing}
                                 rates={quote.rates.exterior}
-                                labourTask={currentLabourTasks.get("washing:pressure-washing")}
-                                taskBudgetDisabled={isLead || calc.updatingTaskBudgetId !== null}
-                                taskBudgetSaving={
-                                  calc.updatingTaskBudgetId === currentLabourTasks.get("washing:pressure-washing")?.id
-                                }
-                                onTaskBudgetChange={calc.updateTaskBudgetHours}
                                 onChange={(choice) => dispatch({ type: "setWashing", choice })}
                                 onRemove={() => dispatch({ type: "setWashing", choice: "none" })}
                               />
@@ -300,18 +252,6 @@ export function CalculatorPage({
               quote={quote}
               totals={totals}
               syncStatus={calc.syncStatus}
-              defaultCalculator={calc.defaultCalculator}
-              defaultCalculatorError={calc.defaultCalculatorError}
-              makingDefault={calc.makingDefault}
-              canTransferTasks={!isLead}
-              onMakeDefault={async () => {
-                const result = await calc.makeDefault();
-                if (result?.ok) {
-                  router.push(`/jobs/${encodeURIComponent(projectId)}/tasks`);
-                }
-                return result;
-              }}
-              tasksHref={isLead ? undefined : `/jobs/${encodeURIComponent(projectId)}/tasks`}
               onEditRates={() => setRatesOpen(true)}
               onClear={() => dispatch({ type: "clear" })}
             />

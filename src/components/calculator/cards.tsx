@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "@/components/ui";
-import type { LabourBudgetTaskSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
   CATALOG_BY_ID,
@@ -16,14 +15,6 @@ import {
   priceWashing,
 } from "@/lib/calculator/engine";
 import { Chip, CoatsStepper, DeleteButton, IconButton, NumField, fmtHoursShort } from "./bits";
-import { LabourTaskBudgetField } from "./task-budget-field";
-
-type TaskBudgetCardProps = {
-  labourTask?: LabourBudgetTaskSelection;
-  taskBudgetDisabled?: boolean;
-  taskBudgetSaving?: boolean;
-  onTaskBudgetChange?: (taskId: string, hours: number | null) => Promise<unknown>;
-};
 
 function CardShell({
   children,
@@ -66,10 +57,6 @@ export function RoomCard({
   onChange,
   onRemove,
   onDuplicate,
-  labourTask,
-  taskBudgetDisabled = false,
-  taskBudgetSaving = false,
-  onTaskBudgetChange,
 }: {
   room: Room;
   tier: PaintTierId;
@@ -78,7 +65,7 @@ export function RoomCard({
   onChange: (patch: Partial<Room>) => void;
   onRemove: () => void;
   onDuplicate: () => void;
-} & TaskBudgetCardProps) {
+}) {
   const p = priceRoom(room, tier, rates);
 
   const breakdown: Array<{ label: string; detail?: string; amount: number }> = [
@@ -116,9 +103,7 @@ export function RoomCard({
             ✎
           </span>
         </div>
-        {!labourTask ? (
-          <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">{fmtHoursShort(p.hours)}</span>
-        ) : null}
+        <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">{fmtHoursShort(p.hours)}</span>
         <div className="flex shrink-0 items-center">
           <IconButton label="Duplicate room" onClick={onDuplicate}>
             ⧉
@@ -165,16 +150,6 @@ export function RoomCard({
         </Chip>
       </div>
 
-      {labourTask && onTaskBudgetChange ? (
-        <LabourTaskBudgetField
-          key={`${labourTask.id}:${labourTask.budgetedHours}`}
-          task={labourTask}
-          disabled={taskBudgetDisabled}
-          saving={taskBudgetSaving}
-          onChange={onTaskBudgetChange}
-        />
-      ) : null}
-
       <textarea
         value={room.notes}
         onChange={(e) => onChange({ notes: e.target.value })}
@@ -213,17 +188,13 @@ export function ExteriorCard({
   autoFocus,
   onChange,
   onRemove,
-  labourTask,
-  taskBudgetDisabled = false,
-  taskBudgetSaving = false,
-  onTaskBudgetChange,
 }: {
   line: ExteriorLine;
   rates: ExteriorRates;
   autoFocus?: boolean;
   onChange: (patch: Partial<ExteriorLine>) => void;
   onRemove: () => void;
-} & TaskBudgetCardProps) {
+}) {
   const item = CATALOG_BY_ID[line.itemId];
   if (!item) return null;
   const p = priceExteriorLine(line, rates);
@@ -239,7 +210,7 @@ export function ExteriorCard({
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-heading)]">{item.label}</span>
         <div className="flex shrink-0 items-baseline gap-2">
           <span className="text-sm font-semibold tabular-nums text-[var(--color-heading)]">{fmtMoney(p.client)}</span>
-          {p.hours > 0 && !labourTask ? (
+          {p.hours > 0 ? (
             <span className="text-xs tabular-nums text-[var(--color-muted)]">{fmtHoursShort(p.hours)}</span>
           ) : null}
         </div>
@@ -268,16 +239,6 @@ export function ExteriorCard({
         ) : null}
       </div>
 
-      {labourTask && onTaskBudgetChange ? (
-        <LabourTaskBudgetField
-          key={`${labourTask.id}:${labourTask.budgetedHours}`}
-          task={labourTask}
-          disabled={taskBudgetDisabled}
-          saving={taskBudgetSaving}
-          onChange={onTaskBudgetChange}
-        />
-      ) : null}
-
       <div className="mt-3 space-y-1.5 border-t border-[var(--color-border)] pt-3">
         <BreakdownRow label="Labour" detail={p.hours > 0 ? fmtHoursShort(p.hours) : undefined} amount={p.labour} />
         {p.materials > 0 ? <BreakdownRow label="Materials (incl. sundries)" amount={p.materials} /> : null}
@@ -297,16 +258,12 @@ export function WashingCard({
   rates,
   onChange,
   onRemove,
-  labourTask,
-  taskBudgetDisabled = false,
-  taskBudgetSaving = false,
-  onTaskBudgetChange,
 }: {
   choice: WashingChoice;
   rates: ExteriorRates;
   onChange: (choice: WashingChoice) => void;
   onRemove: () => void;
-} & TaskBudgetCardProps) {
+}) {
   const p = priceWashing(choice, rates);
   const options: Array<{ id: WashingChoice; label: string }> = [
     { id: "minimum", label: `Minimum · ${fmtMoney(rates.washing.minimum)}` },
@@ -329,15 +286,6 @@ export function WashingCard({
           </Chip>
         ))}
       </div>
-      {labourTask && onTaskBudgetChange ? (
-        <LabourTaskBudgetField
-          key={`${labourTask.id}:${labourTask.budgetedHours}`}
-          task={labourTask}
-          disabled={taskBudgetDisabled}
-          saving={taskBudgetSaving}
-          onChange={onTaskBudgetChange}
-        />
-      ) : null}
     </CardShell>
   );
 }

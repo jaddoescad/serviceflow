@@ -22,7 +22,6 @@ import {
   reviveProjectCalculator,
 } from "../.test-dist/engine.js";
 import { applyOp, bumpRates, parseRoomsText } from "../.test-dist/operations.js";
-import { buildLabourBudgetDraft } from "../.test-dist/labour-budget.js";
 
 const IR = {
   ...DEFAULT_RATES.interior,
@@ -216,39 +215,6 @@ test("whole estimate matches the sheet summary (H95/J95/J96/J97/J100/J101)", () 
 // Published painter task budget
 // ---------------------------------------------------------------------------
 
-test("labour budget: materializes rooms, exterior lines, and washing as tasks", () => {
-  const quote = makeQuote("Selected option");
-  quote.rooms = [
-    room({
-      id: "room-1",
-      name: "Living room",
-      length: 12,
-      width: 14,
-      height: 8,
-      notes: "Repair the north wall first",
-    }),
-  ];
-  quote.exterior = [line("soffits", { id: "line-1", qty: 120, coats: 2 })];
-  quote.washing = "minimum";
-
-  const draft = buildLabourBudgetDraft(quote);
-  assert.equal(draft.tasks.length, 3);
-  assert.deepEqual(
-    draft.tasks.map((task) => [task.sourceKind, task.sourceItemId, task.title]),
-    [
-      ["room", "room-1", "Living room"],
-      ["exterior", "line-1", "Soffits"],
-      ["washing", "pressure-washing", "Pressure washing"],
-    ],
-  );
-  assert.equal(draft.tasks[0].notes, "Repair the north wall first");
-  assert.equal(draft.tasks[2].budgetedHours, 0);
-  close(
-    draft.totalBudgetedHours,
-    draft.tasks[0].budgetedHours + draft.tasks[1].budgetedHours,
-    1e-9,
-  );
-});
 
 // ---------------------------------------------------------------------------
 // Room numbering

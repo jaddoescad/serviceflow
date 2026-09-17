@@ -14,7 +14,6 @@ const statusDot: Record<QuoteStatus, string> = {
 
 export function QuoteBar({
   doc,
-  defaultQuoteId,
   onSwitch,
   onAdd,
   onDuplicate,
@@ -23,7 +22,6 @@ export function QuoteBar({
   onStatus,
 }: {
   doc: ProjectCalculator;
-  defaultQuoteId: string | null;
   onSwitch: (quoteId: string) => void;
   onAdd: () => void;
   onDuplicate: () => void;
@@ -53,11 +51,6 @@ export function QuoteBar({
             className="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-brand-soft)] py-1 pl-3 pr-2 text-xs font-medium text-[var(--color-brand-strong)]"
           >
             <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDot[q.status])} />
-            {q.id === defaultQuoteId ? (
-              <span className="rounded-full bg-[var(--color-good-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--color-good)]">
-                Transferred
-              </span>
-            ) : null}
             <input
               value={q.name}
               onChange={(e) => onRename(e.target.value)}
@@ -80,11 +73,6 @@ export function QuoteBar({
           >
             <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDot[q.status])} />
             {q.name}
-            {q.id === defaultQuoteId ? (
-              <span className="rounded-full bg-[var(--color-good-soft)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--color-good)]">
-                Transferred
-              </span>
-            ) : null}
           </button>
         ),
       )}

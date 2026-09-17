@@ -40,7 +40,7 @@
     "test:hermes-meta-sync": "node --test scripts/meta-marketing-daily-sync.test.mjs",
     "test:project-sort": "node --experimental-strip-types --test scripts/project-sort.test.mjs",
     "test:project-routing": "tsc src/lib/project-routing.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/project-routing --skipLibCheck && node --test scripts/project-routing.test.mjs",
-    "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts src/lib/calculator/labour-budget.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
+    "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
     "test:labour-percentages": "node --experimental-strip-types --test scripts/labour-cost-percentages.test.mjs",
     "test:dripjobs-job-identity": "node --test scripts/dripjobs-job-identity.test.mjs",
     "test:marketing-sales": "node --experimental-strip-types --test scripts/marketing-sales-metrics.test.mjs",

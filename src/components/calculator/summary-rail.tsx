@@ -1,10 +1,7 @@
 "use client";
 
-import Link from "next/link";
-
 import { useEffect, useState } from "react";
 import { Button, Card } from "@/components/ui";
-import type { DefaultCalculatorSelection } from "@/lib/actions/calculator";
 import { fmtMoney } from "@/lib/format";
 import {
   CATALOG_BY_ID,
@@ -19,7 +16,7 @@ import type { SyncStatus } from "./use-calculator";
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   loading: "Loading…",
-  synced: "Synced — autosaves to Supabase as you type.",
+  synced: "Saved",
   saving: "Saving…",
   offline: "Offline — saved on this device only.",
   unsaved: "Not saved yet.",
@@ -90,12 +87,6 @@ export function SummaryRail({
   quote,
   totals,
   syncStatus,
-  defaultCalculator,
-  defaultCalculatorError,
-  makingDefault,
-  canTransferTasks,
-  onMakeDefault,
-  tasksHref,
   onEditRates,
   onClear,
 }: {
@@ -103,12 +94,6 @@ export function SummaryRail({
   quote: Quote;
   totals: CalculatorTotals;
   syncStatus: SyncStatus;
-  defaultCalculator: DefaultCalculatorSelection | null;
-  defaultCalculatorError: string | null;
-  makingDefault: boolean;
-  canTransferTasks: boolean;
-  onMakeDefault: () => Promise<unknown>;
-  tasksHref?: string;
   onEditRates: () => void;
   onClear: () => void;
 }) {
@@ -128,10 +113,6 @@ export function SummaryRail({
   }, [confirmClear]);
 
   const hasAnything = quote.rooms.length > 0 || quote.exterior.length > 0 || quote.washing !== "none";
-  // Transferred = this exact quote state was last copied to the task list.
-  const transferredIsCurrent =
-    defaultCalculator?.quoteId === quote.id &&
-    new Date(defaultCalculator.sourceQuoteUpdatedAt).getTime() === new Date(quote.updatedAt).getTime();
   const displayedLabourHours = totals.hours;
 
   return (
@@ -188,45 +169,6 @@ export function SummaryRail({
         >
           {copied ? "Copied ✓" : "Copy summary"}
         </Button>
-        {!canTransferTasks ? (
-          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-brand-soft)] px-3 py-2.5">
-            <div className="text-xs font-medium text-[var(--color-brand-strong)]">
-              Lead estimate
-            </div>
-            <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-muted)]">
-              Painter task transfer unlocks automatically when this lead&apos;s DripJobs proposal is accepted.
-            </p>
-          </div>
-        ) : !transferredIsCurrent ? (
-          <Button
-            variant="subtle"
-            className="w-full"
-            disabled={makingDefault || !hasAnything}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Copy “${quote.name}”’s items to the painter task list? Existing tasks are kept — items already transferred are updated, new ones are added, nothing is removed.`,
-                )
-              ) {
-                void onMakeDefault();
-              }
-            }}
-          >
-            {makingDefault ? "Transferring…" : "Transfer to tasks"}
-          </Button>
-        ) : tasksHref ? (
-          <Link
-            href={tasksHref}
-            className="block w-full rounded-lg px-3 py-2 text-center text-sm font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-          >
-            Transferred ✓ View tasks →
-          </Link>
-        ) : null}
-        {canTransferTasks && defaultCalculatorError ? (
-          <p role="alert" className="text-[10px] leading-4 text-[var(--color-bad)]">
-            {defaultCalculatorError}
-          </p>
-        ) : null}
         {confirmClear ? (
           <div className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-bad-soft)] px-3 py-2">
             <span className="text-xs font-medium text-[var(--color-bad)]">Clear this quote?</span>
