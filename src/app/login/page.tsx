@@ -10,7 +10,7 @@ import { Button, Card, Field, Input } from "@/components/ui";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/";
+  const next = params.get("next") || "/projects";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ function LoginForm() {
           {SITE_INITIALS}
         </div>
         <h1 className="text-lg font-semibold">{SITE_NAME}</h1>
-        <p className="text-sm text-[var(--color-muted)]">Sign in with your admin or manager account.</p>
+        <p className="text-sm text-[var(--color-muted)]">Sign in with your ServiceFlow account.</p>
       </div>
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Email">

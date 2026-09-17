@@ -3,13 +3,26 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Avatar, Badge, Button, Card, EmptyState, Input } from "@/components/ui";
+import { CreateContactModal } from "./create-contact-form";
+import { Avatar, Button, Card, EmptyState, Input } from "@/components/ui";
 import { fmtDate, initials } from "@/lib/format";
 import type { ContactSummary } from "@/lib/contacts";
 
 const PAGE_SIZE = 50;
 
-export function ContactsTable({ contacts, total, currentPage, query }: { contacts: ContactSummary[]; total: number; currentPage: number; query: string }) {
+export function ContactsTable({
+  contacts,
+  total,
+  currentPage,
+  query,
+  initiallyOpen = false,
+}: {
+  initiallyOpen?: boolean;
+  contacts: ContactSummary[];
+  total: number;
+  currentPage: number;
+  query: string;
+}) {
   const router = useRouter();
   const [search, setSearch] = useState(query);
   const [pending, startTransition] = useTransition();
@@ -17,13 +30,17 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
   useEffect(() => {
     const previous = previousQuery.current;
     previousQuery.current = query;
-    setSearch(value => value.trim() === previous ? query : value);
+    setSearch((value) => (value.trim() === previous ? query : value));
   }, [query]);
   function navigate(page: number, value: string) {
     const params = new URLSearchParams();
     if (value.trim()) params.set("q", value.trim());
     if (page > 1) params.set("page", String(page));
-    startTransition(() => router.replace(`/contacts${params.size ? `?${params}` : ""}`, { scroll: false }));
+    startTransition(() =>
+      router.replace(`/contacts${params.size ? `?${params}` : ""}`, {
+        scroll: false,
+      }),
+    );
   }
   useEffect(() => {
     if (search.trim() === query) return;
@@ -36,15 +53,13 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--color-muted)]">
-          One contact can have multiple separate jobs.
-        </p>
+      <header className="mb-8 flex flex-wrap items-center gap-6">
+        <h1 className="text-4xl font-extrabold tracking-tight">Customers</h1>
         <div className="w-full sm:w-72">
           <Input
             type="search"
-            aria-label="Search contacts"
-            placeholder="Search contacts…"
+            aria-label="Search customers"
+            placeholder="Search"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -52,11 +67,14 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
             className="bg-[var(--color-surface)]"
           />
         </div>
-      </div>
+        <div className="ml-auto">
+          <CreateContactModal initiallyOpen={initiallyOpen} />
+        </div>
+      </header>
 
       <Card className="overflow-hidden" aria-busy={pending}>
         {visible.length === 0 ? (
-          <EmptyState>No contacts match this search.</EmptyState>
+          <EmptyState>No customers match this search.</EmptyState>
         ) : (
           <>
             <div className="max-h-[72vh] overflow-auto">
@@ -72,29 +90,28 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
                       <div className="truncate text-sm font-semibold text-[var(--color-heading)]">
                         {contact.name}
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-[var(--color-muted)]">
-                        {contact.address || "No project address yet"}
-                      </div>
+                      {contact.address && (
+                        <div className="mt-0.5 truncate text-xs text-[var(--color-muted)]">
+                          {contact.address}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="hidden min-w-0 text-xs text-[var(--color-muted)] lg:block">
-                    <div className="truncate">{contact.email || "No email"}</div>
-                    <div className="mt-0.5 truncate">{contact.phone || "No phone"}</div>
+                    <div className="truncate">
+                      {contact.email || "No email"}
+                    </div>
+                    <div className="mt-0.5 truncate">
+                      {contact.phone || "No phone"}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-end gap-1.5">
-                    {contact.jobCount > 0 ? (
-                      <Badge tone="good">
-                        {contact.jobCount} {contact.jobCount === 1 ? "job" : "jobs"}
-                      </Badge>
-                    ) : null}
-                    {contact.leadCount > 0 ? (
-                      <Badge tone="brand">
-                        {contact.leadCount} {contact.leadCount === 1 ? "deal" : "deals"}
-                      </Badge>
-                    ) : null}
-                    {contact.projectCount === 0 ? <Badge>No projects</Badge> : null}
+                    <span className="text-xs text-slate-500">
+                      {contact.projectCount}{" "}
+                      {contact.projectCount === 1 ? "project" : "projects"}
+                    </span>
                   </div>
 
                   <div className="hidden text-right text-xs text-[var(--color-muted)] lg:block">
@@ -107,8 +124,8 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2.5 sm:px-5">
               <div className="text-xs text-[var(--color-muted)]">
                 {((safePage - 1) * PAGE_SIZE + 1).toLocaleString("en-CA")}–
-                {Math.min(safePage * PAGE_SIZE, total).toLocaleString("en-CA")} of{" "}
-                {total.toLocaleString("en-CA")}
+                {Math.min(safePage * PAGE_SIZE, total).toLocaleString("en-CA")}{" "}
+                of {total.toLocaleString("en-CA")}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -126,7 +143,9 @@ export function ContactsTable({ contacts, total, currentPage, query }: { contact
                   variant="subtle"
                   size="sm"
                   disabled={pending || safePage >= totalPages}
-                  onClick={() => navigate(Math.min(totalPages, safePage + 1), query)}
+                  onClick={() =>
+                    navigate(Math.min(totalPages, safePage + 1), query)
+                  }
                 >
                   Next
                 </Button>

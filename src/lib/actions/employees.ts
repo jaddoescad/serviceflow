@@ -48,7 +48,10 @@ export async function setPayRate(input: {
 }
 
 function fail(error: unknown): ActionResult {
-  return { ok: false, error: error instanceof Error ? error.message : "Request failed" };
+  return {
+    ok: false,
+    error: error instanceof Error ? error.message : "Request failed",
+  };
 }
 
 export async function createEmployee(input: {
@@ -59,31 +62,45 @@ export async function createEmployee(input: {
 }): Promise<ActionResult & { temporaryPassword?: string | null }> {
   await requireStaff();
   try {
-    const res = await callEdge<{ temporaryPassword?: string | null }>("project-assignments", {
-      action: "createEmployee",
-      email: input.email,
-      fullName: input.fullName,
-      full_name: input.fullName,
-      password: input.password || undefined,
-      role: input.role,
-    });
+    const res = await callEdge<{ temporaryPassword?: string | null }>(
+      "project-assignments",
+      {
+        action: "createEmployee",
+        email: input.email,
+        fullName: input.fullName,
+        full_name: input.fullName,
+        password: input.password || undefined,
+        role: input.role,
+      },
+    );
     return { ...done(), temporaryPassword: res?.temporaryPassword ?? null };
   } catch (e) {
     return fail(e);
   }
 }
 
-export async function setRole(userId: string, role: Role): Promise<ActionResult> {
+export async function setRole(
+  userId: string,
+  role: Role,
+): Promise<ActionResult> {
   await requireStaff();
   try {
-    await callEdge("project-assignments", { action: "setRole", userId, user_id: userId, role });
+    await callEdge("project-assignments", {
+      action: "setRole",
+      userId,
+      user_id: userId,
+      role,
+    });
     return done();
   } catch (e) {
     return fail(e);
   }
 }
 
-export async function setActive(userId: string, isActive: boolean): Promise<ActionResult> {
+export async function setActive(
+  userId: string,
+  isActive: boolean,
+): Promise<ActionResult> {
   await requireStaff();
   try {
     await callEdge("project-assignments", {
@@ -136,7 +153,37 @@ export async function removeAssignment(input: {
 export async function getPayRateHistory(userId: string) {
   await requireStaff();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_crew_pay_history", { employee: userId });
+  const { data, error } = await supabase.rpc("get_crew_pay_history", {
+    employee: userId,
+  });
   if (error) throw new Error("Rate history could not load.");
-  return data as { id: string; user_id: string; hourly_rate: number; effective_from: string }[];
+  return data as {
+    id: string;
+    user_id: string;
+    hourly_rate: number;
+    effective_from: string;
+  }[];
+}
+
+export async function editTeamProfile(input: {
+  userId: string;
+  fullName: string;
+  phone: string;
+  jobTitle: string;
+  expectedUpdatedAt: string;
+}): Promise<ActionResult> {
+  const actor = await requireStaff();
+  if (actor.role !== "admin")
+    return { ok: false, error: "Admin access required." };
+  const client = await createClient();
+  const { error } = await client.rpc("edit_team_profile", {
+    requested_user: input.userId,
+    requested_name: input.fullName,
+    requested_phone: input.phone,
+    requested_job_title: input.jobTitle,
+    expected_updated_at: input.expectedUpdatedAt,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/employees/${input.userId}`);
+  return done();
 }

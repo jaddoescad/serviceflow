@@ -35,7 +35,10 @@ export async function updateSession(request: NextRequest) {
     userId = data?.claims.sub ?? null;
   } catch (error) {
     const authError = error as { code?: string; status?: number };
-    if (authError.code !== "over_request_rate_limit" && authError.status !== 429) {
+    if (
+      authError.code !== "over_request_rate_limit" &&
+      authError.status !== 429
+    ) {
       throw error;
     }
 
@@ -47,12 +50,14 @@ export async function updateSession(request: NextRequest) {
       const { data, error: claimsError } = await supabase.auth.getClaims();
       if (!claimsError) userId = data?.claims.sub ?? null;
     }
-    console.warn(JSON.stringify({
-      level: "warn",
-      message: "Supabase Auth rate-limit recovery",
-      path,
-      recovered: Boolean(userId),
-    }));
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message: "Supabase Auth rate-limit recovery",
+        path,
+        recovered: Boolean(userId),
+      }),
+    );
   }
 
   const isAuthenticated = Boolean(userId);
@@ -64,9 +69,36 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", path);
     const redirectResponse = NextResponse.redirect(url);
-    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    response.cookies
+      .getAll()
+      .forEach((cookie) => redirectResponse.cookies.set(cookie));
     return redirectResponse;
   }
 
+  const sharedPage =
+    path === "/" ||
+    /^\/(projects(?:\/.*)?|photos|labels|contacts(?:\/.*)?|employees|jobs\/[0-9a-f-]+)$/.test(
+      path,
+    );
+  if (
+    isAuthenticated &&
+    !isPublic &&
+    !path.startsWith("/api/") &&
+    path !== "/not-authorized" &&
+    !sharedPage
+  ) {
+    const { data: profile } = await supabase
+      .from("employees")
+      .select("role,is_active")
+      .eq("id", userId!)
+      .maybeSingle();
+    if (!profile?.is_active || !["admin", "manager"].includes(profile.role)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/not-authorized";
+      const denied = NextResponse.redirect(url);
+      response.cookies.getAll().forEach((cookie) => denied.cookies.set(cookie));
+      return denied;
+    }
+  }
   return response;
 }

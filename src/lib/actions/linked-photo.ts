@@ -1,6 +1,6 @@
 "use server";
 
-import {requireStaff} from '@/lib/auth';
+import {requireMember} from '@/lib/auth';
 import {createClient} from '@/lib/supabase/server';
 import {validPhotoId} from '@/lib/photo-link';
 import type {ProjectMediaItem} from '@/lib/project-data';
@@ -8,7 +8,7 @@ import type {ProjectMediaItem} from '@/lib/project-data';
 /** An original ID is a locator, not permission: project binding and RLS still apply. */
 export async function loadLinkedPhoto(projectId:string,mediaId:string):Promise<ProjectMediaItem|null> {
   if(!validPhotoId(projectId)||!validPhotoId(mediaId))return null;
-  await requireStaff();
+  await requireMember();
   const supabase=await createClient();
   const {data:row,error}=await supabase.from('job_media')
     .select('id,media_type,mime_type,original_filename,duration_ms,captured_at,created_at,uploaded_by,source_metadata')

@@ -10,7 +10,7 @@ import {
   getProjectById,
   getProjectTimeEntries,
 } from "@/lib/queries";
-import { requireStaff } from "@/lib/auth";
+import { requireStaff, requireMember } from "@/lib/auth";
 import {
   projectDetails,
   projectTaskProgress,
@@ -137,35 +137,46 @@ function emptyLeadRollup(
 /** Shared presentation fields for both unconverted leads and operational jobs. */
 export const getProjectPresentation = cache(async (projectId: string) => {
   const supabase = await createClient();
-  const [{ data: job, error }] = await Promise.all([supabase
-    .from("jobs")
-    .select(
-      "id,name,status,formatted_address,address_line_1,lead_id,contact_id,metadata,contact:contacts(name,email,phone,metadata)",
-    )
-    .eq("id", projectId)
-    .maybeSingle(), requireStaff()]);
+  const [{ data: workspace }, { data: job, error }] = await Promise.all([
+    supabase
+      .from("project_workspace")
+      .select("name,description")
+      .eq("project_id", projectId)
+      .maybeSingle(),
+    supabase
+      .from("jobs")
+      .select(
+        "id,name,status,formatted_address,address_line_1,lead_id,contact_id,metadata,contact:contacts(name,email,phone,metadata)",
+      )
+      .eq("id", projectId)
+      .maybeSingle(),
+    requireMember(),
+  ]);
 
   if (error) throw new Error(`project presentation: ${error.message}`);
 
   if (!job) {
-    const [{ data: lead, error: leadError }, { data: quotes, error: quotesError }] =
-      await Promise.all([
-        supabase
-          .from("leads")
-          .select(
-            "id,status,address,city,province,postal_code,metadata,contact:contacts(name,email,phone,metadata)",
-          )
-          .eq("id", projectId)
-          .maybeSingle(),
-        supabase
-          .from("quotes")
-          .select("id,status,accepted_at,updated_at,job:jobs(id,is_feed_visible)")
-          .eq("lead_id", projectId)
-          .order("accepted_at", { ascending: false, nullsFirst: false })
-          .order("updated_at", { ascending: false }),
-      ]);
+    const [
+      { data: lead, error: leadError },
+      { data: quotes, error: quotesError },
+    ] = await Promise.all([
+      supabase
+        .from("leads")
+        .select(
+          "id,status,address,city,province,postal_code,metadata,contact:contacts(name,email,phone,metadata)",
+        )
+        .eq("id", projectId)
+        .maybeSingle(),
+      supabase
+        .from("quotes")
+        .select("id,status,accepted_at,updated_at,job:jobs(id,is_feed_visible)")
+        .eq("lead_id", projectId)
+        .order("accepted_at", { ascending: false, nullsFirst: false })
+        .order("updated_at", { ascending: false }),
+    ]);
     if (leadError) throw new Error(`lead presentation: ${leadError.message}`);
-    if (quotesError) throw new Error(`lead project jobs lookup: ${quotesError.message}`);
+    if (quotesError)
+      throw new Error(`lead project jobs lookup: ${quotesError.message}`);
     if (!lead) return null;
 
     const leadRecord = asRecord(lead);
@@ -187,16 +198,17 @@ export const getProjectPresentation = cache(async (projectId: string) => {
     });
 
     return {
-      name: contact.name ?? "Unnamed lead",
+      name: workspace?.name ?? contact.name ?? "Unnamed lead",
       status: firstText(lead.status),
       address: contact.address,
-      description: firstText(
-        metadata.project_description,
-        metadata.companycam_description,
-        metadata.description,
-        metadata.scope_description,
-      ),
-      notes: firstText(metadata.project_notes),
+      description:
+        workspace?.description ??
+        firstText(
+          metadata.project_description,
+          metadata.companycam_description,
+          metadata.description,
+          metadata.scope_description,
+        ),
       contact,
       isLead: true,
       canonicalJobId: selectCanonicalJobId(candidates),
@@ -213,7 +225,8 @@ export const getProjectPresentation = cache(async (projectId: string) => {
       )
       .eq("id", job.lead_id)
       .maybeSingle();
-    if (leadError) throw new Error(`project lead presentation: ${leadError.message}`);
+    if (leadError)
+      throw new Error(`project lead presentation: ${leadError.message}`);
     sourceLead = asRecord(lead);
     leadMetadata = asRecord(lead?.metadata);
   }
@@ -237,19 +250,20 @@ export const getProjectPresentation = cache(async (projectId: string) => {
     ),
   };
   return {
-    name: job.name,
+    name: workspace?.name ?? job.name,
     status: firstText(job.status),
     address,
-    description: firstText(
-      metadata.project_description,
-      metadata.companycam_description,
-      metadata.description,
-      metadata.scope_description,
-      leadMetadata.project_description,
-      leadMetadata.companycam_description,
-      leadMetadata.description,
-    ),
-    notes: firstText(metadata.project_notes, leadMetadata.project_notes),
+    description:
+      workspace?.description ??
+      firstText(
+        metadata.project_description,
+        metadata.companycam_description,
+        metadata.description,
+        metadata.scope_description,
+        leadMetadata.project_description,
+        leadMetadata.companycam_description,
+        leadMetadata.description,
+      ),
     contact,
     isLead: false,
     canonicalJobId: null,

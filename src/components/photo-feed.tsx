@@ -1,66 +1,29 @@
 "use client";
 
+import { toggleMediaSelection } from "@/lib/media-selection";
+import { MediaItemMenu } from "./media-item-menu";
+
+import { FeedPhotoActions } from "./feed-photo-actions";
+import { PhotoToolbar, type MediaView } from "./photo-toolbar";
 import { SITE_INITIALS } from "@/lib/site-brand";
 
-import Image from "next/image";
+import { ProjectMediaPreview } from "./project-media-preview";
+import dynamic from "next/dynamic";
+const FeedMediaViewer = dynamic(
+  () => import("./feed-media-viewer").then((module) => module.FeedMediaViewer),
+  { ssr: false },
+);
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/components/ui";
 import type { PhotoFeedItem, PhotoBatch, PhotoSummary } from "@/lib/photo-feed";
 
-const OTTAWA_TIME_ZONE = "America/Toronto";
-const DAY = 24 * 60 * 60 * 1000;
-
-type DateRange = "all" | "7" | "30" | "90";
-type MediaFilter = "all" | "image" | "video";
-type ViewDensity = "comfortable" | "compact";
-
-function localDateKey(iso: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: OTTAWA_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(iso));
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
-
-function ordinal(day: number): string {
-  const remainder = day % 100;
-  if (remainder >= 11 && remainder <= 13) return `${day}th`;
-  if (day % 10 === 1) return `${day}st`;
-  if (day % 10 === 2) return `${day}nd`;
-  if (day % 10 === 3) return `${day}rd`;
-  return `${day}th`;
-}
-
-function dateHeading(iso: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: OTTAWA_TIME_ZONE,
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).formatToParts(new Date(iso));
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.weekday}, ${value.month} ${ordinal(Number(value.day))}, ${value.year}`;
-}
-
-function captureTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: OTTAWA_TIME_ZONE,
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
-
-function durationLabel(durationMs: number | null): string | null {
-  if (!durationMs || durationMs < 1) return null;
-  const totalSeconds = Math.round(durationMs / 1000);
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
-
+import {
+  localDateKey,
+  dateHeading,
+  captureTime,
+  durationLabel,
+} from "@/lib/media-format";
 function initials(name: string): string {
   const letters = name
     .split(/\s+/)
@@ -79,70 +42,78 @@ function photoAlt(photo: PhotoFeedItem): string {
   return `${photo.projectName} ${photo.mediaType} captured ${dateHeading(photo.capturedAt)} at ${captureTime(photo.capturedAt)} by ${photo.creatorName}`;
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  children,
-  className,
+export function PhotoFeed({
+  initialBatch,
+  summary,
+  uploaderId,
+  header,
 }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-  className?: string;
+  initialBatch: PhotoBatch;
+  summary: PhotoSummary;
+  uploaderId?: string;
+  header?: ReactNode;
 }) {
-  return (
-    <label className={cn("relative inline-flex shrink-0", className)}>
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full cursor-pointer appearance-none truncate rounded-lg border border-[#d8dde5] bg-white pl-4 pr-9 text-[13px] font-semibold text-[#4a5568] outline-none transition-colors hover:border-[#b8c2d0] focus:border-[#5794ea] focus:ring-2 focus:ring-[#5794ea]/20"
-      >
-        {children}
-      </select>
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 20 20"
-        fill="none"
-        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#647184]"
-      >
-        <path d="m6.5 8 3.5 3.5L13.5 8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </label>
-  );
-}
-
-export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch; summary: PhotoSummary }) {
-  const [dateRange, setDateRange] = useState<DateRange>("all");
-  const [projectId, setProjectId] = useState("all");
-  const [creatorName, setCreatorName] = useState("all");
-  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
-  const [viewDensity, setViewDensity] = useState<ViewDensity>("compact");
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [selectionLocked, setSelectionLocked] = useState(false);
+  const selectionAnchor = useRef<string | null>(null);
+  function toggleSelection(id: string, extend = false) {
+    if (selectionLocked) return;
+    const anchor = selectionAnchor.current;
+    setSelected((current) =>
+      toggleMediaSelection(
+        current,
+        photos.map((photo) => photo.id),
+        id,
+        anchor,
+        extend,
+      ),
+    );
+    selectionAnchor.current = id;
+  }
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [creators, setCreators] = useState<string[]>([]);
+  const [view, setView] = useState<MediaView>({
+    type: "all",
+    size: "compact",
+    oldestFirst: false,
+  });
   const [batch, setBatch] = useState(initialBatch);
-  const [total, setTotal] = useState(summary.total);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
   const photos = batch.items;
   const [activePhotoId, setActivePhotoId] = useState<string | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const projectOptions = summary.projects;
-  const creatorOptions = summary.creators;
-  const since = useMemo(() => dateRange === "all" ? null : new Date(Date.now() - Number(dateRange) * DAY).toISOString(), [dateRange]);
+  const [filterOptions, setFilterOptions] = useState(summary);
+  const projectOptions = filterOptions.projects;
+  const creatorOptions = filterOptions.creators;
   const filterParams = useMemo(() => {
     const params = new URLSearchParams();
-    if (projectId !== "all") params.set("project", projectId);
-    if (creatorName !== "all") params.set("creator", creatorName);
-    if (mediaFilter !== "all") params.set("media", mediaFilter);
-    if (since) params.set("since", since);
+    if (uploaderId) params.set("uploader", uploaderId);
+    projectIds.forEach((id) => params.append("project", id));
+    creators.forEach((name) => params.append("creator", name));
+    tags.forEach((tag) => params.append("tag", tag));
+    if (view.type !== "all") params.set("media", view.type);
+    if (view.oldestFirst) params.set("order", "oldest");
+    if (from) params.set("since", from);
+    if (from) params.set("until", to || from);
     return params.toString();
-  }, [projectId, creatorName, mediaFilter, since]);
-  const lastFilters = useRef("");
-  const loadedFilters = useRef("");
-  async function load(append: boolean) {
+  }, [
+    projectIds,
+    creators,
+    tags,
+    view.type,
+    view.oldestFirst,
+    from,
+    to,
+    uploaderId,
+  ]);
+  const lastFilters = useRef(filterParams);
+  const loadedFilters = useRef(filterParams);
+  async function load(append: boolean, refreshOptions = false) {
     append = append && loadedFilters.current === filterParams;
     requestRef.current?.abort();
     const controller = new AbortController();
@@ -150,17 +121,43 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
     setLoading(true);
     setError(null);
     const params = new URLSearchParams(filterParams);
-    if (append && batch.nextCursor) params.set("cursor", JSON.stringify(batch.nextCursor));
+    if (refreshOptions) params.set("options", "1");
+    if (append && batch.nextCursor)
+      params.set("cursor", JSON.stringify(batch.nextCursor));
     try {
-      const response = await fetch(`/api/photos?${params}`, { signal: controller.signal, cache: "no-store" });
+      const response = await fetch(`/api/photos?${params}`, {
+        signal: controller.signal,
+        cache: "no-store",
+      });
       if (!response.ok) throw new Error("Photos could not load. Try again.");
-      const data = await response.json() as { batch: PhotoBatch; summary?: PhotoSummary };
-      if (controller.signal.aborted || requestRef.current !== controller) return;
+      const data = (await response.json()) as {
+        batch: PhotoBatch;
+        summary?: PhotoSummary;
+      };
+      if (controller.signal.aborted || requestRef.current !== controller)
+        return;
+      if (data.summary) setFilterOptions(data.summary);
       loadedFilters.current = filterParams;
-      setBatch(previous => append ? { ...data.batch, items: [...previous.items, ...data.batch.items.filter(item => !previous.items.some(existing => existing.id === item.id))] } : data.batch);
-      if (data.summary) setTotal(data.summary.total);
+      setBatch((previous) =>
+        append
+          ? {
+              ...data.batch,
+              items: [
+                ...new Map(
+                  [...previous.items, ...data.batch.items].map((item) => [
+                    item.id,
+                    item,
+                  ]),
+                ).values(),
+              ],
+            }
+          : data.batch,
+      );
     } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Photos could not load.");
+      if (!controller.signal.aborted)
+        setError(
+          cause instanceof Error ? cause.message : "Photos could not load.",
+        );
     } finally {
       if (requestRef.current === controller) setLoading(false);
     }
@@ -169,12 +166,20 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
     if (lastFilters.current === filterParams) return;
     lastFilters.current = filterParams;
     setActivePhotoId(null);
+    if (!selectionLocked) setSelected(new Set());
     void load(false);
   }, [filterParams]);
   useEffect(() => () => requestRef.current?.abort(), []);
 
-  const filteredPhotos = photos;
   const visiblePhotos = photos;
+  const hasFilters = Boolean(
+    from ||
+    to ||
+    projectIds.length ||
+    creators.length ||
+    tags.length ||
+    view.type !== "all",
+  );
 
   const groups = useMemo(() => {
     const byDate = new Map<string, PhotoFeedItem[]>();
@@ -187,124 +192,101 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
     return [...byDate.values()];
   }, [visiblePhotos]);
 
-  const galleryPhotos = filteredPhotos.filter((photo) => photo.mediaType === "image");
-  const priorityPhotoId = visiblePhotos.find((photo) => photo.mediaType === "image")?.id;
-  const activeIndex = activePhotoId
-    ? galleryPhotos.findIndex((photo) => photo.id === activePhotoId)
-    : -1;
-  const activePhoto = activeIndex >= 0 ? galleryPhotos[activeIndex] : null;
-
-  function showPrevious() {
-    if (activeIndex < 0 || galleryPhotos.length < 2) return;
-    setActivePhotoId(galleryPhotos[(activeIndex - 1 + galleryPhotos.length) % galleryPhotos.length].id);
-  }
-
-  function showNext() {
-    if (activeIndex < 0 || galleryPhotos.length < 2) return;
-    setActivePhotoId(galleryPhotos[(activeIndex + 1) % galleryPhotos.length].id);
-  }
-
-  useEffect(() => {
-    if (!activePhoto) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setActivePhotoId(null);
-      if (event.key === "ArrowLeft") showPrevious();
-      if (event.key === "ArrowRight") showNext();
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [activeIndex, activePhoto, galleryPhotos.length]);
-
-  const hasFilters = dateRange !== "all" || projectId !== "all" || creatorName !== "all" || mediaFilter !== "all";
-
   return (
-    <div data-app-content="full-bleed" className="min-h-full bg-white text-[#263143]">
-      <div className="mx-auto w-full max-w-[1720px] px-4 pb-14 pt-7 sm:px-7 lg:px-10 lg:pt-9">
-        <div>
+    <div
+      data-app-content="full-bleed"
+      className="min-h-full bg-white text-[#263143]"
+    >
+      <div className="mx-auto w-full px-4 pb-14 pt-7 sm:px-7 lg:px-12 lg:pt-12">
+        {header ?? (
           <div>
-            <h1 className="font-display text-[30px] font-bold leading-none tracking-[-0.035em] text-[#172235]">
-              Photos
-            </h1>
-            <p className="mt-2 text-sm text-[#7b8798]">
-              {total.toLocaleString("en-CA")} {total === 1 ? "photo or video" : "photos and videos"}
-            </p>
+            <div>
+              <h1 className="font-display text-[36px] font-extrabold leading-none tracking-[-0.035em] text-[#172235]">
+                Photos
+              </h1>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="mt-7 flex items-center gap-2 overflow-x-auto pb-2">
-          <FilterSelect
-            label="Date range"
-            value={dateRange}
-            onChange={(value) => setDateRange(value as DateRange)}
-            className="w-[134px]"
-          >
-            <option value="all">Date Range</option>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-          </FilterSelect>
-          <FilterSelect label="Project" value={projectId} onChange={setProjectId} className="w-[140px]">
-            <option value="all">Projects</option>
-            {projectOptions.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </FilterSelect>
-          <FilterSelect label="Posted by" value={creatorName} onChange={setCreatorName} className="w-[160px]">
-            <option value="all">Posted by</option>
-            {creatorOptions.map(([name, count]) => (
-              <option key={name} value={name}>{name} ({count})</option>
-            ))}
-          </FilterSelect>
-          <FilterSelect
-            label="Media type"
-            value={mediaFilter}
-            onChange={(value) => setMediaFilter(value as MediaFilter)}
-            className="w-[120px]"
-          >
-            <option value="all">Media</option>
-            <option value="image">Photos only</option>
-            <option value="video">Videos only</option>
-          </FilterSelect>
-          {hasFilters ? (
+        <fieldset disabled={selectionLocked} className="mt-7">
+          <PhotoToolbar
+            projects={projectOptions}
+            users={creatorOptions.map(([name]) => [name, name])}
+            hideUsers={Boolean(uploaderId)}
+            selectedProjects={projectIds}
+            selectedUsers={creators}
+            tags={{
+              options: filterOptions.tags ?? [],
+              selected: tags,
+              onChange: setTags,
+            }}
+            onProjects={setProjectIds}
+            onUsers={setCreators}
+            from={from}
+            to={to}
+            onDates={(start, end) => {
+              setFrom(start);
+              setTo(end);
+            }}
+            view={view}
+            onView={setView}
+          />
+        </fieldset>
+
+        {selected.size ? (
+          <FeedPhotoActions
+            ids={[...selected]}
+            onClear={() => setSelected(new Set())}
+            onBusy={setSelectionLocked}
+            onSaved={() => void load(false, true)}
+          />
+        ) : null}
+        {error ? (
+          <div role="alert" className="mt-4 text-sm text-red-700">
+            {error}{" "}
             <button
               type="button"
-              onClick={() => {
-                setDateRange("all");
-                setProjectId("all");
-                setCreatorName("all");
-                setMediaFilter("all");
-              }}
-              className="h-10 shrink-0 rounded-lg px-3 text-[13px] font-semibold text-[#617086] hover:bg-[#f3f5f8] hover:text-[#243147]"
+              onClick={() => void load(false)}
+              className="underline"
             >
-              Clear filters
+              Retry
             </button>
-          ) : null}
-          <FilterSelect
-            label="View density"
-            value={viewDensity}
-            onChange={(value) => setViewDensity(value as ViewDensity)}
-            className="ml-auto w-[112px]"
-          >
-            <option value="compact">View</option>
-            <option value="comfortable">Large tiles</option>
-          </FilterSelect>
-        </div>
-
-        {error ? <div role="alert" className="mt-4 text-sm text-red-700">{error} <button type="button" onClick={() => void load(false)} className="underline">Retry</button></div> : null}
+          </div>
+        ) : null}
         {groups.length ? (
-          <div className="mt-6 space-y-10">
+          <div
+            className={`mt-8 space-y-7 ${loading ? "pointer-events-none opacity-50" : ""}`}
+          >
             {groups.map((items) => (
-              <section key={localDateKey(items[0].capturedAt)} className="[content-visibility:auto] [contain-intrinsic-size:360px]">
-                <div className="mb-4 flex items-center gap-3">
-                  <span aria-hidden="true" className="h-5 w-5 rounded-[4px] border-2 border-[#cbd2dc] bg-white" />
+              <section
+                key={localDateKey(items[0].capturedAt)}
+                className="[content-visibility:auto] [contain-intrinsic-size:360px]"
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select photos from ${dateHeading(items[0].capturedAt)}`}
+                    disabled={selectionLocked}
+                    checked={items.every((photo) => selected.has(photo.id))}
+                    ref={(node) => {
+                      if (node)
+                        node.indeterminate =
+                          items.some((photo) => selected.has(photo.id)) &&
+                          !items.every((photo) => selected.has(photo.id));
+                    }}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        items.forEach((photo) => {
+                          if (checked && next.size < 500) next.add(photo.id);
+                          else if (!checked) next.delete(photo.id);
+                        });
+                        return next;
+                      });
+                    }}
+                    className="h-5 w-5 accent-blue-600"
+                  />
                   <h2 className="font-display text-[17px] font-semibold text-[#273244]">
                     {dateHeading(items[0].capturedAt)}
                   </h2>
@@ -312,10 +294,12 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
 
                 <div
                   className={cn(
-                    "grid gap-x-2.5 gap-y-5 sm:gap-x-3",
-                    viewDensity === "compact"
-                      ? "grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8"
-                      : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6",
+                    "grid gap-x-2 gap-y-6",
+                    view.size === "compact"
+                      ? "grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
+                      : view.size === "medium"
+                        ? "grid-cols-[repeat(auto-fill,minmax(200px,1fr))]"
+                        : "grid-cols-[repeat(auto-fill,minmax(280px,1fr))]",
                   )}
                 >
                   {items.map((photo) => {
@@ -324,40 +308,60 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
                     return (
                       <figure key={photo.id} className="min-w-0">
                         <div className="group relative aspect-square overflow-hidden rounded-[8px] bg-[#edf0f4]">
-                          {photo.mediaType === "video" ? (
-                            <video
-                              controls
-                              playsInline
-                              preload="none"
-                              aria-label={photoAlt(photo)}
-                              className="h-full w-full object-cover"
-                            >
-                              <source src={url} type={photo.mimeType} />
-                            </video>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setActivePhotoId(photo.id)}
-                              aria-label={`View ${photoAlt(photo).toLocaleLowerCase("en-CA")}`}
-                              className="relative block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4f91ed]"
-                            >
-                              <Image
-                                src={`${url}?preview=1`}
-                                alt={photoAlt(photo)}
-                                fill
-                                unoptimized
-                                priority={photo.id === priorityPhotoId}
-                                sizes={viewDensity === "compact" ? "(max-width: 640px) 33vw, 14vw" : "(max-width: 640px) 50vw, 18vw"}
-                                className="object-cover transition-transform duration-200 group-hover:scale-[1.025]"
-                              />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={(event) =>
+                              selected.size
+                                ? toggleSelection(photo.id, event.shiftKey)
+                                : setActivePhotoId(photo.id)
+                            }
+                            aria-label={`View ${photo.mediaType === "video" ? "video" : "photo"} from ${photo.projectName}`}
+                            className="relative block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                          >
+                            <ProjectMediaPreview
+                              src={url}
+                              video={photo.mediaType === "video"}
+                              alt={photoAlt(photo)}
+                            />
+                            {photo.mediaType === "video" ? (
+                              <span className="absolute inset-0 flex items-center justify-center text-3xl text-white drop-shadow">
+                                ▶
+                              </span>
+                            ) : null}
+                          </button>
 
+                          {selected.has(photo.id) ? (
+                            <span className="pointer-events-none absolute inset-0 bg-black/30 ring-2 ring-inset ring-blue-500" />
+                          ) : null}
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${photo.mediaType} from ${photo.projectName} at ${captureTime(photo.capturedAt)}`}
+                            disabled={selectionLocked}
+                            checked={selected.has(photo.id)}
+                            onChange={(event) =>
+                              toggleSelection(
+                                photo.id,
+                                Boolean(
+                                  (event.nativeEvent as MouseEvent).shiftKey,
+                                ),
+                              )
+                            }
+                            className={`absolute left-2 top-2 h-5 w-5 cursor-pointer accent-blue-600 focus:opacity-100 ${selected.size ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"}`}
+                          />
+                          <MediaItemMenu
+                            mediaId={photo.id}
+                            mediaType={photo.mediaType}
+                            projectId={photo.ownerProjectId}
+                            label={`Actions for ${photo.mediaType} from ${photo.projectName}`}
+                            disabled={selectionLocked}
+                            onBusy={setSelectionLocked}
+                            onSaved={() => void load(false, true)}
+                          />
                           <span className="pointer-events-none absolute bottom-2 left-2 inline-flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-[#f7f8fa] px-1 text-[10px] font-bold text-[#536073] shadow-sm">
                             {initials(photo.creatorName)}
                           </span>
                           {duration ? (
-                            <span className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                            <span className="pointer-events-none absolute top-2 right-2 rounded group-hover:hidden group-focus-within:hidden [@media(hover:none)]:top-auto [@media(hover:none)]:bottom-2 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                               {duration}
                             </span>
                           ) : null}
@@ -366,15 +370,26 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
                         <figcaption className="mt-2 min-w-0 leading-tight">
                           <Link
                             href={`/jobs/${encodeURIComponent(photo.ownerProjectId)}`}
-                            className="block truncate text-[12px] font-semibold text-[#344056] hover:text-[#246fcb] hover:underline"
-                            title={photo.address ? `${photo.projectName} · ${photo.address}` : photo.projectName}
+                            className="block truncate text-[12px] font-normal text-[#344056] hover:text-[#246fcb] hover:underline"
+                            title={
+                              photo.address
+                                ? `${photo.projectName} · ${photo.address}`
+                                : photo.projectName
+                            }
                           >
                             {photo.projectName}
                           </Link>
                           <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-[#8a95a5]">
-                            <time dateTime={photo.capturedAt} className="shrink-0 whitespace-nowrap">{captureTime(photo.capturedAt)}</time>
+                            <time
+                              dateTime={photo.capturedAt}
+                              className="shrink-0 whitespace-nowrap"
+                            >
+                              {captureTime(photo.capturedAt)}
+                            </time>
                             <span aria-hidden="true">•</span>
-                            <span className="truncate">{photo.creatorName}</span>
+                            <span className="truncate">
+                              {photo.creatorName}
+                            </span>
                           </div>
                         </figcaption>
                       </figure>
@@ -400,85 +415,29 @@ export function PhotoFeed({ initialBatch, summary }: { initialBatch: PhotoBatch;
           <div className="mt-16 flex min-h-72 items-center justify-center rounded-xl border border-dashed border-[#d6dce5] bg-[#fafbfc] p-8 text-center">
             <div>
               <div className="font-display text-lg font-semibold text-[#283448]">
-                {photos.length ? "No photos match these filters" : "No photos yet"}
+                {hasFilters
+                  ? "No photos or videos match these filters"
+                  : "No photos or videos yet"}
               </div>
               <p className="mt-1 text-sm text-[#7d8899]">
-                {photos.length
-                  ? "Clear one or more filters to see the full company feed."
-                  : "Photos uploaded to a lead or job will appear here automatically."}
+                {hasFilters
+                  ? "Change your filters to see more media."
+                  : "Photos and videos added to projects will appear here."}
               </p>
             </div>
           </div>
         )}
       </div>
 
-      {activePhoto ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Photo ${activeIndex + 1} of ${galleryPhotos.length}`}
-          className="fixed inset-0 z-[80] flex flex-col bg-black/95 text-white"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setActivePhotoId(null);
-          }}
-        >
-          <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-4 py-3 sm:px-6">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{activePhoto.projectName}</div>
-              <div className="mt-0.5 truncate text-xs text-white/60">
-                {dateHeading(activePhoto.capturedAt)} · {captureTime(activePhoto.capturedAt)} · {activePhoto.creatorName}
-              </div>
-            </div>
-            <button
-              ref={closeButtonRef}
-              type="button"
-              onClick={() => setActivePhotoId(null)}
-              aria-label="Close gallery"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-2xl hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              ×
-            </button>
-          </header>
-
-          <div className="relative min-h-0 flex-1">
-            <Image
-              key={activePhoto.id}
-              src={mediaUrl(activePhoto)}
-              alt={photoAlt(activePhoto)}
-              fill
-              unoptimized
-              sizes="100vw"
-              className="object-contain px-2 py-3 sm:px-20 sm:py-6"
-            />
-
-            {galleryPhotos.length > 1 ? (
-              <>
-                <button
-                  type="button"
-                  onClick={showPrevious}
-                  aria-label="Previous photo"
-                  className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-3xl hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  onClick={showNext}
-                  aria-label="Next photo"
-                  className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-3xl hover:bg-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                >
-                  ›
-                </button>
-              </>
-            ) : null}
-          </div>
-
-          {activePhoto.description ? (
-            <p className="shrink-0 border-t border-white/10 px-4 py-2 text-center text-sm text-white/80">
-              {activePhoto.description}
-            </p>
-          ) : null}
-        </div>
+      {activePhotoId ? (
+        <FeedMediaViewer
+          items={photos}
+          activeId={activePhotoId}
+          onChange={setActivePhotoId}
+          onClose={() => setActivePhotoId(null)}
+          onRemoved={() => void load(false, true)}
+          onUpdated={() => void load(false, true)}
+        />
       ) : null}
     </div>
   );

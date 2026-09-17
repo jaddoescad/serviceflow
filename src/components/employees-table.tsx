@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, Field, Input, Select } from "@/components/ui";
-import { fmtHours, fmtMoney, fmtDate, initials } from "@/lib/format";
+import { fmtMoney, fmtDate, initials } from "@/lib/format";
 import { useRouter } from "next/navigation";
 import { getPayRateHistory, createEmployee, setActive, setPayRate, setRole } from "@/lib/actions/employees";
 import type { Role } from "@/lib/types";
@@ -13,7 +13,6 @@ export type CrewRow = {
   email: string | null;
   role: string;
   isActive: boolean;
-  loggedHours: number;
   lastActivity: string | null;
   assignedCount: number;
   currentPayRate: number | null;
@@ -105,7 +104,6 @@ export function EmployeesTable({
                 <th className="px-4 py-2.5 font-medium">Role</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5 text-right font-medium">Pay rate</th>
-                <th className="px-4 py-2.5 text-right font-medium">Hours (30d)</th>
                 <th className="px-4 py-2.5 text-right font-medium">Jobs</th>
                 <th className="px-4 py-2.5 font-medium">Last active</th>
                 {canManage || canManageRates ? <th className="px-4 py-2.5 text-right font-medium">Manage</th> : null}
@@ -137,7 +135,6 @@ export function EmployeesTable({
                   <td className="px-4 py-2.5 text-right font-medium tabular-nums">
                     {r.currentPayRate != null ? `${fmtMoney(r.currentPayRate)}/h` : <Badge tone="warn">not set</Badge>}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-medium tabular-nums">{fmtHours(r.loggedHours)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{r.assignedCount}</td>
                   <td className="px-4 py-2.5 text-[var(--color-muted)]">{fmtDate(r.lastActivity)}</td>
                   {canManage || canManageRates ? (

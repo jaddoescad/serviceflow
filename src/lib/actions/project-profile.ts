@@ -25,7 +25,7 @@ function revalidateProject(projectId: string) {
 
 async function saveProjectSection(
   projectId: string,
-  section: "contact" | "description" | "notes",
+  section: "contact" | "description",
   values: {
     name?: string;
     email?: string;
@@ -33,13 +33,22 @@ async function saveProjectSection(
     address?: string;
     customerNotes?: string;
     description?: string;
-    projectNotes?: string;
   },
 ): Promise<ProjectProfileActionResult> {
-  if (!UUID_PATTERN.test(projectId)) return { ok: false, error: "Project not found." };
+  if (!UUID_PATTERN.test(projectId))
+    return { ok: false, error: "Project not found." };
 
   await requireStaff();
   const supabase = await createClient();
+  if (section === "description") {
+    const { error } = await supabase.rpc("save_workspace_description", {
+      requested_id: projectId,
+      requested_description: values.description ?? "",
+    });
+    if (error) return { ok: false, error: error.message };
+    revalidateProject(projectId);
+    return { ok: true };
+  }
   const { error } = await supabase.rpc("save_project_profile", {
     requested_project_id: projectId,
     requested_section: section,
@@ -51,8 +60,6 @@ async function saveProjectSection(
       values.customerNotes == null ? null : clean(values.customerNotes),
     requested_description:
       values.description == null ? null : clean(values.description),
-    requested_project_notes:
-      values.projectNotes == null ? null : clean(values.projectNotes),
   });
 
   if (error) return { ok: false, error: error.message };
@@ -69,10 +76,14 @@ export async function updateProjectContact(input: {
   customerNotes: string;
 }): Promise<ProjectProfileActionResult> {
   if (!input.name.trim()) return { ok: false, error: "Enter a contact name." };
-  if (invalidLength(input.name, 160)) return { ok: false, error: "Contact name is too long." };
-  if (invalidLength(input.email, 320)) return { ok: false, error: "Email is too long." };
-  if (invalidLength(input.phone, 60)) return { ok: false, error: "Phone number is too long." };
-  if (invalidLength(input.address, 500)) return { ok: false, error: "Address is too long." };
+  if (invalidLength(input.name, 160))
+    return { ok: false, error: "Contact name is too long." };
+  if (invalidLength(input.email, 320))
+    return { ok: false, error: "Email is too long." };
+  if (invalidLength(input.phone, 60))
+    return { ok: false, error: "Phone number is too long." };
+  if (invalidLength(input.address, 500))
+    return { ok: false, error: "Address is too long." };
   if (invalidLength(input.customerNotes, 10_000)) {
     return { ok: false, error: "Customer notes are too long." };
   }
@@ -87,14 +98,4 @@ export async function updateProjectDescription(input: {
     return { ok: false, error: "Description is too long." };
   }
   return saveProjectSection(input.projectId, "description", input);
-}
-
-export async function updateProjectNotes(input: {
-  projectId: string;
-  projectNotes: string;
-}): Promise<ProjectProfileActionResult> {
-  if (invalidLength(input.projectNotes, 20_000)) {
-    return { ok: false, error: "Notes are too long." };
-  }
-  return saveProjectSection(input.projectId, "notes", input);
 }

@@ -3,9 +3,34 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input } from "@/components/ui";
-import { createContact } from "@/lib/actions/contacts";
+import { createContact, updateCustomer } from "@/lib/actions/contacts";
 
-export function CreateContactModal({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+export type CreatedContact = {
+  id: string;
+  name: string;
+  email: string | null;
+  address: string;
+};
+
+export function CreateContactModal({
+  initiallyOpen = false,
+  onCreated,
+  onClosed,
+  customer,
+  hideTrigger = false,
+}: {
+  initiallyOpen?: boolean;
+  onCreated?: (contact: CreatedContact) => void;
+  onClosed?: () => void;
+  customer?: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+  };
+  hideTrigger?: boolean;
+}) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const requestId = useRef<string | null>(null);
@@ -18,6 +43,7 @@ export function CreateContactModal({ initiallyOpen = false }: { initiallyOpen?: 
     const element = dialog.current;
     const previousOverflow = document.body.style.overflow;
     element?.showModal();
+    element?.querySelector<HTMLInputElement>("input")?.focus();
     document.body.style.overflow = "hidden";
     return () => {
       element?.close();
@@ -29,54 +55,170 @@ export function CreateContactModal({ initiallyOpen = false }: { initiallyOpen?: 
     if (pending) return;
     dialog.current?.close();
     setOpen(false);
-    if (initiallyOpen) router.replace("/contacts", { scroll: false });
+    if (onClosed) onClosed();
+    else if (initiallyOpen && !customer)
+      router.replace("/contacts", { scroll: false });
   }
 
-  return <>
-    <Button onClick={() => { requestId.current = null; setError(null); setOpen(true); }} className="shrink-0">+ Create contact</Button>
-    {open ? <dialog ref={dialog} aria-labelledby="create-contact-title" aria-describedby="create-contact-description"
-      onCancel={event => { event.preventDefault(); close(); }}
-      className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[520px] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-slate-950/45">
-      <button type="button" aria-label="Close create contact" disabled={pending} onClick={close} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-lg text-2xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] disabled:opacity-40">×</button>
-      <header className="px-6 pb-6 pt-8 text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-brand-soft)] text-[var(--color-brand)]">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-7 w-7"><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M19 7v6m-3-3h6"/></svg>
-        </div>
-        <h2 id="create-contact-title" className="font-display text-2xl font-semibold tracking-tight text-[var(--color-heading)]">Create contact</h2>
-        <p id="create-contact-description" className="mt-2 text-sm text-[var(--color-muted)]">Add a customer to your contacts.</p>
-      </header>
-      <form onSubmit={event => {
-        event.preventDefault();
-        if (pending) return;
-        const data = new FormData(event.currentTarget);
-        requestId.current ??= crypto.randomUUID();
-        const input = { id: requestId.current, name: String(data.get("name") ?? ""), email: String(data.get("email") ?? ""), phone: String(data.get("phone") ?? ""), address: String(data.get("address") ?? "") };
-        setError(null);
-        startTransition(async () => {
-          try {
-            const result = await createContact(input);
-            if (result.error || !result.id) { setError(result.error ?? "Could not create contact."); return; }
-            dialog.current?.close();
-            setOpen(false);
-            if (initiallyOpen) router.replace("/contacts", { scroll: false });
-            router.refresh();
-          } catch { setError("Could not save the contact. Please try again."); }
-        });
-      }}>
-        <fieldset disabled={pending} className="space-y-5 px-6 pb-6">
-          <Field label="Name *"><Input name="name" required maxLength={160} autoComplete="name" autoFocus /></Field>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Email (optional)"><Input name="email" type="email" maxLength={320} autoComplete="email" /></Field>
-            <Field label="Phone (optional)"><Input name="phone" type="tel" maxLength={60} autoComplete="tel" /></Field>
-          </div>
-          <Field label="Address (optional)"><Input name="address" maxLength={500} autoComplete="street-address" /></Field>
-        </fieldset>
-        {error ? <p role="alert" className="px-6 pb-4 text-sm text-[var(--color-bad)]">{error}</p> : null}
-        <footer className="flex items-center justify-between gap-4 border-t border-[var(--color-border)] px-6 py-5">
-          <Button type="button" variant="ghost" onClick={close} disabled={pending}>Cancel</Button>
-          <Button type="submit" disabled={pending}>{pending ? "Creating…" : "Create contact"}</Button>
-        </footer>
-      </form>
-    </dialog> : null}
-  </>;
+  return (
+    <>
+      {!onCreated && !hideTrigger ? (
+        <Button
+          onClick={() => {
+            requestId.current = null;
+            setError(null);
+            setOpen(true);
+          }}
+          className="shrink-0"
+        >
+          {customer ? "Edit Customer" : "＋ Customer"}
+        </Button>
+      ) : null}
+      {open ? (
+        <dialog
+          ref={dialog}
+          aria-labelledby="create-contact-title"
+          onCancel={(event) => {
+            event.preventDefault();
+            close();
+          }}
+          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[600px] overflow-hidden rounded-xl bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-900/60"
+        >
+          <form
+            className="flex max-h-[calc(100dvh-2rem)] flex-col"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (pending) return;
+              const data = new FormData(event.currentTarget);
+              requestId.current ??= crypto.randomUUID();
+              const input = {
+                id: customer?.id ?? requestId.current,
+                name: String(data.get("name") ?? ""),
+                email: String(data.get("email") ?? ""),
+                phone: String(data.get("phone") ?? ""),
+                address: String(data.get("address") ?? ""),
+              };
+              setError(null);
+              startTransition(async () => {
+                try {
+                  const result = await (customer
+                    ? updateCustomer(input)
+                    : createContact(input));
+                  if (result.error || !result.id) {
+                    setError(result.error ?? "Could not save customer.");
+                    return;
+                  }
+                  dialog.current?.close();
+                  setOpen(false);
+                  if (onCreated)
+                    onCreated({
+                      id: result.id,
+                      name: input.name.trim(),
+                      email: input.email.trim() || null,
+                      address: input.address.trim(),
+                    });
+                  else {
+                    if (customer) onClosed?.();
+                    if (initiallyOpen && !customer)
+                      router.replace("/contacts", { scroll: false });
+                    router.refresh();
+                  }
+                } catch {
+                  setError(
+                    "Could not save the customer. Your entries are still here; try again.",
+                  );
+                }
+              });
+            }}
+          >
+            <header className="flex shrink-0 items-center justify-between px-8 pb-5 pt-7">
+              <h2 id="create-contact-title" className="text-xl font-bold">
+                {customer ? "Edit Customer" : "Customer"}
+              </h2>
+              <button
+                type="button"
+                aria-label="Close customer form"
+                disabled={pending}
+                onClick={close}
+                className="flex h-8 w-8 items-center justify-center text-2xl text-slate-500 disabled:opacity-40"
+              >
+                ×
+              </button>
+            </header>
+            <div className="min-h-0 overflow-y-auto px-8 pb-8">
+              <fieldset disabled={pending}>
+                <legend className="mb-4 text-sm font-semibold">
+                  Contact Details
+                </legend>
+                <div className="space-y-5 rounded border border-slate-200 p-4">
+                  <Field label="Name *">
+                    <Input
+                      name="name"
+                      defaultValue={customer?.name ?? ""}
+                      required
+                      maxLength={160}
+                      autoComplete="name"
+                      autoFocus
+                    />
+                  </Field>
+                  <Field label="Phone">
+                    <Input
+                      name="phone"
+                      defaultValue={customer?.phone ?? ""}
+                      type="tel"
+                      maxLength={60}
+                      autoComplete="tel"
+                      placeholder="(555) 555-5555"
+                    />
+                  </Field>
+                  <Field label="Email">
+                    <Input
+                      name="email"
+                      defaultValue={customer?.email ?? ""}
+                      type="email"
+                      maxLength={320}
+                      autoComplete="email"
+                      placeholder="email@address.com"
+                    />
+                  </Field>
+                </div>
+                <div className="mt-7">
+                  <Field label="Address">
+                    <Input
+                      name="address"
+                      defaultValue={customer?.address ?? ""}
+                      maxLength={500}
+                      autoComplete="street-address"
+                    />
+                  </Field>
+                </div>
+              </fieldset>
+              {error ? (
+                <p role="alert" className="mt-4 text-sm text-red-700">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+            <footer className="flex shrink-0 justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <Button
+                type="button"
+                variant="subtle"
+                onClick={close}
+                disabled={pending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending
+                  ? "Saving…"
+                  : customer
+                    ? "Save Customer"
+                    : "Save New Customer"}
+              </Button>
+            </footer>
+          </form>
+        </dialog>
+      ) : null}
+    </>
+  );
 }

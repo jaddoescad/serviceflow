@@ -43,13 +43,7 @@ export function ProjectTabs({
     count?: number;
   }[] = [
     { key: "photos", label: "Photos", href: base, count: photoCount },
-    { key: "labour", label: "Labour budget", href: `${base}/labour` },
-    { key: "tasks", label: "Tasks", href: `${base}/tasks` },
-    {
-      key: "calculator",
-      label: "Quote / Calculator",
-      href: `${base}/calculator?name=${encodeURIComponent(projectName)}`,
-    },
+
   ];
 
   return (

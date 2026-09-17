@@ -39,6 +39,23 @@ const DASHBOARD_ICON = (
 
 export const NAV_ICONS: Record<string, ReactNode> = {
   "/": DASHBOARD_ICON,
+  "/projects": (
+    <Icon>
+      <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </Icon>
+  ),
+  "/labels": (
+    <Icon>
+      <path d="M3 3h8l10 10-8 8L3 11Z" />
+      <circle cx="7.5" cy="7.5" r="1" />
+    </Icon>
+  ),
+  "/trash": (
+    <Icon>
+      <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+    </Icon>
+  ),
   "/deals": (
     <Icon>
       <circle cx="12" cy="12" r="8" />

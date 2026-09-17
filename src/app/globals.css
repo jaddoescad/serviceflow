@@ -458,3 +458,9 @@ body {
 [data-design="4"] .leaflet-tile-pane {
   filter: brightness(0.72) saturate(0.75) contrast(1.12);
 }
+
+/* CompanyCam-style operational workspace. */
+.workspace-page { background: white; min-height: calc(100vh - 3rem); padding: 12px 20px 32px; }
+.app-content:has(.workspace-page), .app-content:has([data-project-workspace]) { background: #fff; }
+[data-project-workspace] { color: #202b39; }
+@media (max-width: 640px) { .workspace-page { padding: 8px 0 24px; } }

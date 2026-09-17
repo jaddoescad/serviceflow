@@ -30,3 +30,20 @@ test('tag names containing commas remain one tag',()=>{
  const [removed]=preparePhotoBatch([photo('a',entry.tags)],'remove-tags',['Kitchen, main floor']);
  assert.deepEqual(removed.tags,['Before']);
 });
+
+test('cross-project selection preserves each photo owner through retries', () => {
+ const items = [{...photo('a'),ownerProjectId:'project-a'},{...photo('b'),ownerProjectId:'project-b'}];
+ const batch = preparePhotoBatch(items,'trash',[]);
+ assert.deepEqual(batch.map(entry=>entry.item.ownerProjectId),['project-a','project-b']);
+});
+
+test('duplicate freezes distinct copy IDs and rejects videos', async () => {
+ const items = [{...photo('a'),mediaType:'image'},{...photo('b'),mediaType:'image'}];
+ const batch = preparePhotoBatch(items,'duplicate',[]);
+ assert.notEqual(batch[0].revision,batch[1].revision);
+ const copies = batch.map(entry=>entry.revision);
+ await runPhotoBatch(batch,async()=>({ok:false}),()=>{});
+ await runPhotoBatch(batch,async()=>({ok:true}),()=>{});
+ assert.deepEqual(batch.map(entry=>entry.revision),copies);
+ assert.throws(()=>preparePhotoBatch([{...photo('v'),mediaType:'video'}],'duplicate',[]),/Select photos/);
+});

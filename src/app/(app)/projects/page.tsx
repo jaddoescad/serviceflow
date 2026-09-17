@@ -1,24 +1,115 @@
-import { requireStaff } from "@/lib/auth";
+import { requireMember } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { rollupProjects, type JobWorkSummary } from "@/lib/metrics";
-import type { Project, ProjectBudget } from "@/lib/types";
-import { PageHeader } from "@/components/kpi";
-import { ProjectsTable } from "@/components/projects-table";
+import {
+  getProjectLabels,
+  type WorkspaceProject,
+} from "@/lib/project-workspace";
+import { ProjectDirectory } from "@/components/project-directory";
+import { redirect } from "next/navigation";
+
 export const dynamic = "force-dynamic";
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    view?: string;
+    label?: string;
+    sort?: string;
+    direction?: string;
+  }>;
+}) {
   const params = await searchParams;
-  const query = (params.q ?? "").slice(0, 200);
-  const requestedPage = Math.max(1, Math.min(1000000, Number.parseInt(params.page ?? "1", 10) || 1));
-  const [profile, result] = await Promise.all([
-    requireStaff(), createClient().then(client => client.rpc("get_labour_budgets_page", { search_text: query, page_number: requestedPage })),
+  const query = (params.q ?? "").trim().slice(0, 200);
+  const sort = params.sort === "name" ? "name" : "updated_at";
+  const direction =
+    params.direction === "asc" || params.direction === "desc"
+      ? params.direction
+      : sort === "name"
+        ? "asc"
+        : "desc";
+  const requestedPage = Number(params.page ?? 1);
+  const page =
+    Number.isSafeInteger(requestedPage) && requestedPage > 0
+      ? requestedPage
+      : 1;
+  const view = ["archived", "trash"].includes(params.view ?? "")
+    ? params.view!
+    : "all";
+  const label = /^[0-9a-f-]{36}$/i.test(params.label ?? "")
+    ? params.label!
+    : "";
+  const client = await createClient();
+  let request = client
+    .from("project_directory")
+    .select("*", { count: "exact" });
+  if (query)
+    request = request.ilike("name", `%${query.replace(/[\\%_]/g, "\\$&")}%`);
+  if (view === "trash")
+    request = request
+      .not("trashed_at", "is", null)
+      .gt("trashed_at", new Date(Date.now() - 90 * 86400000).toISOString());
+  else {
+    request = request.is("trashed_at", null);
+    request =
+      view === "archived"
+        ? request.not("archived_at", "is", null)
+        : request.is("archived_at", null);
+  }
+  // labels is JSONB; a JavaScript array is encoded as a Postgres array by the client.
+  if (label)
+    request = request.contains("labels", JSON.stringify([{ id: label }]));
+  const [profile, labels, initialResult] = await Promise.all([
+    requireMember(),
+    getProjectLabels(),
+    request
+      .order(sort, { ascending: direction === "asc" })
+      .order("id")
+      .range((page - 1) * 40, page * 40 - 1),
   ]);
-  if (result.error) throw new Error(`labour budgets: ${result.error.message}`);
-  type BudgetRow = JobWorkSummary & { address: string | null; startedOn: string | null; productionMonth: string | null; budgetedHours: number | null; hourlyRate: number | null; amount: number | null; closedAt: string | null };
-  const data = result.data as { rows: BudgetRow[]; total: number; calculatedAt: string; totals: { overCount: number; readyToCloseCount: number } };
-  const projects = data.rows.map(row => ({ companycam_id: row.projectId, name: row.name, formatted_address: row.address, started_on: row.startedOn, production_month: row.productionMonth })) as Project[];
-  const budgets = data.rows.map(row => ({ companycam_project_id: row.projectId, budgeted_hours: row.budgetedHours, hourly_rate: row.hourlyRate, amount_including_tax: row.amount, labour_closed_at: row.closedAt })) as ProjectBudget[];
-  const rollups = new Map(rollupProjects([], projects, budgets, [], [], Date.parse(data.calculatedAt), data.rows).map(row => [row.projectId, row]));
-  const rows = data.rows.map(row => rollups.get(row.projectId)!);
-  const page = Math.min(requestedPage, Math.max(1, Math.ceil(data.total / 50)));
-  return <><PageHeader title="Labour budgets" subtitle="Track labour budgets, clocked hours, and painter costs for each job" /><ProjectsTable rows={rows} totals={data.totals} total={data.total} currentPage={page} query={query} canManage={["admin", "manager"].includes(profile.role)} /></>;
+  // A deletion or restore can empty the last page between visits. Recover its
+  // current count without adding a second query to normal page requests.
+  const result =
+    initialResult.status === 416 && page > 1
+      ? await request.range(0, 39)
+      : initialResult;
+  if (result.error)
+    throw new Error(`Projects could not load: ${result.error.message}`);
+  const lastPage = Math.max(1, Math.ceil((result.count ?? 0) / 40));
+  if (page > lastPage) {
+    const destination = new URLSearchParams();
+    if (query) destination.set("q", query);
+    if (view !== "all") destination.set("view", view);
+    if (label) destination.set("label", label);
+    destination.set("sort", sort);
+    destination.set("direction", direction);
+    if (lastPage > 1) destination.set("page", String(lastPage));
+    redirect(`/projects${destination.size ? `?${destination}` : ""}`);
+  }
+  const projects = (result.data ?? []) as WorkspaceProject[];
+  const previews: Record<string, { id: string; media_type: string }[]> = {};
+  // Three indexed rows per project, fetched together by the database.
+  if (projects.length && view !== "trash") {
+    const { data, error } = await client.rpc("project_directory_previews", {
+      requested_ids: projects.map((project) => project.id),
+    });
+    if (error) throw new Error("Project previews could not load.");
+    for (const row of data ?? []) (previews[row.project_id] ??= []).push(row);
+  }
+  return (
+    <ProjectDirectory
+      projects={projects}
+      total={result.count ?? 0}
+      page={page}
+      query={query}
+      view={view}
+      sort={sort}
+      direction={direction}
+      labels={labels}
+      label={label}
+      previews={previews}
+      canManage={["admin", "manager"].includes(profile.role)}
+    />
+  );
 }

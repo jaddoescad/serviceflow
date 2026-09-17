@@ -256,6 +256,27 @@ async function uploadVideoInParts({
   return attachMediaAccess(media, baseUrl, token);
 }
 
+async function uploadVideoPoster(media, asset, baseUrl, token) {
+  if (!asset.posterUri) return media;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await expoFetch(`${baseUrl}/v1/media/${encodeURIComponent(media.id)}/thumbnail`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+      body: new File(asset.posterUri),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Preview upload failed (${response.status})`);
+  } catch (error) {
+    // The original is already saved; never retry it because a preview failed.
+    console.warn("[project-media] Video saved without a poster", error?.message);
+  } finally {
+    clearTimeout(timeout);
+  }
+  return media;
+}
+
 export async function uploadProjectMedia(projectId, asset, { projectKind = "job" } = {}) {
   const baseUrl = requireProjectMediaApiUrl();
   if (!projectId) throw new Error("Missing project id.");
@@ -290,7 +311,7 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
 
   if (mediaKind === "video" && byteSize > MULTIPART_THRESHOLD_BYTES) {
     try {
-      return await uploadVideoInParts({
+      const media = await uploadVideoInParts({
         baseUrl,
         token,
         projectId,
@@ -300,6 +321,7 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
         byteSize,
         mimeType,
       });
+      return await uploadVideoPoster(media, asset, baseUrl, token);
     } catch (error) {
       // Anything that still fits in one request falls back to the path that has
       // always worked rather than failing the capture outright.
@@ -322,7 +344,8 @@ export async function uploadProjectMedia(projectId, asset, { projectKind = "job"
   }
 
   const created = await response.json();
-  return attachMediaAccess(created, baseUrl, token);
+  const media = attachMediaAccess(created, baseUrl, token);
+  return mediaKind === "video" ? uploadVideoPoster(media, asset, baseUrl, token) : media;
 }
 
 export async function deleteProjectMedia(mediaId) {

@@ -683,6 +683,57 @@ async function handleMediaThumbnail(request, env, mediaId) {
   }
 }
 
+// Camera uploads include a small poster because the video transformer cannot
+// process originals over 100 MB. Only the original uploader may supply it.
+async function handleThumbnailUpload(request, env, mediaId) {
+  const token = getBearerToken(request);
+  if (!token) return errorResponse(401, "Missing bearer token.");
+  if (!UUID_PATTERN.test(mediaId)) return errorResponse(400, "Invalid media id.");
+  const { status, row } = await fetchMediaRow(env, token, mediaId);
+  if (status !== 200) return errorResponse(status, "Could not verify media access.");
+  if (!row) return errorResponse(404, "Media not found.");
+  if (row.media_type !== "video" || row.uploaded_by !== decodeJwtSubject(token)) {
+    return errorResponse(403, "Only the uploader can supply a video preview.");
+  }
+  if (request.headers.get("content-type")?.split(";")[0] !== "image/jpeg") {
+    return errorResponse(415, "The preview must be a JPEG.");
+  }
+  const maxBytes = 5 * 1024 * 1024;
+  const reader = request.body?.getReader();
+  if (!reader) return errorResponse(400, "Missing preview.");
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return errorResponse(413, "Preview exceeds 5 MB.");
+    }
+    chunks.push(value);
+  }
+  if (!size) return errorResponse(400, "Missing preview.");
+  if (!env.IMAGES) return errorResponse(503, "Preview processing is unavailable.");
+  try {
+    const input = new Blob(chunks).stream();
+    const output = await env.IMAGES.input(input)
+      .transform({ width: THUMBNAIL_WIDTH, height: THUMBNAIL_HEIGHT, fit: "cover" })
+      .output({ format: "image/jpeg", quality: 80, anim: false });
+    const frame = output.response();
+    const bytes = await frame.arrayBuffer();
+    if (!frame.ok || !bytes.byteLength || bytes.byteLength > maxBytes) {
+      return errorResponse(422, "Invalid preview.");
+    }
+    await env.MEDIA_BUCKET.put(thumbnailObjectKey(row.object_key), bytes, {
+      httpMetadata: { contentType: "image/jpeg" },
+    });
+    return jsonResponse(200, { id: mediaId });
+  } catch {
+    return errorResponse(422, "Invalid preview.");
+  }
+}
+
 async function handleMediaDelete(request, env, mediaId) {
   const token = getBearerToken(request);
   if (!token) return errorResponse(401, "Missing bearer token.");
@@ -712,6 +763,81 @@ async function handleMediaDelete(request, env, mediaId) {
   // Keep originals and derived previews. Managers can restore the same row
   // and storage key; no R2 operation belongs in a trash request.
   return new Response(null, { status: 204, headers: withCors() });
+}
+
+async function handleMediaTransfer(request, env, mediaId, duplicate = false) {
+  const action = duplicate ? "duplicate" : "move";
+  const token = getBearerToken(request);
+  if (!token) return errorResponse(401, "Missing bearer token.");
+  let input;
+  try {
+    const reader = request.body?.getReader();
+    if (!reader) throw new Error();
+    const decoder = new TextDecoder();
+    let text = "", size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 2000) throw new Error();
+        text += decoder.decode(value, { stream: true });
+      }
+      text += decoder.decode();
+      input = JSON.parse(text);
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+  } catch { return errorResponse(400, `Invalid ${action} request.`); }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return errorResponse(400, `Invalid ${action} request.`);
+  const ids = duplicate
+    ? [mediaId, input.sourceId, input.copyId]
+    : [mediaId, input.sourceId, input.destinationId, input.revision];
+  if (!ids.every(value => typeof value === "string" && UUID_PATTERN.test(value)) ||
+      (duplicate
+        ? typeof input.expectedKey !== "string" || !input.expectedKey || input.expectedKey.length > 1000
+        : input.expectedRevision !== null && (typeof input.expectedRevision !== "string" || !UUID_PATTERN.test(input.expectedRevision)))) {
+    return errorResponse(400, `Invalid ${action} request.`);
+  }
+  const args = duplicate ? {
+    requested_media: mediaId, requested_copy: input.copyId,
+    requested_project: input.sourceId, expected_key: input.expectedKey,
+    requested_attempt: crypto.randomUUID(),
+  } : {
+    requested_media: mediaId, requested_source: input.sourceId,
+    requested_destination: input.destinationId, expected_revision: input.expectedRevision,
+    requested_revision: input.revision,
+  };
+  async function planTransfer(commit) {
+    return supabaseRest(env, token, duplicate ? "/rpc/duplicate_project_media" : "/rpc/move_project_media", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...args, [duplicate ? "commit_copy" : "commit_move"]: commit }),
+    });
+  }
+  function failure(response) {
+    const status = [400, 401, 403, 404, 409].includes(response.status) ? response.status : 502;
+    return errorResponse(status, status === 409 ? "This media changed elsewhere. Refresh and try again." : `Could not ${action} media. Try again.`);
+  }
+  const prepared = await planTransfer(false);
+  if (!prepared.ok) return failure(prepared);
+  const plan = await prepared.json();
+  if (plan.already_moved || plan.already_copied) return jsonResponse(200, { ok: true, ...(duplicate ? { id: input.copyId } : {}) });
+  try {
+    // A revision has its own destination key. Keep source bytes even after
+    // commit: uncertain responses and in-flight readers can still use them.
+    const source = await env.MEDIA_BUCKET.get(plan.source_key);
+    if (!source || source.size !== Number(plan.byte_size)) return errorResponse(404, "Original media is unavailable.");
+    const copied = await env.MEDIA_BUCKET.put(plan.target_key, source.body, {
+      httpMetadata: { contentType: plan.mime_type },
+    });
+    if (!copied || copied.size !== source.size) return errorResponse(502, "Could not copy the complete original. Try again.");
+    const suffix = plan.media_type === "video" ? ".thumb.jpg" : ".preview-v1.webp";
+    const preview = await env.MEDIA_BUCKET.get(plan.source_key + suffix);
+    if (preview) await env.MEDIA_BUCKET.put(plan.target_key + suffix, preview.body, {
+      httpMetadata: { contentType: plan.media_type === "video" ? "image/jpeg" : "image/webp" },
+    });
+  } catch { return errorResponse(502, "Copying media failed. The original is unchanged; retry safely."); }
+  const committed = await planTransfer(true);
+  if (!committed.ok) return failure(committed);
+  return jsonResponse(200, { ok: true, ...(duplicate ? { id: input.copyId } : {}) });
 }
 
 export default {
@@ -782,8 +908,21 @@ export default {
       return handleUpload(request, env, projectKind, decodeURIComponent(uploadMatch[2]));
     }
 
+    const duplicateMatch = pathname.match(/^\/v1\/media\/([^/]+)\/duplicate$/);
+    if (duplicateMatch) {
+      if (method !== "POST") return errorResponse(405, "Method not allowed.");
+      return handleMediaTransfer(request, env, decodeURIComponent(duplicateMatch[1]), true);
+    }
+
+    const moveMatch = pathname.match(/^\/v1\/media\/([^/]+)\/move$/);
+    if (moveMatch) {
+      if (method !== "POST") return errorResponse(405, "Method not allowed.");
+      return handleMediaTransfer(request, env, decodeURIComponent(moveMatch[1]));
+    }
+
     const thumbnailMatch = pathname.match(/^\/v1\/media\/([^/]+)\/thumbnail$/);
     if (thumbnailMatch) {
+      if (method === "PUT") return handleThumbnailUpload(request, env, decodeURIComponent(thumbnailMatch[1]));
       if (method !== "GET") return errorResponse(405, "Method not allowed.");
       return handleMediaThumbnail(request, env, decodeURIComponent(thumbnailMatch[1]));
     }

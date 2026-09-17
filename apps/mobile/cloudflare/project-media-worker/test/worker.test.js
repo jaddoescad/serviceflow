@@ -7,6 +7,41 @@ const LEAD_ID = "66666666-7777-4888-8999-000000000000";
 const USER_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 const BASE = "https://media.example.com";
 
+test("video posters require the uploader and are served without transforming the original", async () => {
+  const mediaId = JOB_ID;
+  const row = { id: mediaId, media_type: "video", uploaded_by: USER_ID, object_key: "video.mp4" };
+  const request = (token = fakeJwt(), body = new Uint8Array([1, 2, 3])) => new Request(`${BASE}/v1/media/${mediaId}/thumbnail`, {
+    method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" }, body,
+  });
+  supabaseHandlers.push(() => Response.json([row]));
+  const denied = await worker.fetch(request(fakeJwt(LEAD_ID)), env);
+  assert.equal(denied.status, 403);
+  assert.equal(bucket.objects.size, 0);
+
+  const jpeg = new Uint8Array([255, 216, 255, 217]);
+  env.IMAGES = { input: () => ({ transform: () => ({ output: async () => ({ response: () => new Response(jpeg) }) }) }) };
+  supabaseHandlers.push(() => Response.json([row]));
+  assert.equal((await worker.fetch(request(), env)).status, 200);
+  assert.deepEqual(bucket.objects.get("video.mp4.thumb.jpg").bytes, jpeg);
+  supabaseHandlers.push(() => Response.json([row]));
+  const result = await worker.fetch(new Request(`${BASE}/v1/media/${mediaId}/thumbnail`, { headers: { Authorization: `Bearer ${fakeJwt()}` } }), env);
+  assert.equal(result.status, 200);
+  assert.deepEqual(new Uint8Array(await result.arrayBuffer()), jpeg);
+});
+
+test("video poster upload rejects oversized and invalid image input", async () => {
+  const row = { id: JOB_ID, media_type: "video", uploaded_by: USER_ID, object_key: "video.mp4" };
+  const request = body => new Request(`${BASE}/v1/media/${JOB_ID}/thumbnail`, {
+    method: "PUT", headers: { Authorization: `Bearer ${fakeJwt()}`, "Content-Type": "image/jpeg" }, body,
+  });
+  supabaseHandlers.push(() => Response.json([row]));
+  assert.equal((await worker.fetch(request(new Uint8Array(5 * 1024 * 1024 + 1)), env)).status, 413);
+  env.IMAGES = { input: () => { throw new Error("Not an image"); } };
+  supabaseHandlers.push(() => Response.json([row]));
+  assert.equal((await worker.fetch(request(new Uint8Array([1])), env)).status, 422);
+  assert.equal(bucket.objects.size, 0);
+});
+
 function fakeJwt(sub = USER_ID) {
   const encode = (value) =>
     Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -854,4 +889,98 @@ test('download filename cannot inject headers or include parent paths',async()=>
  const disposition=response.headers.get('Content-Disposition');
  assert.ok(!/[\r\n]/.test(disposition));assert.ok(!disposition.includes('../'));
  assert.ok(disposition.endsWith(`filename*=UTF-8''${encodeURIComponent('été"Injected: yes.jpg')}`));
+});
+
+test("move copies original and preview before committing, retaining source bytes", async () => {
+  const sourceKey = `jobs/${JOB_ID}/${USER_ID}.jpg`;
+  const targetKey = `leads/${LEAD_ID}/${USER_ID}~${JOB_ID}.jpg`;
+  await bucket.put(sourceKey, new Uint8Array([1,2,3]));
+  await bucket.put(sourceKey + '.preview-v1.webp', new Uint8Array([4,5]));
+  supabaseHandlers.push(() => Response.json({source_key:sourceKey,target_key:targetKey,byte_size:3,mime_type:'image/jpeg',media_type:'image'}));
+  supabaseHandlers.push(() => {
+    assert.deepEqual(bucket.objects.get(targetKey).bytes,new Uint8Array([1,2,3]));
+    assert.deepEqual(bucket.objects.get(targetKey+'.preview-v1.webp').bytes,new Uint8Array([4,5]));
+    return Response.json({already_moved:false});
+  });
+  const request = () => new Request(`${BASE}/v1/media/${USER_ID}/move`, {method:'POST',headers:{Authorization:`Bearer ${fakeJwt()}`},body:JSON.stringify({sourceId:JOB_ID,destinationId:LEAD_ID,expectedRevision:null,revision:JOB_ID})});
+  assert.equal((await worker.fetch(request(),env)).status,200);
+  assert.equal(bucket.objects.has(sourceKey),true);
+  supabaseHandlers.push(() => Response.json({already_moved:true,target_key:targetKey}));
+  assert.equal((await worker.fetch(request(),env)).status,200);
+});
+
+test("move authorization and copy failures never commit metadata", async () => {
+  const request = () => new Request(`${BASE}/v1/media/${USER_ID}/move`, {method:'POST',headers:{Authorization:`Bearer ${fakeJwt()}`},body:JSON.stringify({sourceId:JOB_ID,destinationId:LEAD_ID,expectedRevision:null,revision:JOB_ID})});
+  supabaseHandlers.push(() => new Response(null,{status:403}));
+  assert.equal((await worker.fetch(request(),env)).status,403);
+  assert.equal(bucket.objects.size,0);
+  supabaseHandlers.push(() => Response.json({source_key:'missing',target_key:'destination',byte_size:5,mime_type:'image/jpeg',media_type:'image'}));
+  assert.equal((await worker.fetch(request(),env)).status,404);
+  assert.equal(bucket.objects.size,0);
+});
+
+test("conflicting move commit keeps both source and copied bytes for recovery", async () => {
+  await bucket.put('original',new Uint8Array([1,2,3]));
+  supabaseHandlers.push(()=>Response.json({source_key:'original',target_key:'copied',byte_size:3,mime_type:'image/jpeg',media_type:'image'}));
+  supabaseHandlers.push(()=>new Response(null,{status:409}));
+  const response=await worker.fetch(new Request(`${BASE}/v1/media/${USER_ID}/move`,{method:'POST',headers:{Authorization:`Bearer ${fakeJwt()}`},body:JSON.stringify({sourceId:JOB_ID,destinationId:LEAD_ID,expectedRevision:null,revision:JOB_ID})}),env);
+  assert.equal(response.status,409);
+  assert.equal(bucket.objects.has('original'),true);
+  assert.equal(bucket.objects.has('copied'),true);
+});
+
+ test("move rejects null and non-object JSON without touching storage", async () => {
+  for (const input of [null, false, 1, "bad", []]) {
+   const response = await worker.fetch(new Request(`${BASE}/v1/media/${USER_ID}/move`, {method:"POST",headers:{Authorization:`Bearer ${fakeJwt()}`},body:JSON.stringify(input)}),env);
+   assert.equal(response.status,400);
+  }
+  assert.equal(bucket.objects.size,0);
+ });
+
+function duplicateRequest() {
+  return new Request(`${BASE}/v1/media/${USER_ID}/duplicate`, {
+    method: "POST", headers: {Authorization: `Bearer ${fakeJwt()}`},
+    body: JSON.stringify({sourceId: JOB_ID, copyId: LEAD_ID, expectedKey: "original"}),
+  });
+}
+
+test("duplicate copies bytes and preview, commits the same attempt, and retries without rewriting", async () => {
+  await bucket.put("original", new Uint8Array([1, 2, 3]));
+  await bucket.put("original.preview-v1.webp", new Uint8Array([4, 5]));
+  let attempt;
+  supabaseHandlers.push(({url, body}) => {
+    assert.ok(url.endsWith("/rpc/duplicate_project_media"));
+    assert.equal(body.commit_copy, false);
+    attempt = body.requested_attempt;
+    assert.match(attempt, /^[0-9a-f-]{36}$/);
+    return Response.json({source_key:"original", target_key:`copy~${attempt}`, byte_size:3, mime_type:"image/jpeg", media_type:"image"});
+  });
+  supabaseHandlers.push(({body}) => {
+    assert.equal(body.commit_copy, true);
+    assert.equal(body.requested_attempt, attempt);
+    assert.deepEqual(bucket.objects.get(`copy~${attempt}`).bytes, new Uint8Array([1,2,3]));
+    assert.deepEqual(bucket.objects.get(`copy~${attempt}.preview-v1.webp`).bytes, new Uint8Array([4,5]));
+    return Response.json({already_copied:false});
+  });
+  const result = await worker.fetch(duplicateRequest(), env);
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).id, LEAD_ID);
+  const objectCount = bucket.objects.size;
+  supabaseHandlers.push(({body}) => {
+    assert.notEqual(body.requested_attempt, attempt);
+    return Response.json({already_copied:true});
+  });
+  assert.equal((await worker.fetch(duplicateRequest(), env)).status, 200);
+  assert.equal(bucket.objects.size, objectCount);
+  assert.deepEqual(bucket.objects.get("original").bytes, new Uint8Array([1,2,3]));
+});
+
+test("duplicate rejects denied access and incomplete originals before commit", async () => {
+  supabaseHandlers.push(() => new Response(null,{status:403}));
+  assert.equal((await worker.fetch(duplicateRequest(),env)).status,403);
+  await bucket.put("original", new Uint8Array([1]));
+  supabaseHandlers.push(() => Response.json({source_key:"original",target_key:"copy",byte_size:3,mime_type:"image/jpeg",media_type:"image"}));
+  assert.equal((await worker.fetch(duplicateRequest(),env)).status,404);
+  assert.equal(supabaseRequests.length,2);
+  assert.equal(bucket.objects.has("copy"),false);
 });

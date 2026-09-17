@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Field, Input } from "@/components/ui";
 import {
   updateProjectContact,
   updateProjectDescription,
-  updateProjectNotes,
 } from "@/lib/actions/project-profile";
 import type { ProjectContact } from "@/lib/project-data";
 
-type OpenPanel = "contact" | "description" | "notes" | "read-notes" | null;
+type OpenPanel = "contact" | "description" | null;
 
 function Modal({
   title,
@@ -25,18 +31,47 @@ function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
+    const previousFocus = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
+    const dialog = dialogRef.current;
+    (
+      dialog?.querySelector<HTMLElement>("input,textarea") ??
+      dialog?.querySelector<HTMLElement>("button") ??
+      dialog
+    )?.focus();
+    function keydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+      }
+      if (event.key !== "Tab") return;
+      const nodes = dialog?.querySelectorAll<HTMLElement>(
+        "button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]",
+      );
+      if (!nodes?.length) return;
+      const first = nodes[0],
+        last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", keydown);
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
+      previousFocus?.focus();
+      window.removeEventListener("keydown", keydown);
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
@@ -46,10 +81,12 @@ function Modal({
       }}
     >
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-dialog-title"
-        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl ${wide ? "max-w-3xl" : "max-w-xl"}`}
+        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl ${wide ? "max-w-3xl" : "max-w-xl"}`}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-5">
           <div>
@@ -60,7 +97,9 @@ function Modal({
               {title}
             </h2>
             {subtitle ? (
-              <p className="mt-1 text-sm text-[var(--color-muted)]">{subtitle}</p>
+              <p className="mt-1 text-sm text-[var(--color-muted)]">
+                {subtitle}
+              </p>
             ) : null}
           </div>
           <button
@@ -91,7 +130,13 @@ function PanelHeader({ title, action }: { title: string; action: ReactNode }) {
   );
 }
 
-function EditButton({ onClick, label = "Edit" }: { onClick: () => void; label?: string }) {
+function EditButton({
+  onClick,
+  label = "Edit",
+}: {
+  onClick: () => void;
+  label?: string;
+}) {
   return (
     <Button type="button" variant="ghost" size="sm" onClick={onClick}>
       <span aria-hidden="true">✎</span>
@@ -102,7 +147,10 @@ function EditButton({ onClick, label = "Edit" }: { onClick: () => void; label?: 
 
 function ActionError({ message }: { message: string | null }) {
   return message ? (
-    <p role="alert" className="rounded-lg bg-[var(--color-bad-soft)] px-3 py-2 text-sm text-[var(--color-bad)]">
+    <p
+      role="alert"
+      className="rounded-lg bg-[var(--color-bad-soft)] px-3 py-2 text-sm text-[var(--color-bad)]"
+    >
       {message}
     </p>
   ) : null;
@@ -124,44 +172,60 @@ function ContactEditor({
   const [email, setEmail] = useState(contact.email ?? "");
   const [phone, setPhone] = useState(contact.phone ?? "");
   const [address, setAddress] = useState(contact.address ?? "");
-  const [customerNotes, setCustomerNotes] = useState(contact.customerNotes ?? "");
+  const [customerNotes, setCustomerNotes] = useState(
+    contact.customerNotes ?? "",
+  );
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await updateProjectContact({
-        projectId,
-        name,
-        email,
-        phone,
-        address,
-        customerNotes,
-      });
-      if (!result.ok) {
-        setError(result.error ?? "Contact could not be saved.");
-        return;
+      try {
+        const result = await updateProjectContact({
+          projectId,
+          name,
+          email,
+          phone,
+          address,
+          customerNotes,
+        });
+        if (!result.ok) {
+          setError(result.error ?? "Contact could not be saved.");
+          return;
+        }
+        router.refresh();
+        onClose();
+      } catch {
+        setError(
+          "Could not save contact. Your changes are still here. Try again.",
+        );
       }
-      router.refresh();
-      onClose();
     });
   }
 
   return (
     <Modal
       title="Edit contact"
-      subtitle="This contact is shared by the lead and its job."
-      onClose={onClose}
+      onClose={() => {
+        if (!pending) onClose();
+      }}
       wide
     >
       <form onSubmit={submit} className="space-y-5 p-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Contact name">
-            <Input value={name} onChange={(event) => setName(event.target.value)} required autoFocus />
+            <Input
+              value={name}
+              disabled={pending}
+              onChange={(event) => setName(event.target.value)}
+              required
+              autoFocus
+            />
           </Field>
           <Field label="Phone">
             <Input
               value={phone}
+              disabled={pending}
               onChange={(event) => setPhone(event.target.value)}
               type="tel"
               autoComplete="tel"
@@ -170,6 +234,7 @@ function ContactEditor({
           <Field label="Email">
             <Input
               value={email}
+              disabled={pending}
               onChange={(event) => setEmail(event.target.value)}
               type="email"
               autoComplete="email"
@@ -178,6 +243,7 @@ function ContactEditor({
           <Field label="Project / customer address">
             <Input
               value={address}
+              disabled={pending}
               onChange={(event) => setAddress(event.target.value)}
               autoComplete="street-address"
             />
@@ -186,6 +252,7 @@ function ContactEditor({
         <Field label="Customer notes">
           <textarea
             value={customerNotes}
+            disabled={pending}
             onChange={(event) => setCustomerNotes(event.target.value)}
             rows={5}
             placeholder="Add access details, preferences, or anything the team should know…"
@@ -194,7 +261,12 @@ function ContactEditor({
         </Field>
         <ActionError message={error} />
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-5">
-          <Button type="button" variant="subtle" onClick={onClose} disabled={pending}>
+          <Button
+            type="button"
+            variant="subtle"
+            onClick={onClose}
+            disabled={pending}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={pending}>
@@ -216,7 +288,7 @@ function TextEditor({
   onSave,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   label: string;
   placeholder: string;
   initialValue: string | null;
@@ -232,22 +304,34 @@ function TextEditor({
     event.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await onSave(value);
-      if (!result.ok) {
-        setError(result.error ?? "Changes could not be saved.");
-        return;
+      try {
+        const result = await onSave(value);
+        if (!result.ok) {
+          setError(result.error ?? "Changes could not be saved.");
+          return;
+        }
+        router.refresh();
+        onClose();
+      } catch {
+        setError("Could not save changes. Your text is still here. Try again.");
       }
-      router.refresh();
-      onClose();
     });
   }
 
   return (
-    <Modal title={title} subtitle={subtitle} onClose={onClose} wide>
+    <Modal
+      title={title}
+      subtitle={subtitle}
+      onClose={() => {
+        if (!pending) onClose();
+      }}
+      wide
+    >
       <form onSubmit={submit} className="space-y-5 p-6">
         <Field label={label}>
           <textarea
             value={value}
+            disabled={pending}
             onChange={(event) => setValue(event.target.value)}
             rows={12}
             autoFocus
@@ -255,10 +339,14 @@ function TextEditor({
             className="w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-sm leading-6 text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)] focus:border-[var(--color-brand)]"
           />
         </Field>
-        <p className="text-xs text-[var(--color-muted)]">Line breaks are preserved on the project page.</p>
         <ActionError message={error} />
         <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-5">
-          <Button type="button" variant="subtle" onClick={onClose} disabled={pending}>
+          <Button
+            type="button"
+            variant="subtle"
+            onClick={onClose}
+            disabled={pending}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={pending}>
@@ -274,39 +362,58 @@ export function ProjectProfilePanel({
   projectId,
   contact,
   description,
-  notes,
+  canEdit = true,
 }: {
   projectId: string;
   contact: ProjectContact;
   description: string | null;
-  notes: string | null;
+  canEdit?: boolean;
 }) {
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
 
   return (
     <>
-      <aside className="space-y-4 self-start xl:sticky xl:top-6">
-        <Card className="overflow-hidden">
-          <PanelHeader title="Contact" action={<EditButton onClick={() => setOpenPanel("contact")} />} />
+      <aside className="space-y-4 self-start rounded-md bg-slate-50 p-4 xl:sticky xl:top-6">
+        <Card className="overflow-hidden rounded-md! shadow-none!">
+          <PanelHeader
+            title="Contact Info"
+            action={
+              canEdit ? (
+                <EditButton onClick={() => setOpenPanel("contact")} />
+              ) : null
+            }
+          />
           <div className="space-y-2 px-5 py-5 text-sm leading-6">
             <div className="font-semibold text-[var(--color-heading)]">
               {contact.name ?? "No contact name"}
             </div>
             {contact.email ? (
-              <a href={`mailto:${contact.email}`} className="block break-all text-[var(--color-brand-strong)] hover:underline">
+              <a
+                href={`mailto:${contact.email}`}
+                className="block break-all text-[var(--color-brand-strong)] hover:underline"
+              >
                 {contact.email}
               </a>
             ) : (
               <div className="text-[var(--color-muted)]">No email</div>
             )}
             {contact.phone ? (
-              <a href={`tel:${contact.phone}`} className="block text-[var(--color-brand-strong)] hover:underline">
+              <a
+                href={`tel:${contact.phone}`}
+                className="block text-[var(--color-brand-strong)] hover:underline"
+              >
                 {contact.phone}
               </a>
             ) : (
               <div className="text-[var(--color-muted)]">No phone</div>
             )}
-            <div className={contact.address ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}>
+            <div
+              className={
+                contact.address
+                  ? "text-[var(--color-text)]"
+                  : "text-[var(--color-muted)]"
+              }
+            >
               {contact.address ?? "No address"}
             </div>
             {contact.customerNotes ? (
@@ -322,75 +429,44 @@ export function ProjectProfilePanel({
           </div>
         </Card>
 
-        <Card className="overflow-hidden">
-          <PanelHeader title="Description" action={<EditButton onClick={() => setOpenPanel("description")} />} />
-          <div className="whitespace-pre-wrap px-5 py-5 text-sm leading-6 text-[var(--color-text)]">
-            {description || <span className="text-[var(--color-muted)]">No project description yet.</span>}
-          </div>
-        </Card>
-
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden rounded-md! shadow-none!">
           <PanelHeader
-            title="Project notes"
-            action={<EditButton onClick={() => setOpenPanel("notes")} label={notes ? "Edit" : "Add"} />}
+            title="Description"
+            action={
+              canEdit ? (
+                <EditButton onClick={() => setOpenPanel("description")} />
+              ) : null
+            }
           />
-          <div className="px-5 py-5 text-sm leading-6 text-[var(--color-text)]">
-            {notes ? (
-              <>
-                <p className="line-clamp-5 whitespace-pre-wrap">{notes}</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-3 -ml-2 text-[var(--color-brand-strong)]"
-                  onClick={() => setOpenPanel("read-notes")}
-                >
-                  Read all notes
-                </Button>
-              </>
-            ) : (
-              <span className="text-[var(--color-muted)]">No project notes yet.</span>
+          <div className="whitespace-pre-wrap px-5 py-5 text-sm leading-6 text-[var(--color-text)]">
+            {description || (
+              <span className="text-[var(--color-muted)]">
+                No project description yet.
+              </span>
             )}
           </div>
         </Card>
       </aside>
 
       {openPanel === "contact" ? (
-        <ContactEditor projectId={projectId} contact={contact} onClose={() => setOpenPanel(null)} />
+        <ContactEditor
+          projectId={projectId}
+          contact={contact}
+          onClose={() => setOpenPanel(null)}
+        />
       ) : null}
       {openPanel === "description" ? (
         <TextEditor
           title="Edit project description"
-          subtitle="Keep the scope and important project details in one place."
+
           label="Description"
           placeholder="Add scope, measurements, colour details, and project instructions…"
           initialValue={description}
           onClose={() => setOpenPanel(null)}
-          onSave={(value) => updateProjectDescription({ projectId, description: value })}
+          onSave={(value) =>
+            updateProjectDescription({ projectId, description: value })
+          }
         />
-      ) : null}
-      {openPanel === "notes" ? (
-        <TextEditor
-          title="Edit project notes"
-          subtitle="Add internal notes for this project."
-          label="Notes"
-          placeholder="Add internal project notes…"
-          initialValue={notes}
-          onClose={() => setOpenPanel(null)}
-          onSave={(value) => updateProjectNotes({ projectId, projectNotes: value })}
-        />
-      ) : null}
-      {openPanel === "read-notes" ? (
-        <Modal title="Project notes" onClose={() => setOpenPanel(null)} wide>
-          <div className="whitespace-pre-wrap px-6 py-6 text-sm leading-7 text-[var(--color-text)]">
-            {notes}
-          </div>
-          <div className="flex justify-end border-t border-[var(--color-border)] px-6 py-4">
-            <Button type="button" variant="subtle" onClick={() => setOpenPanel(null)}>
-              Close
-            </Button>
-          </div>
-        </Modal>
       ) : null}
     </>
   );

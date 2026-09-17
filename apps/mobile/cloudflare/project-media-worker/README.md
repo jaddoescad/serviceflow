@@ -69,3 +69,22 @@ Then push the admin changes to main for the GitHub/Vercel deployment.
 `GET/HEAD /v1/media/:id/trash` serves retained originals only through the
 manager-only trash RPC. No automatic purge is configured. Uncertain upload
 attempts may retain unreferenced objects; reconciliation is still pending.
+
+### Moving media
+
+`POST /v1/media/:id/move` accepts `sourceId`, `destinationId`,
+`expectedRevision` (nullable prior move revision), and a UUID `revision`.
+Apply `20260916010000_move_project_media.sql` before deploying the endpoint.
+The same caller JWT is checked by the manager-only database RPC before copying
+and at commit. Originals and previews are streamed to revision-specific keys;
+source objects are retained so uncertain responses never destroy the original.
+Retry using the same request values. The committed move preserves source
+attribution, descriptions, tags, and annotation metadata.
+
+### September 16 deployment verification
+
+Worker version `f2de84f3-9bea-4cfe-96a2-c2ddca8710a1` passed 51 unit tests and
+the dedicated live move runner (`scripts/media-move-live-test.mjs` at repository
+root). Verified R2 original/thumbnail checksums, metadata preservation, safe
+retry, stale request rejection, move back, and the admin browser move flow.
+The QA photo and destination project were returned to recoverable trash.

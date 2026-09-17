@@ -1,24 +1,7 @@
 import { notFound } from "next/navigation";
-import { getProjectData, getProjectMediaData } from "@/lib/project-data";
+import { getProjectData } from "@/lib/project-data";
 import { ProjectOverviewPanel } from "@/components/project-detail";
-import { ProjectPhotosPanel } from "@/components/project-photos";
 import { ProjectTasksPanel } from "@/components/project-tasks";
-
-export async function PhotosSlot({ projectId }: { projectId: string }) {
-  const data = await getProjectMediaData(projectId);
-  if (!data) notFound();
-  return (
-    <ProjectPhotosPanel
-      projectId={projectId}
-      projectName={data.name}
-      contact={data.contact}
-      description={data.description}
-      notes={data.notes}
-      galleryPage={data.galleryPage}
-      isLead={data.isLead}
-    />
-  );
-}
 
 export async function OverviewSlot({ projectId }: { projectId: string }) {
   const data = await getProjectData(projectId);

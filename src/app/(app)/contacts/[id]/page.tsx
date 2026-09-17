@@ -1,185 +1,210 @@
-import { Suspense } from "react";
-import { createClient } from "@/lib/supabase/server";
-import { getProjectMediaPreviews } from "@/lib/project-media-previews";
-import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { PageHeader } from "@/components/kpi";
-import { Badge, Card, EmptyState } from "@/components/ui";
-import { getContactDetail, type ContactProject } from "@/lib/contacts";
-import { fmtDate, fmtMoney } from "@/lib/format";
+import { notFound, redirect } from "next/navigation";
+import { ProjectMediaPreview } from "@/components/project-media-preview";
+import { LabelChip } from "@/components/label-chip";
+import { getContactDetail } from "@/lib/contacts";
+import { createClient } from "@/lib/supabase/server";
+import { CustomerActions } from "@/components/customer-actions";
+import { requireMember } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-function statusTone(status: string): "neutral" | "good" | "warn" | "brand" {
-  const value = status.toLocaleLowerCase("en-CA");
-  if (["completed", "won", "paid"].includes(value)) return "good";
-  if (["scheduled", "active", "in_progress"].includes(value)) return "brand";
-  if (["proposal_sent", "estimated", "estimate_scheduled"].includes(value)) return "warn";
-  return "neutral";
-}
-
-function statusLabel(status: string): string {
-  return status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-type PreviewResult = Awaited<ReturnType<typeof getProjectMediaPreviews>> | null;
-async function ProjectPhotoCount({ id, previews }: { id: string; previews: Promise<PreviewResult> }) {
-  const result = await previews;
-  if (!result) return null;
-  const count = result.get(id)?.mediaCount ?? 0;
-  return <>{count} {count === 1 ? "photo or video" : "photos and videos"} · </>;
-}
-async function ProjectPhotos({ project: original, previews }: { project: ContactProject; previews: Promise<PreviewResult> }) {
-  const result = await previews;
-  if (!result) return <div className="flex h-24 items-center justify-center text-xs text-[var(--color-muted)]">Photos unavailable</div>;
-  const project = { ...original, ...(result.get(original.id) ?? { media: [], mediaCount: 0 }) };
-  const images = project.media.filter((item) => item.mediaType === "image").slice(0, 2);
-  if (!images.length) {
-    return (
-      <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs text-[var(--color-muted)]">
-        {project.mediaCount > 0 ? "No image preview" : "No photos yet"}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {images.map((image) => (
-        <div
-          key={image.id}
-          className="relative aspect-[4/3] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
-        >
-          <Image
-            src={`/api/jobs/${encodeURIComponent(image.ownerProjectId)}/media/${encodeURIComponent(image.id)}?preview=1`}
-            alt=""
-            fill
-            unoptimized
-            sizes="(max-width: 768px) 30vw, 180px"
-            className="object-cover"
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default async function ContactDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const { id } = await params;
-  const contact = await getContactDetail(decodeURIComponent(id));
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  )
+    notFound();
+  const query = await searchParams;
+  const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
+  const contact = await getContactDetail(id, page);
+  const profile = await requireMember();
   if (!contact) notFound();
-  const previews = createClient().then(client => getProjectMediaPreviews(client, contact.projects)).catch(() => null);
-  const jobs = contact.projects.filter((project) => project.kind === "job").length;
-  const leads = contact.projects.length - jobs;
-
+  const pages = Math.max(1, Math.ceil(contact.projectCount / 40));
+  if (page > pages) redirect(`/contacts/${id}?page=${pages}`);
+  const previews: Record<string, { id: string; media_type: string }[]> = {};
+  if (contact.projects.length) {
+    const client = await createClient();
+    const { data, error } = await client.rpc("project_directory_previews", {
+      requested_ids: contact.projects.map((project) => project.id),
+    });
+    if (error) throw new Error("Could not load project previews.");
+    for (const row of data ?? []) (previews[row.project_id] ??= []).push(row);
+  }
   return (
-    <>
-      <div className="mb-3">
-        <Link
-          href="/contacts"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-muted)] hover:text-[var(--color-heading)]"
-        >
-          <span aria-hidden="true">‹</span>
-          Contacts
-        </Link>
+    <section className="workspace-page">
+      <Link
+        href="/contacts"
+        className="text-sm text-slate-500 hover:text-blue-600"
+      >
+        ‹ Customers
+      </Link>
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <h1 className="break-words text-4xl font-extrabold tracking-tight">
+          {contact.name}
+        </h1>
+        {["admin", "manager"].includes(profile.role) && (
+          <CustomerActions
+            customer={{
+              id: contact.id,
+              name: contact.name,
+              email: contact.email,
+              phone: contact.phone,
+              address: contact.address,
+            }}
+          />
+        )}
       </div>
-      <PageHeader
-        title={contact.name}
-        subtitle={`${jobs} ${jobs === 1 ? "job" : "jobs"} · ${leads} ${leads === 1 ? "deal" : "deals"}`}
-      />
-
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section aria-labelledby="contact-projects-title">
-          <div className="mb-3">
-            <h2
-              id="contact-projects-title"
-              className="font-display text-lg font-semibold text-[var(--color-heading)]"
+      <div className="mt-8 grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <section aria-labelledby="customer-projects">
+          <h2
+            id="customer-projects"
+            className="border-b border-slate-200 pb-4 text-lg font-semibold"
+          >
+            Projects ({contact.projectCount})
+          </h2>
+          {contact.projects.map((project) => (
+            <article
+              key={project.id}
+              className="flex items-center gap-4 border-b border-slate-200 py-5"
             >
-              Deals & jobs
-            </h2>
-            <p className="mt-0.5 text-sm text-[var(--color-muted)]">
-              Each card is a separate deal or job with its own photos.
-            </p>
-          </div>
-
-          {contact.projects.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {contact.projects.map((project) => (
-                <Card key={`${project.kind}:${project.id}`} className="overflow-hidden">
-                  <Link
-                    href={`/jobs/${encodeURIComponent(project.id)}`}
-                    className="block p-4 outline-none hover:bg-[var(--color-surface-2)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-brand)]"
+              <Link
+                href={`/jobs/${project.id}`}
+                prefetch={false}
+                aria-label={`Open ${project.name}`}
+                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100"
+              >
+                {previews[project.id]?.[0] ? (
+                  <ProjectMediaPreview
+                    src={`/api/jobs/${project.id}/media/${previews[project.id][0].id}`}
+                    alt={project.name}
+                    video={previews[project.id][0].media_type === "video"}
+                  />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 flex items-center justify-center text-slate-400"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-[var(--color-heading)]">
-                          {project.address || project.name}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-                          {project.kind === "job" && project.amount != null ? <span>{fmtMoney(project.amount)}</span> : null}
-                        </div>
-                      </div>
-                      <Badge tone={project.kind === "job" ? statusTone(project.status) : "neutral"}>{project.kind === "job" ? statusLabel(project.status) : "Deal"}</Badge>
-                    </div>
-
-                    <div className="mt-4">
-                      <Suspense fallback={<div className="h-24 rounded-xl bg-[var(--color-surface-2)]" />}><ProjectPhotos project={project} previews={previews} /></Suspense>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--color-muted)]">
-                      <span>{project.source || (project.kind === "job" ? "Job" : "Deal")}</span>
-                      <span>
-                        <Suspense fallback={null}><ProjectPhotoCount id={project.id} previews={previews} /></Suspense>{fmtDate(project.createdAt)}
-                      </span>
-                    </div>
-                  </Link>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Card>
-              <EmptyState>No deals or jobs are linked to this contact yet.</EmptyState>
-            </Card>
+                    ▧
+                  </span>
+                )}
+              </Link>
+              <div className="min-w-0 flex-1">
+                <Link
+                  href={`/jobs/${project.id}`}
+                  prefetch={false}
+                  className="font-semibold hover:text-blue-600"
+                >
+                  {project.name}
+                </Link>
+                {project.address && (
+                  <p className="mt-1 truncate text-sm text-slate-500">
+                    {project.address}
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {project.archived_at && (
+                    <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                      Archived
+                    </span>
+                  )}
+                  {project.labels.map((label) => (
+                    <LabelChip key={label.id} label={label} />
+                  ))}
+                </div>
+              </div>
+            </article>
+          ))}
+          {!contact.projects.length && (
+            <p className="py-14 text-center text-sm text-slate-500">
+              No projects yet.
+            </p>
+          )}
+          {pages > 1 && (
+            <nav
+              aria-label="Customer project pages"
+              className="mt-5 flex items-center justify-end gap-4 text-sm"
+            >
+              {page > 1 && (
+                <Link
+                  href={`/contacts/${id}?page=${page - 1}`}
+                  className="text-blue-600"
+                >
+                  Previous
+                </Link>
+              )}
+              <span className="text-slate-500">
+                {page} / {pages}
+              </span>
+              {page < pages && (
+                <Link
+                  href={`/contacts/${id}?page=${page + 1}`}
+                  className="text-blue-600"
+                >
+                  Next
+                </Link>
+              )}
+            </nav>
           )}
         </section>
-
-        <Card className="overflow-hidden xl:sticky xl:top-6">
-          <div className="border-b border-[var(--color-border)] px-5 py-4">
-            <h2 className="font-display text-sm font-semibold text-[var(--color-heading)]">
-              Contact details
-            </h2>
-          </div>
-          <dl className="space-y-4 p-5 text-sm">
-            {contact.address ? <div><dt className="text-xs font-medium text-[var(--color-muted)]">Address</dt><dd className="mt-1 text-[var(--color-heading)]">{contact.address}</dd></div> : null}
-            <div>
-              <dt className="text-xs font-medium text-[var(--color-muted)]">Email</dt>
-              <dd className="mt-1 break-words text-[var(--color-heading)]">
-                {contact.email || "No email"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-[var(--color-muted)]">Phone</dt>
-              <dd className="mt-1 text-[var(--color-heading)]">{contact.phone || "No phone"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-[var(--color-muted)]">Customer since</dt>
-              <dd className="mt-1 text-[var(--color-heading)]">{fmtDate(contact.createdAt)}</dd>
-            </div>
-            {contact.notes ? (
+        <aside className="text-sm">
+          <h2 className="border-b border-slate-200 pb-4 text-lg font-semibold">
+            Contact Info
+          </h2>
+          <dl className="space-y-5 pt-5">
+            {contact.email && (
               <div>
-                <dt className="text-xs font-medium text-[var(--color-muted)]">Notes</dt>
-                <dd className="mt-1 whitespace-pre-wrap text-[var(--color-heading)]">
-                  {contact.notes}
+                <dt className="text-xs text-slate-500">Email</dt>
+                <dd className="mt-1 break-all">
+                  <a
+                    href={`mailto:${contact.email}`}
+                    className="hover:text-blue-600"
+                  >
+                    {contact.email}
+                  </a>
                 </dd>
               </div>
-            ) : null}
+            )}
+            {contact.phone && (
+              <div>
+                <dt className="text-xs text-slate-500">Phone</dt>
+                <dd className="mt-1">
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="hover:text-blue-600"
+                  >
+                    {contact.phone}
+                  </a>
+                </dd>
+              </div>
+            )}
+            {contact.address && (
+              <div>
+                <dt className="text-xs text-slate-500">Address</dt>
+                <dd className="mt-1 whitespace-pre-line">{contact.address}</dd>
+              </div>
+            )}
+            {contact.notes && (
+              <div>
+                <dt className="text-xs text-slate-500">Notes</dt>
+                <dd className="mt-1 whitespace-pre-wrap">{contact.notes}</dd>
+              </div>
+            )}
           </dl>
-        </Card>
+          {!contact.email &&
+            !contact.phone &&
+            !contact.address &&
+            !contact.notes && (
+              <p className="pt-5 text-slate-500">No contact details.</p>
+            )}
+        </aside>
       </div>
-    </>
+    </section>
   );
 }
