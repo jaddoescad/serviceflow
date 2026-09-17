@@ -56,6 +56,9 @@ async function context(supabase: Awaited<ReturnType<typeof createClient>>, entit
     .maybeSingle();
   if (jobError) throw new Error(jobError.message);
   if (job) {
+    if (!job.accepted_quote_id && !job.lead_id) {
+      return { kind: "job" as const, entityId, leadId: null, quote: null };
+    }
     const quoteQuery = supabase.from("quotes").select("*");
     const { data: quoteRows, error } = job.accepted_quote_id
       ? await quoteQuery.eq("id", job.accepted_quote_id).limit(1)
