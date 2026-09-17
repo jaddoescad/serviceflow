@@ -31,13 +31,15 @@ export function CalculatorPage({
   projectId,
   projectName,
   isLead,
+  initialData,
 }: {
   projectId: string;
   projectName: string | null;
   isLead: boolean;
+  initialData?: import("@/lib/actions/calculator").LoadCalculatorResult;
 }) {
   const router = useRouter();
-  const calc = useCalculator(projectId, { allowTaskTransfer: !isLead });
+  const calc = useCalculator(projectId, { allowTaskTransfer: !isLead, initialData });
   const [ratesOpen, setRatesOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);

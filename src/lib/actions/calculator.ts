@@ -85,9 +85,12 @@ async function defaultSelection(
   supabase: Awaited<ReturnType<typeof createClient>>,
   entityId: string,
   quote: any,
+  knownJob = false,
 ): Promise<DefaultCalculatorSelection | null> {
-  const { data: job } = await supabase.from("jobs").select("id").eq("id", entityId).maybeSingle();
-  if (!job) return null;
+  if (!knownJob) {
+    const { data: job } = await supabase.from("jobs").select("id").eq("id", entityId).maybeSingle();
+    if (!job) return null;
+  }
   const [{ data: budgets, error: budgetError }, { data: tasks, error: taskError }] = await Promise.all([
     supabase.from("job_budgets").select("*").eq("job_id", entityId).in("status", ["active", "closed"]).order("version", { ascending: false }).limit(1),
     supabase.from("job_tasks").select("*").eq("job_id", entityId).neq("status", "cancelled").order("sort_order"),
@@ -141,7 +144,9 @@ export async function loadCalculator(entityId: string): Promise<LoadCalculatorRe
       companyRates: mergeCompanyRates(
         (settings.data?.settings?.calculator_rates as Partial<CalculatorRates> | undefined) ?? undefined,
       ),
-      defaultCalculator: await defaultSelection(supabase, entityId, resolved.quote),
+      defaultCalculator: resolved.kind === "job"
+        ? await defaultSelection(supabase, entityId, resolved.quote, true)
+        : null,
     };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Calculator failed to load." };
@@ -212,26 +217,28 @@ export async function makeCalculatorDefault(
     .eq("job_id", projectId);
   if (existingError) return { ok: false, error: existingError.message };
   const existingBySource = new Map((existing ?? []).map((task: any) => [`${task.source_kind}:${task.source_item_id}`, task.id]));
-  for (const task of draft.tasks) {
-    const { error } = await supabase.rpc("save_job_task", {
-      requested_job_id: projectId,
-      requested_task_id: existingBySource.get(`${task.sourceKind}:${task.sourceItemId}`) ?? null,
-      requested_title: task.title,
-      requested_notes: task.notes,
-      requested_budget_minutes: Math.round(task.budgetedHours * 60),
-      requested_sort_order: task.sortOrder,
-    });
-    if (error) return { ok: false, error: error.message };
-  }
-  const { error: budgetError } = await supabase.rpc("save_job_budget", {
+  const activeQuote = clean.quotes.find((candidate) => candidate.id === clean.activeQuoteId) ?? clean.quotes[0];
+  const { error } = await supabase.rpc("publish_calculator_budget", {
     requested_job_id: projectId,
-    requested_budget_minutes: Math.round(draft.totalBudgetedHours * 60),
-    requested_hourly_rate_cents: null,
-    requested_amount_including_tax_cents: Math.round(computeTotals(quote).price * 100),
-    requested_notes: `Published from ${quote.name}`,
+    payload: {
+      tasks: draft.tasks.map((task) => ({
+        id: existingBySource.get(`${task.sourceKind}:${task.sourceItemId}`) ?? null,
+        title: task.title,
+        notes: task.notes,
+        minutes: Math.round(task.budgetedHours * 60),
+        sortOrder: task.sortOrder,
+      })),
+      minutes: Math.round(draft.totalBudgetedHours * 60),
+      notes: `Published from ${quote.name}`,
+      leadId: resolved.leadId,
+      quoteId: resolved.quote?.id ?? null,
+      quoteName: activeQuote.name,
+      quoteAmountCents: Math.round(computeTotals(activeQuote).price * 100),
+      quoteStatus: activeQuote.status === "won" ? "accepted" : activeQuote.status === "lost" ? "declined" : activeQuote.status,
+      doc: clean,
+    },
   });
-  if (budgetError) return { ok: false, error: budgetError.message };
-  await saveCalculator(projectId, clean);
+  if (error) return { ok: false, error: error.message };
   const selection = await defaultSelection(supabase, projectId, { ...resolved.quote, calculator_doc: clean });
   if (!selection) return { ok: false, error: "Published tasks could not be reloaded." };
   revalidatePath(`/jobs/${projectId}`);

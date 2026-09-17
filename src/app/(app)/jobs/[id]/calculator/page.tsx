@@ -1,4 +1,5 @@
 import { CalculatorPage } from "@/components/calculator/calculator";
+import { loadCalculator } from "@/lib/actions/calculator";
 import { getProjectById } from "@/lib/queries";
 import { notFound, redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -17,10 +18,12 @@ export default async function JobCalculatorPage({
   const { id } = await params;
   const { name } = await searchParams;
   const jobId = decodeURIComponent(id);
-  const job = await getProjectById(jobId);
+  const [job, initialData] = await Promise.all([getProjectById(jobId), loadCalculator(jobId)]);
   if (job) {
     return (
       <CalculatorPage
+        key={jobId}
+        initialData={initialData}
         projectId={jobId}
         projectName={job.name || name || null}
         isLead={false}
@@ -46,6 +49,8 @@ export default async function JobCalculatorPage({
   const contact = Array.isArray(lead.contact) ? lead.contact[0] : lead.contact;
   return (
     <CalculatorPage
+      key={jobId}
+      initialData={initialData}
       projectId={jobId}
       projectName={contact?.name || name || "Lead"}
       isLead

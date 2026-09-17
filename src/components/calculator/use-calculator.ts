@@ -27,7 +27,7 @@ const docKey = (projectId: string) => `op-calculator:v2:${projectId}`;
 const legacyKey = (projectId: string) => `op-calculator:v1:${projectId}`;
 const DEFAULTS_KEY = "op-calculator-defaults:v1";
 
-export type SyncStatus = "loading" | "synced" | "saving" | "offline";
+export type SyncStatus = "loading" | "synced" | "saving" | "offline" | "unsaved";
 
 function readLocalDefaults(): CalculatorRates {
   if (typeof window === "undefined") return structuredClone(DEFAULT_RATES);
@@ -60,7 +60,7 @@ function writeLocal(key: string, value: unknown) {
 
 export function useCalculator(
   projectId: string,
-  { allowTaskTransfer = true }: { allowTaskTransfer?: boolean } = {},
+  { allowTaskTransfer = true, initialData }: { allowTaskTransfer?: boolean; initialData?: import("@/lib/actions/calculator").LoadCalculatorResult } = {},
 ) {
   const [doc, setDoc] = useState<ProjectCalculator>(emptyProjectCalculator);
   const [hydrated, setHydrated] = useState(false);
@@ -73,6 +73,7 @@ export function useCalculator(
   const companyRates = useRef<CalculatorRates>(structuredClone(DEFAULT_RATES));
   const saveTimer = useRef<number | null>(null);
   const serverAvailable = useRef(true);
+  const loadedDoc = useRef<ProjectCalculator | null>(null);
   const defaultCalculatorRef = useRef<DefaultCalculatorSelection | null>(null);
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export function useCalculator(
     (async () => {
       const local = readLocalDoc(projectId);
       try {
-        const result = await loadCalculator(projectId);
+        const result = initialData ?? await loadCalculator(projectId);
         if (cancelled) return;
         if (!result.ok) throw new Error(result.error);
         companyRates.current = result.companyRates;
@@ -95,50 +96,16 @@ export function useCalculator(
         setDefaultCalculator(result.defaultCalculator);
         setDefaultCalculatorError(result.defaultCalculatorError ?? null);
 
-        if (result.defaultCalculator) {
-          if (result.doc) {
-            setSyncStatus("synced");
-          } else {
-            const saved = await saveCalculator(projectId, initialDoc);
-            if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
-          }
-        } else if (result.defaultCalculatorError) {
-          // Keep ordinary calculator saving available if the labour-budget
-          // migration has not been deployed yet.
-          const saved = result.doc ? { ok: true } : await saveCalculator(projectId, initialDoc);
-          if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
-        } else if (!allowTaskTransfer) {
-          // Lead estimates save as calculator documents, but do not create
-          // operational painter budgets or tasks before the lead is converted.
-          const saved = result.doc ? { ok: true } : await saveCalculator(projectId, initialDoc);
-          if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
-        } else {
-          // There is no explicit default yet. The first-created quote—not the
-          // currently viewed quote—becomes the default automatically.
-          setMakingDefault(true);
-          setSyncStatus("saving");
-          const madeDefault = await makeCalculatorDefault(
-            projectId,
-            initialDoc,
-            initialDoc.quotes[0].id,
-          );
-          if (cancelled) return;
-          if (madeDefault.ok) {
-            setDefaultCalculator(madeDefault.defaultCalculator);
-            setDefaultCalculatorError(null);
-            writeLocal(docKey(projectId), initialDoc);
-            setSyncStatus("synced");
-          } else {
-            setDefaultCalculatorError(madeDefault.error);
-            const saved = result.doc ? { ok: true } : await saveCalculator(projectId, initialDoc);
-            if (!cancelled) setSyncStatus(saved.ok ? "synced" : "offline");
-          }
-        }
+        loadedDoc.current = initialDoc;
+        serverAvailable.current = true;
+        setSyncStatus(result.doc ? "synced" : "unsaved");
       } catch {
         if (cancelled) return;
         serverAvailable.current = false;
         companyRates.current = readLocalDefaults();
-        setDoc(local ?? emptyProjectCalculator(companyRates.current));
+        const fallback = local ?? emptyProjectCalculator(companyRates.current);
+        loadedDoc.current = fallback;
+        setDoc(fallback);
         setSyncStatus("offline");
       } finally {
         if (!cancelled) {
@@ -150,13 +117,13 @@ export function useCalculator(
     return () => {
       cancelled = true;
     };
-  }, [allowTaskTransfer, projectId]);
+  }, [initialData, projectId]);
 
   // Save: debounced; localStorage always (cache), Supabase when reachable.
   // Saving never touches painter tasks — the calculator and the task list are
   // decoupled; tasks only change on an explicit "Transfer to tasks".
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || doc === loadedDoc.current) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       writeLocal(docKey(projectId), doc);

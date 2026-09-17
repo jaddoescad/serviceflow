@@ -22,6 +22,7 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
   synced: "Synced — autosaves to Supabase as you type.",
   saving: "Saving…",
   offline: "Offline — saved on this device only.",
+  unsaved: "Not saved yet.",
 };
 
 function Line({
