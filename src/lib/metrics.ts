@@ -106,7 +106,7 @@ export type ProjectDetail = {
   entryCount: number;
   activeEntryCount: number;
   crew: ProjectCrewHours[];
-  recentEntries: ProjectEntryDetail[];
+  entries: ProjectEntryDetail[];
 };
 
 export type ProjectTaskProgress = {
@@ -537,9 +537,8 @@ export function projectDetails(
             hourlyRates: [...(detail.ratesByCrew.get(member.crewId) ?? [])].sort((a, b) => a - b),
           }))
           .sort((a, b) => b.wageCost - a.wageCost || b.hours - a.hours),
-        recentEntries: detail.entries
-          .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-          .slice(0, 12),
+        entries: detail.entries
+          .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
       },
     ]),
   );

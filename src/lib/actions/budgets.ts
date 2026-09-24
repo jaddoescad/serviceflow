@@ -35,30 +35,3 @@ export async function setJobAmount(input: {
   revalidatePath("/");
   return { ok: true };
 }
-
-/**
- * Mark a job's labour as settled, or reopen it.
- *
- * Closing means every painter invoice for the job is in, so its labour cost is
- * final and the job can join the headline labour-share number. Jobs left open
- * carry a partial cost against a full contract value, which is why they are
- * reported separately instead of averaged in.
- */
-export async function setLabourClosed(input: {
-  projectId: string;
-  closed: boolean;
-}): Promise<ActionResult> {
-  await requireStaff();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("set_job_status", {
-    requested_job_id: input.projectId,
-    requested_status: input.closed ? "completed" : "active",
-  });
-
-  if (error) return { ok: false, error: error.message };
-
-  revalidatePath("/jobs");
-  revalidatePath("/");
-  revalidatePath(`/jobs/${input.projectId}`);
-  return { ok: true };
-}

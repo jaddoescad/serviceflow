@@ -294,7 +294,7 @@ export const getProjectData = cache(async (projectId: string) => {
         entryCount: 0,
         activeEntryCount: 0,
         crew: [],
-        recentEntries: [],
+        entries: [],
       },
       taskProgress: [],
     };
