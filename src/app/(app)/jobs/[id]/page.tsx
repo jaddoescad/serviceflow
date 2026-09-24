@@ -8,6 +8,7 @@ import { ProjectProfilePanel } from "@/components/project-profile-panel";
 import { PhotosSlot } from "@/components/project-photos-slot";
 import { PhotosPanelSkeleton } from "@/components/skeletons";
 import { WorkspaceProjectActions } from "@/components/workspace-project-actions";
+import { ProjectTabs } from "@/components/project-tabs";
 
 export const dynamic = "force-dynamic";
 export default async function ProjectPage({
@@ -66,11 +67,11 @@ export default async function ProjectPage({
           </p>
         ) : (
           <>
-            <div className="mb-6 border-b border-slate-200">
-              <span className="inline-block border-b-2 border-slate-900 pb-3 text-sm font-semibold">
-                Photos
-              </span>
-            </div>
+            <ProjectTabs
+              projectId={id}
+              projectName={project.name}
+              activeOverride="photos"
+            />
             <Suspense fallback={<PhotosPanelSkeleton />}>
               <PhotosSlot projectId={id} showProfile={false} />
             </Suspense>
