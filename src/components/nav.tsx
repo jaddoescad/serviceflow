@@ -20,6 +20,7 @@ import { initials } from "@/lib/format";
 
 const LINKS = [
   { href: "/projects", label: "Projects", icon: "/projects" },
+  { href: "/jobs", label: "Labour", icon: "/jobs" },
   { href: "/photos", label: "Photos", icon: "/photos" },
   { href: "/contacts", label: "Customers", icon: "/contacts" },
   { href: "/employees", label: "Team", icon: "/employees" },
@@ -48,7 +49,9 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
           {LINKS.map((link) => {
             const active = link.href.includes("?")
               ? pathname === "/projects" && params.get("view") === "trash"
-              : (pathname.startsWith(link.href) ||
+              : link.href === "/jobs"
+                ? pathname === "/jobs"
+                : (pathname.startsWith(link.href) ||
                   (link.href === "/projects" &&
                     pathname.startsWith("/jobs/"))) &&
                 !(link.href === "/projects" && params.get("view") === "trash");
