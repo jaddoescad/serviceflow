@@ -22,23 +22,14 @@ function budgetTone(used: number, budget: number): Tone {
   return "good";
 }
 
-function BudgetBar({ used, budget, tone }: { used: number; budget: number; tone: Tone }) {
-  const over = used > budget;
-  const scale = Math.max(used, budget);
-  const withinWidth = scale > 0 ? (Math.min(used, budget) / scale) * 100 : 0;
-  const budgetMark = scale > 0 ? (budget / scale) * 100 : 0;
+function HoursBar({ label, hours, scale, fill }: { label: string; hours: number; scale: number; fill: string }) {
   return (
-    <div className="relative h-3 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-      <div
-        className={cn("absolute inset-y-0 left-0", over ? "bg-[var(--color-muted)]" : toneFill[tone])}
-        style={{ width: `${withinWidth}%` }}
-      />
-      {over ? (
-        <div
-          className="absolute inset-y-0 bg-[var(--color-bad)]"
-          style={{ left: `${budgetMark}%`, right: 0 }}
-        />
-      ) : null}
+    <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3 text-sm">
+      <span className="text-[var(--color-muted)]">{label}</span>
+      <div className="h-3 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+        <div className={cn("h-full rounded-full", fill)} style={{ width: `${scale > 0 ? (hours / scale) * 100 : 0}%` }} />
+      </div>
+      <span className="min-w-16 text-right font-semibold tabular-nums">{fmtHours(hours)}</span>
     </div>
   );
 }
@@ -84,17 +75,9 @@ export function ProjectOverviewPanel({
             <p className="mt-1 font-display text-3xl font-semibold text-[var(--color-heading)]">
               {used > budget ? `${fmtHours(used - budget)} over` : `${fmtHours(budget - used)} left`}
             </p>
-            <div className="mt-4">
-              <BudgetBar used={used} budget={budget} tone={tone} />
-            </div>
-            <div className="mt-2 flex justify-between gap-4 text-sm">
-              <span>
-                <span className="font-semibold tabular-nums">{fmtHours(used)}</span> used
-              </span>
-              <span>
-                <span className="font-semibold tabular-nums">{fmtHours(budget)}</span> budget ·{" "}
-                {Math.round((used / budget) * 100)}%
-              </span>
+            <div className="mt-5 space-y-2">
+              <HoursBar label="Budget" hours={budget} scale={Math.max(used, budget)} fill="bg-[var(--color-muted)]" />
+              <HoursBar label="Used" hours={used} scale={Math.max(used, budget)} fill={toneFill[tone]} />
             </div>
             {budgetDollars != null && rate != null ? (
               <p className="mt-4 border-t border-[var(--color-border)] pt-4 text-sm text-[var(--color-muted)]">
