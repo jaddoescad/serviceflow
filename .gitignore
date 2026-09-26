@@ -1,2 +1,11 @@
 .DS_Store
 /supabase/.temp/
+
+# iOS
+/ios/ServiceFlow.xcodeproj/
+/ios/Config/Signing.xcconfig
+/ios/ServiceFlowKit/.build/
+/ios/ServiceFlowKit/.swiftpm/
+/ios/build/
+*.xcuserstate
+xcuserdata/

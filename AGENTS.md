@@ -35,9 +35,9 @@ Ottawa Painters' business files, accounting, DripJobs import rules, Quo access a
 
 ## Repository layout
 
-- `web/` is the ServiceFlow admin website, `mobile/` the crew app, `supabase/` the shared backend (migrations, edge functions, SQL tests), and `docs/` cross-project notes. Keep the repository root to these.
+- `web/` is the ServiceFlow admin website, `ios/` the native iOS crew app, `mobile/` the React Native crew app (Android), `supabase/` the shared backend (migrations, edge functions, SQL tests), and `docs/` cross-project notes. Keep the repository root to these.
 - Run admin npm commands from `web/` and mobile npm/Expo/EAS commands from `mobile/`; each keeps its own lockfile and dependencies.
-- Follow `mobile/AGENTS.md` for mobile release requirements.
+- Follow `mobile/AGENTS.md` for Android release requirements and `ios/README.md` for the native iOS app. Its core logic lives in `ios/ServiceFlowKit`; run `swift run ServiceFlowCoreChecks` there after changing it.
 - Before UI/UX design work, use the imagegen skill for a visual reference.
 - Ottawa Painters admin stays in its separate repository.
 

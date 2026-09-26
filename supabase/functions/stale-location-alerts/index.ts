@@ -35,11 +35,11 @@ Deno.serve(async (req) => {
 
   try {
     const now = new Date();
-    const [entries, statuses, existingAlerts, managerTokens] = await Promise.all([
+    const [entries, statuses, existingAlerts, tokensByOrg] = await Promise.all([
       fetchActiveEntries(supabase),
       fetchStatuses(supabase),
       fetchUnresolvedAlerts(supabase),
-      fetchManagerTokens(supabase),
+      fetchManagerTokensByOrg(supabase),
     ]);
 
     const statusByUser = new Map(statuses.map((status) => [status.employee_id, status]));
@@ -50,6 +50,9 @@ Deno.serve(async (req) => {
       // never successfully initialized tracking), so do not create noisy
       // alerts for non-pilot workers.
       if (!status) return false;
+      // The native iOS app records location only while it is open, so a
+      // quiet period is expected there and is not an interruption.
+      if (status.metadata?.background_tracking === false) return false;
       const staleAfterMs = staleThresholdMs(status?.tracking_mode);
       const cutoff = now.getTime() - staleAfterMs;
       if (new Date(entry.started_at).getTime() > cutoff) return false;
@@ -73,12 +76,15 @@ Deno.serve(async (req) => {
     });
 
     let sent = 0;
-    if (notifyEntries.length && managerTokens.length) {
+    // Each alert goes only to the managers of the company the entry belongs to.
+    const tokensFor = (entry: { org_id: string }) => tokensByOrg.get(entry.org_id) || [];
+    const managerTokenCount = [...tokensByOrg.values()].reduce((total, list) => total + list.length, 0);
+    if (notifyEntries.length && managerTokenCount) {
       const messages = notifyEntries.flatMap((entry) =>
-        managerTokens.map((tokenRow) => ({
+        tokensFor(entry).map((tokenRow) => ({
           to: tokenRow.expo_push_token,
           sound: "default",
-          title: `${entry.employee_name || "Painter"} tracking was interrupted`,
+          title: `${entry.employee_name || "A crew member"}'s tracking was interrupted`,
           body: `No work-location update for ${staleWindowLabel(statusByUser.get(entry.employee_id)?.tracking_mode)} while clocked in to ${entry.job_name || "a job"}. Ask them to reopen ServiceFlow.`,
           data: { type: "tracking_interrupted", userId: entry.employee_id, timeEntryId: entry.id },
         })),
@@ -95,7 +101,7 @@ Deno.serve(async (req) => {
           employee_id: entry.employee_id,
           time_entry_id: entry.id,
           stale_since: new Date(now.getTime() - staleThresholdMs(status?.tracking_mode)).toISOString(),
-          last_notified_at: managerTokens.length ? now.toISOString() : null,
+          last_notified_at: tokensFor(entry).length ? now.toISOString() : null,
           resolved_at: null,
         };
       });
@@ -108,19 +114,19 @@ Deno.serve(async (req) => {
     return json({
       activeEntries: entries.length,
       staleEntries: staleEntries.length,
-      managerTokens: managerTokens.length,
+      managerTokens: managerTokenCount,
       notificationsSent: sent,
       resolved: alertsToResolve.length,
     });
   } catch (error) {
-    return json({ error: error?.message || "Stale-location alert check failed" }, 500);
+    return json({ error: (error as Error)?.message || "Stale-location alert check failed" }, 500);
   }
 });
 
 async function fetchActiveEntries(supabase: ServiceClient) {
   const { data, error } = await supabase
     .from("time_entries")
-    .select("id,employee_id,employee_name,job_name,started_at")
+    .select("id,employee_id,employee_name,job_name,started_at,org_id")
     .eq("status", "active")
     .is("ended_at", null);
   if (error) throw new Error(error.message);
@@ -130,7 +136,7 @@ async function fetchActiveEntries(supabase: ServiceClient) {
 async function fetchStatuses(supabase: ServiceClient) {
   const { data, error } = await supabase
     .from("employee_tracking_status")
-    .select("employee_id,last_location_at,tracking_mode,task_status,platform");
+    .select("employee_id,last_location_at,tracking_mode,task_status,platform,metadata");
   if (error) throw new Error(error.message);
   return data || [];
 }
@@ -144,15 +150,17 @@ async function fetchUnresolvedAlerts(supabase: ServiceClient) {
   return data || [];
 }
 
-async function fetchManagerTokens(supabase: ServiceClient) {
+/** Active push tokens of each company's owners, admins and managers. */
+async function fetchManagerTokensByOrg(supabase: ServiceClient) {
   const { data: managers, error: managerError } = await supabase
-    .from("employees")
-    .select("id")
-    .in("role", ["admin", "manager"])
-    .eq("is_active", true);
+    .from("org_members")
+    .select("org_id,user_id,organization:organizations!inner(status)")
+    .in("role", ["owner", "admin", "manager"])
+    .eq("is_active", true)
+    .eq("organization.status", "active");
   if (managerError) throw new Error(managerError.message);
-  const managerIds = (managers || []).map((manager) => manager.id);
-  if (!managerIds.length) return [];
+  const managerIds = [...new Set((managers || []).map((manager) => manager.user_id))];
+  if (!managerIds.length) return new Map<string, { expo_push_token: string }[]>();
 
   const { data, error } = await supabase
     .from("push_tokens")
@@ -160,12 +168,22 @@ async function fetchManagerTokens(supabase: ServiceClient) {
     .in("employee_id", managerIds)
     .eq("is_active", true);
   if (error) throw new Error(error.message);
-  const seen = new Set<string>();
-  return (data || []).filter((row) => {
-    if (!row.expo_push_token || seen.has(row.expo_push_token)) return false;
-    seen.add(row.expo_push_token);
-    return true;
-  });
+  // Native iOS tokens (`apns:`) can't be delivered through Expo.
+  const tokensByUser = new Map<string, string[]>();
+  for (const row of data || []) {
+    if (!row.expo_push_token || row.expo_push_token.startsWith("apns:")) continue;
+    tokensByUser.set(row.employee_id, [...(tokensByUser.get(row.employee_id) || []), row.expo_push_token]);
+  }
+
+  const byOrg = new Map<string, { expo_push_token: string }[]>();
+  for (const manager of managers || []) {
+    const list = byOrg.get(manager.org_id) || [];
+    for (const token of tokensByUser.get(manager.user_id) || []) {
+      if (!list.some((row) => row.expo_push_token === token)) list.push({ expo_push_token: token });
+    }
+    byOrg.set(manager.org_id, list);
+  }
+  return byOrg;
 }
 
 async function sendPushBatch(messages: Record<string, unknown>[]) {
@@ -194,8 +212,8 @@ function staleThresholdMs(mode: unknown) {
 }
 
 function staleWindowLabel(mode: unknown) {
-  if (mode === "painting") return "eight hours in painting mode";
-  if (mode === "stationary") return "two hours in stationary mode";
+  if (mode === "painting") return "eight hours on site";
+  if (mode === "stationary") return "two hours without moving";
   return "at least 15 minutes";
 }
 

@@ -1,0 +1,10 @@
+// Client configuration for the ServiceFlow iOS app. These values are public by
+// design (the publishable key only allows what row-level security permits).
+
+SUPABASE_URL = https:/$()/bwbckdkouqghdadpkjvn.supabase.co
+SUPABASE_PUBLISHABLE_KEY = sb_publishable_SYrZ-1VL2W7xYczfcYapow_03a_4Pdu
+PROJECT_MEDIA_API_URL = https:/$()/project-media-worker.jadslim-fai.workers.dev
+LOCATION_TRACKING_ENABLED = YES
+
+// Signing team, kept out of git (Config/Signing.xcconfig: DEVELOPMENT_TEAM = XXXXXXXXXX).
+#include? "Signing.xcconfig"
