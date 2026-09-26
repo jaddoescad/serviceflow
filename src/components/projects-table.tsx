@@ -6,10 +6,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input } from "@/components/ui";
 import { fmtMoney, fmtHours } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
-import {
-  LABOUR_ALERT_PERCENT,
-  budgetStatus,
-} from "@/lib/metrics";
+import { budgetStatus } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import { AmountDialog } from "@/components/job-amount-dialog";
 
@@ -19,15 +16,17 @@ type ProjectTableRow = ProjectRollup;
 function painterBudget(row: ProjectTableRow): number | null {
   return row.amountBeforeTax == null
     ? null
-    : row.amountBeforeTax * (LABOUR_ALERT_PERCENT / 100);
+    : row.amountBeforeTax * (row.costTargetPercent / 100);
 }
 
 function UsageBar({
   percent,
   status,
+  targetPercent,
 }: {
   percent: number | null;
   status: BudgetStatus;
+  targetPercent: number;
 }) {
   if (percent == null) {
     return <span className="text-xs text-[var(--color-muted)]">—</span>;
@@ -39,7 +38,7 @@ function UsageBar({
         <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--color-surface-2)] xl:w-20">
           <div
             className="h-full rounded-full"
-            style={{ width: `${Math.min(100, (percent / LABOUR_ALERT_PERCENT) * 100)}%`, background: color }}
+            style={{ width: `${Math.min(100, (percent / targetPercent) * 100)}%`, background: color }}
           />
         </div>
         <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">{percent.toFixed(1)}%</span>
@@ -111,7 +110,7 @@ export function ProjectsTable({
                 <Badge tone="warn">{totals.readyToCloseCount} ready to complete</Badge>
               ) : null}
               <Badge tone={totals.overCount ? "bad" : "good"}>
-                {totals.overCount ? `${totals.overCount} at 40% or higher` : "all below 40%"}
+                {totals.overCount ? `${totals.overCount} over labour target` : "all within labour target"}
               </Badge>
             </div>
           }
@@ -144,7 +143,7 @@ export function ProjectsTable({
 
 
                   <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
-                  <th className="px-2.5 py-2.5 text-right font-medium">Painter budget (40%)</th>
+                  <th className="px-2.5 py-2.5 text-right font-medium" title="Job amount × the job's labour cost target">Painter budget</th>
                   <th
                     className="px-2.5 py-2.5 text-right font-medium"
                     title="Dollar cost of priced clocked hours"
@@ -221,7 +220,8 @@ export function ProjectsTable({
                     <td className="px-2.5 py-2.5">
                       <UsageBar
                         percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost)}
-                        status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost))}
+                        status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost), r.costTargetPercent)}
+                        targetPercent={r.costTargetPercent}
                       />
                     </td>
 

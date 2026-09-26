@@ -38,6 +38,9 @@ export type ProjectRollup = {
   remainingHours: number | null;
   percentUsed: number | null;
   status: BudgetStatus;
+  /** Crew hours % and labour cost target % this job was budgeted with. */
+  crewHoursPercent: number;
+  costTargetPercent: number;
   laborCost: number | null;
   budgetCost: number | null;
   labourAllowanceLow: number | null;
@@ -130,9 +133,12 @@ export type EmployeeRollup = {
   lastActivity: string | null;
 };
 
-export function budgetStatus(wageSharePercent: number | null): BudgetStatus {
+export function budgetStatus(
+  wageSharePercent: number | null,
+  targetPercent: number = LABOUR_ALERT_PERCENT,
+): BudgetStatus {
   if (wageSharePercent == null) return "none";
-  return wageSharePercent >= LABOUR_ALERT_PERCENT ? "over" : "under";
+  return wageSharePercent >= targetPercent ? "over" : "under";
 }
 
 function classifyLabour(input: {
@@ -346,8 +352,13 @@ export function rollupProjects(
     const clockedWageCost = labourExcluded ? 0 : (wagesById.get(id) ?? 0);
     const wageCost = clockedWageCost;
     const labourCostSource = "clocked_hours" as const;
-    const allowanceLow = preTaxAmount != null ? preTaxAmount * (LABOUR_MIN_PERCENT / 100) : null;
-    const allowanceHigh = preTaxAmount != null ? preTaxAmount * (LABOUR_MAX_PERCENT / 100) : null;
+    // Budgets made before labour settings existed use the original 37% / 40%.
+    const crewHoursPercent = budget?.crew_hours_percent ?? LABOUR_MAX_PERCENT;
+    const costTargetPercent = budget?.cost_target_percent ?? LABOUR_ALERT_PERCENT;
+    const allowanceLow = preTaxAmount != null
+      ? preTaxAmount * (Math.min(LABOUR_MIN_PERCENT, crewHoursPercent) / 100)
+      : null;
+    const allowanceHigh = preTaxAmount != null ? preTaxAmount * (crewHoursPercent / 100) : null;
     const wageSharePercent = labourExcluded
       ? null
       : preTaxAmount && preTaxAmount > 0
@@ -371,7 +382,9 @@ export function rollupProjects(
       hourlyRate: rate,
       remainingHours: budgetedHours != null ? budgetedHours - logged : null,
       percentUsed,
-      status: budgetStatus(wageSharePercent),
+      status: budgetStatus(wageSharePercent, costTargetPercent),
+      crewHoursPercent,
+      costTargetPercent,
       laborCost: wageCost,
       budgetCost: allowanceHigh,
       labourAllowanceLow: allowanceLow,

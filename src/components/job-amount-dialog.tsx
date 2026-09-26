@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Card, Field, Input, Button } from "@/components/ui";
 import { fmtMoney } from "@/lib/format";
-import { LABOUR_MIN_PERCENT, LABOUR_MAX_PERCENT, type ProjectRollup } from "@/lib/metrics";
+import { LABOUR_MIN_PERCENT, type ProjectRollup } from "@/lib/metrics";
 export function AmountDialog({
   project,
   pending,
@@ -17,8 +17,11 @@ export function AmountDialog({
   const [amount, setAmount] = useState(project.amountBeforeTax?.toString() ?? "");
   const dialogRef = useRef<HTMLDivElement>(null);
   const numericAmount = amount.trim() === "" ? null : Number(amount);
-  const allowanceLow = numericAmount != null ? numericAmount * (LABOUR_MIN_PERCENT / 100) : null;
-  const allowanceHigh = numericAmount != null ? numericAmount * (LABOUR_MAX_PERCENT / 100) : null;
+  const crewHoursPercent = project.crewHoursPercent;
+  const allowanceLow = numericAmount != null
+    ? numericAmount * (Math.min(LABOUR_MIN_PERCENT, crewHoursPercent) / 100)
+    : null;
+  const allowanceHigh = numericAmount != null ? numericAmount * (crewHoursPercent / 100) : null;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -92,7 +95,9 @@ export function AmountDialog({
               <span className="font-semibold tabular-nums">{fmtMoney(numericAmount)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3 text-sm">
-              <span className="text-[var(--color-muted)]">35–37% labour allowance</span>
+              <span className="text-[var(--color-muted)]">
+                {Math.min(LABOUR_MIN_PERCENT, crewHoursPercent)}–{crewHoursPercent}% labour allowance
+              </span>
               <span className="font-semibold tabular-nums">
                 {allowanceLow != null && allowanceHigh != null
                   ? `${fmtMoney(allowanceLow)}–${fmtMoney(allowanceHigh)}`

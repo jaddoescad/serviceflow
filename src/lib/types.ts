@@ -180,6 +180,10 @@ export type ProjectBudget = {
   labour_closed_at: string | null;
   // Invoices before this date belong to a previous job for the same customer.
   labour_invoice_job_started_on: string | null;
+  // Settings recorded on the budget when it was created; null on budgets made
+  // before labour settings existed.
+  crew_hours_percent: number | null;
+  cost_target_percent: number | null;
   updated_at: string;
 };
 

@@ -238,6 +238,11 @@ export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
   return { total: rows.length, confirmed, needsReview: 0, missingSource: rows.length - confirmed };
 }
 
+function recordedPercent(value: unknown): number | null {
+  const percent = Number(value);
+  return value != null && value !== "" && Number.isFinite(percent) && percent > 0 ? percent : null;
+}
+
 export async function getBudgets(projectId?: string): Promise<ProjectBudget[]> {
   const supabase = await createClient();
   let jobQuery = supabase.from("jobs").select("id,contract_amount_cents,status,completed_on,updated_at");
@@ -267,6 +272,8 @@ export async function getBudgets(projectId?: string): Promise<ProjectBudget[]> {
       notes: budget?.notes ?? null,
       labour_closed_at: budget?.closed_at ?? null,
       labour_invoice_job_started_on: budget?.metadata?.labour_invoice_job_started_on ?? null,
+      crew_hours_percent: recordedPercent(budget?.metadata?.formula_allocation_percent),
+      cost_target_percent: recordedPercent(budget?.metadata?.cost_target_percent),
       updated_at: budget?.updated_at ?? job.updated_at,
     };
   });

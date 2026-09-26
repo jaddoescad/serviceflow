@@ -12,6 +12,8 @@ import {
 } from "@/lib/queries";
 import { requireStaff, requireMember } from "@/lib/auth";
 import {
+  LABOUR_ALERT_PERCENT,
+  LABOUR_MAX_PERCENT,
   projectDetails,
   projectTaskProgress,
   rollupProjects,
@@ -112,6 +114,8 @@ function emptyLeadRollup(
     remainingHours: null,
     percentUsed: null,
     status: "none",
+    crewHoursPercent: LABOUR_MAX_PERCENT,
+    costTargetPercent: LABOUR_ALERT_PERCENT,
     laborCost: null,
     budgetCost: null,
     labourAllowanceLow: null,
