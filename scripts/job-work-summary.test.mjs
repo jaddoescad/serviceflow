@@ -11,7 +11,18 @@ function moduleAt(path, require) {
 }
 const hours=moduleAt('src/lib/hours.ts',()=>({}));
 const metrics=moduleAt('src/lib/metrics.ts',name=>name.endsWith('/hours')?hours:{});
-const sort=moduleAt('src/lib/project-sort.ts',()=>({}));
+// The Labour table's job order, which the database pages must reproduce:
+// open jobs with clock activity first (latest first), then by start date, then name.
+const timestamp=value=>{const parsed=value?Date.parse(value):0;return Number.isFinite(parsed)?parsed:0;};
+function compareJobsTableRows(left,right){
+ const leftActive=!left.labourClosedAt&&Boolean(left.lastClockIn);
+ const rightActive=!right.labourClosedAt&&Boolean(right.lastClockIn);
+ if(leftActive!==rightActive)return leftActive?-1:1;
+ if(leftActive&&rightActive){const delta=timestamp(right.lastClockIn)-timestamp(left.lastClockIn);if(delta!==0)return delta;}
+ const started=timestamp(right.jobStartedOn)-timestamp(left.jobStartedOn);
+ if(started!==0)return started;
+ return left.name.localeCompare(right.name,'en-CA');
+}
 test('database labour summaries and pages match existing clock/rate calculations beyond 1000 rows',async()=>{
  const db=new PGlite();
  try {
@@ -43,8 +54,8 @@ test('database labour summaries and pages match existing clock/rate calculations
  const projects=(await db.query('select * from jobs')).rows.map(p=>({companycam_id:p.id,name:p.name,started_on:'2026-09-01',production_month:null,formatted_address:null}));
  const budgets=projects.map(p=>({companycam_project_id:p.companycam_id,amount_including_tax:p.name==='Job 0002'?2000:1000,budgeted_hours:p.name==='Job 0002'?2:null,hourly_rate:p.name==='Job 0002'?35:null,labour_closed_at:null}));
  const assignments=[{companycam_project_id:projects.find(p=>p.name==='Job 0002').companycam_id}];
- const old=metrics.rollupProjects(raw,projects,budgets,assignments,rates,now).sort(sort.compareJobsTableRows);
- const fresh=metrics.rollupProjects([],projects,budgets,[],[],now,summaries).sort(sort.compareJobsTableRows);
+ const old=metrics.rollupProjects(raw,projects,budgets,assignments,rates,now).sort(compareJobsTableRows);
+ const fresh=metrics.rollupProjects([],projects,budgets,[],[],now,summaries).sort(compareJobsTableRows);
  for(let i=0;i<old.length;i++){
  assert.equal(fresh[i].projectId,old[i].projectId);
  for(const key of ['loggedHours','wageCost','unpricedHours','assignedCount'])assert.ok(Math.abs(fresh[i][key]-old[i][key])<1e-8,`${key}: ${fresh[i][key]} vs ${old[i][key]}`);

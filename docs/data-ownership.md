@@ -1,6 +1,6 @@
 # ServiceFlow deployment and ownership
 
-Private repository: jaddoescad/serviceflow-web. Vercel project: ottawa-painters-dashboard (existing project name). Canonical production address: https://serviceflow-admin.vercel.app. Database: bwbckdkouqghdadpkjvn. Branding is explicit in source. Push to the connected current branch to deploy; never attach this repository to Ottawa Painters' Vercel project.
+Private repository: jaddoescad/serviceflow. Vercel project: ottawa-painters-dashboard (existing project name). Canonical production address: https://serviceflow-admin.vercel.app. Database: bwbckdkouqghdadpkjvn. Branding is explicit in source. Push to the connected current branch to deploy; never attach this repository to Ottawa Painters' Vercel project.
 
 Contacts, deals, jobs, photos, tasks, issues, recorded hours, labour budgets and employee pay rates are edited here. The mobile app and Zapier continue using this database. A transactional outbox sends an explicit operational column allowlist to Ottawa Painters. No reverse sync exists. Receiver credentials are private and are not production service-role keys.
 

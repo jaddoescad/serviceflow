@@ -5,12 +5,6 @@
 - Work on the current branch by default.
 - Do not create a Git branch unless the user explicitly asks for one.
 
-## Quo API access
-
-- This workspace can access the Quo (formerly OpenPhone) API.
-- Use the server-side `QUO_API_KEY` from `.env` for authentication.
-- Never expose the key in browser code, logs, documentation, commits, or user-facing output.
-
 ## Deployment speed
 
 - For explicit deployment requests, ship and verify the smallest testable version first, then harden it unless the user asks for production hardening before testing.
@@ -33,19 +27,11 @@
 - If evidence is ambiguous between a locked job and a current job, leave it unassigned for review.
 - Only reopen a specific historical job when the user explicitly names that job and explicitly asks to unlock or correct its accounting. Use a narrow forward repair; never disable the global cutoff.
 
-## DripJobs job authority
-
-- The latest validated DripJobs Jobs List exports are the source of truth for job amounts and production months. Export both active and archived/cancelled views with the table length set to `All`, validate both files, and require proposal IDs to be unique across the combined set. Do not derive job amounts from archived customer-invoice PDFs, invoice lines, invoice allocations, proposal estimates, or customer-invoice table totals.
-- Match a CSV row to a job by its DripJobs proposal number. Require exactly one canonical job match; leave missing or ambiguous matches unchanged for review.
-- The CSV `Amount` column includes 13% HST. Store and display the job amount before HST as `round(Amount cents / 1.13)`. Preserve the CSV gross amount, implied HST, proposal number, invoice ID, source filename, and source SHA-256 in audit metadata.
-- When several CSV rows share a proposal number, never sum them or choose by date alone. Use an existing explicit void/supersession decision only to identify one current row; otherwise leave that proposal unchanged for review.
-- Apply changes through a versioned job budget and keep `jobs.contract_amount_cents` synchronized. Preserve the previous budget and record the import in `verification_events`.
-- For production month, only `Work Finished`/`Work Complete`, `Review Request`, and `Project Complete`/`Job Completed` qualify for the first assignment. When `jobs.production_month` is null, use the month of the qualifying `Deal Stage Date`, store the first day of that month on both `jobs.production_month` and associated `job_budgets.production_month`, and preserve stage/date/source provenance. Once `jobs.production_month` has any value, automation must never change or clear it; later workflow transitions are audit evidence only. Keep associated budget months synchronized to the immutable job value and never use the daily sync date.
-- The historical job accounting lock still applies. A broad CSV import does not authorize changing locked historical jobs.
-
 ## Backend ownership
 
 This is ServiceFlow. Operational edits belong here. Sync only the approved operational columns to Ottawa Painters; never import Ottawa Painters accounting or login access. Production Supabase project: `bwbckdkouqghdadpkjvn`.
+
+Ottawa Painters' business files, accounting, DripJobs import rules, Quo access and the Hermes assistant live in the `ottawa-painters-admin` repository. Do not add them back here.
 
 ## Repository layout
 

@@ -28,7 +28,6 @@
     "qa:lead-clock-in": "node scripts/qa-lead-clock-in-sql.mjs",
     "qa:project-media": "node scripts/qa-project-media.mjs",
     "qa:project-media-sql": "node scripts/qa-project-media-sql.mjs",
-    "import:companycam-media": "node --env-file=.env.local scripts/import-companycam-media.mjs",
     "qa:location": "node scripts/qa-location-tracking.cjs",
     "qa:v2-client": "node scripts/qa-v2-client.cjs",
     "qa:time-entry-backend": "node scripts/qa-time-entry-commands.mjs",

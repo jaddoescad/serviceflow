@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ottawa Painters Database CLI"
-  short_description: "Fast read-only Ottawa customer and operations retrieval"
-  default_prompt: "Use $ottawa-painters-db-cli to answer this Ottawa Painters question with the bounded high-level CLI."

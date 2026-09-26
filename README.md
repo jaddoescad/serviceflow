@@ -28,5 +28,3 @@ Ignored mobile credentials and environment files belong inside `apps/mobile`, no
 ## Migration provenance
 
 The mobile history through `9beb24a` was imported with a full-history subtree merge. Admin history remains intact. The old mobile checkout/repository is a recovery reference, not the active development source. Do all future mobile and admin work here.
-
-Historical admin documentation is retained in `docs/admin-legacy-readme.md`; descriptions of removed accounting modules there are historical, not current features.

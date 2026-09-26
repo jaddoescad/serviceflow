@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ottawa Painters APIs"
-  short_description: "Fast read-only Ottawa communications and photo retrieval"
-  default_prompt: "Use $ottawa-painters-apis to retrieve bounded Ottawa customer evidence without making changes."

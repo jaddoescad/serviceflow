@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ottawa Operations"
-  short_description: "Fast read-only Ottawa Painters operations RAG"
-  default_prompt: "Use $ottawa-operations to answer this Ottawa Painters business question with one bounded retrieval command."

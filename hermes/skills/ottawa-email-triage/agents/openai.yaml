@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ottawa Email Triage"
-  short_description: "Safely read, analyze, and label Gmail"
-  default_prompt: "Use $ottawa-email-triage to review the requested Ottawa Painters email and apply only an approved label."
