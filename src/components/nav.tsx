@@ -24,6 +24,7 @@ const LINKS = [
   { href: "/photos", label: "Photos", icon: "/photos" },
   { href: "/contacts", label: "Customers", icon: "/contacts" },
   { href: "/employees", label: "Team", icon: "/employees" },
+  { href: "/settings", label: "Settings", icon: "/settings" },
   { href: "/labels", label: "Labels", icon: "/labels" },
   { href: "/projects?view=trash", label: "Project Trash", icon: "/trash" },
 ];
