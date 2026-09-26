@@ -6,7 +6,8 @@ import {
   type LabourBudgetSettings,
 } from "@/lib/actions/settings";
 import { fmtHoursDecimal, fmtMoney } from "@/lib/format";
-import { Button, Card, CardHeader, Field, Input } from "./ui";
+import { Button, Field, Input } from "./ui";
+import { SaveStatus, SettingsSection } from "./settings/settings-section";
 
 const EXAMPLE_JOB_AMOUNT = 10_000;
 
@@ -16,7 +17,6 @@ function NumberField({
   prefix,
   suffix,
   value,
-  step,
   disabled,
   onChange,
 }: {
@@ -25,33 +25,42 @@ function NumberField({
   prefix?: string;
   suffix: string;
   value: string;
-  step: number;
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
   return (
     <Field label={label}>
-      <div className="flex items-center gap-2">
-        <div className="relative w-32">
-          {prefix ? (
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--color-muted)]">
-              {prefix}
-            </span>
-          ) : null}
-          <Input
-            type="number"
-            inputMode="decimal"
-            step={step}
-            value={value}
-            disabled={disabled}
-            onChange={(event) => onChange(event.target.value)}
-            className={prefix ? "pl-7 tabular-nums" : "tabular-nums"}
-          />
-        </div>
-        <span className="text-sm text-[var(--color-muted)]">{suffix}</span>
+      <div className="relative">
+        {prefix ? (
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[var(--color-muted)]">
+            {prefix}
+          </span>
+        ) : null}
+        <Input
+          type="number"
+          inputMode="decimal"
+          step={0.5}
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${prefix ? "pl-7" : ""} pr-16 tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">
+          {suffix}
+        </span>
       </div>
-      <span className="mt-1 block text-xs text-[var(--color-muted)]">{hint}</span>
+      <span className="mt-1.5 block text-xs leading-relaxed text-[var(--color-muted)]">{hint}</span>
     </Field>
+  );
+}
+
+function PreviewFigure({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="bg-[var(--color-surface)] px-4 py-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</div>
+      <div className="mt-1 font-display text-lg font-semibold tabular-nums text-[var(--color-heading)]">{value}</div>
+      <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">{hint}</div>
+    </div>
   );
 }
 
@@ -115,84 +124,79 @@ export function LabourBudgetSettingsForm({
   const targetCost = costTargetPercent != null ? (EXAMPLE_JOB_AMOUNT * costTargetPercent) / 100 : null;
 
   return (
-    <Card>
-      <CardHeader
-        title="Labour budget"
-        subtitle="Changes apply to new jobs only. Existing jobs keep the numbers they were created with."
-      />
-      <div className="space-y-5 px-5 py-5">
+    <SettingsSection
+      id="labour"
+      title="Labour budget"
+      description="How each job's amount becomes a crew-hour budget, and when labour cost is flagged. Changes apply to new jobs only; existing jobs keep the numbers they were created with."
+      footer={
+        settings.canEdit ? (
+          <>
+            <SaveStatus
+              error={error || (!valid ? "Rate must be $1–$500 and percentages 1–100." : "")}
+              message={message}
+              hint="Applies to jobs created after you save."
+            />
+            <Button className="ml-auto" onClick={save} disabled={pending || !valid || !changed}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </>
+        ) : (
+          <span>Only owners and admins can change labour settings.</span>
+        )
+      }
+    >
+      <div className="grid gap-5 sm:grid-cols-3">
         <NumberField
           label="Standard hourly rate"
-          hint="What an average crew hour costs you. Turns the crew budget into hours."
+          hint="What an average crew hour costs you."
           prefix="$"
-          suffix="per hour"
-          step={0.5}
+          suffix="/ hour"
           value={rate}
           disabled={disabled}
           onChange={edit(setRate)}
         />
         <NumberField
           label="Crew hours budget"
-          hint="Share of the job amount the crew's hours are budgeted from."
-          suffix="% of job amount"
-          step={0.5}
+          hint="Share of the job amount crew hours come from."
+          suffix="% of job"
           value={crewPercent}
           disabled={disabled}
           onChange={edit(setCrewPercent)}
         />
         <NumberField
           label="Labour cost target"
-          hint="Labour cost above this share of the job amount is flagged as over budget."
-          suffix="% of job amount"
-          step={0.5}
+          hint="Labour cost above this is flagged as over budget."
+          suffix="% of job"
           value={targetPercent}
           disabled={disabled}
           onChange={edit(setTargetPercent)}
         />
-
-        <div className="rounded-lg bg-[var(--color-surface-2)] px-4 py-3 text-sm">
-          <div className="text-xs font-medium text-[var(--color-muted)]">
-            Example: a {fmtMoney(EXAMPLE_JOB_AMOUNT)} job
-          </div>
-          <div className="mt-1">
-            Crew budget {fmtMoney(crewBudget)} ÷ {hourlyRate != null ? `$${hourlyRate.toFixed(2)}` : "—"} ={" "}
-            <span className="font-semibold tabular-nums text-[var(--color-heading)]">
-              {crewBudget != null && hourlyRate != null
-                ? `${fmtHoursDecimal(crewBudget / hourlyRate)} crew hours`
-                : "—"}
-            </span>
-          </div>
-          <div className="mt-0.5">
-            Flagged when labour cost passes{" "}
-            <span className="font-semibold tabular-nums text-[var(--color-heading)]">
-              {fmtMoney(targetCost)}
-            </span>
-          </div>
-        </div>
-
-        {settings.canEdit ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={save} disabled={pending || !valid || !changed}>
-              {pending ? "Saving…" : "Save"}
-            </Button>
-            {error ? (
-              <span role="alert" className="text-sm text-[var(--color-bad)]">
-                {error}
-              </span>
-            ) : !valid ? (
-              <span className="text-sm text-[var(--color-bad)]">
-                Rate must be $1–$500 and percentages 1–100.
-              </span>
-            ) : message ? (
-              <span role="status" className="text-sm text-[var(--color-good)]">
-                {message}
-              </span>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-[var(--color-muted)]">Only admins can change these.</p>
-        )}
       </div>
-    </Card>
+
+      <div className="mt-6">
+        <div className="text-xs font-medium text-[var(--color-muted)]">
+          Preview for a {fmtMoney(EXAMPLE_JOB_AMOUNT)} job
+        </div>
+        <div className="mt-2 grid gap-px overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">
+          <PreviewFigure
+            label="Crew budget"
+            value={fmtMoney(crewBudget)}
+            hint={crewHoursPercent != null ? `${crewHoursPercent}% of the job` : "—"}
+          />
+          <PreviewFigure
+            label="Crew hours"
+            value={
+              crewBudget != null && hourlyRate != null ? `${fmtHoursDecimal(crewBudget / hourlyRate)} h` : "—"
+            }
+            hint={hourlyRate != null ? `at $${hourlyRate.toFixed(2)} an hour` : "—"}
+          />
+          <PreviewFigure
+            label="Flagged above"
+            value={fmtMoney(targetCost)}
+            hint="of labour cost"
+          />
+        </div>
+      </div>
+    </SettingsSection>
   );
 }
