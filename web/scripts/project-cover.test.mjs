@@ -17,7 +17,7 @@ test('cover selection persists, rejects invalid media, and falls back after tras
    create view project_directory as select * from projects;
    create table job_media(id uuid primary key,job_id uuid,lead_id uuid,media_type text,source_metadata jsonb default '{}',captured_at timestamptz,created_at timestamptz default now());`);
   for(let index=1;index<=5;index++) await db.query('insert into job_media(id,job_id,media_type,captured_at) values($1,$2,$3,$4)',[media(index),project,index===5?'video':'image',`2026-09-0${index}`]);
-  await db.exec(await readFile(new URL('../supabase/migrations/20260916021000_project_cover_photo.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../../supabase/migrations/20260916021000_project_cover_photo.sql',import.meta.url),'utf8'));
   const previews=async()=> (await db.query('select * from project_directory_previews($1)',[[project]])).rows.map(row=>row.id);
   await db.query('select set_project_cover($1,$2)',[project,media(1)]);
   assert.deepEqual(await previews(),[media(1),media(5),media(4)]);

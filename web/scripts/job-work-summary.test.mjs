@@ -43,9 +43,9 @@ test('database labour summaries and pages match existing clock/rate calculations
  insert into job_assignments values(md5('2')::uuid,'active'),(md5('2')::uuid,'inactive');
  insert into job_budgets values(md5('2')::uuid,'manual','active','2026-09-01',1,null,120,3500,200000),(md5('2')::uuid,'project_budget','closed','2026-09-01',9,'2026-09-01',999,9000,999999);
  `);
- for(const file of ['20260915182306_summarize_job_work.sql','20260915182926_paginate_labour_budgets.sql']) await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8').replaceAll('"en-CA-x-icu"','"C"'));
+ for(const file of ['20260915182306_summarize_job_work.sql','20260915182926_paginate_labour_budgets.sql']) await db.exec(fs.readFileSync('../supabase/migrations/'+file,'utf8').replaceAll('"en-CA-x-icu"','"C"'));
  await db.exec("alter table jobs add column updated_at timestamptz default now();create table employees(id uuid primary key,full_name text,email text);");
- await db.exec(fs.readFileSync('supabase/migrations/20260915190659_summarize_timesheet_options.sql','utf8'));
+ await db.exec(fs.readFileSync('../supabase/migrations/20260915190659_summarize_timesheet_options.sql','utf8'));
  const options=(await db.query('select get_timesheet_options() r')).rows[0].r;assert.equal(options.projects.length,1200);assert.deepEqual(Object.keys(options.projects[0]).sort(),['companycam_id','name']);
  const at='2026-09-15T12:00:00.456Z',now=Date.parse(at);
  const summaries=(await db.query('select get_job_work_summary($1) r',[at])).rows[0].r.rows;

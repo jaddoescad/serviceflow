@@ -35,7 +35,7 @@ test("user feed keeps exact identity through filters and pagination; legacy feed
     ]) {
       await db.exec(
         await readFile(
-          new URL(`../supabase/migrations/${migration}.sql`, import.meta.url),
+          new URL(`../../supabase/migrations/${migration}.sql`, import.meta.url),
           "utf8",
         ),
       );

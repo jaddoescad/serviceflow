@@ -4,15 +4,15 @@ import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260803200000_ingest_live_dripjobs_events.sql",
+  "../../supabase/migrations/20260803200000_ingest_live_dripjobs_events.sql",
   import.meta.url,
 );
 const lifecycleMigrationUrl = new URL(
-  "../supabase/migrations/20260804120000_unify_dripjobs_lead_lifecycle.sql",
+  "../../supabase/migrations/20260804120000_unify_dripjobs_lead_lifecycle.sql",
   import.meta.url,
 );
 const lifecycleCorrectionMigrationUrl = new URL(
-  "../supabase/migrations/20260804150000_correct_unconverted_lead_projection.sql",
+  "../../supabase/migrations/20260804150000_correct_unconverted_lead_projection.sql",
   import.meta.url,
 );
 

@@ -11,7 +11,7 @@ test('profile edits preserve account access and reject stale or unauthorized cha
  create function auth.uid() returns uuid language sql as $$select '${actor}'::uuid$$;
  create table employees(id uuid primary key,email text,full_name text,role text,is_active boolean,updated_at timestamptz);
  insert into employees values('${actor}','admin@example.invalid','Admin','admin',true,now()),('${target}','qa@example.invalid','QA','painter',false,'2026-09-16');`);
- await db.exec(await readFile(new URL('../supabase/migrations/20260916124441_edit_team_profile.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20260916124441_edit_team_profile.sql',import.meta.url),'utf8'));
  const run=(name=' QA Edited ')=>(db.query('select edit_team_profile($1,$2,$3,$4,$5)',[target,name,' 613-555-0100 ',' Painter ','2026-09-16']));
  await db.exec('set role authenticated');
  await assert.rejects(run(' '),/Check the profile/);

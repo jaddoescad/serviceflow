@@ -21,7 +21,7 @@ test('duplicate prepares, commits independently and retries without creating ano
  insert into project_directory values('${project}','job');
  insert into job_media(id,job_id,object_key,media_type,mime_type,byte_size,source_metadata) values('${source}','${project}','${key}','image','image/jpeg',123,'{"description":"Keep","tags":["Before"],"photo_move_revision":"old"}');
  set test.manager='true';`);
- await db.exec(await readFile(new URL('../supabase/migrations/20260916050000_duplicate_project_media.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20260916050000_duplicate_project_media.sql',import.meta.url),'utf8'));
  const original=(await db.query('select to_jsonb(m) value from job_media m where id=$1',[source])).rows[0].value;
  const run=async(commit=false,copyId=copy,objectKey=key,attempt=actor)=>(await db.query('select duplicate_project_media($1,$2,$3,$4,$5,$6) plan',[source,copyId,project,objectKey,attempt,commit])).rows[0].plan;
  await db.exec('set role authenticated');

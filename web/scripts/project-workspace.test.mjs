@@ -30,7 +30,7 @@ test("project lifecycle requires archive, retains 90-day restore, and scopes med
     `);
     let migration = await readFile(
       new URL(
-        "../supabase/migrations/20260915203410_project_workspace.sql",
+        "../../supabase/migrations/20260915203410_project_workspace.sql",
         import.meta.url,
       ),
       "utf8",
@@ -40,7 +40,7 @@ test("project lifecycle requires archive, retains 90-day restore, and scopes med
     await db.exec(
       await readFile(
         new URL(
-          "../supabase/migrations/20260915204818_project_workspace_refinements.sql",
+          "../../supabase/migrations/20260915204818_project_workspace_refinements.sql",
           import.meta.url,
         ),
         "utf8",
@@ -49,7 +49,7 @@ test("project lifecycle requires archive, retains 90-day restore, and scopes med
     await db.exec(
       await readFile(
         new URL(
-          "../supabase/migrations/20260915235345_workspace_media_filters.sql",
+          "../../supabase/migrations/20260915235345_workspace_media_filters.sql",
           import.meta.url,
         ),
         "utf8",
@@ -58,7 +58,7 @@ test("project lifecycle requires archive, retains 90-day restore, and scopes med
     await db.exec(
       await readFile(
         new URL(
-          "../supabase/migrations/20260916001000_project_label_workflows.sql",
+          "../../supabase/migrations/20260916001000_project_label_workflows.sql",
           import.meta.url,
         ),
         "utf8",

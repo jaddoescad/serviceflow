@@ -35,8 +35,6 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "supabase/functions",
-    "apps/mobile"
+    "node_modules"
   ]
 }

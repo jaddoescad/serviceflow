@@ -19,7 +19,7 @@ test('media move preserves content metadata, commits atomically, and rejects sta
  create view project_directory as select * from projects;
  create table job_media(id uuid primary key,job_id uuid,lead_id uuid,object_key text,byte_size bigint,media_type text,mime_type text,source_metadata jsonb,updated_at timestamptz);
  insert into job_media values('${media}','${source}',null,'jobs/${source}/${media}.jpg',123,'image','image/jpeg','{"description":"Keep this","tags":["Before"]}',now());`);
- await db.exec(await readFile(new URL('../supabase/migrations/20260916010000_move_project_media.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20260916010000_move_project_media.sql',import.meta.url),'utf8'));
  const args=[media,source,destination,null,revision];
  const call=commit=>db.query('select public.move_project_media($1,$2,$3,$4,$5,$6) plan',[...args,commit]);
  const plan=(await call(false)).rows[0].plan;

@@ -1,30 +1,26 @@
 # ServiceFlow
 
-One private repository for the ServiceFlow admin website and mobile app.
+One private repository for the ServiceFlow admin website, mobile app and backend.
 
-| Component | Directory | Release |
+| Folder | What | Release |
 | --- | --- | --- |
-| Admin website | Repository root (`src/`) | Push `main`; existing Vercel project deploys https://serviceflow-admin.vercel.app |
-| Mobile app | `apps/mobile` | Expo EAS channels `preview`, `pilot`, `production` |
+| `web/` | Admin website (Next.js) | Push `main`; Vercel (Root Directory `web`) deploys https://serviceflow-admin.vercel.app |
+| `mobile/` | Crew app (Expo / React Native) | Expo EAS channels `preview`, `pilot`, `production` |
+| `supabase/` | Shared backend: migrations, edge functions, SQL tests | Supabase project `bwbckdkouqghdadpkjvn` |
+| `docs/` | Cross-project plans and ownership notes | — |
 
 ## Development
 
-Admin: run `npm ci`, then `npm run dev` at the root. `npm run build` validates production.
+Admin: `cd web`, `npm ci`, then `npm run dev`. `npm run build` validates production. Tests run from `web/` with `node --test scripts/<name>.test.mjs`.
 
-Mobile: `cd apps/mobile`, `npm ci`, then `npm start`. Run all Expo and EAS commands there. The two apps retain independent lockfiles and dependencies; this repository intentionally does not hoist native dependencies into the admin.
+Mobile: `cd mobile`, `npm ci`, then `npm start`. Run all Expo and EAS commands there. The two apps keep independent lockfiles and dependencies.
 
-Both use the existing ServiceFlow backend. Ottawa Painters remains in its own repository and database. Combining the code does not merge their data or releases.
+Both use the ServiceFlow backend. Ottawa Painters' own admin, accounting and business files live in the separate `ottawa-painters-admin` repository and database.
 
 ## Deployment
 
-Vercel keeps its existing project, domain, environment, root directory (`.`), and `npm run build` command. GitHub source is `jaddoescad/serviceflow`, branch `main`. No new Vercel project is needed.
+Vercel builds the admin from `web/` with `npm run build`. GitHub source is `jaddoescad/serviceflow`, branch `main`.
 
-Mobile retains the ServiceFlow display name, Expo project ID, runtime version, update channels, iOS bundle identifier, and Android application ID. Package metadata is now named `serviceflow`. Keeping the platform identifiers preserves updates for existing installed apps and store listings.
+Mobile keeps the ServiceFlow display name, Expo project ID, runtime version, update channels, iOS bundle identifier and Android application ID, so existing installs and store listings keep updating. From `mobile/`, use `eas update --branch <preview|pilot|production> --message "description"` for JavaScript releases, or the EAS build/submit profiles for native releases. See `mobile/AGENTS.md` for mandatory release verification.
 
-From `apps/mobile`, use `eas update --branch <preview|pilot|production> --message "description"` for JavaScript releases, or the existing EAS build/submit profiles for native releases. See `apps/mobile/AGENTS.md` for mandatory release verification.
-
-Ignored mobile credentials and environment files belong inside `apps/mobile`, not the repository root. Obtain these securely for new checkouts; never commit signing credentials or production secrets.
-
-## Migration provenance
-
-The mobile history through `9beb24a` was imported with a full-history subtree merge. Admin history remains intact. The old mobile checkout/repository is a recovery reference, not the active development source. Do all future mobile and admin work here.
+Ignored credentials and environment files belong next to the app that uses them (`web/.env.local`, `mobile/.env.local`, `mobile/play-service-account.json`). Obtain them securely for new checkouts; never commit signing credentials or production secrets.

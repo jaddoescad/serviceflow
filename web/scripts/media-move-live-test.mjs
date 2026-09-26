@@ -109,7 +109,7 @@ try {
   );
   destinationCreated = true;
   const bytes = await readFile(
-    new URL("../apps/mobile/assets/serviceflow-icon.png", import.meta.url),
+    new URL("../../mobile/assets/serviceflow-icon.png", import.meta.url),
   );
   const uploaded = await json(
     await fetch(`${worker}/v1/leads/${project}/media`, {

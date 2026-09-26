@@ -31,9 +31,9 @@ test('retiring project notes preserves descriptions, contact notes, and manager 
         ('00000000-0000-4000-8000-000000000002', auth.uid(), auth.uid(),
         '{"project_notes":"Remove job notes","project_description":"Job description","other":"keep"}');
     `);
-    const oldMigration = await readFile(new URL('../supabase/migrations/20260818131638_shared_project_profile_and_lead_media.sql', import.meta.url), 'utf8');
+    const oldMigration = await readFile(new URL('../../supabase/migrations/20260818131638_shared_project_profile_and_lead_media.sql', import.meta.url), 'utf8');
     await db.exec(oldMigration.slice(oldMigration.indexOf('create or replace function public.save_project_profile(')));
-    await db.exec(await readFile(new URL('../supabase/migrations/20260914234011_remove_project_notes.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../supabase/migrations/20260914234011_remove_project_notes.sql', import.meta.url), 'utf8'));
     for (const [table, description] of [['jobs', 'Job description'], ['leads', 'Lead description']]) {
       assert.deepEqual((await db.query(`select metadata from ${table}`)).rows[0].metadata,
         { project_description: description, other: 'keep' });

@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 
 const employee = '11111111-1111-4111-8111-111111111111';
-const migration = await readFile(new URL('../supabase/migrations/20260916130423_link_verified_photo_creator.sql', import.meta.url), 'utf8');
+const migration = await readFile(new URL('../../supabase/migrations/20260916130423_link_verified_photo_creator.sql', import.meta.url), 'utf8');
 for (const ambiguous of [false,true]) test(`imported creator filter preserves attribution (ambiguous email: ${ambiguous})`, async () => {
   const db = new PGlite();
   try {

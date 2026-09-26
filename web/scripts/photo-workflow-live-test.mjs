@@ -31,7 +31,7 @@ try {
   assert.ok(employee.ok,'QA employee created');
   const session=await json(await api('/auth/v1/token?grant_type=password',key,{method:'POST',body:JSON.stringify({email,password})}),'QA sign-in');
   const token=session.access_token;
-  const bytes=await readFile(new URL('../apps/mobile/assets/serviceflow-icon.png',import.meta.url));
+  const bytes=await readFile(new URL('../../mobile/assets/serviceflow-icon.png',import.meta.url));
   const mediaId=randomUUID();report.mediaId=mediaId;
   const upload=()=>fetch(`${worker}/v1/leads/${project}/media`,{method:'PUT',headers:{Authorization:`Bearer ${token}`,
     'Content-Type':'image/png','x-media-type':'image','x-file-size':String(bytes.length),'x-upload-id':mediaId,'x-original-filename':'serviceflow-icon.png'},body:bytes,signal:AbortSignal.timeout(60000)});

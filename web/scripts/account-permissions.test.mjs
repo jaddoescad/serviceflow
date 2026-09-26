@@ -9,7 +9,7 @@ test('account updates recheck actor privileges, protect admins and deny direct c
  await db.exec(`create role anon; create role authenticated; create role service_role;
  create table employees(id uuid primary key,full_name text,email text,role text,is_active boolean,updated_at timestamptz);
  insert into employees(id,role,is_active) values('${id(1)}','admin',true),('${id(2)}','admin',true),('${id(3)}','manager',true),('${id(4)}','painter',true);`);
- await db.exec(await readFile(new URL('../supabase/migrations/20260916123800_manage_team_account.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../supabase/migrations/20260916123800_manage_team_account.sql',import.meta.url),'utf8'));
  const run=(actor,target,role=null,active=null)=>db.query('select manage_team_account($1,$2,$3,$4) value',[id(actor),id(target),role,active]);
  await db.exec('set role service_role');
  await assert.rejects(run(3,1,'painter'),/Only admins/);

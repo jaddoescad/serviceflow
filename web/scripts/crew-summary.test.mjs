@@ -15,7 +15,7 @@ test('crew totals include all related rows, old active clocks and effective rate
  insert into job_assignments select md5('1')::uuid,'active' from generate_series(1,1200);
  insert into employee_pay_rates values(md5('r1')::uuid,md5('1')::uuid,'2026-01-01',2500),(md5('r2')::uuid,md5('1')::uuid,'2026-09-01',3000),(md5('r3')::uuid,md5('1')::uuid,'2026-10-01',4000);
  `);
- await db.exec(fs.readFileSync('supabase/migrations/20260915184127_summarize_crew.sql','utf8'));
+ await db.exec(fs.readFileSync('../supabase/migrations/20260915184127_summarize_crew.sql','utf8'));
  const rows=(await db.query("select get_crew_summary('2026-09-15T00:00Z') r")).rows[0].r;
  assert.equal(rows.length,1200);const first=rows.find(r=>r.name==='Painter 1');assert.equal(first.loggedHours,1200);assert.equal(first.assignedCount,1200);assert.equal(first.currentPayRate,30);assert.ok(!('payRates' in first));
  assert.equal(rows.find(r=>r.name==='Painter 2').loggedHours,(Date.parse('2026-09-15')-Date.parse('2026-01-01'))/3600000);

@@ -73,8 +73,8 @@ bridge caps at 10 MB and an app bundle is far larger.
 
 ### Local iOS builds
 
-Run mobile commands from `apps/mobile` in this repository. For local iOS
-builds use a checkout path without spaces, then `cd apps/mobile`, run
+Run mobile commands from `mobile/` in this repository. For local iOS
+builds use a checkout path without spaces, then `cd mobile`, run
 `npm ci` and `eas env:pull --environment production`. Any older standalone
 `~/.serviceflow-build` checkout must be replaced or refreshed from the combined
 `jaddoescad/serviceflow` repository before building.

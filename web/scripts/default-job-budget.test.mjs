@@ -4,11 +4,11 @@ import { test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 
 const migrationUrl = new URL(
-  "../supabase/migrations/20260805202244_automate_default_job_budget_hours.sql",
+  "../../supabase/migrations/20260805202244_automate_default_job_budget_hours.sql",
   import.meta.url,
 );
 const rateMigrationUrl = new URL(
-  "../supabase/migrations/20260818235302_set_labour_planning_rate_to_30.sql",
+  "../../supabase/migrations/20260818235302_set_labour_planning_rate_to_30.sql",
   import.meta.url,
 );
 

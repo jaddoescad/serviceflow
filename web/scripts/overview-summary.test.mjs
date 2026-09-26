@@ -18,7 +18,7 @@ const db=new PGlite();try{
  insert into jobs values(md5('job')::uuid,'Project',true,null,0,null,'{}');
  insert into time_entries(id,employee_id,employee_name,job_id,job_name,started_at,ended_at,status) select md5(i::text)::uuid,md5('emp')::uuid,'Painter',md5('job')::uuid,'Project','2026-09-14 10:00Z','2026-09-14 11:00Z','completed' from generate_series(1,1200)i;
  `);
- await db.exec(fs.readFileSync('supabase/migrations/20260915184531_summarize_overview.sql','utf8').replaceAll('"en-CA-x-icu"','"C"'));
+ await db.exec(fs.readFileSync('../supabase/migrations/20260915184531_summarize_overview.sql','utf8').replaceAll('"en-CA-x-icu"','"C"'));
  const now=Date.parse('2026-09-15T12:00:00Z');
  const base={started_at:'2026-09-15T10:00:00.123Z',ended_at:'2026-09-15T11:00:00.789Z',status:'complete',is_on_site:true};
  const cases=[{...base,segments:[]},{...base,is_on_site:false,segments:null},{...base,segments:[{mode:'on_site',startedAt:'2026-09-15T09:00Z',endedAt:'2026-09-15T12:00Z'},{mode:'off_site',startedAt:'2026-09-15T10:00Z',endedAt:'2026-09-15T12:00Z'}]},{...base,status:'active',ended_at:null,segments:[{mode:'off_site',startedAt:'2026-09-15T10:00Z',endedAt:'2026-09-15T10:10Z'}]},{...base,segments:[{mode:'off_site',startedAt:'invalid',endedAt:'invalid'}]},{...base,segments:{}},{...base,segments:[{mode:'off_site',startedAt:'2026-09-15T10:00Z',endedAt:'2026-09-15T10:20Z'}]}];

@@ -16,7 +16,7 @@ test('contact pagination retains canonical grouping, fallbacks and complete coun
       insert into quotes values ('quote-a','accepted','2026-01-10','lead-a'),('quote-old','accepted','2026-01-01','lead-a'),('quote-hidden','accepted','2026-03-01','lead-a');
       insert into jobs values ('job-a','contact-1200','quote-a','lead-a',true,'active','Ottawa',null,null,'2026-01-01','2026-01-10'),('job-old','contact-1200','quote-old','lead-a',true,'active',null,null,null,'2026-01-01','2026-01-20'),('job-hidden','contact-1200','quote-hidden','lead-a',false,'active',null,null,null,'2026-01-01','2026-03-01');`);
     // ASCII fixture names do not depend on ICU; PGlite has no en-CA ICU collation.
-    await db.exec(fs.readFileSync('supabase/migrations/20260915180938_paginate_contacts_summary.sql','utf8').replaceAll('collate "en-CA-x-icu"','collate "C"'));
+    await db.exec(fs.readFileSync('../supabase/migrations/20260915180938_paginate_contacts_summary.sql','utf8').replaceAll('collate "en-CA-x-icu"','collate "C"'));
     const page = async (search='', number=1) => (await db.query('select get_contacts_page($1,$2) as result',[search,number])).rows[0].result;
     const first=await page(), second=await page('',2);
     assert.equal(first.total,1200); assert.equal(first.rows.length,50);
@@ -40,7 +40,7 @@ test('contact pagination retains canonical grouping, fallbacks and complete coun
       insert into leads(id,contact_id,updated_at) select 'many-lead-'||i,'contact-1','2026-09-01' from generate_series(1,1200)i;
       insert into jobs(id,lead_id,is_feed_visible,updated_at) select 'many-job-'||i,'many-lead-'||i,true,'2026-09-01' from generate_series(1,1200)i;`);
     // Use text IDs only in this pre-existing fixture; production IDs are UUIDs.
-    await db.exec(fs.readFileSync('supabase/migrations/20260915185236_scope_contact_project_records.sql','utf8').replaceAll('contact_uuid uuid','contact_uuid text').replaceAll('get_contact_project_records(uuid)','get_contact_project_records(text)'));
+    await db.exec(fs.readFileSync('../supabase/migrations/20260915185236_scope_contact_project_records.sql','utf8').replaceAll('contact_uuid uuid','contact_uuid text').replaceAll('get_contact_project_records(uuid)','get_contact_project_records(text)'));
     const related=(await db.query("select get_contact_project_records('contact-1') r")).rows[0].r;
     assert.equal(related.leads.length,1200);assert.equal(related.jobs.length,1200);
     assert.equal(new Set(related.jobs.map(j=>j.id)).size,1200);

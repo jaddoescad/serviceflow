@@ -45,12 +45,11 @@ the App Store. The native iOS rewrite waits until this is done (see Phase 7).
 - **Outbox sync to the Ottawa Painters Supabase project**
   (`pyzejfhsdewpnvmtqtlw`) uses `claim_serviceflow_sync`. It must only ever
   carry Ottawa Painters rows.
-- **Media**: the Cloudflare R2 worker (`apps/mobile/cloudflare/project-media-worker`)
+- **Media**: the Cloudflare R2 worker (`mobile/cloudflare/project-media-worker`)
   authorizes access through `job_media`/`jobs` visibility.
-- **Repository layout:** one repo, `jaddoescad/serviceflow`. The
-  `serviceflow-admin` Next.js app and the Supabase backend
-  (`supabase/migrations`, `supabase/functions`) are at the root; the mobile
-  app is in `apps/mobile`.
+- **Repository layout:** one repo, `jaddoescad/serviceflow`: the admin
+  website in `web/`, the mobile app in `mobile/`, and the Supabase backend in
+  `supabase/` (`migrations`, `functions`).
 - **Login** is email + password. Accounts are created by an admin
   (`scripts/office.cjs create-employee`, `manage_team_account`).
 
@@ -157,15 +156,15 @@ audit_log            id, org_id, actor_id, action, target, details, at
 - Still open:
   - A person in two companies must pass the company explicitly for new
     top-level rows (company switcher, Phase 5).
-  - The mobile app (`apps/mobile/App.js` `canManageProjects`) and the
+  - The mobile app (`mobile/App.js` `canManageProjects`) and the
     `project-assignments` edge function (`authorize`) still read
     `employees.role` to decide what to show / who may call it. That's fine for
     Ottawa Painters; switch them to the membership role in Phase 5 / Phase 2.
   - `get_crew_summary` / `get_overview_summary` count `employees` rather than
     company members (per-company admin pages, Phase 5).
-- Next: Phase 1 step 5, the photo worker (`apps/mobile/cloudflare/project-media-worker`),
+- Next: Phase 1 step 5, the photo worker (`mobile/cloudflare/project-media-worker`),
   and step 6, a repeatable two-company leak test in
-  `apps/mobile/scripts/qa-supabase-rls.cjs`.
+  `mobile/scripts/qa-supabase-rls.cjs`.
 
 Use an expand-then-contract migration so the live Android app and older
 binaries keep working the whole time:
@@ -197,7 +196,7 @@ binaries keep working the whole time:
    the root `AGENTS.md` then apply to the Ottawa Painters org only.
 8. Scheduled edge functions (reminders, stale-location alerts) loop per company
    and use each company's timezone.
-9. **Test for leaks:** extend `apps/mobile/scripts/qa-supabase-rls.cjs` with two fixture
+9. **Test for leaks:** extend `mobile/scripts/qa-supabase-rls.cjs` with two fixture
    companies and users in each role. Assert that no table, RPC or media URL
    returns data from the other company. This is the release gate for enabling
    signup.
@@ -284,7 +283,7 @@ company without talking to us.**
 ## Phase 5: Mobile app changes (React Native, both platforms)
 
 - Company context: an active-company provider, a switcher (hidden when the user
-  has one company), and `org_id` on every repository call in `apps/mobile/src/lib/*Repository.js`.
+  has one company), and `org_id` on every repository call in `mobile/src/lib/*Repository.js`.
 - Onboarding screens: sign-in with email code, Create company, Join with code.
 - **In-app account deletion** (guideline 5.1.1(v), required once accounts can be
   created in the app). It deletes the login and memberships. Time entries a
@@ -301,7 +300,7 @@ company without talking to us.**
 
 | Guideline | Fix |
 |---|---|
-| **2.5.4** background location | iOS only: remove `"location"` (and `"fetch"` if unused) from `UIBackgroundModes` in `apps/mobile/app.config.js`, and set `isIosBackgroundLocationEnabled: false`. On iOS the app records location at clock-in/out and while it's open. The team map shows "last seen". `stale-location-alerts` must skip iOS devices or treat gaps as "app closed". Android is unchanged. Native change, so bump `runtimeVersion`. |
+| **2.5.4** background location | iOS only: remove `"location"` (and `"fetch"` if unused) from `UIBackgroundModes` in `mobile/app.config.js`, and set `isIosBackgroundLocationEnabled: false`. On iOS the app records location at clock-in/out and while it's open. The team map shows "last seen". `stale-location-alerts` must skip iOS devices or treat gaps as "app closed". Android is unchanged. Native change, so bump `runtimeVersion`. |
 | **5.1.1(iv)** location prompt | The current code only requests While In Use and has no Settings redirect. Check this on the release build: no screen before the system prompt that pressures users, no "are you sure" screen after they deny. A Settings link appears only when a denied user taps Clock In. |
 | **2.3.10** screenshots | Retake them on iOS simulators: 6.9" iPhone, plus 13" iPad (`supportsTablet: true`, and review ran on an iPad). Or set `supportsTablet: false`. Show real features: clock-in, projects, photos, timesheet. |
 | **3.2** business | Ship Phases 1–3 first, then answer Apple's questions (draft below). |
@@ -324,7 +323,7 @@ in the submitted build):
 5. *The app is currently free. If we add paid plans, companies will subscribe
    as organizations under 3.1.3(c). There are no consumer purchases.*
 
-Before submitting: follow the Release Verification rules in `apps/mobile/AGENTS.md`, and
+Before submitting: follow the Release Verification rules in `mobile/AGENTS.md`, and
 test the exact build on a device, including iPad.
 
 ## Phase 7: Native iOS app (after Phases 1–6)

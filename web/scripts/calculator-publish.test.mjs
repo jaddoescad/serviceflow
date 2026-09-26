@@ -20,7 +20,7 @@ test('calculator publish commits together and rolls back when a downstream mutat
         insert into public.writes values ('quote');
       end $$;
     `);
-    await db.exec(readFileSync(new URL('../supabase/migrations/20260917182928_publish_calculator_budget_atomically.sql', import.meta.url), 'utf8'));
+    await db.exec(readFileSync(new URL('../../supabase/migrations/20260917182928_publish_calculator_budget_atomically.sql', import.meta.url), 'utf8'));
     const payload = { tasks: [{ title: 'Paint', minutes: 60, sortOrder: 0 }, { title: 'Prep', minutes: 30, sortOrder: 1 }], minutes: 90, amountCents: 10000, quoteAmountCents: 10000, quoteStatus: 'draft', doc: {} };
     const publish = (value) => db.query('select publish_calculator_budget($1,$2)', ['00000000-0000-0000-0000-000000000001', JSON.stringify(value)]);
     await publish(payload);
