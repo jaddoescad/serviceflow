@@ -171,7 +171,7 @@ struct CameraScreen: View {
     private var closeButton: some View {
         Button(action: close) {
             Image(systemName: "xmark")
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.35), radius: 4)
                 .frame(width: 48, height: 48)
@@ -203,7 +203,7 @@ struct CameraScreen: View {
     private func sideButton(symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.35), radius: 4)
                 .frame(width: 48, height: 40)
@@ -223,10 +223,10 @@ struct CameraScreen: View {
                     camera.zoom(to: step)
                 } label: {
                     Text(camera.label(for: step))
-                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                        .font(.system(size: 13, weight: .bold).monospacedDigit())
                         .foregroundStyle(active ? .black : .white)
                         .shadow(color: active ? .clear : .black.opacity(0.4), radius: 3)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 34, height: 34)
                         .background(active ? Color.white : Color.clear, in: Circle())
                         .contentShape(Circle())
                 }
