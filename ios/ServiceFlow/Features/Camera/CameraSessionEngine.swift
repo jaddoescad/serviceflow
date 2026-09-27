@@ -131,16 +131,13 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
 
     // MARK: Configuration
 
-    /// Sets up inputs and outputs for the lens and mode. Audio is only ever
-    /// attached in video mode: a phone call owns the microphone, and an audio
-    /// input in photo mode would interrupt the whole camera.
-    func configure(facing: CameraFacing, mode: CameraMode, audio: Bool) {
+    /// Sets up the lens, and the photo and video outputs once. The session
+    /// uses one preset for both photo and video, so switching modes never
+    /// reconfigures or restarts it (that caused the flash and delay).
+    func configure(facing: CameraFacing) {
         sessionQueue.async { [self] in
             session.beginConfiguration()
-            let preset: AVCaptureSession.Preset = mode == .photo
-                ? .photo
-                : (session.canSetSessionPreset(.hd1920x1080) ? .hd1920x1080 : .high)
-            if session.canSetSessionPreset(preset) { session.sessionPreset = preset }
+            if session.sessionPreset != .photo, session.canSetSessionPreset(.photo) { session.sessionPreset = .photo }
 
             var deviceChanged = false
             let position: AVCaptureDevice.Position = facing == .back ? .back : .front
@@ -163,33 +160,25 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
 
             if !outputsAdded {
                 if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
+                photoOutput.maxPhotoQualityPrioritization = .balanced
                 videoOutput.alwaysDiscardsLateVideoFrames = true
                 videoOutput.setSampleBufferDelegate(self, queue: dataQueue)
                 if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
                 audioOutput.setSampleBufferDelegate(self, queue: dataQueue)
                 outputsAdded = true
             }
-
-            let wantsAudio = mode == .video && audio
-            if wantsAudio {
-                if audioInput == nil, let mic = AVCaptureDevice.default(for: .audio), let input = try? AVCaptureDeviceInput(device: mic),
-                   session.canAddInput(input) {
-                    session.addInput(input)
-                    audioInput = input
-                }
-                if !session.outputs.contains(audioOutput), session.canAddOutput(audioOutput) { session.addOutput(audioOutput) }
-            } else {
-                if let audioInput {
-                    session.removeInput(audioInput)
-                    self.audioInput = nil
-                }
-                if session.outputs.contains(audioOutput) { session.removeOutput(audioOutput) }
-            }
             session.commitConfiguration()
 
             guard let device else { return }
-            if let dimensions = device.activeFormat.supportedMaxPhotoDimensions.last {
-                photoOutput.maxPhotoDimensions = dimensions
+            // Only a size the active format lists may be set, and it must
+            // happen after the output is connected. Capped at about 12 MP so a
+            // photo stays well under the 25 MB upload limit.
+            if photoOutput.connection(with: .video) != nil {
+                let supported = device.activeFormat.supportedMaxPhotoDimensions
+                let capped = supported.filter { Int($0.width) * Int($0.height) <= 12_600_000 }
+                if let best = (capped.isEmpty ? supported : capped).max(by: { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }) {
+                    photoOutput.maxPhotoDimensions = best
+                }
             }
             if deviceChanged {
                 rawPerDisplay = Self.rawPerDisplay(for: device)
@@ -202,7 +191,8 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
                     device.unlockForConfiguration()
                 } catch {}
                 zoomObservation = device.observe(\.videoZoomFactor, options: [.initial, .new]) { [weak self] device, _ in
-                    self?.emit(.zoomChanged(device.videoZoomFactor))
+                    let zoom = device.videoZoomFactor
+                    self?.emit(.zoomChanged(zoom))
                 }
                 dataQueue.async { self.sawFirstFrame = false }
             }
@@ -216,6 +206,34 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
             )
             let configuredDevice = device
             DispatchQueue.main.async { [weak self] in self?.onEvent?(.configured(info, configuredDevice)) }
+        }
+    }
+
+    /// Attaches or detaches the microphone. Added once when video is first
+    /// used and then kept, so later mode switches don't touch the session.
+    /// Detached for dictation and when a phone call needs the microphone.
+    func setAudio(_ enabled: Bool) {
+        sessionQueue.async { [self] in
+            if enabled {
+                guard audioInput == nil, let mic = AVCaptureDevice.default(for: .audio),
+                      let input = try? AVCaptureDeviceInput(device: mic) else { return }
+                session.beginConfiguration()
+                if session.canAddInput(input) {
+                    session.addInput(input)
+                    audioInput = input
+                }
+                if !session.outputs.contains(audioOutput), session.canAddOutput(audioOutput) { session.addOutput(audioOutput) }
+                session.commitConfiguration()
+            } else {
+                guard audioInput != nil || session.outputs.contains(audioOutput) else { return }
+                session.beginConfiguration()
+                if let audioInput {
+                    session.removeInput(audioInput)
+                    self.audioInput = nil
+                }
+                if session.outputs.contains(audioOutput) { session.removeOutput(audioOutput) }
+                session.commitConfiguration()
+            }
         }
     }
 
@@ -337,12 +355,31 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
         sessionQueue.async { [self] in
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("project-\(Int(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString.prefix(6)).mp4")
-            let videoSettings = videoOutput.recommendedVideoSettings(forVideoCodecType: .h264, assetWriterOutputFileType: .mp4)
-                ?? [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 1920, AVVideoHeightKey: 1080]
+            // The photo preset delivers large frames; the writer scales them to
+            // at most 1920 px on the long side (H.264 can't take full sensor size).
+            var source = CGSize(width: 1920, height: 1440)
+            if let format = device?.activeFormat.formatDescription {
+                let dims = CMVideoFormatDescriptionGetDimensions(format)
+                if dims.width > 0, dims.height > 0 { source = CGSize(width: Int(dims.width), height: Int(dims.height)) }
+            }
+            let scale = min(1, 1920 / max(source.width, source.height))
+            let width = Int((source.width * scale / 2).rounded()) * 2
+            let height = Int((source.height * scale / 2).rounded()) * 2
+            let videoSettings: [String: Any] = [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height,
+                AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: 10_000_000,
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                    AVVideoExpectedSourceFrameRateKey: 30,
+                ],
+            ]
             let hasAudio = audioInput != nil && session.outputs.contains(audioOutput)
             var audioSettings: [String: Any]?
             if hasAudio {
-                audioSettings = (audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mp4) as? [String: Any]) ?? [
+                audioSettings = audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: .mp4) ?? [
                     AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 1, AVSampleRateKey: 44_100, AVEncoderBitRateKey: 96_000,
                 ]
             }

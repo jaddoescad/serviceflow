@@ -348,6 +348,35 @@ func runChecks() async {
     }
 }
 
+@MainActor
+func runMediaChecks() async {
+    await check("Drawings encode in the web editor's format") {
+        let arrow = AnnotationShape(type: .arrow, points: [AnnotationPoint(x: 0.1, y: 0.2), AnnotationPoint(x: 1.4, y: -1)],
+                                    color: "#ffcc00", width: 0.2)
+        let text = AnnotationShape(type: .text, points: [AnnotationPoint(x: 0.5, y: 0.5)], color: "#ffffff", width: 0.01,
+                                   text: "  Patch here ", fontSize: 0.5)
+        let invalid = AnnotationShape(type: .line, points: [AnnotationPoint(x: 0, y: 0)], color: "red", width: 0.01)
+        let document = AnnotationDocument(shapes: [arrow, text, invalid]).sanitized()
+        expectEqual(document.shapes.count, 2, "invalid shapes dropped")
+        expectEqual(document.shapes[0].points[1], AnnotationPoint(x: 1, y: 0), "points clamped to the image")
+        expectEqual(document.shapes[0].width, 0.05, "width clamped")
+        expectEqual(document.shapes[1].text, "Patch here", "text trimmed")
+        expectEqual(document.shapes[1].fontSize, 0.2, "font size clamped")
+        let json = String(data: try JSONCoding.encoder.encode(document), encoding: .utf8) ?? ""
+        expect(!json.contains("null"), "no null keys (the web schema is strict)")
+        expect(json.contains("\"version\":1"), "version 1")
+        let row: JSONValue = ["id": "m1", "media_type": "image", "source_metadata": [
+            "description": "Before sanding", "photo_revision": "r1",
+            "annotations": try JSONValue(encoding: document),
+        ]]
+        let item = MediaItem(row: row)
+        expectEqual(item?.mediaDescription, "Before sanding", "description read")
+        expectEqual(item?.annotations?.shapes.count, 2, "drawings read")
+        expectEqual(item?.detailsRevision, "r1", "revision read")
+    }
+}
+
 await runChecks()
+await runMediaChecks()
 print("\n\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -339,6 +339,25 @@ final class ServiceFlowAPI: TimeTrackingBackend, @unchecked Sendable {
         return items
     }
 
+    /// Sets a photo's description (`edit_photo_details`). Uploaders can edit their own photos.
+    func editPhotoDetails(projectId: String, mediaId: String, expectedRevision: String?, revision: UUID, description: String) async throws {
+        _ = try await rpc("edit_photo_details", [
+            "requested_project_id": .string(projectId), "requested_media_id": .string(mediaId),
+            "expected_revision": JSONValue(expectedRevision), "requested_revision": .string(revision.uuidString.lowercased()),
+            "requested_description": .string(description), "requested_tags": .array([]),
+        ])
+    }
+
+    /// Stores a photo's drawings (`save_photo_annotations`), the same format the web editor uses.
+    func savePhotoAnnotations(projectId: String, mediaId: String, expectedRevision: String?, revision: UUID,
+                              document: AnnotationDocument) async throws {
+        _ = try await rpc("save_photo_annotations", [
+            "requested_project_id": .string(projectId), "requested_media_id": .string(mediaId),
+            "expected_revision": JSONValue(expectedRevision), "requested_revision": .string(revision.uuidString.lowercased()),
+            "requested_document": try JSONValue(encoding: document),
+        ])
+    }
+
     // MARK: Team map
 
     func trackingStatuses() async throws -> [TeamMemberStatus] {

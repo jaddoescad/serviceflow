@@ -63,7 +63,21 @@ final class SessionContext {
         if let mediaURL = config.mediaURL {
             let client = MediaClient(baseURL: mediaURL, token: { [api] in try await api.accessToken() })
             mediaClient = client
-            uploads = MediaUploadQueue(client: client, storage: storage, uploaderName: name)
+            let queue = MediaUploadQueue(client: client, storage: storage, uploaderName: name)
+            queue.saveDetails = { [api] remote, item in
+                let note = (item.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !note.isEmpty, let revision = item.detailsRevision {
+                    try await api.editPhotoDetails(projectId: item.projectId, mediaId: remote.id,
+                                                   expectedRevision: item.savedDetailsRevision?.uuidString.lowercased(),
+                                                   revision: revision, description: note)
+                }
+                if let document = item.annotations, !document.isEmpty, let revision = item.annotationsRevision {
+                    try await api.savePhotoAnnotations(projectId: item.projectId, mediaId: remote.id,
+                                                       expectedRevision: item.savedAnnotationsRevision?.uuidString.lowercased(),
+                                                       revision: revision, document: document)
+                }
+            }
+            uploads = queue
         } else {
             mediaClient = nil
             uploads = nil

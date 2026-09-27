@@ -156,6 +156,20 @@ struct MediaLightbox: View {
     }
 
     private var captionBar: some View {
+        VStack(spacing: 6) {
+            if let description = current?.mediaDescription {
+                Text(description)
+                    .text(13, .semibold, .white.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 18)
+            }
+            dateCaption
+        }
+    }
+
+    private var dateCaption: some View {
         HStack(spacing: 7) {
             if let current {
                 Icon(current.kind == .video ? "video" : "camera", 15, .white.opacity(0.7))
@@ -219,7 +233,10 @@ private struct MediaLightboxPhoto: View {
             } else if let client = session.mediaClient {
                 // Loads through the shared loader; the zoom view takes over once decoded.
                 MediaAsyncImage(url: client.originalURL(item.id), downsampleTo: 1400, contentMode: .fit,
-                                showsSpinner: true, spinnerColor: .white, onLoad: { loaded in image = loaded })
+                                showsSpinner: true, spinnerColor: .white, onLoad: { loaded in
+                                    // Drawings are stored separately; show them on top of the photo.
+                                    image = item.annotations.map { AnnotationRenderer.composite(loaded, document: $0) } ?? loaded
+                                })
             }
         }
     }

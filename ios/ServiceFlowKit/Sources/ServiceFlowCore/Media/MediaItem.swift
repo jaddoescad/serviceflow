@@ -19,6 +19,11 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
     public var creatorName: String?
     /// Filled in after listing from the uploader's employee profile.
     public var uploaderName: String?
+    public var mediaDescription: String?
+    public var annotations: AnnotationDocument?
+    /// Revisions the next edit of the description or drawings must name.
+    public var detailsRevision: String?
+    public var annotationsRevision: String?
 
     public init(id: String, jobId: String? = nil, leadId: String? = nil, kind: MediaKind, mimeType: String? = nil,
                 capturedAt: Date? = nil, createdAt: Date? = nil, uploadedBy: String? = nil, sourceProvider: String? = nil,
@@ -50,6 +55,11 @@ public struct MediaItem: Codable, Hashable, Identifiable, Sendable {
             sourceProvider: row["source_provider"]?.nonEmptyString,
             creatorName: row["source_metadata"]?["creator_name"]?.nonEmptyString
         )
+        let metadata = row["source_metadata"]
+        mediaDescription = metadata?["description"]?.nonEmptyString
+        annotations = (try? metadata?["annotations"]?.decode(AnnotationDocument.self)).flatMap { $0.isEmpty ? nil : $0 }
+        detailsRevision = metadata?["photo_revision"]?.nonEmptyString
+        annotationsRevision = metadata?["annotation_revision"]?.nonEmptyString
     }
 
     /// When it was taken, for sorting and grouping.

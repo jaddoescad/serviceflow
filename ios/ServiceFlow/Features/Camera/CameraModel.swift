@@ -62,6 +62,8 @@ final class CameraModel {
     @ObservationIgnored private var stopRequested = false
     @ObservationIgnored private var finishWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var pinchStartZoom: CGFloat = 1
+    @ObservationIgnored private var audioAttached = false
+    private(set) var dictating = false
 
     init() {
         // Events arrive on the main queue.
@@ -123,7 +125,8 @@ final class CameraModel {
             return
         }
         hasDevice = true
-        engine.configure(facing: facing, mode: mode, audio: mode == .video && Self.microphoneGranted)
+        engine.configure(facing: facing)
+        if mode == .video, Self.microphoneGranted, !dictating { attachAudio() }
         engine.start()
     }
 
@@ -196,9 +199,10 @@ final class CameraModel {
         switch reason {
         case "audio-device-in-use-by-another-client":
             show(message: "Your phone call is using the microphone. Photo mode is still available.", details: details)
+            engine.setAudio(false)
+            audioAttached = false
             if mode == .video, !isRecording {
                 mode = .photo
-                engine.configure(facing: facing, mode: .photo, audio: false)
                 updateTorch()
             }
         case "video-device-in-use-by-another-client", "video-device-not-available-with-multiple-foreground-apps":
@@ -263,24 +267,45 @@ final class CameraModel {
         previewReady = false
         retries = 0
         previewFailed = false
-        engine.configure(facing: facing, mode: mode, audio: mode == .video && Self.microphoneGranted)
+        engine.configure(facing: facing)
         startWatchdog()
     }
 
+    /// Switches between photo and video instantly: the running session is
+    /// left alone; only the microphone is attached the first time.
     func select(_ newMode: CameraMode) {
         guard newMode != mode, !isRecording, !isFinalizing else { return }
-        Task {
-            if newMode == .video {
-                guard await Self.ensureMicrophone() else {
-                    show(message: "Microphone access is required to record video with sound. Enable it in Settings.")
-                    return
-                }
+        mode = newMode
+        notice = nil
+        updateTorch()
+        guard newMode == .video else { return }
+        if Self.microphoneGranted {
+            if !dictating { attachAudio() }
+        } else if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            Task {
+                if await AVCaptureDevice.requestAccess(for: .audio), self.mode == .video, !self.dictating { self.attachAudio() }
             }
-            mode = newMode
-            notice = nil
-            engine.configure(facing: facing, mode: newMode, audio: newMode == .video)
-            updateTorch()
         }
+    }
+
+    private func attachAudio() {
+        guard !audioAttached else { return }
+        audioAttached = true
+        engine.setAudio(true)
+    }
+
+    /// Dictating a note needs the microphone; the camera lets go of it.
+    func beginDictation() {
+        dictating = true
+        if audioAttached {
+            audioAttached = false
+            engine.setAudio(false)
+        }
+    }
+
+    func endDictation() {
+        dictating = false
+        if mode == .video, Self.microphoneGranted { attachAudio() }
     }
 
     private func updateTorch() {
@@ -306,9 +331,10 @@ final class CameraModel {
 
     func label(for step: CGFloat) -> String {
         if step == activeStep, abs(step - displayZoom) > 0.05 {
-            return String(format: "%.1f×", displayZoom)
+            let value = String(format: "%.1f", displayZoom)
+            return (value.hasPrefix("0") ? String(value.dropFirst()) : value) + "x"
         }
-        return step == 0.5 ? "0.5×" : "\(Int(step))×"
+        return step == 0.5 ? ".5x" : "\(Int(step))x"
     }
 
     func zoom(to step: CGFloat) {
@@ -349,9 +375,9 @@ final class CameraModel {
     private func startRecording() {
         guard canShoot, !isRecording, !recordingStarting else { return }
         Task {
-            guard await Self.ensureMicrophone() else {
-                show(message: "Microphone access is required to record video with sound. Enable it in Settings.")
-                return
+            if !Self.microphoneGranted {
+                // Records without sound when the microphone isn't allowed.
+                if await Self.ensureMicrophone(), !dictating { attachAudio() }
             }
             notice = nil
             // The UI flips immediately so a second tap is a stop.

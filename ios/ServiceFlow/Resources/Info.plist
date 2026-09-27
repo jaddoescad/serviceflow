@@ -28,8 +28,10 @@
 	<string>ServiceFlow uses the camera to take job-site photos and videos for project records.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ServiceFlow records your location when you clock in, while the app is open during a shift, and when you clock out, to confirm job-site time.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>ServiceFlow turns what you say into text when you dictate notes for job-site photos.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>ServiceFlow uses the microphone to record audio when you capture job-site videos.</string>
+	<string>ServiceFlow uses the microphone to record audio in job-site videos and to dictate photo notes.</string>
 	<key>ServiceFlowSupabaseURL</key>
 	<string>$(SUPABASE_URL)</string>
 	<key>ServiceFlowSupabaseKey</key>
