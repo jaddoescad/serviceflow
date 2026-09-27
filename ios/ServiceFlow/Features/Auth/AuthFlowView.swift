@@ -3,38 +3,35 @@ import SwiftUI
 
 /// Signed-out screens: sign in, create an account, reset a password.
 struct AuthFlowView: View {
-    enum Step: Equatable {
-        case signIn
+    enum Step: Hashable {
         case signUp
+        case forgot
         case verify(email: String, purpose: CodePurpose)
         case setPassword(purpose: CodePurpose)
-        case forgot
     }
 
-    enum CodePurpose: Equatable { case signUp, reset }
+    enum CodePurpose: Hashable { case signUp, reset }
 
-    @Environment(AppModel.self) private var model
-    @State private var step: Step = .signIn
+    @State private var path: [Step] = []
     @State private var email = ""
 
     var body: some View {
-        Group {
-            switch step {
-            case .signIn:
-                SignInView(email: $email, onCreateAccount: { step = .signUp }, onForgot: { step = .forgot })
-            case .signUp:
-                SignUpView(email: $email, onBack: { step = .signIn }, onCodeSent: { step = .verify(email: $0, purpose: .signUp) })
-            case .forgot:
-                ForgotPasswordView(email: $email, onBack: { step = .signIn }, onCodeSent: { step = .verify(email: $0, purpose: .reset) })
-            case let .verify(address, purpose):
-                VerifyCodeView(email: address, purpose: purpose, onBack: { step = purpose == .signUp ? .signUp : .forgot },
-                               onVerified: { step = .setPassword(purpose: purpose) })
-            case let .setPassword(purpose):
-                SetPasswordView(purpose: purpose)
-            }
+        NavigationStack(path: $path) {
+            SignInView(email: $email, onCreateAccount: { path.append(.signUp) }, onForgot: { path.append(.forgot) })
+                .navigationDestination(for: Step.self) { step in
+                    switch step {
+                    case .signUp:
+                        SignUpView(email: $email) { path.append(.verify(email: $0, purpose: .signUp)) }
+                    case .forgot:
+                        ForgotPasswordView(email: $email) { path.append(.verify(email: $0, purpose: .reset)) }
+                    case let .verify(address, purpose):
+                        VerifyCodeView(email: address, purpose: purpose) { path.append(.setPassword(purpose: purpose)) }
+                    case let .setPassword(purpose):
+                        SetPasswordView(purpose: purpose).navigationBarBackButtonHidden()
+                    }
+                }
         }
-        .transition(.opacity)
-        .animation(.easeInOut(duration: 0.2), value: step)
+        .tint(AuthPalette.brand)
     }
 }
 
@@ -58,35 +55,37 @@ struct SignInView: View {
     }
 
     var body: some View {
-        AuthPage {
-            AuthLabel(text: "Email Address")
-            AuthTextField(placeholder: "name@company.com", text: $email, content: .emailAddress, keyboard: .emailAddress) {
-                focus = .password
+        AuthForm(title: nil) {
+            Section {
+                AuthLogo()
             }
-            .focused($focus, equals: .email)
-            .padding(.bottom, 18)
+            .listRowBackground(Color.clear)
 
-            AuthLabel(text: "Password")
-            AuthPasswordField(text: $password, onSubmit: submit)
-                .focused($focus, equals: .password)
-
-            AuthErrorSlot(message: error)
-
-            AuthPrimaryButton(title: "Log In", busyTitle: "Signing In...", busy: loading, enabled: canSubmit, action: submit)
-
-            HStack {
-                Spacer()
-                AuthLinkButton(title: "Forgot password?", action: onForgot)
-                Spacer()
+            Section {
+                AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress) {
+                    focus = .password
+                }
+                .focused($focus, equals: .email)
+                AuthPasswordField(text: $password, onSubmit: submit)
+                    .focused($focus, equals: .password)
+            } footer: {
+                AuthError(message: error)
             }
-            .padding(.top, 10)
 
-            VStack(spacing: 4) {
-                Text("New to ServiceFlow?").text(14, .semibold, AuthPalette.inkMuted)
-                AuthLinkButton(title: "Create an account", action: onCreateAccount)
+            AuthPrimaryButton(title: "Log In", busy: loading, enabled: canSubmit, action: submit)
+
+            Section {
+                Button("Forgot password?", action: onForgot)
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 18)
+
+            Section {
+                Button("Create an Account", action: onCreateAccount)
+                    .frame(maxWidth: .infinity)
+            } header: {
+                Text("New to ServiceFlow?")
+            }
         }
         .onChange(of: email) { _, _ in error = nil }
         .onChange(of: password) { _, _ in error = nil }
@@ -115,7 +114,6 @@ struct SignInView: View {
 struct SignUpView: View {
     @Environment(AppModel.self) private var model
     @Binding var email: String
-    var onBack: () -> Void
     var onCodeSent: (String) -> Void
 
     @State private var name = ""
@@ -123,22 +121,18 @@ struct SignUpView: View {
     @State private var loading = false
 
     var body: some View {
-        AuthPage(showsLogo: false, onBack: onBack) {
-            AuthTitle(title: "Create your account",
-                      subtitle: "Start a company, or join your team with an invite code. We'll email you a code to confirm it's you.")
-            AuthLabel(text: "Your name")
-            AuthTextField(placeholder: "First and last name", text: $name, content: .name, capitalization: .words)
-                .padding(.bottom, 18)
-            AuthLabel(text: "Email Address")
-            AuthTextField(placeholder: "name@company.com", text: $email, content: .emailAddress, keyboard: .emailAddress,
-                          submitLabel: .send, onSubmit: submit)
-            AuthErrorSlot(message: error)
-            AuthPrimaryButton(title: "Send code", busyTitle: "Sending...", busy: loading, enabled: !loading, action: submit)
-            Text("By creating an account you agree to use ServiceFlow for your company's work records.")
-                .text(12.5, .medium, AuthPalette.inkMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 16)
+        AuthForm(title: "Create Account") {
+            Section {
+                AuthTextField(placeholder: "Your name", text: $name, content: .name, capitalization: .words)
+                AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress,
+                              submitLabel: .send, onSubmit: submit)
+            } header: {
+                Text("Start a company, or join your team with an invite code.")
+                    .textCase(nil)
+            } footer: {
+                if let error { AuthError(message: error) } else { Text("We'll email you a 6-digit code to confirm it's you.") }
+            }
+            AuthPrimaryButton(title: "Send Code", busy: loading, enabled: !loading, action: submit)
         }
         .onChange(of: name) { _, _ in error = nil }
         .onChange(of: email) { _, _ in error = nil }
@@ -169,20 +163,20 @@ struct SignUpView: View {
 struct ForgotPasswordView: View {
     @Environment(AppModel.self) private var model
     @Binding var email: String
-    var onBack: () -> Void
     var onCodeSent: (String) -> Void
 
     @State private var error: String?
     @State private var loading = false
 
     var body: some View {
-        AuthPage(showsLogo: false, onBack: onBack) {
-            AuthTitle(title: "Reset your password", subtitle: "We'll email you a 6-digit code to set a new password.")
-            AuthLabel(text: "Email Address")
-            AuthTextField(placeholder: "name@company.com", text: $email, content: .emailAddress, keyboard: .emailAddress,
-                          submitLabel: .send, onSubmit: submit)
-            AuthErrorSlot(message: error)
-            AuthPrimaryButton(title: "Send code", busyTitle: "Sending...", busy: loading, enabled: !loading, action: submit)
+        AuthForm(title: "Reset Password") {
+            Section {
+                AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress,
+                              submitLabel: .send, onSubmit: submit)
+            } footer: {
+                if let error { AuthError(message: error) } else { Text("We'll email you a 6-digit code to set a new password.") }
+            }
+            AuthPrimaryButton(title: "Send Code", busy: loading, enabled: !loading, action: submit)
         }
         .onChange(of: email) { _, _ in error = nil }
     }
@@ -213,7 +207,6 @@ struct VerifyCodeView: View {
     @Environment(AppModel.self) private var model
     var email: String
     var purpose: AuthFlowView.CodePurpose
-    var onBack: () -> Void
     var onVerified: () -> Void
 
     @State private var code = ""
@@ -222,19 +215,17 @@ struct VerifyCodeView: View {
     @State private var resendNote: String?
 
     var body: some View {
-        AuthPage(showsLogo: false, onBack: onBack) {
-            AuthTitle(title: "Check your email", subtitle: "Enter the 6-digit code we sent to \(email).")
-            CodeField(code: $code, onComplete: verify)
-            AuthErrorSlot(message: error)
-            AuthPrimaryButton(title: "Continue", busyTitle: "Checking...", busy: loading, enabled: code.count == 6, action: verify)
-            HStack {
-                Spacer()
-                AuthLinkButton(title: "Send a new code", action: resend)
-                Spacer()
+        AuthForm(title: "Check Your Email") {
+            Section {
+                CodeField(code: $code, onComplete: verify)
+            } header: {
+                Text("Enter the 6-digit code sent to \(email).").textCase(nil)
+            } footer: {
+                if let error { AuthError(message: error) } else if let resendNote { Text(resendNote) }
             }
-            .padding(.top, 10)
-            if let resendNote {
-                Text(resendNote).text(13.5, .semibold, AuthPalette.inkMuted).frame(maxWidth: .infinity)
+            AuthPrimaryButton(title: "Continue", busy: loading, enabled: code.count == 6, action: verify)
+            Section {
+                Button("Send a New Code", action: resend).frame(maxWidth: .infinity)
             }
         }
         .onChange(of: code) { _, _ in error = nil }
@@ -289,13 +280,13 @@ struct SetPasswordView: View {
     @State private var loading = false
 
     var body: some View {
-        AuthPage(showsLogo: false) {
-            AuthTitle(title: purpose == .signUp ? "Choose a password" : "Set a new password",
-                      subtitle: "You'll use it with your email to sign in. Use at least 8 characters.")
-            AuthLabel(text: "Password")
-            AuthPasswordField(placeholder: "New password", text: $password, content: .newPassword, onSubmit: save)
-            AuthErrorSlot(message: error)
-            AuthPrimaryButton(title: "Save password", busyTitle: "Saving...", busy: loading, enabled: !password.isEmpty, action: save)
+        AuthForm(title: purpose == .signUp ? "Choose a Password" : "New Password") {
+            Section {
+                AuthPasswordField(placeholder: "New password", text: $password, content: .newPassword, onSubmit: save)
+            } footer: {
+                if let error { AuthError(message: error) } else { Text("Use at least 8 characters. You'll sign in with your email and this password.") }
+            }
+            AuthPrimaryButton(title: "Save Password", busy: loading, enabled: !password.isEmpty, action: save)
         }
         .onChange(of: password) { _, _ in error = nil }
     }

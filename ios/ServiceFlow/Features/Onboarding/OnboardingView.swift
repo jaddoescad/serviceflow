@@ -3,78 +3,69 @@ import SwiftUI
 
 /// Shown to a signed-in person who doesn't belong to a company yet.
 struct OnboardingView: View {
-    enum Step { case choose, create, join }
+    enum Step: Hashable { case create, join }
 
     @Environment(AppModel.self) private var model
-    @State private var step: Step = .choose
     @State private var showDelete = false
 
     var body: some View {
-        Group {
-            switch step {
-            case .choose: choose
-            case .create: CreateCompanyView(onBack: { step = .choose })
-            case .join: JoinCompanyView(onBack: { step = .choose }, onJoined: { Task { await model.refreshAccount() } })
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: step)
-        .sheet(isPresented: $showDelete) {
-            DeleteAccountView(onDeleted: { Task { await model.accountDeleted() } })
-        }
-    }
-
-    private var choose: some View {
-        AuthPage {
-            AuthTitle(title: "Welcome to ServiceFlow",
-                      subtitle: "Track time, photos and job progress with your crew. Start by creating your company or joining one.")
-            OnboardingChoice(icon: "building.2.fill", title: "Create a company",
-                             detail: "For owners and managers. You can invite your crew next.") { step = .create }
-                .padding(.bottom, 12)
-            OnboardingChoice(icon: "person.badge.key.fill", title: "Join with an invite code",
-                             detail: "Your manager gives you an 8-character code.") { step = .join }
-
-            HStack(spacing: 18) {
-                Spacer()
-                AuthLinkButton(title: "Sign out") { Task { await model.signOut() } }
-                AuthLinkButton(title: "Delete account") { showDelete = true }
-                Spacer()
-            }
-            .padding(.top, 28)
-        }
-    }
-}
-
-private struct OnboardingChoice: View {
-    var icon: String
-    var title: String
-    var detail: String
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(AuthPalette.brand)
-                    .frame(width: 46, height: 46)
-                    .background(Color(hex: 0xe9f3ee), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).text(16, .heavy, AuthPalette.ink)
-                    Text(detail).text(13, .medium, AuthPalette.inkMuted).multilineTextAlignment(.leading)
+        NavigationStack {
+            List {
+                Section {
+                    AuthLogo()
+                } footer: {
+                    Text("Track time, photos and job progress with your crew. Start by creating your company or joining one.")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.muted)
+                .listRowBackground(Color.clear)
+
+                Section {
+                    NavigationLink(value: Step.create) {
+                        choice("Create a company", detail: "For owners and managers. Invite your crew next.", icon: "building.2.fill")
+                    }
+                    NavigationLink(value: Step.join) {
+                        choice("Join with an invite code", detail: "Your manager gives you an 8-character code.", icon: "person.badge.key.fill")
+                    }
+                }
+
+                Section {
+                    Button("Sign Out") { Task { await model.signOut() } }
+                    Button("Delete Account", role: .destructive) { showDelete = true }
+                }
             }
-            .padding(16)
-            .bordered(14, border: AuthPalette.fieldBorder)
+            .navigationTitle("Welcome")
+            .navigationDestination(for: Step.self) { step in
+                switch step {
+                case .create: CreateCompanyView()
+                case .join: JoinCompanyView(onJoined: { Task { await model.refreshAccount() } })
+                }
+            }
         }
-        .buttonStyle(.pressable(opacity: 0.8))
+        .tint(AuthPalette.brand)
+        .sheet(isPresented: $showDelete) {
+            NavigationStack {
+                DeleteAccountView(onDeleted: { Task { await model.accountDeleted() } })
+            }
+        }
+    }
+
+    private func choice(_ title: String, detail: String, icon: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: icon).foregroundStyle(AuthPalette.brand)
+        }
+        .padding(.vertical, 4)
     }
 }
 
 struct CreateCompanyView: View {
     @Environment(AppModel.self) private var model
-    var onBack: () -> Void
 
     @State private var name = ""
     @State private var trade = ""
@@ -85,32 +76,18 @@ struct CreateCompanyView: View {
                          "Roofing", "Flooring", "Handyman", "Other"]
 
     var body: some View {
-        AuthPage(showsLogo: false, onBack: onBack) {
-            AuthTitle(title: "Create your company", subtitle: "You'll be its owner. You can change these details later on the web.")
-            AuthLabel(text: "Company name")
-            AuthTextField(placeholder: "e.g. Northside Renovations", text: $name, content: .organizationName,
-                          capitalization: .words, submitLabel: .done)
-                .padding(.bottom, 18)
-            AuthLabel(text: "Trade")
-            Menu {
-                ForEach(Self.trades, id: \.self) { option in
-                    Button(option) { trade = option }
+        AuthForm(title: "New Company") {
+            Section {
+                AuthTextField(placeholder: "Company name", text: $name, content: .organizationName, capitalization: .words,
+                              submitLabel: .done)
+                Picker("Trade", selection: $trade) {
+                    Text("Choose…").tag("")
+                    ForEach(Self.trades, id: \.self) { Text($0).tag($0) }
                 }
-            } label: {
-                HStack {
-                    Text(trade.isEmpty ? "Choose your trade" : trade)
-                        .font(.app(16, .medium))
-                        .foregroundStyle(trade.isEmpty ? AuthPalette.placeholder : AuthPalette.ink)
-                    Spacer()
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AuthPalette.placeholder)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 52)
-                .bordered(10, border: AuthPalette.fieldBorder)
+            } footer: {
+                if let error { AuthError(message: error) } else { Text("You'll be the owner. You can change these details later.") }
             }
-            AuthErrorSlot(message: error)
-            AuthPrimaryButton(title: "Create company", busyTitle: "Creating...", busy: loading, enabled: !loading, action: create)
+            AuthPrimaryButton(title: "Create Company", busy: loading, enabled: !loading, action: create)
         }
         .onChange(of: name) { _, _ in error = nil }
     }
@@ -137,7 +114,6 @@ struct CreateCompanyView: View {
 
 struct JoinCompanyView: View {
     @Environment(AppModel.self) private var model
-    var onBack: () -> Void
     var onJoined: () -> Void
 
     @State private var code = ""
@@ -146,30 +122,26 @@ struct JoinCompanyView: View {
     @State private var loading = false
 
     var body: some View {
-        AuthPage(showsLogo: false, onBack: onBack) {
-            AuthTitle(title: "Join your team", subtitle: "Enter the 8-character invite code from your manager.")
-            TextField("", text: $code, prompt: Text("ABCD-EFGH").foregroundColor(AuthPalette.placeholder))
-                .font(.system(size: 26, weight: .heavy, design: .rounded))
-                .tracking(4)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(AuthPalette.ink)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .submitLabel(.join)
-                .onSubmit(join)
-                .frame(height: 60)
-                .bordered(10, border: AuthPalette.fieldBorder)
-                .onChange(of: code) { _, value in
-                    let formatted = InviteCode.display(value)
-                    if formatted != value { code = formatted }
-                    error = nil
-                }
-            AuthErrorSlot(message: error)
-            if let joined {
-                Text("You joined \(joined).").text(15, .bold, AuthPalette.brandDeep).padding(.bottom, 12)
+        AuthForm(title: "Join a Company") {
+            Section {
+                TextField("ABCD-EFGH", text: $code)
+                    .font(.system(.title2, design: .rounded).weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .submitLabel(.join)
+                    .onSubmit(join)
+                    .onChange(of: code) { _, value in
+                        let formatted = InviteCode.display(value)
+                        if formatted != value { code = formatted }
+                        error = nil
+                    }
+            } header: {
+                Text("Enter the 8-character invite code from your manager.").textCase(nil)
+            } footer: {
+                if let error { AuthError(message: error) } else if let joined { Text("You joined \(joined).") }
             }
-            AuthPrimaryButton(title: "Join company", busyTitle: "Joining...", busy: loading,
-                              enabled: InviteCode.isComplete(code), action: join)
+            AuthPrimaryButton(title: "Join Company", busy: loading, enabled: InviteCode.isComplete(code), action: join)
         }
     }
 

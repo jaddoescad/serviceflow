@@ -33,6 +33,11 @@ targets:
       - package: Supabase
         product: Supabase
     settings:
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ottawapainters.app
         PRODUCT_NAME: ServiceFlow

@@ -1,20 +1,27 @@
 import ServiceFlowCore
 import SwiftUI
 
+/// A painter on this job, pushed from "Hours by Crew".
+struct ProjectDetailPainterRoute: Hashable {
+    let userId: String
+}
+
+/// One of your own clock-ins, pushed for editing.
+struct ProjectDetailEditRoute: Hashable {
+    let entryId: String
+}
+
 /// A job or lead: its clock-ins, hours, tasks, photos and videos.
 struct ProjectDetailScreen: View {
-    enum Tab { case clock, media }
+    enum Tab: Hashable { case clock, media }
 
     let route: ProjectRoute
 
     @Environment(SessionContext.self) private var session
     @Environment(TimeTracker.self) private var tracker
-    @Environment(\.dismiss) private var dismiss
     @State private var model: ProjectDetailModel
     @State private var tab: Tab
     @State private var mediaStore: MediaStore?
-    @State private var selectedPainterId: String?
-    @State private var editing: TimeEntry?
     @State private var cameraOpen = false
     @State private var clockPending = false
     @State private var clockError: String?
@@ -49,19 +56,56 @@ struct ProjectDetailScreen: View {
         return session.isManager ? all : all.filter { $0.userId == session.user.id }
     }
 
+    private var summaries: [PainterClockInSummary] {
+        ProjectClockIns.summaries(entries: entries, activeShift: nil, projectId: jobId, userId: session.user.id, now: liveNow)
+    }
+
     var body: some View {
         Group {
-            if let editing {
-                ProjectDetailEditTime(entry: editing, painterName: session.displayName, onClose: { self.editing = nil }) { deleted in
-                    if deleted { model.removeLocally(editing) }
+            switch tab {
+            case .clock: clockInsList
+            case .media: mediaScroll
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !isLead {
+                Picker("Section", selection: $tab) {
+                    Label("Clock Ins", systemImage: "clock").tag(Tab.clock)
+                    Label("Media", systemImage: "photo.on.rectangle").tag(Tab.media)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.bar)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) { cameraButton }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .projectDetailSubtitle(addedLabel, title: title)
+        .navigationDestination(for: ProjectDetailPainterRoute.self) { painterRoute in
+            if let summary = summaries.first(where: { $0.userId == painterRoute.userId }) {
+                ProjectDetailPainterDetail(summary: summary, now: liveNow)
+            } else {
+                ContentUnavailableView("No clock-ins", systemImage: "clock")
+            }
+        }
+        .navigationDestination(for: ProjectDetailEditRoute.self) { editRoute in
+            if let entry = entries.first(where: { $0.localId == editRoute.entryId }) {
+                ProjectDetailEditTime(entry: entry, painterName: session.displayName) { deleted in
+                    if deleted { model.removeLocally(entry) }
                     Task {
                         await model.refreshBudget(api: session.api)
                         await model.refreshEntries(api: session.api)
                     }
                 }
             } else {
-                screen
+                ContentUnavailableView("Clock-in not found", systemImage: "clock.badge.xmark")
             }
+        }
+        .onChange(of: tab) { _, newTab in
+            // Opening Media always reloads it.
+            if newTab == .media { Task { await mediaStore?.load() } }
         }
         .task {
             if mediaStore == nil {
@@ -99,113 +143,28 @@ struct ProjectDetailScreen: View {
         .overBudgetPrompt(item: $overBudget)
     }
 
-    // MARK: Layout
-
-    private var screen: some View {
-        VStack(spacing: 0) {
-            header
-            tabPills
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    switch tab {
-                    case .clock: clockInsTab
-                    case .media: mediaTab
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 4)
-                .padding(.bottom, 120)
-            }
-        }
-        .background(Color.white)
-        .overlay(alignment: .bottomTrailing) {
-            if selectedPainterId == nil || tab == .media {
-                cameraButton
-            }
-        }
-    }
-
-    private var header: some View {
-        HStack(spacing: 0) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(DetailPalette.ink)
-                    .frame(width: 32, height: 36, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).text(18, .bold, DetailPalette.ink, tracking: -0.2).lineLimit(1)
-                Text(addedLabel).text(12, .medium, DetailPalette.muted).lineLimit(1)
-            }
-            .padding(.trailing, 8)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
-        .background(Color.white)
-    }
-
-    private var tabPills: some View {
-        HStack(spacing: 8) {
-            if !isLead {
-                pill("Clock Ins", icon: "clock.fill", iconSize: 13, active: tab == .clock, accessibility: "Clock Ins") {
-                    tab = .clock
-                }
-            }
-            pill("Media", icon: "photo.on.rectangle", iconSize: 15, active: tab == .media, accessibility: "Photos and videos") {
-                tab = .media
-                // Every tap on Media reloads it.
-                Task { await mediaStore?.load() }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
-        .background(Color.white)
-    }
-
-    private func pill(_ title: String, icon: String, iconSize: CGFloat, active: Bool, accessibility: String,
-                      action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: icon).font(.system(size: iconSize, weight: .semibold))
-                    .foregroundStyle(active ? .white : DetailPalette.brand)
-                Text(title).font(.app(13, active ? .bold : .semibold)).foregroundStyle(active ? .white : Color(hex: 0x5a6068))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(active ? DetailPalette.navy : DetailPalette.soft, in: Capsule())
-            .overlay(Capsule().strokeBorder(active ? DetailPalette.navy : DetailPalette.border, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibility)
-        .accessibilityAddTraits(active ? .isSelected : [])
-    }
+    // MARK: Camera
 
     private var cameraButton: some View {
         let deleting = mediaStore?.deletingId != nil
         return Button(action: openCamera) {
             Group {
                 if deleting {
-                    Spinner(color: .white)
+                    ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "camera.fill").font(.system(size: 24, weight: .semibold)).foregroundStyle(.white)
+                    Image(systemName: "camera.fill").font(.system(size: 22, weight: .semibold))
                 }
             }
-                .frame(width: 58, height: 58)
-                .background(DetailPalette.brand, in: Circle())
-                .cardShadow(opacity: 0.2, radius: 14, y: 6)
+            .frame(width: 30, height: 30)
+            .padding(8)
         }
-        .buttonStyle(.pressable(opacity: 0.85))
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .tint(DetailPalette.brand)
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .disabled(jobId.isEmpty || deleting)
-        .opacity(deleting ? 0.65 : 1)
-        .padding(.trailing, 16)
-        .padding(.bottom, 22)
+        .padding(.trailing, 20)
+        .padding(.bottom, 20)
         .accessibilityLabel("Take project photo")
     }
 
@@ -218,98 +177,125 @@ struct ProjectDetailScreen: View {
 
     // MARK: Media tab
 
-    @ViewBuilder
-    private var mediaTab: some View {
-        if let mediaStore {
-            ProjectMediaPanel(store: mediaStore, project: project)
-        } else {
-            ProgressView().tint(DetailPalette.brand).frame(maxWidth: .infinity).padding(.top, 58)
+    private var mediaScroll: some View {
+        ScrollView {
+            Group {
+                if let mediaStore {
+                    ProjectMediaPanel(store: mediaStore, project: project)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 58)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 96)
         }
+        .refreshable { await mediaStore?.load() }
     }
 
     // MARK: Clock Ins tab
 
-    @ViewBuilder
-    private var clockInsTab: some View {
-        let summaries = ProjectClockIns.summaries(entries: entries, activeShift: nil, projectId: jobId,
-                                                  userId: session.user.id, now: liveNow)
-        if let selectedPainterId, let summary = summaries.first(where: { $0.userId == selectedPainterId }) {
-            ProjectDetailPainterDetail(summary: summary, now: liveNow, onBack: { self.selectedPainterId = nil }) { entry in
-                editing = entry
+    private var clockInsList: some View {
+        let summaries = self.summaries
+        return List {
+            Section {
+                infoRow
+                if isActiveProject, let shift = tracker.activeShift { currentRow(shift) }
             }
-        } else {
-            infoCard
-            if isActiveProject, let shift = tracker.activeShift { currentBanner(shift) }
-            hoursCard
-            clockButton
-            if let feedback = tracker.notice?.message ?? clockError {
-                Text(feedback).text(13, .bold, Palette.red).multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity).padding(.top, 10)
+
+            Section {
+                hoursPanel
             }
-            JobPhotosPanel(project: project, showCamera: false) { tab = .media }
-                .padding(.top, 16)
-                .padding(.bottom, 4)
-            recentHeader(summaries)
-            if summaries.isEmpty {
-                emptyClockIns
-            } else {
-                ForEach(summaries) { summary in
-                    ProjectDetailPainterRow(summary: summary) { selectedPainterId = summary.userId }
+
+            Section {
+                clockButton
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            } footer: {
+                if let feedback = tracker.notice?.message ?? clockError {
+                    Text(feedback).foregroundStyle(Palette.red).frame(maxWidth: .infinity)
                 }
             }
-            LabourTasksPanel(project: project, showHoursMeter: false, enabled: true)
-                .padding(.top, 18)
+
+            Section {
+                JobPhotosPanel(project: project, showCamera: false) { tab = .media }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            Section {
+                if summaries.isEmpty {
+                    ContentUnavailableView {
+                        Label("No clock-ins yet", systemImage: "clock")
+                    } description: {
+                        Text("Time entries will appear here after the crew clocks into this project.")
+                    }
+                } else {
+                    ForEach(summaries) { summary in
+                        NavigationLink(value: ProjectDetailPainterRoute(userId: summary.userId)) {
+                            ProjectDetailPainterRow(summary: summary)
+                        }
+                    }
+                }
+            } header: {
+                recentHeader(summaries)
+            }
+
+            Section {
+                LabourTasksPanel(project: project, showHoursMeter: false, enabled: true)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+
+            Color.clear.frame(height: 60).listRowBackground(Color.clear)
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(16)
+        .refreshable {
+            async let budget: Void = model.refreshBudget(api: session.api)
+            async let team: Void = model.refreshEntries(api: session.api)
+            _ = await (budget, team)
         }
     }
 
-    private var infoCard: some View {
-        HStack(spacing: 0) {
+    private var infoRow: some View {
+        HStack(spacing: 12) {
             Text(Initials.of(title, fallback: "P"))
-                .text(14, .heavy, DetailPalette.brand, tracking: 0.3)
+                .font(.app(14, .semibold))
+                .foregroundStyle(DetailPalette.brand)
                 .frame(width: 42, height: 42)
-                .background(Color(hex: 0xeaf4f6), in: Circle())
-                .padding(.trailing, 12)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("PROJECT").text(10, .bold, DetailPalette.subtle, tracking: 1)
-                Text(title).text(15, .bold, DetailPalette.ink, tracking: -0.1).lineLimit(1).padding(.top, 2)
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "mappin").font(.system(size: 14, weight: .semibold)).foregroundStyle(DetailPalette.brand)
-                    Text(project.fullAddress ?? "No address on file")
-                        .text(12, .medium, Color(hex: 0x73777a)).lineSpacing(2).lineLimit(2)
-                }
-                .padding(.top, 4)
+                .background(DetailPalette.brand.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.app(16, .semibold)).lineLimit(1)
+                Label(project.fullAddress ?? "No address on file", systemImage: "mappin")
+                    .font(.app(13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
-            Spacer(minLength: 0)
         }
-        .padding(12)
-        .bordered(14, border: DetailPalette.border)
-        .cardShadow(opacity: 0.03, radius: 6, y: 2)
+        .padding(.vertical, 2)
     }
 
-    private func currentBanner(_ shift: TimeEntry) -> some View {
+    private func currentRow(_ shift: TimeEntry) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "clock.fill")
                 .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                .frame(width: 38, height: 38)
+                .frame(width: 36, height: 36)
                 .background(DetailPalette.brand, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text("Current clock-in · since \(DateText.time(shift.startedAt))")
-                    .text(12, .bold, Color(hex: 0x4a6b72), tracking: 0.1)
+                    .font(.app(13)).foregroundStyle(.secondary)
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(DurationFormat.elapsedClock(shift.duration(at: context.date)))
-                        .text(22, .heavy, DetailPalette.ink, tracking: 0.5).monospacedDigit()
+                        .font(.app(22, .semibold)).monospacedDigit()
                 }
             }
             Spacer(minLength: 0)
             Circle().fill(Color(hex: 0x27ae60)).frame(width: 10, height: 10)
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-        .bordered(14, border: Color(hex: 0xcfe6ea), background: Color(hex: 0xeaf4f6))
-        .padding(.top, 12)
+        .padding(.vertical, 2)
     }
 
-    private var hoursCard: some View {
+    private var hoursPanel: some View {
         let me = session.user
         let mine = entries.filter { $0.userId == me.id || ($0.userEmail != nil && $0.userEmail == me.email) }
         let yourSeconds = mine.reduce(0) { $0 + $1.duration(at: liveNow) }
@@ -321,64 +307,39 @@ struct ProjectDetailScreen: View {
             secondaryLabel: session.isManager ? "Team total" : "Entries shown",
             secondaryValue: HoursFormat.fromMilliseconds(teamSeconds * 1000)
         )
-        .padding(.vertical, 13)
-        .padding(.horizontal, 14)
-        .bordered(14, border: DetailPalette.border)
-        .padding(.top, 12)
+        .padding(.vertical, 6)
     }
 
     private var clockButton: some View {
         let (label, icon): (String, String) = isActiveProject
-            ? ("Clock Out", "stop.circle")
+            ? ("Clock Out", "stop.circle.fill")
             : tracker.activeShift != nil ? ("Switch Job", "arrow.left.arrow.right") : ("Clock In", "play.fill")
         return Button(action: runClockAction) {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(DetailPalette.brand).frame(width: 28, height: 28)
-                    if clockPending {
-                        Spinner(color: .white)
-                    } else {
-                        Image(systemName: icon).font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-                    }
+            HStack(spacing: 8) {
+                if clockPending {
+                    ProgressView().tint(.white)
+                    Text("Working…")
+                } else {
+                    Image(systemName: icon)
+                    Text(label)
                 }
-                Text(clockPending ? "Working…" : label).text(15, .bold, DetailPalette.brand, tracking: 0.1)
             }
+            .font(.app(17, .semibold))
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DetailPalette.brand, lineWidth: 1.5))
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
-            .opacity(clockPending ? 0.6 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(isActiveProject ? Palette.red : DetailPalette.brand)
         .disabled(clockPending || tracker.isClockingOut)
-        .padding(.top, 14)
     }
 
     private func recentHeader(_ summaries: [PainterClockInSummary]) -> some View {
         let days = ProjectClockIns.dayCount(summaries, userId: session.user.id)
         return HStack {
-            Text(session.isManager ? "Hours by Crew" : "Your Clock-ins").text(15, .heavy, DetailPalette.ink)
+            Text(session.isManager ? "Hours by Crew" : "Your Clock-ins")
             Spacer()
             Text(session.isManager ? "\(summaries.count) crew" : "\(days) \(days == 1 ? "day" : "days")")
-                .text(13, .bold, DetailPalette.brand)
         }
-        .padding(.horizontal, 2)
-        .padding(.top, 22)
-        .padding(.bottom, 10)
-    }
-
-    private var emptyClockIns: some View {
-        VStack(spacing: 0) {
-            Image(systemName: "clock.fill").font(.system(size: 28)).foregroundStyle(DetailPalette.brand)
-                .frame(width: 44, height: 44).padding(.bottom, 6)
-            Text("No clock-ins yet").text(15, .bold, DetailPalette.ink)
-            Text("Time entries will appear here after the crew clocks into this project.")
-                .text(12, .medium, DetailPalette.muted).lineSpacing(3).multilineTextAlignment(.center).padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 6)
     }
 
     // MARK: Actions
@@ -415,6 +376,25 @@ struct ProjectDetailScreen: View {
             } catch {
                 let message = error.localizedDescription
                 clockError = message.isEmpty ? "Clock action could not complete. Try again." : message
+            }
+        }
+    }
+}
+
+private extension View {
+    /// The navigation bar subtitle (iOS 26), or a two-line title on older systems.
+    @ViewBuilder
+    func projectDetailSubtitle(_ subtitle: String, title: String) -> some View {
+        if #available(iOS 26.0, *) {
+            navigationSubtitle(subtitle)
+        } else {
+            toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text(title).font(.headline).lineLimit(1)
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
             }
         }
     }

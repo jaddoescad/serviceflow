@@ -1,90 +1,48 @@
 import ServiceFlowCore
 import SwiftUI
 
-/// The signed-in app: a custom tab bar over tab screens that all stay
-/// mounted, so each keeps its scroll position and state. Project Detail is
-/// pushed over the whole shell.
+/// The signed-in app: the system tab bar with one navigation stack per tab.
+/// Tabs keep their state while you switch between them.
 struct MainShell: View {
     @Environment(SessionContext.self) private var session
 
-    private var tabs: [MainTab] {
-        session.canViewTeamMap ? [.clock, .projects, .timesheet, .teamMap, .more] : [.clock, .projects, .timesheet, .more]
-    }
-
     var body: some View {
         @Bindable var session = session
-        NavigationStack(path: $session.path) {
-            VStack(spacing: 0) {
-                ZStack {
-                    tab(.clock) { ClockInScreen(enabled: isEnabled(.clock)) }
-                    tab(.projects) { JobsScreen(enabled: isEnabled(.projects)) }
-                    tab(.timesheet) { TimesheetScreen() }
-                    if session.canViewTeamMap {
-                        tab(.teamMap) { TeamMapScreen(enabled: isEnabled(.teamMap)) }
-                    }
-                    tab(.more) { MoreScreen() }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                TabBar(tabs: tabs, active: $session.activeTab)
+        TabView(selection: $session.activeTab) {
+            tab(.clock) { ClockInScreen(enabled: isEnabled(.clock)) }
+            tab(.projects) { JobsScreen(enabled: isEnabled(.projects)) }
+            tab(.timesheet) { TimesheetScreen() }
+            if session.canViewTeamMap {
+                tab(.teamMap) { TeamMapScreen(enabled: isEnabled(.teamMap)) }
             }
-            .background(Color.white)
-            .ignoresSafeArea(.keyboard, edges: .bottom)
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: ProjectRoute.self) { route in
-                ProjectDetailScreen(route: route)
-                    .toolbar(.hidden, for: .navigationBar)
-            }
+            tab(.more) { MoreScreen() }
         }
+        .tint(Palette.green)
         .onChange(of: session.canViewTeamMap) { _, canView in
             if !canView, session.activeTab == .teamMap { session.activeTab = .clock }
         }
     }
 
     private func isEnabled(_ tab: MainTab) -> Bool {
-        session.activeTab == tab && session.path.isEmpty
+        session.activeTab == tab && (session.paths[tab]?.isEmpty ?? true)
     }
 
     private func tab<Content: View>(_ tab: MainTab, @ViewBuilder content: () -> Content) -> some View {
-        let active = session.activeTab == tab
-        return content()
-            .opacity(active ? 1 : 0)
-            .allowsHitTesting(active)
-            .accessibilityHidden(!active)
+        stack(tab, content: content)
+            .tabItem { Label(tab.title, systemImage: tab.icon) }
+            .tag(tab)
     }
-}
 
-struct TabBar: View {
-    var tabs: [MainTab]
-    @Binding var active: MainTab
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(tabs, id: \.self) { tab in
-                let selected = tab == active
-                Button {
-                    active = tab
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 22, weight: .medium))
-                            .frame(height: 27)
-                        Text(tab.title).font(.app(11, .bold)).tracking(0.1)
-                    }
-                    .foregroundStyle(selected ? Palette.green : Palette.muted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
+    private func stack<Content: View>(_ tab: MainTab, @ViewBuilder content: () -> Content) -> some View {
+        NavigationStack(path: Binding(
+            get: { session.paths[tab] ?? NavigationPath() },
+            set: { session.paths[tab] = $0 }
+        )) {
+            content()
+                .navigationDestination(for: ProjectRoute.self) { route in
+                    ProjectDetailScreen(route: route)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tab.title)
-                .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-            }
         }
-        .padding(.horizontal, 6)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(Color.white.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) { Rectangle().fill(Palette.border).frame(height: 1) }
     }
 }
 
@@ -110,27 +68,17 @@ extension MainTab {
     }
 }
 
-/// Keeps the edge-swipe back gesture working with the navigation bar hidden.
-extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
-    }
-
-    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        viewControllers.count > 1
-    }
-}
-
 extension SessionContext {
-    /// Pushes Project Detail.
+    /// Pushes Project Detail on the current tab.
     func open(_ project: Project, action: ProjectRoute.Action? = nil) {
+        var path = paths[activeTab] ?? NavigationPath()
         path.append(ProjectRoute(project: project, action: action))
+        paths[activeTab] = path
     }
 
-    /// Shows the Clock In tab and pops back to it.
+    /// Shows the Clock In tab at its root.
     func showClockIn() {
+        paths = [:]
         activeTab = .clock
-        path = []
     }
 }

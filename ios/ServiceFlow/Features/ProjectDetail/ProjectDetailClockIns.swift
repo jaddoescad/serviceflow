@@ -64,47 +64,39 @@ struct ProjectDetailAvatar: View {
     }
 }
 
-/// One person's row in "Hours by Crew".
+/// One person's row in "Hours by Crew" (the label of a navigation link).
 struct ProjectDetailPainterRow: View {
     var summary: PainterClockInSummary
-    var action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                ProjectDetailAvatar(initials: summary.initials, isYou: summary.isYou, size: 30, fontSize: 11)
-                    .padding(.trailing, 6)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Text(summary.name).text(14, .heavy, DetailPalette.ink, tracking: -0.1).lineLimit(1)
-                        if summary.isYou {
-                            Text("You")
-                                .text(10, .heavy, DetailPalette.brand)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color(hex: 0xeaf4f6), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        Spacer(minLength: 4)
-                        Text(DurationFormat.hoursMinutes(minutes: summary.totalMinutes)).text(14, .heavy, DetailPalette.ink)
+        HStack(spacing: 12) {
+            ProjectDetailAvatar(initials: summary.initials, isYou: summary.isYou, size: 34, fontSize: 12)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(summary.name).font(.app(15, .semibold)).lineLimit(1)
+                    if summary.isYou {
+                        Text("You")
+                            .font(.app(11, .semibold))
+                            .foregroundStyle(DetailPalette.brand)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(DetailPalette.brand.opacity(0.12), in: Capsule())
                     }
-                    ProjectDetailWrap(spacing: 8) {
-                        ForEach(Array(metaItems.enumerated()), id: \.offset) { index, item in
-                            if index > 0 { ProjectDetailDot() }
-                            HStack(spacing: 4) {
-                                if let dot = item.dot { Circle().fill(dot).frame(width: 6, height: 6) }
-                                Text(item.text).text(11.5, item.weight, item.color)
-                            }
-                        }
-                    }
-                    .padding(.top, 6)
+                    Spacer(minLength: 4)
+                    Text(DurationFormat.hoursMinutes(minutes: summary.totalMinutes))
+                        .font(.app(15, .semibold)).monospacedDigit()
                 }
-                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(DetailPalette.subtle)
-                    .frame(width: 20)
+                ProjectDetailWrap(spacing: 8) {
+                    ForEach(Array(metaItems.enumerated()), id: \.offset) { index, item in
+                        if index > 0 { ProjectDetailDot() }
+                        HStack(spacing: 4) {
+                            if let dot = item.dot { Circle().fill(dot).frame(width: 6, height: 6) }
+                            Text(item.text).font(.app(12, item.weight)).foregroundStyle(item.color)
+                        }
+                    }
+                }
             }
-            .padding(12)
-            .bordered(14, border: DetailPalette.border)
         }
-        .buttonStyle(.pressable(opacity: 0.85))
-        .padding(.bottom, 10)
+        .padding(.vertical, 2)
     }
 
     private struct MetaItem {
@@ -116,86 +108,68 @@ struct ProjectDetailPainterRow: View {
 
     private var metaItems: [MetaItem] {
         var items = [MetaItem(text: "\(summary.clockInCount) \(summary.clockInCount == 1 ? "clock-in" : "clock-ins")",
-                              color: DetailPalette.muted, weight: .semibold, dot: nil)]
+                              color: .secondary, weight: .regular, dot: nil)]
         if summary.onSiteCount > 0 {
-            items.append(MetaItem(text: "\(summary.onSiteCount) On Site", color: DetailPalette.brand, weight: .heavy, dot: DetailPalette.brand))
+            items.append(MetaItem(text: "\(summary.onSiteCount) On Site", color: DetailPalette.brand, weight: .semibold, dot: DetailPalette.brand))
         }
         if summary.offSiteCount > 0 {
             let red = Color(hex: 0xc0432b)
-            items.append(MetaItem(text: "\(summary.offSiteCount) Off Site", color: red, weight: .heavy, dot: red))
+            items.append(MetaItem(text: "\(summary.offSiteCount) Off Site", color: red, weight: .semibold, dot: red))
         }
         if summary.mixedCount > 0 {
-            items.append(MetaItem(text: "\(summary.mixedCount) Mixed", color: Color(hex: 0x9a611f), weight: .heavy, dot: nil))
+            items.append(MetaItem(text: "\(summary.mixedCount) Mixed", color: Color(hex: 0x9a611f), weight: .semibold, dot: nil))
         }
         if summary.unknownCount > 0 {
-            items.append(MetaItem(text: "\(summary.unknownCount) Location unavailable", color: DetailPalette.muted, weight: .semibold, dot: nil))
+            items.append(MetaItem(text: "\(summary.unknownCount) Location unavailable", color: .secondary, weight: .regular, dot: nil))
         }
         return items
     }
 }
 
-/// One person's clock-ins on the job, day by day.
+/// One person's clock-ins on the job, day by day (pushed).
 struct ProjectDetailPainterDetail: View {
     var summary: PainterClockInSummary
     var now: Date
-    var onBack: () -> Void
-    var onEdit: (TimeEntry) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(action: onBack) {
-                HStack(spacing: 2) {
-                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
-                    Text("All crew").font(.app(13, .bold))
+        List {
+            Section {
+                HStack(spacing: 12) {
+                    ProjectDetailAvatar(initials: summary.initials, isYou: summary.isYou, size: 44, fontSize: 15)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(summary.name + (summary.isYou ? " (You)" : "")).font(.app(17, .semibold)).lineLimit(1)
+                        Text(metaLine).font(.app(12)).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(DurationFormat.hoursMinutes(minutes: summary.totalMinutes))
+                        .font(.app(17, .semibold)).foregroundStyle(DetailPalette.navy).monospacedDigit()
                 }
-                .foregroundStyle(DetailPalette.brand)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
             }
-            .buttonStyle(.plain)
-            .padding(.top, 6)
-            .padding(.bottom, 6)
-
-            HStack(spacing: 12) {
-                ProjectDetailAvatar(initials: summary.initials, isYou: summary.isYou, size: 44, fontSize: 14)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.name + (summary.isYou ? " (You)" : ""))
-                        .text(16, .heavy, DetailPalette.ink, tracking: -0.2).lineLimit(1)
-                    Text(metaLine).text(11.5, .semibold, DetailPalette.muted).lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text(DurationFormat.hoursMinutes(minutes: summary.totalMinutes)).text(17, .heavy, DetailPalette.navy, tracking: -0.3)
-            }
-            .padding(14)
-            .bordered(14, border: DetailPalette.border)
-            .padding(.bottom, 16)
 
             ForEach(summary.days) { day in
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        (Text("\(day.label),").font(.app(13, .heavy)).foregroundColor(DetailPalette.ink)
-                            + Text(" \(day.dateLabel)").font(.app(12)).foregroundColor(DetailPalette.muted))
-                        Spacer()
-                        Text(DurationFormat.hoursMinutes(minutes: day.totalMinutes)).text(13, .heavy, DetailPalette.navy)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .bordered(10, border: DetailPalette.border, background: DetailPalette.soft)
-                    .padding(.bottom, 8)
-
-                    VStack(spacing: 0) {
-                        ForEach(Array(day.entries.enumerated()), id: \.element.localId) { index, entry in
-                            if index > 0 { Rectangle().fill(DetailPalette.border).frame(height: 1) }
-                            ProjectDetailClockInRow(entry: entry, now: now, editable: summary.isYou) { onEdit(entry) }
+                Section {
+                    ForEach(day.entries, id: \.localId) { entry in
+                        if summary.isYou {
+                            NavigationLink(value: ProjectDetailEditRoute(entryId: entry.localId)) {
+                                ProjectDetailClockInRow(entry: entry, now: now)
+                            }
+                        } else {
+                            ProjectDetailClockInRow(entry: entry, now: now)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .bordered(14, border: DetailPalette.border)
-                    .padding(.bottom, 14)
+                } header: {
+                    HStack {
+                        Text("\(day.label), \(day.dateLabel)")
+                        Spacer()
+                        Text(DurationFormat.hoursMinutes(minutes: day.totalMinutes)).monospacedDigit()
+                    }
                 }
-                .padding(.bottom, 14)
             }
         }
+        .listStyle(.insetGrouped)
+        .navigationTitle(summary.isYou ? "Your Clock-ins" : summary.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var metaLine: String {
@@ -212,59 +186,43 @@ struct ProjectDetailPainterDetail: View {
 struct ProjectDetailClockInRow: View {
     var entry: TimeEntry
     var now: Date
-    var editable: Bool
-    var onEdit: () -> Void
 
     var body: some View {
-        if editable {
-            Button(action: onEdit) { content }.buttonStyle(.pressable(opacity: 0.85))
-        } else {
-            content
-        }
-    }
-
-    private var content: some View {
         let summary = SegmentSummary(entry, now: now)
         let status = ProjectDetailSiteStatus(summary.status)
-        return HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 0) {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
                 timeLine
                 HStack(spacing: 5) {
                     Circle().fill(status.color).frame(width: 6, height: 6)
-                    Text(status.label).text(10.5, .heavy, status.color, tracking: 0.2)
+                    Text(status.label).font(.app(11, .semibold)).foregroundStyle(status.color)
                     if let distance = summary.latestDistance {
-                        Text("-").text(10.5, .heavy, status.color).padding(.horizontal, -2)
-                        Text("\(DistanceFormat.meters(distance)) from site").text(10.5, .heavy, status.color, tracking: 0.2)
+                        Text("· \(DistanceFormat.meters(distance)) from site").font(.app(11, .semibold)).foregroundStyle(status.color)
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(status.background, in: Capsule())
-                .padding(.top, 5)
                 if let breakdown = gpsBreakdown(summary) {
-                    Text(breakdown).text(10.5, .semibold, DetailPalette.muted).padding(.top, 5)
+                    Text(breakdown).font(.app(11)).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(DurationFormat.hoursMinutes(entry.duration(at: now))).text(13, .bold, DetailPalette.ink)
-            if editable {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(DetailPalette.subtle)
-            }
+            Text(DurationFormat.hoursMinutes(entry.duration(at: now))).font(.app(14, .semibold)).monospacedDigit()
         }
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
+        .padding(.vertical, 3)
     }
 
     private var timeLine: some View {
-        let brand = DetailPalette.brand
         let end = entry.isActive ? "Now" : DateText.time(entry.endedAt)
         return (
-            Text(DateText.time(entry.startedAt)).font(.app(12.5, .heavy)).foregroundColor(brand)
-                + Text(" \(entry.startedLocation == nil ? "Manual" : "GPS")").font(.app(12.5, .semibold)).foregroundColor(brand.opacity(0.85))
-                + Text("  -  ").font(.app(12.5, .semibold)).foregroundColor(DetailPalette.subtle)
-                + Text(end).font(.app(12.5, .heavy)).foregroundColor(brand)
-                + Text(" \(entry.lastLocation == nil ? "Manual" : "GPS")").font(.app(12.5, .semibold)).foregroundColor(brand.opacity(0.85))
+            Text(DateText.time(entry.startedAt)).font(.app(14, .semibold))
+                + Text(" \(entry.startedLocation == nil ? "Manual" : "GPS")").font(.app(12)).foregroundColor(.secondary)
+                + Text("  –  ").font(.app(14)).foregroundColor(.secondary)
+                + Text(end).font(.app(14, .semibold))
+                + Text(" \(entry.lastLocation == nil ? "Manual" : "GPS")").font(.app(12)).foregroundColor(.secondary)
         )
+        .foregroundColor(DetailPalette.brand)
         .lineLimit(1)
     }
 

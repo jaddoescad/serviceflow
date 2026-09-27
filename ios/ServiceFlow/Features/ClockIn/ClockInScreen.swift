@@ -45,7 +45,6 @@ struct ClockedOutView: View {
     @State private var userPoint: LocationPoint?
     @State private var clockingIn = false
     @State private var clockInError: String?
-    @FocusState private var searchFocused: Bool
 
     /// The pin or result tapped, else the nearest job within 2 km, else the most recent job.
     private var displayProject: Project? {
@@ -57,23 +56,23 @@ struct ClockedOutView: View {
         return latest
     }
 
+    private var isSearching: Bool { !search.text.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            ZStack(alignment: .top) {
-                ClockInMap(projects: session.mappedProjects, selected: displayProject, userPoint: $userPoint) { project in
-                    hideKeyboard()
-                    select(project)
-                }
-                projectCard.padding(.horizontal, 14).padding(.top, 14)
-                VStack {
-                    Spacer()
-                    if displayProject?.isLead != true { clockInCluster.padding(.bottom, 22) }
-                }
-            }
-            .clipped()
+        @Bindable var search = search
+        ClockInMap(projects: session.mappedProjects, selected: displayProject, userPoint: $userPoint) { project in
+            select(project)
         }
-        .background(Color.white)
+        .ignoresSafeArea(edges: .horizontal)
+        .safeAreaInset(edge: .bottom) {
+            if displayProject?.isLead != true || displayProject == nil { clockInPanel }
+        }
+        .overlay { if isSearching { searchResults } }
+        .navigationTitle("Clock In")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search jobs and leads")
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
         .task { await loadLatest() }
         .task(id: search.committed) { await runSearch(search.committed) }
         .onChange(of: search.text) { _, value in
@@ -85,164 +84,89 @@ struct ClockedOutView: View {
         }
     }
 
-    // MARK: Header
+    // MARK: Search
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(session.displayName).text(15, .black, Palette.ink).padding(.bottom, 6)
-            TimelineView(.periodic(from: .now, by: 30)) { _ in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(DurationFormat.headerHours(tracker.workedToday())).text(22, .black, Palette.ink, tracking: -0.5)
-                    Text("Hours used today").text(12.5, .bold, Palette.muted)
-                }
+    private var searchResults: some View {
+        List {
+            if searching && results.isEmpty {
+                HStack { Spacer(); ProgressView(); Spacer() }
+            } else if results.isEmpty {
+                Text(searchError ?? "No matching jobs or leads found.").foregroundStyle(.secondary)
             }
-            searchField.padding(.top, 14)
-            if !search.text.trimmingCharacters(in: .whitespaces).isEmpty { resultsCard.padding(.top, 10) }
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .background(Color.white)
-        .zIndex(1)
-    }
-
-    private var searchField: some View {
-        @Bindable var search = search
-        return HStack(spacing: 10) {
-            Icon("magnifyingglass", 20, Palette.muted)
-            TextField("", text: $search.text, prompt: Text("Search all projects and leads").foregroundColor(Palette.muted))
-                .font(.app(15, .bold))
-                .foregroundStyle(Palette.ink)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .focused($searchFocused)
-                .onSubmit { searchFocused = false }
-            if searching {
-                Spinner(color: Palette.teal)
-            } else if !search.text.isEmpty {
-                Button { search.clear() } label: { Icon("xmark.circle.fill", 20, Palette.muted) }
-                    .accessibilityLabel("Clear search")
+            ForEach(results) { result in
+                Button { select(result) } label: { ProjectListRow(project: result) }
+                    .foregroundStyle(.primary)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 48)
-        .bordered(18, border: Color(hex: 0xe3ebe7), background: Color(hex: 0xf4f7f5))
+        .listStyle(.plain)
     }
 
-    private var resultsCard: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                if results.isEmpty, !searching {
-                    Text(searchError ?? "No matching projects or leads found.")
-                        .text(13, .bold, Palette.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                }
-                ForEach(results) { result in
-                    Button { select(result) } label: { resultRow(result) }
-                        .buttonStyle(.pressable)
+    // MARK: Bottom panel
+
+    private var clockInPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(session.displayName).font(.subheadline.weight(.semibold))
+                Spacer()
+                TimelineView(.periodic(from: .now, by: 30)) { _ in
+                    Text("\(DurationFormat.hoursMinutes(tracker.workedToday())) today")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
             }
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: 280)
-        .fixedSize(horizontal: false, vertical: true)
-        .bordered(18)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .cardShadow(opacity: 0.08, radius: 10, y: 4)
-    }
 
-    private func resultRow(_ result: Project) -> some View {
-        HStack(spacing: 10) {
-            Icon("mappin", 15, Palette.teal)
-                .frame(width: 30, height: 30)
-                .background(Color(hex: 0xe9f3ee), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 7) {
-                    Text(result.name).text(13, .black, Palette.ink).lineLimit(1)
-                    if result.isLead {
-                        Text("LEAD").text(8.5, .black, Color(hex: 0x245c9c), tracking: 0.5)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color(hex: 0xe8f1ff), in: RoundedRectangle(cornerRadius: 6))
-                    }
-                }
-                Text(result.cardAddress ?? "No address on file").text(11.5, .semibold, Palette.muted).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color(hex: 0xeef1ef)).frame(height: 1) }
-    }
-
-    // MARK: Project card
-
-    private var projectCard: some View {
-        Button {
-            hideKeyboard()
-            if let project = displayProject { session.open(project) }
-        } label: {
-            HStack(spacing: 12) {
-                Icon("map.fill", 22, Palette.teal)
-                    .frame(width: 42, height: 42)
-                    .background(Color(hex: 0xe9f3ee), in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    if loadingLatest, displayProject == nil {
-                        Spinner(color: Palette.teal)
-                    } else if let project = displayProject {
-                        Text(project.name).text(15, .black, Palette.ink, tracking: -0.2).lineLimit(1)
-                        Text(project.cardAddress ?? "No address on file").text(12.5, .semibold, Palette.muted).lineLimit(1)
-                    } else {
-                        Text("No active project").text(15, .black, Palette.ink, tracking: -0.2)
-                        Text(latestError ?? "No active jobs are available.").text(12.5, .semibold, Palette.muted).lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 0)
-                if displayProject != nil { Icon("chevron.right", 20, Palette.muted) }
-            }
-            .padding(12)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
-            .cardShadow(opacity: 0.08, radius: 10, y: 4)
-        }
-        .buttonStyle(.pressable(opacity: 0.85, scale: 0.99))
-        .disabled(displayProject == nil)
-    }
-
-    // MARK: Clock In
-
-    private var clockInCluster: some View {
-        VStack(spacing: 10) {
-            if let message = tracker.notice?.message ?? clockInError {
-                HStack(alignment: .top, spacing: 8) {
-                    Icon("exclamationmark.circle.fill", 16, Palette.navy)
-                    Text(message).text(12.5, .bold, Palette.ink).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .bordered(8)
-                .cardShadow(opacity: 0.12, radius: 8, y: 4)
-                .frame(maxWidth: UIScreen.main.bounds.width * 0.86)
-            }
-            Button(action: startClockIn) {
+            Button {
+                if let project = displayProject { session.open(project) }
+            } label: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        Circle().fill(Color.white)
-                        if clockingIn { Spinner(color: Palette.navy) } else { Icon("play.fill", 16, Palette.navy) }
+                    Image(systemName: "mappin.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(Palette.teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if loadingLatest, displayProject == nil {
+                            ProgressView()
+                        } else if let project = displayProject {
+                            Text(project.name).font(.headline).lineLimit(1)
+                            Text(project.cardAddress ?? "No address on file").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        } else {
+                            Text("No active job").font(.headline)
+                            Text(latestError ?? "Search for a job to clock in.").font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                        }
                     }
-                    .frame(width: 38, height: 38)
-                    Text(clockingIn ? "Clocking In" : "Clock In").text(16, .black, .white, tracking: 0.3)
+                    Spacer(minLength: 0)
+                    if displayProject != nil {
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
                 }
-                .padding(.leading, 6)
-                .padding(.trailing, 26)
-                .padding(.vertical, 6)
-                .background(Palette.navy, in: Capsule())
-                .cardShadow(opacity: 0.2, radius: 12, y: 6)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.pressable(opacity: 0.9, scale: 0.98))
-            .disabled(clockingIn || displayProject == nil)
-            .opacity(clockingIn || displayProject == nil ? 0.55 : 1)
+            .buttonStyle(.plain)
+            .disabled(displayProject == nil)
+
+            if let message = tracker.notice?.message ?? clockInError {
+                Label(message, systemImage: "exclamationmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: startClockIn) {
+                ZStack {
+                    Label("Clock In", systemImage: "play.fill").opacity(clockingIn ? 0 : 1)
+                    if clockingIn { ProgressView().tint(.white) }
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity, minHeight: 30)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(Palette.navy)
+            .disabled(clockingIn || displayProject == nil || displayProject?.isLead == true)
             .accessibilityLabel("Start clock in")
         }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private func startClockIn() {
@@ -297,5 +221,30 @@ struct ClockedOutView: View {
             searchError = (error as? BackendError)?.message ?? error.localizedDescription
         }
         searching = false
+    }
+}
+
+/// A job or lead in a list: name, address and a lead badge.
+struct ProjectListRow: View {
+    var project: Project
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: project.isLead ? "person.crop.circle.badge.plus" : "briefcase.fill")
+                .foregroundStyle(Palette.teal)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(project.name).font(.body.weight(.semibold)).lineLimit(1)
+                    if project.isLead {
+                        Text("LEAD").font(.caption2.weight(.bold)).foregroundStyle(Color(hex: 0x245c9c))
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Color(hex: 0xe8f1ff), in: Capsule())
+                    }
+                }
+                Text(project.cardAddress ?? "No address on file").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

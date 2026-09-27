@@ -11,7 +11,7 @@ final class ServiceFlowAPI: TimeTrackingBackend, @unchecked Sendable {
         client = SupabaseClient(
             supabaseURL: config.supabaseURL,
             supabaseKey: config.supabaseKey,
-            options: SupabaseClientOptions(auth: .init(autoRefreshToken: true))
+            options: SupabaseClientOptions(auth: .init(autoRefreshToken: true, emitLocalSessionAsInitialSession: true))
         )
     }
 

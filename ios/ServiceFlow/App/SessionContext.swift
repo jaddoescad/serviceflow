@@ -29,9 +29,9 @@ final class SessionContext {
     private(set) var assignedJobIds: [String] = []
     private(set) var locationAuthorization: LocationAuthorization
 
-    /// Navigation shared by the tabs.
+    /// Navigation: the selected tab and each tab's navigation stack.
     var activeTab: MainTab = .clock
-    var path: [ProjectRoute] = []
+    var paths: [MainTab: NavigationPath] = [:]
 
     @ObservationIgnored private var loops: [Task<Void, Never>] = []
     @ObservationIgnored private let membershipStore: JSONFileStore<[CompanyMembership]>
@@ -82,8 +82,7 @@ final class SessionContext {
             Task { await self?.tracker.clockOut(reason: .notification) }
         }
         notifications.onReminderTap = { [weak self] _ in
-            self?.activeTab = .clock
-            self?.path = []
+            self?.showClockIn()
         }
         Task { await self.loadProfile(profileStore: profileStore) }
     }

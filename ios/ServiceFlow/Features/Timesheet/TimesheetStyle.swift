@@ -21,10 +21,6 @@ enum TimesheetColors {
     static let summaryLabel = Color(hex: 0xa8c7c0)
     static let greySoft = Color(hex: 0xeef1f3)
     static let unknownBg = Color(hex: 0xeef1ef)
-    static let disabled = Color(hex: 0xd7dcde)
-    static let buttonText = Color(hex: 0xf8f9f9)
-    static let grabber = Color(hex: 0xd5dadc)
-    static let backdrop = Color(rgba: 15, 30, 28, 0.45)
 }
 
 /// Icon and colours for an entry's location status.
@@ -92,23 +88,5 @@ struct TimesheetSectionLabel: View {
     var text: String
     var body: some View {
         Text(text.uppercased()).text(12, .heavy, TimesheetColors.muted, tracking: 0.8)
-    }
-}
-
-/// The back chevron used by the day and edit screens.
-struct TimesheetBackButton: View {
-    var label: String
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(TimesheetColors.ink)
-                .frame(width: 38, height: 38, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }

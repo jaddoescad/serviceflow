@@ -2,18 +2,21 @@ import Combine
 import ServiceFlowCore
 import SwiftUI
 
+/// Pushed screens of the Timesheet tab.
+enum TimesheetRoute: Hashable {
+    case day(String)
+    case edit(dayId: String, entryId: String)
+}
+
 /// The signed-in person's own time: three Monday–Sunday weeks, each day of
-/// the week shown (missing days in red), with a day detail and an editor.
-/// Navigation (list → day → edit) is local state, so it survives tab switches.
+/// the week shown (missing days in red). Days and edits are pushed on the
+/// tab's navigation stack.
 struct TimesheetScreen: View {
     @Environment(SessionContext.self) private var session
     @Environment(TimeTracker.self) private var tracker
 
     @State private var now = Date()
     @State private var periodId: String?
-    @State private var openDayId: String?
-    @State private var editingEntryId: String?
-    @State private var showingPeriods = false
 
     init() {}
 
@@ -31,15 +34,47 @@ struct TimesheetScreen: View {
     }
 
     var body: some View {
-        ZStack {
-            TimesheetColors.bg.ignoresSafeArea(edges: .top)
-            content
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                summaryCard
+                    .padding(.top, 4)
+
+                HStack(alignment: .firstTextBaseline) {
+                    TimesheetSectionLabel(text: ["This Week", "Last Week", "2 Weeks Ago"][min(selectedIndex, 2)])
+                    Spacer()
+                    Text(period?.label ?? "").text(12, .semibold, TimesheetColors.muted)
+                }
+                .padding(.top, 22)
+                .padding(.bottom, 10)
+
+                timeline
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 36)
         }
-        .overlay {
-            if showingPeriods {
-                TimesheetPeriodSheet(periods: periods, selectedId: period?.id) { chosen in
-                    if let chosen { periodId = chosen }
-                    withAnimation(.easeIn(duration: 0.18)) { showingPeriods = false }
+        .background(TimesheetColors.bg)
+        .refreshable { await tracker.refresh() }
+        .navigationTitle("Timesheet")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { periodMenu }
+        }
+        .navigationDestination(for: TimesheetRoute.self) { route in
+            switch route {
+            case .day(let dayId):
+                if let day = day(dayId) {
+                    TimesheetDayDetailView(day: day, now: now)
+                } else {
+                    ContentUnavailableView("No clock-ins", systemImage: "clock", description: Text("This day has no time logged."))
+                }
+            case let .edit(dayId, entryId):
+                if let day = day(dayId), let entry = day.entries.first(where: { $0.localId == entryId }) {
+                    TimesheetEditTimeView(entry: entry, day: day, painterName: session.displayName) {
+                        session.paths[.timesheet] = NavigationPath()
+                    }
+                } else {
+                    ContentUnavailableView("Clock-in not found", systemImage: "clock.badge.questionmark",
+                                           description: Text("It may have been changed or deleted."))
                 }
             }
         }
@@ -61,87 +96,33 @@ struct TimesheetScreen: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let dayId = openDayId, let day = days.first(where: { $0.id == dayId }) ?? outOfPeriodDay(dayId) {
-            if let entryId = editingEntryId, let entry = day.entries.first(where: { $0.localId == entryId }) {
-                TimesheetEditTimeView(
-                    entry: entry,
-                    day: day,
-                    painterName: session.displayName,
-                    onBack: { navigate { editingEntryId = nil } },
-                    onFinished: { navigate { editingEntryId = nil; openDayId = nil } }
-                )
-                .transition(.move(edge: .trailing))
-            } else {
-                TimesheetDayDetailView(
-                    day: day,
-                    now: now,
-                    onBack: { navigate { openDayId = nil } },
-                    onSelect: { entry in navigate { editingEntryId = entry.localId } }
-                )
-                .transition(.move(edge: .trailing))
+    /// Pay period picker in the navigation bar.
+    private var periodMenu: some View {
+        Menu {
+            Picker("Pay period", selection: Binding(get: { period?.id ?? "" }, set: { periodId = $0 })) {
+                ForEach(periods) { option in
+                    Text(option.label).tag(option.id)
+                }
             }
-        } else {
-            list.transition(.move(edge: .leading))
+            .pickerStyle(.inline)
+        } label: {
+            Label("Pay period", systemImage: "calendar")
         }
+        .accessibilityLabel("Select pay period, currently \(period?.label ?? "")")
     }
 
-    /// A day that fell out of the selected period (e.g. after a week rollover).
-    private func outOfPeriodDay(_ id: String) -> TimesheetDay? {
+    /// A day by id, from the selected period or one of the other two.
+    private func day(_ id: String) -> TimesheetDay? {
+        if let found = days.first(where: { $0.id == id }) { return found }
         for candidate in periods {
-            if let found = TimesheetBuilder.days(for: candidate, entries: tracker.allEntries, now: now).first(where: { $0.id == id }),
-               found.isWorked {
+            if let found = TimesheetBuilder.days(for: candidate, entries: tracker.allEntries, now: now).first(where: { $0.id == id }) {
                 return found
             }
         }
         return nil
     }
 
-    private func navigate(_ change: () -> Void) {
-        withAnimation(.easeInOut(duration: 0.25)) { change() }
-    }
-
-    // MARK: List
-
-    private var list: some View {
-        VStack(spacing: 0) {
-            Button {
-                withAnimation(.easeOut(duration: 0.22)) { showingPeriods = true }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(period?.label ?? "").text(15.5, .bold, TimesheetColors.ink)
-                    Image(systemName: "chevron.down").font(.system(size: 14, weight: .bold)).foregroundStyle(TimesheetColors.ink)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Select pay period, currently \(period?.label ?? "")")
-
-            summaryCard
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
-
-            HStack {
-                TimesheetSectionLabel(text: ["This Week", "Last Week", "2 Weeks Ago"][min(selectedIndex, 2)])
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 22)
-            .padding(.bottom, 10)
-
-            ScrollView(showsIndicators: false) {
-                timeline
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 36)
-            }
-            .refreshable { await tracker.refresh() }
-        }
-    }
+    // MARK: Summary
 
     private var summaryCard: some View {
         let total = TimesheetBuilder.weekTotalMinutes(days)
@@ -190,9 +171,7 @@ struct TimesheetScreen: View {
     private var timeline: some View {
         VStack(spacing: 12) {
             ForEach(days) { day in
-                TimesheetDayRow(day: day) {
-                    navigate { openDayId = day.id }
-                }
+                TimesheetDayRow(day: day)
             }
         }
         .background(alignment: .topLeading) {
@@ -207,10 +186,9 @@ struct TimesheetScreen: View {
     }
 }
 
-/// One day on the timeline: date, marker and card.
+/// One day on the timeline: date, marker and card. Worked days open the day.
 struct TimesheetDayRow: View {
     var day: TimesheetDay
-    var onOpen: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -235,7 +213,8 @@ struct TimesheetDayRow: View {
 
             Group {
                 if day.isWorked {
-                    Button(action: onOpen) { workedCard }.buttonStyle(.pressable(opacity: 0.85))
+                    NavigationLink(value: TimesheetRoute.day(day.id)) { workedCard }
+                        .buttonStyle(.plain)
                 } else {
                     missingCard
                 }
@@ -250,7 +229,7 @@ struct TimesheetDayRow: View {
             HStack {
                 Text(day.total).text(17, .black, TimesheetColors.ink, tracking: -0.4)
                 Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(TimesheetColors.muted)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tertiary)
             }
             TimesheetFlowLayout(spacing: 6) {
                 ForEach(day.jobs, id: \.self) { job in
@@ -281,6 +260,7 @@ struct TimesheetDayRow: View {
         .padding(.horizontal, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .bordered(12, border: TimesheetColors.border, background: TimesheetColors.surface)
+        .contentShape(Rectangle())
     }
 
     private func meta(_ icon: String, _ color: Color, _ label: String, _ value: String) -> some View {
@@ -347,71 +327,5 @@ struct TimesheetFlowLayout: Layout {
             x += size.width + spacing
             lineHeight = max(lineHeight, size.height)
         }
-    }
-}
-
-/// "Select Pay Period" bottom sheet: tap the backdrop to close, no drag.
-struct TimesheetPeriodSheet: View {
-    var periods: [PayPeriod]
-    var selectedId: String?
-    /// Called with the chosen period id, or nil when dismissed.
-    var onClose: (String?) -> Void
-
-    @State private var shown = false
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            TimesheetColors.backdrop
-                .ignoresSafeArea()
-                .opacity(shown ? 1 : 0)
-                .onTapGesture { close(nil) }
-
-            VStack(alignment: .leading, spacing: 0) {
-                Capsule().fill(TimesheetColors.grabber).frame(width: 40, height: 4)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, 12)
-                Text("Select Pay Period").text(16, .black, TimesheetColors.ink)
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 10)
-                ForEach(periods) { period in
-                    let selected = period.id == selectedId
-                    Button { close(period.id) } label: {
-                        HStack {
-                            Text(period.label).text(14.5, selected ? .heavy : .bold, selected ? TimesheetColors.tealInk : TimesheetColors.ink)
-                            Spacer()
-                            if selected {
-                                Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(TimesheetColors.teal)
-                            } else {
-                                Circle().strokeBorder(TimesheetColors.border, lineWidth: 1.5).frame(width: 22, height: 22)
-                            }
-                        }
-                        .padding(14)
-                        .background(selected ? TimesheetColors.tealSoft : .clear, in: RoundedRectangle(cornerRadius: 12))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 6)
-                    .accessibilityLabel(period.label)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
-                Color.clear.frame(height: 28)
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 16)
-            .background(
-                UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-                    .fill(TimesheetColors.surface)
-                    .ignoresSafeArea(edges: .bottom)
-            )
-            .offset(y: shown ? 0 : 400)
-        }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.22)) { shown = true }
-        }
-    }
-
-    private func close(_ id: String?) {
-        withAnimation(.easeIn(duration: 0.18)) { shown = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { onClose(id) }
     }
 }

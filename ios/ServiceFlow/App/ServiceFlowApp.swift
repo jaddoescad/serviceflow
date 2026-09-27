@@ -96,7 +96,7 @@ struct MaintenanceView: View {
             title: "Database upgrade in progress",
             message: "ServiceFlow is temporarily paused while your jobs and time records are verified. Please try again shortly."
         ) {
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 Button {
                     checking = true
                     Task {
@@ -104,15 +104,19 @@ struct MaintenanceView: View {
                         checking = false
                     }
                 } label: {
-                    Group {
-                        if checking { ProgressView().tint(.white) } else { Text("Try again").text(16, .black, .white) }
+                    ZStack {
+                        Text("Try Again").opacity(checking ? 0 : 1)
+                        if checking { ProgressView().tint(.white) }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(Palette.green, in: RoundedRectangle(cornerRadius: 18))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 30)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Palette.green)
                 .disabled(checking)
-                Button("Sign out") { Task { await model.signOut() } }
-                    .font(.app(15, .bold)).foregroundStyle(Palette.muted)
+                Button("Sign Out") { Task { await model.signOut() } }
+                    .tint(Palette.muted)
             }
             .padding(.top, 28)
         }

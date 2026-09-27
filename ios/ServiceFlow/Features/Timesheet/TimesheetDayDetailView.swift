@@ -5,24 +5,9 @@ import SwiftUI
 struct TimesheetDayDetailView: View {
     var day: TimesheetDay
     var now: Date
-    var onBack: () -> Void
-    var onSelect: (TimeEntry) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 0) {
-                TimesheetBackButton(label: "Back to timesheet", action: onBack)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(day.weekday), \(day.fullDate())").text(18, .heavy, TimesheetColors.ink, tracking: -0.3).lineLimit(1)
-                    Text("\(day.total) logged").text(13, .bold, TimesheetColors.muted)
-                }
-                .padding(.leading, 4)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 8)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-
+        ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 summaryCard
                 HStack(spacing: 8) {
@@ -31,25 +16,23 @@ struct TimesheetDayDetailView: View {
                 }
                 .padding(.top, 22)
                 .padding(.bottom, 10)
+
+                LazyVStack(spacing: 10) {
+                    ForEach(day.entries) { entry in
+                        NavigationLink(value: TimesheetRoute.edit(dayId: day.id, entryId: entry.localId)) {
+                            TimesheetEntryCard(info: TimesheetEntryInfo(entry, now: now))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
-
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 10) {
-                    ForEach(day.entries) { entry in
-                        Button { onSelect(entry) } label: {
-                            TimesheetEntryCard(info: TimesheetEntryInfo(entry, now: now))
-                        }
-                        .buttonStyle(.pressable(opacity: 0.85))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 40)
-            }
-            .scrollBounceBehavior(.basedOnSize)
+            .padding(.bottom, 40)
         }
         .background(TimesheetColors.bg)
+        .navigationTitle("\(day.weekday), \(day.fullDate())")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private var summaryCard: some View {
@@ -115,7 +98,7 @@ struct TimesheetEntryCard: View {
                 Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(TimesheetColors.muted)
                     .padding(.horizontal, 8)
                 time("OUT", info.end, info.endSource)
-                Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold)).foregroundStyle(TimesheetColors.muted)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tertiary)
                     .padding(.leading, 8)
             }
 
@@ -141,6 +124,7 @@ struct TimesheetEntryCard: View {
         .padding(.horizontal, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .bordered(14, border: TimesheetColors.border, background: TimesheetColors.surface)
+        .contentShape(Rectangle())
     }
 
     private func time(_ label: String, _ value: String, _ source: String) -> some View {
