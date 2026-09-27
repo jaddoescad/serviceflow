@@ -94,6 +94,7 @@ struct ProjectDetailScreen: View {
                 cameraOpen = false
                 tab = .media
             }
+            .environment(session)
         }
         .overBudgetPrompt(item: $overBudget)
     }
@@ -158,7 +159,7 @@ struct ProjectDetailScreen: View {
             pill("Media", icon: "photo.on.rectangle", iconSize: 15, active: tab == .media, accessibility: "Photos and videos") {
                 tab = .media
                 // Every tap on Media reloads it.
-                Task { await mediaStore?.reload() }
+                Task { await mediaStore?.load() }
             }
             Spacer(minLength: 0)
         }
@@ -187,23 +188,29 @@ struct ProjectDetailScreen: View {
     }
 
     private var cameraButton: some View {
-        Button(action: openCamera) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white)
+        let deleting = mediaStore?.deletingId != nil
+        return Button(action: openCamera) {
+            Group {
+                if deleting {
+                    Spinner(color: .white)
+                } else {
+                    Image(systemName: "camera.fill").font(.system(size: 24, weight: .semibold)).foregroundStyle(.white)
+                }
+            }
                 .frame(width: 58, height: 58)
                 .background(DetailPalette.brand, in: Circle())
                 .cardShadow(opacity: 0.2, radius: 14, y: 6)
         }
         .buttonStyle(.pressable(opacity: 0.85))
-        .disabled(jobId.isEmpty)
+        .disabled(jobId.isEmpty || deleting)
+        .opacity(deleting ? 0.65 : 1)
         .padding(.trailing, 16)
         .padding(.bottom, 22)
         .accessibilityLabel("Take project photo")
     }
 
     private func openCamera() {
-        guard !jobId.isEmpty else { return }
+        guard !jobId.isEmpty, mediaStore?.deletingId == nil else { return }
         tab = .media
         session.uploads?.clearCompleted()
         cameraOpen = true

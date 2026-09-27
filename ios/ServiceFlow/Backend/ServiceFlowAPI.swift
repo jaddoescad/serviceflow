@@ -302,7 +302,7 @@ final class ServiceFlowAPI: TimeTrackingBackend, @unchecked Sendable {
     /// Calls `onChange` whenever a task on the job changes.
     func watchTasks(jobId: String, onChange: @escaping @Sendable () -> Void) async -> RealtimeChannelV2 {
         let channel = client.realtimeV2.channel("project-labour-task-state:\(jobId):watch-\(UUID().uuidString.prefix(8))")
-        let changes = channel.postgresChange(AnyAction.self, schema: "public", table: "job_tasks", filter: "job_id=eq.\(jobId)")
+        let changes = channel.postgresChange(AnyAction.self, schema: "public", table: "job_tasks", filter: .eq("job_id", value: jobId))
         Task {
             for await _ in changes { onChange() }
         }

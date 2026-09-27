@@ -111,7 +111,7 @@ extension MainTab {
 }
 
 /// Keeps the edge-swipe back gesture working with the navigation bar hidden.
-extension UINavigationController: UIGestureRecognizerDelegate {
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
     override open func viewDidLoad() {
         super.viewDidLoad()
         interactivePopGestureRecognizer?.delegate = self
