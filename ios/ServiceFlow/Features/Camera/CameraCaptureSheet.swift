@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The white drawer at the bottom of the camera: this session's captures,
 /// newest first, each with a note field, dictation and the photo editor.
-/// Collapsed it peeks one row; drag it up to see more.
+/// It follows the finger and settles all the way down (grabber only), at one
+/// row, or all the way up.
 struct CameraCaptureSheet: View {
     let items: [PendingUpload]
     let collapsedHeight: CGFloat
@@ -16,11 +17,23 @@ struct CameraCaptureSheet: View {
     let onDictationEnd: () -> Void
 
     @Environment(SessionContext.self) private var session
+    @State private var stop: Stop = .minimized
     @GestureState private var drag: CGFloat = 0
 
+    enum Stop { case minimized, peek, full }
+
+    private static let minimizedHeight: CGFloat = 34
+
+    private func height(of stop: Stop) -> CGFloat {
+        switch stop {
+        case .minimized: return Self.minimizedHeight
+        case .peek: return collapsedHeight
+        case .full: return expandedHeight
+        }
+    }
+
     private var height: CGFloat {
-        let base = expanded ? expandedHeight : collapsedHeight
-        return min(expandedHeight, max(collapsedHeight, base - drag))
+        min(expandedHeight, max(Self.minimizedHeight, height(of: stop) - drag))
     }
 
     var body: some View {
@@ -28,23 +41,19 @@ struct CameraCaptureSheet: View {
             Capsule()
                 .fill(Color(hex: 0xc8cccb))
                 .frame(width: 40, height: 5)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: Self.minimizedHeight)
                 .contentShape(Rectangle())
                 .gesture(dragGesture)
-                .onTapGesture { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { expanded.toggle() } }
-                .accessibilityLabel(expanded ? "Collapse captures" : "Show all captures")
+                .onTapGesture { settle(stop == .full ? .peek : .full) }
+                .accessibilityLabel(stop == .full ? "Collapse captures" : "Show all captures")
                 .accessibilityAddTraits(.isButton)
 
             if items.isEmpty {
-                Text("Photos and videos you take appear here. Add a note to each one before you tap Done.")
+                Text("No shots yet")
                     .font(.subheadline)
                     .foregroundStyle(Color(hex: 0x6d7f7b))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-                    .padding(.top, 2)
                     .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
                 Spacer(minLength: 0)
             } else {
                 ScrollView(showsIndicators: false) {
@@ -57,7 +66,7 @@ struct CameraCaptureSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
                 }
-                .scrollDisabled(!expanded)
+                .scrollDisabled(stop != .full)
                 .scrollDismissesKeyboard(.interactively)
             }
 
@@ -68,23 +77,37 @@ struct CameraCaptureSheet: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: height, alignment: .top)
+        .clipped()
         .background(
             UnevenRoundedRectangle(topLeadingRadius: 26, topTrailingRadius: 26, style: .continuous)
                 .fill(Color(hex: 0xf6f7f6))
                 .ignoresSafeArea(edges: .bottom)
         )
+        // Anywhere on the drawer drags it, except while its list is scrollable.
+        .gesture(stop == .full ? nil : dragGesture)
         .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.86), value: drag)
+        .onAppear { stop = items.isEmpty ? .minimized : .peek }
+        .onChange(of: items.count) { old, new in
+            if new > old, stop == .minimized { settle(.peek) }
+        }
+        .onChange(of: expanded) { _, value in
+            if value != (stop == .full) { settle(value ? .full : .peek) }
+        }
     }
 
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 4)
             .updating($drag) { value, state, _ in state = value.translation.height }
             .onEnded { value in
-                let predicted = value.predictedEndTranslation.height
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                    if predicted < -60 { expanded = true } else if predicted > 60 { expanded = false }
-                }
+                let projected = height(of: stop) - value.predictedEndTranslation.height
+                let target = [Stop.minimized, .peek, .full].min { abs(height(of: $0) - projected) < abs(height(of: $1) - projected) } ?? stop
+                settle(target)
             }
+    }
+
+    private func settle(_ target: Stop) {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { stop = target }
+        if expanded != (target == .full) { expanded = target == .full }
     }
 }
 

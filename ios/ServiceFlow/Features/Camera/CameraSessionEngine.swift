@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import UIKit
 
 enum CameraFacing: Equatable { case back, front }
@@ -65,6 +66,13 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
 
     // Data-queue state.
     private var sawFirstFrame = false
+    // A small, recent frame kept for the blurred placeholder shown while the
+    // camera restarts (returning to the app, flipping lenses).
+    private let snapshotContext = CIContext(options: [.cacheIntermediates: false])
+    private let snapshotLock = NSLock()
+    private var snapshotImage: CGImage?
+    private var snapshotFront = false
+    private var frameCount = 0
     private var recorder: CameraMovieRecorder?
 
     private var observers: [NSObjectProtocol] = []
@@ -425,7 +433,32 @@ final class CameraSessionEngine: NSObject, AVCaptureVideoDataOutputSampleBufferD
             sawFirstFrame = true
             emit(.firstFrame)
         }
+        if isVideo {
+            frameCount &+= 1
+            if frameCount % 12 == 0 { keepSnapshot(sampleBuffer, front: connection.isVideoMirrored) }
+        }
         recorder?.append(sampleBuffer, isVideo: isVideo)
+    }
+}
+
+extension CameraSessionEngine {
+    /// The latest kept frame, upright for a portrait screen.
+    var latestSnapshot: UIImage? {
+        snapshotLock.lock(); defer { snapshotLock.unlock() }
+        guard let snapshotImage else { return nil }
+        return UIImage(cgImage: snapshotImage, scale: 1, orientation: snapshotFront ? .leftMirrored : .right)
+    }
+
+    fileprivate func keepSnapshot(_ sampleBuffer: CMSampleBuffer, front: Bool) {
+        guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let image = CIImage(cvPixelBuffer: buffer)
+        let scale = 480 / max(image.extent.width, 1)
+        let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        guard let cgImage = snapshotContext.createCGImage(small, from: small.extent) else { return }
+        snapshotLock.lock()
+        snapshotImage = cgImage
+        snapshotFront = front
+        snapshotLock.unlock()
     }
 }
 

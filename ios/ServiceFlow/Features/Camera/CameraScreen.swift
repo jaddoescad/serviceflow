@@ -100,7 +100,7 @@ struct CameraScreen: View {
                     CameraCaptureSheet(
                         items: sessionItems,
                         collapsedHeight: layout.sheetCollapsed,
-                        expandedHeight: full.height * 0.62,
+                        expandedHeight: full.height - 60,
                         expanded: $sheetExpanded,
                         dictation: dictation,
                         onEdit: { item in
@@ -147,12 +147,13 @@ struct CameraScreen: View {
     private func previewCard(_ layout: CameraLayout) -> some View {
         ZStack {
             CameraPreview(model: camera)
-            if !camera.previewReady { statusCard }
+            if !camera.previewReady { statusCard.transition(.opacity) }
             // Brief white flash when a photo is taken.
             Color.white.opacity(flashPulse ? 0.55 : 0).allowsHitTesting(false)
         }
         .frame(width: layout.size.width, height: layout.previewHeight)
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .animation(.easeOut(duration: 0.35), value: camera.previewReady)
         .offset(y: layout.previewTop)
         .animation(Self.spring, value: camera.mode)
         .simultaneousGesture(
@@ -345,8 +346,16 @@ struct CameraScreen: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.white)
                     .foregroundStyle(.black)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            // Like the system camera: the last frame, blurred, until the live
+            // picture is back and has refocused.
+            if let frame = camera.frozenFrame, !camera.previewFailed {
+                Image(uiImage: frame).resizable().scaledToFill().blur(radius: 22, opaque: true).clipped()
             } else {
-                ProgressView().tint(.white)
+                Color.black
             }
         }
         .allowsHitTesting(camera.previewFailed)

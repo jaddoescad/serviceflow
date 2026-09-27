@@ -36,6 +36,8 @@ final class CameraModel {
     private(set) var hasDevice = true
     private(set) var isRunning = false
     private(set) var previewReady = false
+    /// The last frame, shown blurred while the camera restarts.
+    private(set) var frozenFrame: UIImage?
     private(set) var previewFailed = false
     private(set) var rawZoom: CGFloat = 1
     private(set) var isRecording = false
@@ -108,6 +110,7 @@ final class CameraModel {
         active = false
         watchdog?.cancel()
         if isRecording { stopRecording() }
+        frozenFrame = engine.latestSnapshot ?? frozenFrame
         engine.setTorch(false)
         engine.stop()
         previewReady = false
@@ -264,6 +267,7 @@ final class CameraModel {
         guard !isRecording, canFlip else { return }
         facing = facing == .back ? .front : .back
         CameraPreferences.facing = facing
+        frozenFrame = engine.latestSnapshot ?? frozenFrame
         previewReady = false
         retries = 0
         previewFailed = false
