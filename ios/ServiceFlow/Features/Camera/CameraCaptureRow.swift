@@ -4,36 +4,47 @@ import SwiftUI
 private let ink = Color(hex: 0x11201d)
 private let fieldBorder = Color(hex: 0xe1e4e3)
 
-/// One capture in the drawer: thumbnail, note field with dictation, and the
-/// markup button. The note is the capture's description; the photo editor
-/// edits the same value.
+/// One drawer row: thumbnail, note field with dictation, and the markup
+/// button. The note is the photo's description; the photo editor edits the
+/// same value.
 struct CameraCaptureRow: View {
-    let item: PendingUpload
+    let entry: CameraDrawerEntry
     let dictation: CameraDictation
+    /// The person may change this photo (their own, or they're a manager).
+    let canEdit: Bool
     let onEdit: () -> Void
     let onView: () -> Void
+    /// Stores a changed note.
+    let onNote: (String) -> Void
     let onDictationBegin: () -> Void
     let onDictationEnd: () -> Void
 
-    @Environment(SessionContext.self) private var session
     @State private var note = ""
     @State private var saveTask: Task<Void, Never>?
     @FocusState private var focused: Bool
 
-    private var isPhoto: Bool { item.kind == .image }
-    private var isDictating: Bool { dictation.activeId == item.localId }
+    private var isPhoto: Bool { entry.kind == .image }
+    private var isDictating: Bool { dictation.activeId == entry.id }
+
+    /// A shot still on the device saves as you type; a photo already on the
+    /// job saves once you're done, so each edit is a single server save.
+    private var savesWhileTyping: Bool {
+        if case .capture = entry { return true }
+        return false
+    }
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: isPhoto ? edit : onView) {
-                CameraCaptureThumbnail(item: item)
+            Button(action: isPhoto && canEdit ? edit : onView) {
+                CameraDrawerThumbnail(entry: entry)
             }
             .buttonStyle(.pressable(opacity: 0.8))
-            .accessibilityLabel(isPhoto ? "Edit photo" : "Play video")
+            .accessibilityLabel(isPhoto ? (canEdit ? "Edit photo" : "View photo") : "Play video")
 
             noteField
+                .disabled(!canEdit)
 
-            if isPhoto {
+            if isPhoto, canEdit {
                 Button(action: edit) {
                     Image(systemName: "scribble")
                         .font(.system(size: 22, weight: .medium))
@@ -46,11 +57,14 @@ struct CameraCaptureRow: View {
                 .accessibilityLabel("Mark up photo")
             }
         }
-        .onAppear { note = item.note ?? "" }
+        .onAppear { note = entry.note }
         // The editor may have changed the description; follow it unless the
         // person is typing or dictating here.
-        .onChange(of: item.note) { _, value in
-            if !focused, !isDictating, let value, value != note { note = value }
+        .onChange(of: entry.note) { _, value in
+            if !focused, !isDictating, value != note { note = value }
+        }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { saveNow() }
         }
         .onDisappear(perform: saveNow)
     }
@@ -63,7 +77,7 @@ struct CameraCaptureRow: View {
                 .lineLimit(1...4)
                 .focused($focused)
                 .submitLabel(.done)
-                .onChange(of: note) { _, value in saveSoon(value) }
+                .onChange(of: note) { _, value in if savesWhileTyping { saveSoon(value) } }
             Button(action: toggleDictation) {
                 Image(systemName: isDictating ? "mic.fill" : "mic")
                     .font(.system(size: 20, weight: .medium))
@@ -94,69 +108,21 @@ struct CameraCaptureRow: View {
         saveTask = Task {
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
-            session.uploads?.setNote(item.localId, value)
+            onNote(value)
         }
     }
 
     private func saveNow() {
         saveTask?.cancel()
-        if note != (item.note ?? "") { session.uploads?.setNote(item.localId, note) }
+        if note != entry.note { onNote(note) }
     }
 
     private func toggleDictation() {
         if isDictating { return dictation.stop() }
         focused = false
-        dictation.start(id: item.localId, prefix: note, onText: { note = $0 }, onBegin: onDictationBegin, onEnd: {
+        dictation.start(id: entry.id, prefix: note, onText: { note = $0 }, onBegin: onDictationBegin, onEnd: {
             saveNow()
             onDictationEnd()
         })
-    }
-}
-
-/// A square thumbnail of a capture with its drawings on top.
-struct CameraCaptureThumbnail: View {
-    let item: PendingUpload
-
-    @Environment(SessionContext.self) private var session
-    private static let side: CGFloat = 64
-
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(hex: 0xdfe6e4))
-            if let url = imageURL {
-                MediaAsyncImage(url: url, downsampleTo: Self.side)
-                    .frame(width: Self.side, height: Self.side)
-            }
-            if let document = item.annotations, !document.isEmpty {
-                drawings(document)
-            }
-            if item.kind == .video {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 20, height: 20)
-                    .background(Color(rgba: 8, 15, 18, 0.7), in: Circle())
-                    .padding(5)
-            }
-        }
-        .frame(width: Self.side, height: Self.side)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private var imageURL: URL? {
-        guard let uploads = session.uploads else { return nil }
-        return item.kind == .video ? uploads.posterURL(for: item) : uploads.fileURL(for: item)
-    }
-
-    /// Drawings are stored relative to the whole photo, so they're drawn over
-    /// the photo's aspect-filled frame (larger than the square) and clipped.
-    private func drawings(_ document: AnnotationDocument) -> some View {
-        let aspect = CGFloat(item.width ?? 3) / CGFloat(max(item.height ?? 4, 1))
-        let filled = aspect >= 1
-            ? CGSize(width: Self.side * aspect, height: Self.side)
-            : CGSize(width: Self.side, height: Self.side / max(aspect, 0.01))
-        return AnnotationOverlay(document: document)
-            .frame(width: filled.width, height: filled.height)
-            .frame(width: Self.side, height: Self.side)
     }
 }

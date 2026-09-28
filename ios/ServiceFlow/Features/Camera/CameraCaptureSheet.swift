@@ -1,23 +1,26 @@
 import ServiceFlowCore
 import SwiftUI
 
-/// The white drawer at the bottom of the camera: this opening's captures,
-/// newest first, each with a note field, dictation and the photo editor.
-/// It follows the finger and settles all the way down (grabber only), at one
-/// row, or all the way up.
+/// The white drawer at the bottom of the camera: this opening's shots, then
+/// the job's earlier photos, newest first, each with a note field, dictation
+/// and the photo editor. It follows the finger and settles all the way down
+/// (grabber only), at one row, or all the way up.
 struct CameraCaptureSheet: View {
-    let items: [PendingUpload]
+    let entries: [CameraDrawerEntry]
+    let isLoading: Bool
     let collapsedHeight: CGFloat
     let expandedHeight: CGFloat
     let dictation: CameraDictation
-    let onEdit: (PendingUpload) -> Void
-    let onView: (PendingUpload) -> Void
+    let canEdit: (CameraDrawerEntry) -> Bool
+    let onEdit: (CameraDrawerEntry) -> Void
+    let onView: (CameraDrawerEntry) -> Void
+    let onNote: (CameraDrawerEntry, String) -> Void
     let onDictationBegin: () -> Void
     let onDictationEnd: () -> Void
 
     private enum Stop: CaseIterable { case minimized, peek, full }
 
-    @State private var stop: Stop = .minimized
+    @State private var stop: Stop = .peek
     @GestureState private var drag: CGFloat = 0
 
     private static let minimizedHeight: CGFloat = 34
@@ -39,8 +42,8 @@ struct CameraCaptureSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             grabber
-            if items.isEmpty {
-                Text("No shots yet")
+            if entries.isEmpty {
+                Text(isLoading ? "Loading photos…" : "No photos yet")
                     .font(.subheadline)
                     .foregroundStyle(Color(hex: 0x6d7f7b))
                     .frame(maxWidth: .infinity)
@@ -65,8 +68,7 @@ struct CameraCaptureSheet: View {
         // Anywhere on the drawer drags it, except while its list is scrollable.
         .gesture(stop == .full ? nil : dragGesture)
         .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.86), value: drag)
-        .onAppear { stop = items.isEmpty ? .minimized : .peek }
-        .onChange(of: items.count) { old, new in
+        .onChange(of: entries.count) { old, new in
             // A new shot makes a pushed-down drawer peek so it can be noted.
             if new > old, stop == .minimized { settle(.peek) }
         }
@@ -87,8 +89,9 @@ struct CameraCaptureSheet: View {
     private var list: some View {
         ScrollView(showsIndicators: false) {
             LazyVStack(spacing: 14) {
-                ForEach(items) { item in
-                    CameraCaptureRow(item: item, dictation: dictation, onEdit: { onEdit(item) }, onView: { onView(item) },
+                ForEach(entries) { entry in
+                    CameraCaptureRow(entry: entry, dictation: dictation, canEdit: canEdit(entry),
+                                     onEdit: { onEdit(entry) }, onView: { onView(entry) }, onNote: { onNote(entry, $0) },
                                      onDictationBegin: onDictationBegin, onDictationEnd: onDictationEnd)
                 }
             }
@@ -100,7 +103,9 @@ struct CameraCaptureSheet: View {
     }
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 4)
+        // Measured on the screen: the drawer grows under the finger, so its own
+        // coordinates would cancel the movement out.
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
             .updating($drag) { value, state, _ in state = value.translation.height }
             .onEnded { value in
                 // Settle at the stop nearest to where the flick would end.

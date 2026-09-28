@@ -20,6 +20,9 @@ struct CameraScreen: View {
     /// Local ids of this opening's captures, newest first.
     @State private var captureIds: [String] = []
     @State private var editing: PendingUpload?
+    /// The job's photos already on the server, shown under this opening's shots.
+    @State private var jobMedia: MediaStore?
+    @State private var editingUploaded: MediaItem?
     @State private var viewing: CameraViewerItem?
     @State private var closing = false
     @State private var shutterFlash = false
@@ -34,6 +37,12 @@ struct CameraScreen: View {
     }
 
     static let spring = Animation.spring(response: 0.3, dampingFraction: 0.88)
+
+    private var isEditing: Bool { editing != nil || editingUploaded != nil }
+
+    private var drawerEntries: [CameraDrawerEntry] {
+        CameraDrawerEntry.list(captures: captures, uploaded: jobMedia?.items ?? [])
+    }
 
     /// This opening's captures, newest first.
     private var captures: [PendingUpload] {
@@ -64,20 +73,27 @@ struct CameraScreen: View {
             camera.onVideo = handleVideo
             if scenePhase == .active { camera.activate() }
         }
+        .task { await loadJobMedia() }
         .onDisappear {
             dictation.stop()
             camera.deactivate()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active, editing == nil { camera.activate() } else if phase != .active { camera.deactivate() }
+            if phase == .active, !isEditing { camera.activate() } else if phase != .active { camera.deactivate() }
         }
-        .onChange(of: editing?.localId) { _, id in
+        .onChange(of: isEditing) { _, editing in
             // The editor has the screen; the camera rests until it closes.
-            if id != nil { camera.deactivate() } else if scenePhase == .active { camera.activate() }
+            if editing { camera.deactivate() } else if scenePhase == .active { camera.activate() }
         }
         .fullScreenCover(item: $editing) { item in
             CameraPhotoEditorHost(localId: item.localId) { editing = nil }
                 .environment(session)
+        }
+        .fullScreenCover(item: $editingUploaded) { item in
+            if let jobMedia {
+                MediaPhotoEditFlow(item: item, store: jobMedia) { editingUploaded = nil }
+                    .environment(session)
+            }
         }
         .animation(.easeOut(duration: 0.15), value: viewing?.id)
     }
@@ -152,12 +168,15 @@ struct CameraScreen: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             CameraCaptureSheet(
-                items: captures,
+                entries: drawerEntries,
+                isLoading: jobMedia?.hasLoaded != true,
                 collapsedHeight: layout.drawerCollapsed,
                 expandedHeight: layout.drawerExpanded,
                 dictation: dictation,
-                onEdit: { item in if item.kind == .image { editing = item } },
-                onView: openViewer,
+                canEdit: canEdit,
+                onEdit: edit,
+                onView: view,
+                onNote: saveNote,
                 onDictationBegin: camera.beginDictation,
                 onDictationEnd: camera.endDictation
             )
@@ -206,6 +225,46 @@ struct CameraScreen: View {
         }
         withAnimation(Self.spring) { captureIds.insert(item.localId, at: 0) }
         onCapture?()
+    }
+
+    // MARK: Drawer
+
+    private func loadJobMedia() async {
+        let project = Project(id: projectId, name: projectName, isLead: projectKind == .lead)
+        let store = MediaStore(project: project, session: session, includeLinkedLead: true)
+        jobMedia = store
+        await store.load()
+    }
+
+    private func canEdit(_ entry: CameraDrawerEntry) -> Bool {
+        switch entry {
+        case .capture: return true
+        case .uploaded(let item): return jobMedia?.canEdit(item) ?? false
+        }
+    }
+
+    private func edit(_ entry: CameraDrawerEntry) {
+        guard entry.kind == .image else { return }
+        switch entry {
+        case .capture(let upload): editing = upload
+        case .uploaded(let item): editingUploaded = item
+        }
+    }
+
+    private func view(_ entry: CameraDrawerEntry) {
+        if case .capture(let upload) = entry { openViewer(upload) }
+    }
+
+    /// A shot's note travels with its upload; an earlier photo's description
+    /// is saved the same way the photo viewer and the web admin save it.
+    private func saveNote(_ entry: CameraDrawerEntry, _ text: String) {
+        switch entry {
+        case .capture(let upload):
+            session.uploads?.setNote(upload.localId, text)
+        case .uploaded(let item):
+            guard let jobMedia else { return }
+            Task { _ = await jobMedia.saveEdits(to: item, description: text, annotations: nil) }
+        }
     }
 
     private func openViewer(_ item: PendingUpload) {
