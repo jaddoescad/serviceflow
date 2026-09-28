@@ -1,35 +1,67 @@
 import ServiceFlowCore
 import SwiftUI
 
-/// The frosted panel at the bottom of the Team Map: the crew list, or the
-/// selected person's day, plus the "not live" note.
-struct TeamMapPanel: View {
+/// The Team Map drawer's header: always visible, even collapsed. A summary
+/// of the crew, or the selected person's name and when they were last seen.
+struct TeamMapPanelHeader: View {
     let model: TeamMapModel
-    let onSelect: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Capsule().fill(.secondary.opacity(0.4)).frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-                .accessibilityHidden(true)
-
+        VStack(alignment: .leading, spacing: 4) {
+            if let selected = model.selected {
+                HStack(spacing: 8) {
+                    TeamMapStateDot(status: selected)
+                    Text(selected.displayName).font(.headline).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if model.pointsLoading && model.points.isEmpty { ProgressView().controlSize(.small) }
+                }
+                Text("\(model.activity(for: selected)) · \(model.lastSeen(for: selected))")
+                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            } else {
+                HStack(spacing: 8) {
+                    Text("Crew").font(.headline)
+                    Spacer(minLength: 0)
+                    if model.loading && model.statuses.isEmpty { ProgressView().controlSize(.small) }
+                }
+                Text(summary).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+            }
             if let error = model.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color(hex: 0x87491e))
                     .lineLimit(2)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
+                    .padding(.top, 2)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
 
+    private var summary: String {
+        let clockedIn = model.statuses.filter(\.isClockedIn).count
+        let crew = model.statuses.count
+        if model.loading && crew == 0 { return "Loading team locations…" }
+        if crew == 0 { return "No tracking records yet" }
+        return "\(clockedIn) clocked in · \(crew) crew"
+    }
+}
+
+/// The Team Map drawer's body: the crew list, or the selected person's day,
+/// plus the "not live" note.
+struct TeamMapPanelContent: View {
+    let model: TeamMapModel
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider()
             Group {
                 if model.loading && model.statuses.isEmpty {
                     ProgressView("Loading team locations…")
                         .frame(maxWidth: .infinity, minHeight: 150)
                 } else if let selected = model.selected {
-                    selectedSummary(selected)
+                    selectedSummary(selected).padding(.top, 12)
                 } else if model.statuses.isEmpty {
                     ContentUnavailableView {
                         Label("No tracking records yet", systemImage: "mappin.and.ellipse")
@@ -47,29 +79,29 @@ struct TeamMapPanel: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
         }
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 16, topTrailingRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 8, y: -2)
     }
 
     private var crewList: some View {
-        List {
-            Section {
-                ForEach(model.cards) { status in
-                    Button { onSelect(status.employeeId) } label: { crewRow(status) }
-                        .listRowBackground(Color.clear)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Tap a crew member to see where they were recorded today.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+            ForEach(model.cards) { status in
+                Button { onSelect(status.employeeId) } label: { crewRow(status) }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                if status.employeeId != model.cards.last?.employeeId {
+                    Divider().padding(.leading, 66)
                 }
-            } header: {
-                Text("Tap a crew member to see where they were recorded today.")
-                    .textCase(nil)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .frame(height: 230)
     }
 
     private func crewRow(_ status: TeamMemberStatus) -> some View {
@@ -100,13 +132,6 @@ struct TeamMapPanel: View {
         let clockedIn = model.points.first { $0.eventType == LocationEventType.clockIn.rawValue }
         let lastSeen = model.points.last?.capturedAt ?? status.lastLocationAt
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                TeamMapStateDot(status: status)
-                Text("\(model.activity(for: status)) · \(model.lastSeen(for: status))")
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 0)
-                if model.pointsLoading && model.points.isEmpty { ProgressView().controlSize(.small) }
-            }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     summaryCell("Clocked in", clockedIn.map { DateText.time($0.capturedAt) } ?? "—")

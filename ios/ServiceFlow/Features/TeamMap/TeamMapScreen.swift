@@ -14,6 +14,11 @@ struct TeamMapScreen: View {
     @State private var didInitialFit = false
     @State private var fittedSelection: String?
     @State private var refreshing = false
+    @State private var drawerStop: DrawerStop = .middle
+    /// Height of the space the map and drawer share, for camera fitting.
+    @State private var mapHeight: CGFloat = 0
+
+    private static let collapsedDrawer: CGFloat = 84
 
     init(enabled: Bool) {
         self.enabled = enabled
@@ -25,10 +30,18 @@ struct TeamMapScreen: View {
     }
 
     var body: some View {
-        map
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                TeamMapPanel(model: model) { select($0) }
+        GeometryReader { geometry in
+            ZStack {
+                map.ignoresSafeArea(.container, edges: .bottom)
+                BottomDrawer(stop: $drawerStop, collapsedHeight: Self.collapsedDrawer, availableHeight: geometry.size.height) {
+                    TeamMapPanelHeader(model: model)
+                } content: {
+                    TeamMapPanelContent(model: model) { select($0) }
+                }
             }
+            .onAppear { mapHeight = geometry.size.height }
+            .onChange(of: geometry.size.height) { _, height in mapHeight = height }
+        }
             .navigationTitle(model.selected?.displayName ?? "Team Map")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -173,11 +186,13 @@ struct TeamMapScreen: View {
     private func select(_ id: String?) {
         model.select(id)
         fittedSelection = nil
+        if id != nil, drawerStop != .middle {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { drawerStop = .middle }
+        }
         if let status = model.selected, let coordinate = status.coordinate {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                position = .region(MKCoordinateRegion(center: teamMapCoordinate(coordinate),
-                                                      span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025)))
-            }
+            let region = MKCoordinateRegion(center: teamMapCoordinate(coordinate),
+                                            span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025))
+            withAnimation(.easeInOut(duration: 0.3)) { position = .region(clearOfDrawer(region, at: .middle)) }
         } else if id == nil {
             fitOverview()
         }
@@ -189,7 +204,7 @@ struct TeamMapScreen: View {
         fittedSelection = status.employeeId
         let coordinates = model.points.map { teamMapCoordinate($0.coordinate) } + [status.coordinate].compactMap { $0.map(teamMapCoordinate) }
         if let region = TeamMapModel.region(fitting: coordinates) {
-            withAnimation(.easeInOut(duration: 0.3)) { position = .region(region) }
+            withAnimation(.easeInOut(duration: 0.3)) { position = .region(clearOfDrawer(region)) }
         }
     }
 
@@ -203,6 +218,19 @@ struct TeamMapScreen: View {
         } else {
             region = TeamMapModel.northAmerica
         }
-        withAnimation(.easeInOut(duration: 0.3)) { position = .region(region) }
+        withAnimation(.easeInOut(duration: 0.3)) { position = .region(clearOfDrawer(region)) }
+    }
+
+    /// Stretches `region` so what it frames sits in the part of the map the
+    /// drawer doesn't cover (the drawer lies over the bottom of the map).
+    private func clearOfDrawer(_ region: MKCoordinateRegion, at stop: DrawerStop? = nil) -> MKCoordinateRegion {
+        guard mapHeight > 0 else { return region }
+        let drawer = BottomDrawer<EmptyView, EmptyView>.height(at: stop ?? drawerStop, collapsed: Self.collapsedDrawer,
+                                                                available: mapHeight)
+        let visible = max(0.3, (mapHeight - drawer) / mapHeight)
+        let span = min(170, region.span.latitudeDelta / visible)
+        let center = CLLocationCoordinate2D(latitude: region.center.latitude + region.span.latitudeDelta / 2 - span / 2,
+                                            longitude: region.center.longitude)
+        return MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: region.span.longitudeDelta))
     }
 }
