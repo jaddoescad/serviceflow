@@ -133,7 +133,7 @@ public struct MediaClient: Sendable {
         guard let uploadId = started["uploadId"]?.nonEmptyString, let objectKey = started["objectKey"]?.nonEmptyString else {
             throw MediaClientError("Upload failed")
         }
-        let partSize = Int64(started["partSize"]?.intValue ?? 0) > 0 ? Int64(started["partSize"]!.intValue!) : 8 * 1024 * 1024
+        let partSize = started["partSize"]?.intValue.flatMap { $0 > 0 ? Int64($0) : nil } ?? 8 * 1024 * 1024
         let partsURL = baseURL.appendingPathComponent("v1/media-uploads/\(uploadId)/parts")
 
         do {

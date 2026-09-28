@@ -3,7 +3,8 @@ import ServiceFlowCore
 import SwiftUI
 
 /// Full-screen viewer for a project's uploaded photos and videos: paging,
-/// pinch zoom, swipe down to close, and delete for the person who uploaded it.
+/// pinch zoom, swipe down to close, editing the description and drawings, and
+/// delete for the person who uploaded it.
 struct MediaLightbox: View {
     let store: MediaStore
     let onClose: () -> Void
@@ -14,6 +15,8 @@ struct MediaLightbox: View {
     @State private var confirmDelete: MediaItem?
     @State private var deleteFailure: String?
     @State private var visible = false
+    @State private var editingPhoto: MediaItem?
+    @State private var editingDescription: MediaItem?
 
     init(store: MediaStore, startId: String, onClose: @escaping () -> Void) {
         self.store = store
@@ -54,6 +57,13 @@ struct MediaLightbox: View {
             Text(deleteFailure ?? "")
         }
         .accessibilityAction(.escape) { close(animated: true) }
+        .fullScreenCover(item: $editingPhoto) { item in
+            MediaPhotoEditFlow(item: item, store: store) { editingPhoto = nil }
+                .environment(session)
+        }
+        .sheet(item: $editingDescription) { item in
+            MediaDescriptionEditor(item: item, store: store)
+        }
     }
 
     private var deleteTitle: String {
@@ -89,6 +99,30 @@ struct MediaLightbox: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 6)
 
+            actions
+                .frame(minWidth: 68, alignment: .trailing)
+        }
+        .frame(height: 54)
+        .padding(.horizontal, 16)
+    }
+
+    /// Edit (photo drawings and description, or a video's description) and delete.
+    private var actions: some View {
+        HStack(spacing: 4) {
+            if let current, store.canEdit(current) {
+                Button {
+                    if current.kind == .video { editingDescription = current } else { editingPhoto = current }
+                } label: {
+                    Text(current.kind == .video ? "Description" : "Edit")
+                        .text(15, .bold, .white)
+                        .frame(minHeight: 44)
+                        .padding(.horizontal, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable(opacity: 0.7))
+                .disabled(zoomed)
+                .accessibilityLabel(current.kind == .video ? "Edit description" : "Edit photo")
+            }
             if let current, current.canDelete(userId: session.user.id) {
                 Button {
                     confirmDelete = current
@@ -100,18 +134,14 @@ struct MediaLightbox: View {
                             Icon("trash", 21, .white)
                         }
                     }
-                    .frame(width: 68, height: 44)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.pressable(opacity: 0.7))
                 .disabled(store.deletingId != nil)
                 .accessibilityLabel("Delete media")
-            } else {
-                Color.clear.frame(width: 68, height: 44)
             }
         }
-        .frame(height: 54)
-        .padding(.horizontal, 16)
     }
 
     private var pager: some View {
@@ -211,34 +241,41 @@ struct MediaLightbox: View {
     }
 }
 
-/// A lightbox photo page: the original, downsampled to the screen, zoomable.
+/// A lightbox photo page: the original, downsampled to the screen, zoomable,
+/// with its drawings on top.
 private struct MediaLightboxPhoto: View {
     let item: MediaItem
     let isCurrent: Bool
     let onZoomChange: (Bool) -> Void
 
     @Environment(SessionContext.self) private var session
-    @State private var image: UIImage?
+    @Environment(\.displayScale) private var displayScale
+    @State private var original: UIImage?
+    /// The original with its drawings painted on, redrawn only when they change.
+    @State private var displayed: UIImage?
 
-    init(item: MediaItem, isCurrent: Bool, onZoomChange: @escaping (Bool) -> Void) {
-        self.item = item
-        self.isCurrent = isCurrent
-        self.onZoomChange = onZoomChange
-    }
+    private static let pointSize: CGFloat = 1400
 
     var body: some View {
         ZStack {
-            if let image {
-                MediaZoomableImage(image: image, isCurrent: isCurrent, onZoomChange: onZoomChange)
-            } else if let client = session.mediaClient {
-                // Loads through the shared loader; the zoom view takes over once decoded.
-                MediaAsyncImage(url: client.originalURL(item.id), downsampleTo: 1400, contentMode: .fit,
-                                showsSpinner: true, spinnerColor: .white, onLoad: { loaded in
-                                    // Drawings are stored separately; show them on top of the photo.
-                                    image = item.annotations.map { AnnotationRenderer.composite(loaded, document: $0) } ?? loaded
-                                })
+            if let displayed {
+                MediaZoomableImage(image: displayed, isCurrent: isCurrent, onZoomChange: onZoomChange)
+            } else {
+                Spinner(color: .white)
             }
         }
+        .task(id: item.id) {
+            guard original == nil, let client = session.mediaClient else { return }
+            original = await MediaImageLoader.shared.image(for: client.originalURL(item.id),
+                                                          maxPixel: Self.pointSize * displayScale, client: client)
+            redraw()
+        }
+        .onChange(of: item.annotations) { _, _ in redraw() }
+    }
+
+    private func redraw() {
+        guard let original else { return }
+        displayed = item.annotations.map { AnnotationRenderer.composite(original, document: $0) } ?? original
     }
 }
 

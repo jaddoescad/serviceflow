@@ -19,7 +19,6 @@ final class AppModel {
 
     private(set) var phase: Phase = .booting
     private(set) var session: SessionContext?
-    private(set) var memberships: [CompanyMembership] = []
     /// Set while a sign-up flow still has to choose a password; keeps the
     /// auth screens up after the email code signs the person in.
     var holdAuthFlow = false
@@ -63,11 +62,12 @@ final class AppModel {
 
     private func signedIn(_ user: User) async {
         guard let api, let config else { return }
-        if currentUserId != user.id.uuidString.lowercased() {
+        let userId = user.id.uuidString.lowercased()
+        // Token refreshes also arrive here; only a different person gets a new session.
+        if currentUserId != userId {
             session?.stop()
-            currentUserId = user.id.uuidString.lowercased()
-            let context = SessionContext(user: user, api: api, config: config, notifications: notifications, location: location)
-            session = context
+            currentUserId = userId
+            session = SessionContext(user: user, api: api, config: config, notifications: notifications, location: location)
         }
         await refreshAccount()
     }
@@ -76,7 +76,6 @@ final class AppModel {
         session?.stop()
         session = nil
         currentUserId = nil
-        memberships = []
         holdAuthFlow = false
         phase = .signedOut
     }
@@ -84,21 +83,20 @@ final class AppModel {
     /// Reloads memberships and the maintenance flag, and picks the screen.
     func refreshAccount() async {
         guard let api, let session else { return }
-        if holdAuthFlow {
+        guard !holdAuthFlow else {
             phase = .signedOut
             return
         }
-        let userId = session.user.id
         async let maintenance = api.maintenanceMode()
-        let loaded = try? await api.memberships(userId: userId)
-        if let loaded { memberships = loaded }
+        // Nil when offline: carry on with the memberships cached on the device.
+        let loaded = try? await api.memberships(userId: session.user.id)
         if await maintenance {
             phase = .maintenance
-        } else if memberships.isEmpty, loaded != nil {
+        } else if loaded?.isEmpty == true {
             phase = .onboarding
         } else {
             phase = .main
-            session.start(memberships: memberships)
+            session.start(memberships: loaded ?? [])
         }
     }
 

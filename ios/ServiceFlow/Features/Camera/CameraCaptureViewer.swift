@@ -3,13 +3,23 @@ import AVKit
 import ServiceFlowCore
 import SwiftUI
 
-/// A filmstrip capture opened inside the camera. The status is a snapshot
-/// taken when it opened.
+/// A capture opened full screen inside the camera. Its status is a
+/// snapshot taken when it opened.
 struct CameraViewerItem: Identifiable, Equatable {
     var id: String { upload.localId }
     var upload: PendingUpload
     var fileURL: URL?
-    var statusText: String
+
+    var statusText: String {
+        switch upload.status {
+        case .uploading: return "Uploading"
+        case .uploaded: return "Uploaded"
+        case .failed: return "Upload failed, tap to retry"
+        case .queued:
+            if upload.isHeld { return "Uploads when you tap Done" }
+            return upload.attempts > 0 ? "Retrying upload" : "Waiting to upload"
+        }
+    }
 }
 
 struct CameraCaptureViewer: View {
@@ -18,15 +28,6 @@ struct CameraCaptureViewer: View {
     let safeBottom: CGFloat
     let onRetry: (String) -> Void
     let onClose: () -> Void
-
-    init(item: CameraViewerItem, safeTop: CGFloat, safeBottom: CGFloat, onRetry: @escaping (String) -> Void,
-         onClose: @escaping () -> Void) {
-        self.item = item
-        self.safeTop = safeTop
-        self.safeBottom = safeBottom
-        self.onRetry = onRetry
-        self.onClose = onClose
-    }
 
     var body: some View {
         ZStack {
@@ -54,7 +55,7 @@ struct CameraCaptureViewer: View {
                     }
                     .buttonStyle(.pressable(opacity: 0.7))
                     .accessibilityLabel("Close preview")
-                    Text(item.statusText.prefix(1).uppercased() + item.statusText.dropFirst())
+                    Text(item.statusText)
                         .text(13, .bold, .white.opacity(0.82))
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -94,10 +95,6 @@ private struct CameraLoopingVideo: View {
     let url: URL
     @State private var player: AVQueuePlayer?
     @State private var looper: AVPlayerLooper?
-
-    init(url: URL) {
-        self.url = url
-    }
 
     var body: some View {
         ZStack {

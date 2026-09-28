@@ -10,22 +10,20 @@ struct ProjectSwitcherSheet: View {
 
     @Environment(SessionContext.self) private var session
     @Environment(\.dismiss) private var dismiss
-    @State private var search = Debouncer()
-    @State private var results: [Project] = []
-    @State private var searching = false
-    @State private var searchError: String?
+    @State private var search = ProjectSearch()
 
-    private var hasQuery: Bool { !search.text.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var hasQuery: Bool { search.hasQuery }
 
+    /// Other jobs to switch to: search results, or every active job.
     private var options: [Project] {
         var seen = Set<String>()
-        let source = hasQuery ? results : session.mappedProjects
+        let source = hasQuery ? search.results : session.mappedProjects
         return source.filter { !$0.id.isEmpty && $0.id != currentProject?.id && !$0.isArchived && seen.insert($0.id).inserted }
             .prefix(hasQuery ? 50 : 40).map { $0 }
     }
 
     var body: some View {
-        @Bindable var search = search
+        @Bindable var query = search.query
         NavigationStack {
             List {
                 if let error {
@@ -33,10 +31,10 @@ struct ProjectSwitcherSheet: View {
                 }
                 Section {
                     if options.isEmpty {
-                        if searching {
+                        if search.isSearching {
                             HStack { Spacer(); ProgressView(); Spacer() }
                         } else {
-                            Text(searchError ?? (hasQuery ? "No matching jobs found." : "No other active jobs are available."))
+                            Text(search.error ?? (hasQuery ? "No matching jobs found." : "No other active jobs are available."))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -54,7 +52,7 @@ struct ProjectSwitcherSheet: View {
             }
             .navigationTitle("Change Job")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search all jobs")
+            .searchable(text: $query.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search all jobs")
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .toolbar {
@@ -67,20 +65,7 @@ struct ProjectSwitcherSheet: View {
             }
         }
         .tint(Palette.teal)
-        .task(id: search.committed) {
-            let query = search.committed
-            guard !query.isEmpty else { return }
-            do {
-                let found = try await session.api.searchProjects(query)
-                if query == search.committed { results = found; searchError = nil }
-            } catch {
-                if query == search.committed { results = []; searchError = (error as? BackendError)?.message }
-            }
-            searching = false
-        }
-        .onChange(of: search.text) { _, value in
-            searching = !value.trimmingCharacters(in: .whitespaces).isEmpty
-            if !searching { results = []; searchError = nil }
-        }
+        .task(id: search.query.committed) { await search.run(session.api) }
+        .onChange(of: search.query.text) { _, _ in search.textChanged() }
     }
 }

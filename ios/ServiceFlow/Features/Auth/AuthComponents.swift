@@ -1,3 +1,4 @@
+import ServiceFlowCore
 import SwiftUI
 
 /// The logo shown above the sign-in form.
@@ -117,11 +118,25 @@ struct AuthPrimaryButton: View {
 }
 
 /// A section footer that shows an error in red.
-struct AuthError: View {
+struct AuthErrorText: View {
     var message: String?
     var body: some View {
         if let message {
             Text(message).foregroundStyle(AuthPalette.danger)
+        }
+    }
+}
+
+/// A section footer: the error when there is one, else the hint.
+struct AuthFooter: View {
+    var error: String?
+    var hint: String?
+
+    var body: some View {
+        if let error {
+            AuthErrorText(message: error)
+        } else if let hint {
+            Text(hint)
         }
     }
 }
@@ -148,6 +163,8 @@ struct CodeField: View {
 /// Maps Supabase auth errors to friendlier text.
 enum AuthMessage {
     static func from(_ error: Error) -> String {
+        // Server refusals already carry readable text (e.g. invite codes).
+        if let error = error as? BackendError, case .server = error { return error.message }
         let text = error.localizedDescription
         let lower = text.lowercased()
         if lower.contains("invalid login credentials") { return "That email and password don't match." }

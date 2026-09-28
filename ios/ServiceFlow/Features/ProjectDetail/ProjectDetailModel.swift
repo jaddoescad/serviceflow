@@ -22,6 +22,9 @@ final class ProjectDetailModel {
 
     var jobId: String { project.id }
 
+    /// Someone is clocked into the job right now (the live clock needs ticking).
+    var hasRunningEntry: Bool { serverEntries.contains(where: \.isActive) }
+
     /// Server entries merged with this device's entries for the job. The local
     /// copy wins for the same entry, so the running shift and unsynced edits count.
     func entries(local: [TimeEntry]) -> [TimeEntry] {
@@ -32,6 +35,13 @@ final class ProjectDetailModel {
             result.append(entry)
         }
         return result.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    /// Reloads team entries and the budget together.
+    func refresh(api: ServiceFlowAPI) async {
+        async let budget: Void = refreshBudget(api: api)
+        async let team: Void = refreshEntries(api: api)
+        _ = await (budget, team)
     }
 
     func refreshEntries(api: ServiceFlowAPI) async {

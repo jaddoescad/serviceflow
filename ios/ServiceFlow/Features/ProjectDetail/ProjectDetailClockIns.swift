@@ -25,7 +25,7 @@ enum ProjectDetailSiteStatus {
 
     var color: Color {
         switch self {
-        case .on: return Color(hex: 0x2b8496)
+        case .on: return DetailPalette.brand
         case .off: return Color(hex: 0xc0432b)
         case .mixed: return Color(hex: 0x9a611f)
         case .unknown: return Color(hex: 0x6f7774)
@@ -85,7 +85,7 @@ struct ProjectDetailPainterRow: View {
                     Text(DurationFormat.hoursMinutes(minutes: summary.totalMinutes))
                         .font(.app(15, .semibold)).monospacedDigit()
                 }
-                ProjectDetailWrap(spacing: 8) {
+                WrapLayout(spacing: 8, lineSpacing: 4) {
                     ForEach(Array(metaItems.enumerated()), id: \.offset) { index, item in
                         if index > 0 { ProjectDetailDot() }
                         HStack(spacing: 4) {
@@ -232,48 +232,5 @@ struct ProjectDetailClockInRow: View {
             .filter { $0.0 >= 60 }
         guard buckets.count > 1 else { return nil }
         return (["GPS breakdown"] + buckets.map { "\(DurationFormat.hoursMinutes($0.0)) \($0.1)" }).joined(separator: " · ")
-    }
-}
-
-/// A simple wrapping row for meta items separated by dots.
-struct ProjectDetailWrap: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
-        let height = rows.reduce(0) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * 4
-        let width = rows.map(\.width).max() ?? 0
-        return CGSize(width: proposal.width ?? width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in arrange(width: bounds.width, subviews: subviews) {
-            var x = bounds.minX
-            for index in row.indices {
-                let size = subviews[index].sizeThatFits(.unspecified)
-                subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
-                x += size.width + spacing
-            }
-            y += row.height + 4
-        }
-    }
-
-    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
-
-    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
-        var rows: [Row] = [Row()]
-        for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
-            let extra = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
-            if rows[rows.count - 1].width + extra > width, !rows[rows.count - 1].indices.isEmpty {
-                rows.append(Row())
-            }
-            let isFirst = rows[rows.count - 1].indices.isEmpty
-            rows[rows.count - 1].indices.append(index)
-            rows[rows.count - 1].width += isFirst ? size.width : size.width + spacing
-            rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
-        }
-        return rows
     }
 }

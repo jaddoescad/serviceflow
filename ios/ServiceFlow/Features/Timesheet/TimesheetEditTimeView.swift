@@ -3,103 +3,58 @@ import SwiftUI
 
 /// Edit the start and end of one of your own clock-ins, or delete it.
 struct TimesheetEditTimeView: View {
-    var entry: TimeEntry
-    var day: TimesheetDay
-    var painterName: String
+    let day: TimesheetDay
+    let painterName: String
     /// Saved or deleted: return to the list.
-    var onFinished: () -> Void
+    let onFinished: () -> Void
 
     @Environment(TimeTracker.self) private var tracker
-    @State private var startAt: Date
-    @State private var endAt: Date
-    @State private var busy = false
-    @State private var error: String?
+    @State private var edit: TimeEntryEditModel
     @State private var confirmingDelete = false
 
     private static let step: TimeInterval = 5 * 60
 
     init(entry: TimeEntry, day: TimesheetDay, painterName: String, onFinished: @escaping () -> Void) {
-        self.entry = entry
         self.day = day
         self.painterName = painterName
         self.onFinished = onFinished
-        _startAt = State(initialValue: entry.startedAt)
-        _endAt = State(initialValue: entry.endedAt ?? entry.startedAt)
-    }
-
-    private var isActive: Bool { entry.isActive }
-    private var startChanged: Bool { startAt != entry.startedAt }
-    private var endChanged: Bool { !isActive && endAt != (entry.endedAt ?? entry.startedAt) }
-
-    private var canSave: Bool {
-        guard !busy else { return false }
-        if isActive { return startChanged }
-        return (startChanged || endChanged) && endAt > startAt
+        _edit = State(initialValue: TimeEntryEditModel(entry: entry))
     }
 
     var body: some View {
-        let info = TimesheetEntryInfo(entry, now: Date())
-        let status = statusPresentation(info.summary.status)
+        @Bindable var edit = edit
+        let info = TimesheetEntryInfo(edit.entry, now: Date())
         Form {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(info.job, systemImage: "briefcase.fill")
-                        .font(.app(16, .semibold))
-                        .foregroundStyle(TimesheetColors.ink)
-                    Text(info.address).font(.app(13)).foregroundStyle(.secondary).lineLimit(2)
-                }
-                .padding(.vertical, 2)
-                LabeledContent("Crew member", value: painterName)
-                LabeledContent("Date", value: day.fullDate())
-                Label {
-                    Text(status.label)
-                } icon: {
-                    Image(systemName: status.icon).foregroundStyle(status.pin)
-                }
-                LabeledContent("Distance", value: info.summary.distanceLabel)
-            }
+            shiftSection(info)
 
             Section {
-                DatePicker(selection: $startAt, displayedComponents: [.hourAndMinute]) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Clock-in")
-                        Text(info.startSource).font(.caption).foregroundStyle(.secondary)
-                    }
+                DatePicker(selection: $edit.startAt, displayedComponents: [.hourAndMinute]) {
+                    timeLabel("Clock-in", source: info.startSource)
                 }
-                .onChange(of: startAt) { _, _ in error = nil }
-                stepRow(label: "clock-in time") { startAt = startAt.addingTimeInterval($0) }
+                stepRow(label: "clock-in time") { edit.startAt += $0 }
 
-                if isActive {
+                if edit.isActive {
                     LabeledContent("Clock-out", value: "In progress")
                 } else {
-                    DatePicker(selection: $endAt, displayedComponents: [.hourAndMinute]) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Clock-out")
-                            Text(info.endSource).font(.caption).foregroundStyle(.secondary)
-                        }
+                    DatePicker(selection: $edit.endAt, displayedComponents: [.hourAndMinute]) {
+                        timeLabel("Clock-out", source: info.endSource)
                     }
-                    .onChange(of: endAt) { _, _ in error = nil }
-                    stepRow(label: "clock-out time") { endAt = endAt.addingTimeInterval($0) }
+                    stepRow(label: "clock-out time") { edit.endAt += $0 }
                 }
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let duration = isActive ? context.date.timeIntervalSince(startAt) : endAt.timeIntervalSince(startAt)
-                    LabeledContent("Duration", value: DurationFormat.hoursMinutes(max(0, duration)))
+                    LabeledContent("Duration", value: DurationFormat.hoursMinutes(edit.duration(now: context.date)))
                 }
             } header: {
                 Text("Time")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let note = TimesheetBuilder.originalTimeNote(entry: entry, startAt: startAt, endAt: isActive ? nil : endAt) {
-                        Text(note)
-                    }
-                    if isActive {
-                        Text("This shift is still in progress. Only the start time can be changed.")
-                    }
+                    if let note = edit.originalTimeNote { Text(note) }
+                    if edit.isActive { Text(TimeEntryEditModel.inProgressHint) }
                 }
             }
 
-            if let error {
+            if let error = edit.error {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(TimesheetColors.redInk)
@@ -112,31 +67,64 @@ struct TimesheetEditTimeView: View {
                 } label: {
                     Label("Delete Time Entry", systemImage: "trash")
                 }
-                .disabled(busy)
+                .disabled(edit.busy)
                 .accessibilityLabel("Delete time entry")
             }
         }
         .tint(TimesheetColors.teal)
         .navigationTitle("Edit Time")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(busy)
+        .navigationBarBackButtonHidden(edit.busy)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if busy {
+                if edit.busy {
                     ProgressView()
                 } else {
-                    Button("Save", action: save)
+                    Button("Save") { Task { if await edit.save(with: tracker) { onFinished() } } }
                         .fontWeight(.semibold)
-                        .disabled(!canSave)
+                        .disabled(!edit.canSave)
                         .accessibilityLabel("Save changes")
                 }
             }
         }
         .confirmationDialog("Delete time entry?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { delete() }
+            Button("Delete", role: .destructive) {
+                Task {
+                    await edit.delete(with: tracker)
+                    onFinished()
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This can't be undone.")
+        }
+    }
+
+    private func shiftSection(_ info: TimesheetEntryInfo) -> some View {
+        let status = TimesheetEditStatus(info.summary.status)
+        return Section {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(info.job, systemImage: "briefcase.fill")
+                    .font(.app(16, .semibold))
+                    .foregroundStyle(TimesheetColors.ink)
+                Text(info.address).font(.app(13)).foregroundStyle(.secondary).lineLimit(2)
+            }
+            .padding(.vertical, 2)
+            LabeledContent("Crew member", value: painterName)
+            LabeledContent("Date", value: day.fullDate())
+            Label {
+                Text(status.label)
+            } icon: {
+                Image(systemName: status.icon).foregroundStyle(status.color)
+            }
+            LabeledContent("Distance", value: info.summary.distanceLabel)
+        }
+    }
+
+    private func timeLabel(_ title: String, source: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(source).font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -151,54 +139,32 @@ struct TimesheetEditTimeView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(busy)
+        .disabled(edit.busy)
     }
+}
 
-    private struct StatusPresentation {
-        var icon: String
-        var label: String
-        var pin: Color
-    }
+/// How the edit screen describes where the clock-in happened.
+private struct TimesheetEditStatus {
+    var icon: String
+    var label: String
+    var color: Color
 
-    private func statusPresentation(_ status: SegmentSummary.Status) -> StatusPresentation {
+    init(_ status: SegmentSummary.Status) {
         switch status {
         case .unavailable:
-            return StatusPresentation(icon: "questionmark.circle.fill", label: "Location was not recorded for this clock-in",
-                                      pin: TimesheetColors.muted)
+            self.init(icon: "questionmark.circle.fill", label: "Location was not recorded for this clock-in", color: TimesheetColors.muted)
         case .onSite:
-            return StatusPresentation(icon: "checkmark.circle.fill", label: "On site during clock-in", pin: TimesheetColors.teal)
+            self.init(icon: "checkmark.circle.fill", label: "On site during clock-in", color: TimesheetColors.teal)
         case .mixed:
-            return StatusPresentation(icon: "arrow.left.arrow.right.circle.fill", label: "On and off site during clock-in",
-                                      pin: TimesheetColors.teal)
+            self.init(icon: "arrow.left.arrow.right.circle.fill", label: "On and off site during clock-in", color: TimesheetColors.teal)
         case .offSite:
-            return StatusPresentation(icon: "exclamationmark.circle.fill", label: "Off site during clock-in", pin: TimesheetColors.red)
+            self.init(icon: "exclamationmark.circle.fill", label: "Off site during clock-in", color: TimesheetColors.red)
         }
     }
 
-    private func save() {
-        guard canSave else { return }
-        busy = true
-        error = nil
-        Task {
-            do {
-                try await tracker.updateEntry(entry, startedAt: startAt, endedAt: isActive ? nil : endAt)
-                busy = false
-                onFinished()
-            } catch {
-                busy = false
-                let message = error.localizedDescription
-                self.error = message.isEmpty ? "Could not save changes. Try again." : message
-            }
-        }
-    }
-
-    private func delete() {
-        busy = true
-        error = nil
-        Task {
-            await tracker.deleteEntry(entry)
-            busy = false
-            onFinished()
-        }
+    init(icon: String, label: String, color: Color) {
+        self.icon = icon
+        self.label = label
+        self.color = color
     }
 }

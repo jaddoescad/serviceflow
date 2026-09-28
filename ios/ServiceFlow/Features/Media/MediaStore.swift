@@ -21,6 +21,7 @@ final class MediaStore {
     private(set) var deletingId: String?
 
     @ObservationIgnored private var loadToken = 0
+    /// Uploads merged from the queue, kept when a reload races them.
     @ObservationIgnored private var absorbed = Set<String>()
 
     init(project: Project, session: SessionContext, includeLinkedLead: Bool) {
@@ -31,29 +32,41 @@ final class MediaStore {
         observeUploads()
     }
 
-    var projectId: String { project.id }
-    var projectKind: ProjectKind { project.kind }
-    var mediaClient: MediaClient? { session.mediaClient }
-    var userId: String { session.user.id }
     var uploaderName: String { session.displayName }
 
     /// Captures of this project that aren't in `items` yet.
     var pending: [PendingUpload] {
         guard let uploads = session.uploads else { return [] }
         let known = Set(items.map(\.id))
-        return uploads.items(for: project.id, kind: project.kind).filter { item in
-            guard item.status == .uploaded else { return true }
-            return !(item.remote.map { known.contains($0.id) } ?? true)
+        return uploads.items(for: project.id, kind: project.kind).filter { upload in
+            guard upload.status == .uploaded, let remote = upload.remote else { return true }
+            return !known.contains(remote.id)
         }
     }
 
-    /// Uploaded media, newest first (the grid and lightbox order).
+    /// Uploaded media, newest first (the lightbox order).
     var sortedItems: [MediaItem] {
         items.enumerated().sorted { lhs, rhs in
-            let l = lhs.element.timestamp?.timeIntervalSince1970 ?? 0
-            let r = rhs.element.timestamp?.timeIntervalSince1970 ?? 0
-            return l == r ? lhs.offset < rhs.offset : l > r
+            let left = lhs.element.timestamp?.timeIntervalSince1970 ?? 0
+            let right = rhs.element.timestamp?.timeIntervalSince1970 ?? 0
+            return left == right ? lhs.offset < rhs.offset : left > right
         }.map(\.element)
+    }
+
+    struct PendingCounts {
+        /// Waiting or uploading.
+        var active = 0
+        var failed = 0
+    }
+
+    var pendingCounts: PendingCounts {
+        pending.reduce(into: PendingCounts()) { counts, upload in
+            switch upload.status {
+            case .queued, .uploading: counts.active += 1
+            case .failed: counts.failed += 1
+            case .uploaded: break
+            }
+        }
     }
 
     // MARK: Loading
@@ -73,23 +86,28 @@ final class MediaStore {
         loadToken += 1
         let token = loadToken
         isLoading = true
+        defer {
+            if token == loadToken {
+                isLoading = false
+                hasLoaded = true
+            }
+        }
         do {
             let linkedLead = includeLinkedLead && !project.isLead ? project.linkedLeadId : nil
             let loaded = try await session.api.media(projectId: project.id, kind: project.kind, linkedLeadId: linkedLead)
             guard token == loadToken else { return }
             let loadedIds = Set(loaded.map(\.id))
             // Keep uploads that landed while the list was loading.
-            let recent = items.filter { absorbed.contains($0.id) && !loadedIds.contains($0.id) }
-            items = recent + loaded
+            items = items.filter { absorbed.contains($0.id) && !loadedIds.contains($0.id) } + loaded
             error = nil
         } catch {
             guard token == loadToken else { return }
             items = []
             self.error = Self.message(error) ?? "Unable to load project media."
         }
-        isLoading = false
-        hasLoaded = true
     }
+
+    // MARK: Delete
 
     /// Moves the item to the project's trash. Returns whether it worked.
     func delete(_ item: MediaItem) async -> Bool {
@@ -111,26 +129,66 @@ final class MediaStore {
         }
     }
 
+    // MARK: Edit
+
+    /// The person who took it, or a manager, can change its description and
+    /// drawings (the server enforces the same rule).
+    func canEdit(_ item: MediaItem) -> Bool {
+        item.uploadedBy == session.user.id || session.isManager
+    }
+
+    enum EditOutcome: Equatable {
+        case saved
+        /// Someone else changed it first; the list was reloaded.
+        case conflict
+        case failed(String)
+    }
+
+    /// Saves a new description and/or drawings (nil leaves a part unchanged).
+    /// The original image is never touched.
+    func saveEdits(to item: MediaItem, description: String?, annotations: AnnotationDocument?) async -> EditOutcome {
+        guard let projectId = item.jobId ?? item.leadId else { return .failed("This photo is missing its project.") }
+        do {
+            let saved = try await session.savePhotoEdits(
+                projectId: projectId, mediaId: item.id, description: description, annotations: annotations,
+                expected: PhotoRevisions(details: item.detailsRevision, annotations: item.annotationsRevision)
+            )
+            var updated = item
+            if let description {
+                let text = description.trimmingCharacters(in: .whitespacesAndNewlines)
+                updated.mediaDescription = text.isEmpty ? nil : text
+            }
+            if let annotations {
+                let document = annotations.sanitized()
+                updated.annotations = document.isEmpty ? nil : document
+            }
+            updated.detailsRevision = saved.details
+            updated.annotationsRevision = saved.annotations
+            replace(updated)
+            return .saved
+        } catch {
+            let message = Self.message(error) ?? "Couldn't save your changes. Try again."
+            if message.localizedCaseInsensitiveContains("changed elsewhere") {
+                await load()
+                return .conflict
+            }
+            return .failed(message)
+        }
+    }
+
+    private func replace(_ item: MediaItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        items[index] = item
+    }
+
     // MARK: Upload queue
 
     func retry(_ localId: String) { session.uploads?.retry(localId) }
     func retryAllFailed() { session.uploads?.retryAllFailed(projectId: project.id) }
     func discard(_ localId: String) { session.uploads?.discard(localId) }
-    func clearCompleted() { session.uploads?.clearCompleted() }
 
     func fileURL(for upload: PendingUpload) -> URL? { session.uploads?.fileURL(for: upload) }
     func posterURL(for upload: PendingUpload) -> URL? { session.uploads?.posterURL(for: upload) }
-
-    var pendingCounts: (active: Int, uploading: Int, failed: Int) {
-        pending.reduce(into: (0, 0, 0)) { counts, item in
-            switch item.status {
-            case .queued: counts.0 += 1
-            case .uploading: counts.0 += 1; counts.1 += 1
-            case .failed: counts.2 += 1
-            case .uploaded: break
-            }
-        }
-    }
 
     private func observeUploads() {
         guard let uploads = session.uploads else { return }
@@ -150,6 +208,15 @@ final class MediaStore {
             guard var remote = upload.remote, !absorbed.contains(remote.id) else { continue }
             absorbed.insert(remote.id)
             if remote.uploaderName == nil { remote.uploaderName = session.displayName }
+            // The note and drawings were saved with the upload.
+            if remote.mediaDescription == nil, let note = upload.note?.trimmingCharacters(in: .whitespacesAndNewlines), !note.isEmpty {
+                remote.mediaDescription = note
+                remote.detailsRevision = upload.savedDetailsRevision?.uuidString.lowercased()
+            }
+            if remote.annotations == nil, let document = upload.annotations, !document.isEmpty {
+                remote.annotations = document
+                remote.annotationsRevision = upload.savedAnnotationsRevision?.uuidString.lowercased()
+            }
             items.removeAll { $0.id == remote.id }
             items.insert(remote, at: 0)
             if error != nil, hasLoaded { error = nil }

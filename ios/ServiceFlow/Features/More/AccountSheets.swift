@@ -8,8 +8,7 @@ struct DeleteAccountView: View {
     var onDeleted: () -> Void
 
     @State private var confirmation = ""
-    @State private var error: String?
-    @State private var deleting = false
+    @State private var request = RequestState()
 
     private var confirmed: Bool { confirmation.trimmingCharacters(in: .whitespaces).uppercased() == "DELETE" }
 
@@ -30,18 +29,18 @@ struct DeleteAccountView: View {
             } header: {
                 Text("Type DELETE to confirm")
             } footer: {
-                AuthError(message: error)
+                AuthErrorText(message: request.error)
             }
-            AuthPrimaryButton(title: "Delete Account", busy: deleting, enabled: confirmed, role: .destructive, action: delete)
+            AuthPrimaryButton(title: "Delete Account", busy: request.isRunning, enabled: confirmed, role: .destructive, action: delete)
         }
         .navigationTitle("Delete Account")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }.disabled(deleting)
+                Button("Cancel") { dismiss() }.disabled(request.isRunning)
             }
         }
-        .interactiveDismissDisabled(deleting)
+        .interactiveDismissDisabled(request.isRunning)
     }
 
     private func bullet(_ text: String) -> some View {
@@ -51,21 +50,14 @@ struct DeleteAccountView: View {
 
     private func delete() {
         guard confirmed, let api = model.api else { return }
-        deleting = true
-        error = nil
-        Task {
-            do {
-                switch try await api.deleteAccount() {
-                case .deleted:
-                    dismiss()
-                    onDeleted()
-                case .blocked(let message), .failed(let message):
-                    error = message
-                }
-            } catch {
-                self.error = (error as? BackendError)?.message ?? error.localizedDescription
+        request.run {
+            switch try await api.deleteAccount() {
+            case .deleted:
+                dismiss()
+                onDeleted()
+            case .blocked(let message), .failed(let message):
+                request.error = message
             }
-            deleting = false
         }
     }
 }
@@ -88,8 +80,7 @@ struct InviteCrewView: View {
     @State private var role = "crew"
     @State private var code: String?
     @State private var expires: Date?
-    @State private var error: String?
-    @State private var creating = false
+    @State private var request = RequestState()
 
     private var managedCompanies: [CompanyMembership] { session.memberships.filter(\.isManager) }
     private var selectedCompany: CompanyMembership? {
@@ -135,9 +126,9 @@ struct InviteCrewView: View {
                 }
             }
 
-            Section {} footer: { AuthError(message: error) }
+            Section {} footer: { AuthErrorText(message: request.error) }
 
-            AuthPrimaryButton(title: code == nil ? "Create Invite Code" : "Create Another Code", busy: creating,
+            AuthPrimaryButton(title: code == nil ? "Create Invite Code" : "Create Another Code", busy: request.isRunning,
                               enabled: !managedCompanies.isEmpty, action: create)
         }
         .navigationTitle("Invite Crew")
@@ -155,17 +146,12 @@ struct InviteCrewView: View {
 
     private func create() {
         guard let orgId = selectedCompany?.orgId else { return }
-        creating = true
-        error = nil
-        Task {
-            do {
-                let result = try await session.api.createInvitation(role: role, email: nil, orgId: orgId)
-                code = result["code"]?.nonEmptyString
-                expires = result["expires_at"]?.dateValue
-            } catch {
-                self.error = (error as? BackendError)?.message ?? error.localizedDescription
-            }
-            creating = false
+        let api = session.api
+        let role = role
+        request.run {
+            let result = try await api.createInvitation(role: role, email: nil, orgId: orgId)
+            code = result["code"]?.nonEmptyString
+            expires = result["expires_at"]?.dateValue
         }
     }
 }

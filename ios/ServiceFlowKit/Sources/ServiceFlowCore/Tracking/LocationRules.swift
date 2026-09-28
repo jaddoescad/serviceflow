@@ -31,13 +31,10 @@ public enum Geo {
 
     /// The closest non-archived job with coordinates.
     public static func nearest(_ projects: [Project], to point: Coordinate) -> (project: Project, distance: Double)? {
-        var best: (Project, Double)?
-        for project in projects where !project.isArchived {
-            guard let coordinate = project.coordinate else { continue }
-            let distance = distance(point, coordinate)
-            if best == nil || distance < best!.1 { best = (project, distance) }
-        }
-        return best
+        projects
+            .filter { !$0.isArchived }
+            .compactMap { project in project.coordinate.map { (project: project, distance: distance(point, $0)) } }
+            .min { $0.distance < $1.distance }
     }
 }
 

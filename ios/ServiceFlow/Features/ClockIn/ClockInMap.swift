@@ -16,11 +16,19 @@ struct ClockInMap: View {
     @State private var centredId: String?
     @State private var didInitialFit = false
 
-    private var markers: [Project] {
+    /// A job that has a map position.
+    private struct MapJob: Identifiable {
+        let project: Project
+        let coordinate: CLLocationCoordinate2D
+        var id: String { project.id }
+    }
+
+    /// Active jobs with coordinates, plus the selected one if it isn't among them.
+    private var markers: [MapJob] {
         var seen = Set<String>()
-        var list = projects.filter { !$0.isArchived && $0.coordinate != nil && seen.insert($0.id).inserted }
-        if let selected, selected.coordinate != nil, !seen.contains(selected.id) { list.append(selected) }
-        return list
+        return (projects + (selected.map { [$0] } ?? []))
+            .filter { ($0.id == selected?.id || !$0.isArchived) && seen.insert($0.id).inserted }
+            .compactMap { project in project.coordinate.map { MapJob(project: project, coordinate: $0.location) } }
     }
 
     private var authorized: Bool { session.locationAuthorization.isAuthorized }
@@ -37,11 +45,11 @@ struct ClockInMap: View {
                         .stroke(Palette.teal, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                 }
             }
-            ForEach(markers) { project in
-                Marker(project.name, systemImage: project.isLead ? "person.fill" : "briefcase.fill",
-                       coordinate: project.coordinate!.location)
-                    .tint(project.id == selected?.id ? Palette.teal : Palette.navy)
-                    .tag(project.id)
+            ForEach(markers) { job in
+                Marker(job.project.name, systemImage: job.project.isLead ? "person.fill" : "briefcase.fill",
+                       coordinate: job.coordinate)
+                    .tint(job.id == selected?.id ? Palette.teal : Palette.navy)
+                    .tag(job.id)
             }
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
@@ -51,8 +59,8 @@ struct ClockInMap: View {
             MapScaleView()
         }
         .onChange(of: selection) { _, id in
-            guard let id, let project = markers.first(where: { $0.id == id }) else { return }
-            onSelect(project)
+            guard let id, let job = markers.first(where: { $0.id == id }) else { return }
+            onSelect(job.project)
         }
         .onChange(of: selected?.id) { _, id in
             selection = id

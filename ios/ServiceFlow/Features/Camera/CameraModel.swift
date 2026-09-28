@@ -2,51 +2,33 @@ import AVFoundation
 import Observation
 import SwiftUI
 
-/// A message in the camera's red notice banner.
-struct CameraNotice: Equatable, Identifiable {
-    let id = UUID()
-    var message: String
-    var details: String?
-
-    static func == (lhs: CameraNotice, rhs: CameraNotice) -> Bool { lhs.id == rhs.id }
-}
-
-/// Lens and flash choices last the whole app run, like the RN camera that
-/// stayed mounted with its host screen.
-enum CameraPreferences {
-    static var facing: CameraFacing = .back
-    static var flashOn = false
-}
-
-/// State and behaviour of the camera screen, on top of `CameraSessionEngine`.
+/// State and actions of the camera screen, on top of `CameraSessionEngine`.
 @MainActor
 @Observable
 final class CameraModel {
-    enum Permission { case notDetermined, granted, denied }
-
-    static let zoomSteps: [CGFloat] = [0.5, 1, 2]
     static let maxVideoSeconds = 600
 
-    private(set) var permission: Permission = CameraModel.currentPermission()
+    private(set) var permission: CameraPermission = .camera
     private(set) var mode: CameraMode = .photo
     private(set) var facing: CameraFacing = CameraPreferences.facing
     private(set) var flashOn = CameraPreferences.flashOn
-    private(set) var info: CameraDeviceInfo?
+    private(set) var zoom = CameraZoom()
     private(set) var device: AVCaptureDevice?
     private(set) var hasDevice = true
     private(set) var isRunning = false
+    /// The first live frame has arrived since the last (re)start.
     private(set) var previewReady = false
+    private(set) var previewFailed = false
     /// The last frame, shown blurred while the camera restarts.
     private(set) var frozenFrame: UIImage?
-    private(set) var previewFailed = false
-    private(set) var rawZoom: CGFloat = 1
     private(set) var isRecording = false
+    /// A stopped recording is still being written.
     private(set) var isFinalizing = false
     private(set) var recordingStartedAt: Date?
     private(set) var isCapturingPhoto = false
     private(set) var notice: CameraNotice?
 
-    /// A photo was taken: its file, pixel size and time.
+    /// A photo was taken.
     @ObservationIgnored var onPhoto: (@MainActor (CameraPhotoResult) -> Void)?
     /// A video finished: its file, wall-clock duration (ms) and start time.
     @ObservationIgnored var onVideo: (@MainActor (URL, Int, Date) -> Void)?
@@ -54,10 +36,10 @@ final class CameraModel {
     @ObservationIgnored var captureRotationAngle: @MainActor () -> CGFloat = { 90 }
 
     @ObservationIgnored let engine = CameraSessionEngine()
-    @ObservationIgnored private var requestedPermission = false
     @ObservationIgnored private var active = false
+    @ObservationIgnored private var askedPermission = false
     @ObservationIgnored private var watchdog: Task<Void, Never>?
-    @ObservationIgnored private var retries = 0
+    @ObservationIgnored private var restartedOnce = false
     @ObservationIgnored private var noticeTimer: Task<Void, Never>?
     @ObservationIgnored private var recordingLimit: Task<Void, Never>?
     @ObservationIgnored private var recordingStarting = false
@@ -65,36 +47,27 @@ final class CameraModel {
     @ObservationIgnored private var finishWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var pinchStartZoom: CGFloat = 1
     @ObservationIgnored private var audioAttached = false
-    private(set) var dictating = false
+    @ObservationIgnored private var dictating = false
 
     init() {
-        // Events arrive on the main queue.
-        engine.onEvent = { @Sendable [weak self] event in
+        engine.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
-        }
-    }
-
-    static func currentPermission() -> Permission {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: return .granted
-        case .notDetermined: return .notDetermined
-        default: return .denied
         }
     }
 
     // MARK: Lifecycle
 
-    /// The camera became visible (and the app is active).
+    /// The camera is visible and the app is active.
     func activate() {
         active = true
-        permission = Self.currentPermission()
+        permission = .camera
         switch permission {
         case .granted:
             startSession()
         case .notDetermined:
             // Ask once per opening; the system prompt comes first.
-            guard !requestedPermission else { return }
-            requestedPermission = true
+            guard !askedPermission else { return }
+            askedPermission = true
             Task {
                 let granted = await AVCaptureDevice.requestAccess(for: .video)
                 permission = granted ? .granted : .denied
@@ -110,7 +83,7 @@ final class CameraModel {
         active = false
         watchdog?.cancel()
         if isRecording { stopRecording() }
-        frozenFrame = engine.latestSnapshot ?? frozenFrame
+        freezeLastFrame()
         engine.setTorch(false)
         engine.stop()
         previewReady = false
@@ -118,39 +91,37 @@ final class CameraModel {
     }
 
     func requestPermission() {
-        requestedPermission = false
+        askedPermission = false
         activate()
     }
 
-    private func startSession() {
-        guard Self.device(for: facing) != nil else {
-            hasDevice = false
-            return
-        }
-        hasDevice = true
-        engine.configure(facing: facing)
-        if mode == .video, Self.microphoneGranted, !dictating { attachAudio() }
-        engine.start()
-    }
-
-    private static func device(for facing: CameraFacing) -> AVCaptureDevice? {
-        CameraSessionEngine.device(for: facing) ?? CameraSessionEngine.device(for: facing == .back ? .front : .back)
-    }
-
     func retryPreview() {
-        retries = 0
+        restartedOnce = false
         previewFailed = false
         notice = nil
         previewReady = false
         engine.restart()
     }
 
+    private func startSession() {
+        let available = CameraSessionEngine.device(for: facing) ?? CameraSessionEngine.device(for: facing == .back ? .front : .back)
+        hasDevice = available != nil
+        guard hasDevice else { return }
+        engine.configure(facing: facing)
+        if mode == .video, CameraPermission.microphoneGranted, !dictating { attachAudio() }
+        engine.start()
+    }
+
+    private func freezeLastFrame() {
+        frozenFrame = engine.latestSnapshot ?? frozenFrame
+    }
+
     // MARK: Events
 
     private func handle(_ event: CameraEvent) {
         switch event {
-        case .configured(let info, let device):
-            self.info = info
+        case let .configured(info, device):
+            zoom.info = info
             self.device = device
             updateTorch()
         case .configurationFailed(let message):
@@ -170,29 +141,30 @@ final class CameraModel {
             watchdog?.cancel()
             notice = nil
         case .zoomChanged(let raw):
-            rawZoom = raw
+            zoom.raw = raw
         case .interrupted(let reason):
             handleInterruption(reason)
         case .interruptionEnded:
             notice = nil
         case .runtimeError(let message):
-            showNativeError(message)
+            if let notice = CameraNotice.forNativeError(message) { show(notice) }
         }
     }
 
+    /// If no frame arrives within 3 s, restart once, then give up with a Retry button.
     private func startWatchdog() {
         watchdog?.cancel()
         guard !previewReady else { return }
         watchdog = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard let self, !Task.isCancelled, !self.previewReady, self.active else { return }
-            if self.retries == 0 {
-                self.retries = 1
-                self.show(message: "Restarting camera preview…")
-                self.engine.restart()
-            } else {
+            if self.restartedOnce {
                 self.previewFailed = true
                 self.show(message: "The camera preview did not start.")
+            } else {
+                self.restartedOnce = true
+                self.show(message: "Restarting camera preview…")
+                self.engine.restart()
             }
         }
     }
@@ -201,7 +173,8 @@ final class CameraModel {
         let details = "iPhone camera interruption: \(reason ?? "")"
         switch reason {
         case "audio-device-in-use-by-another-client":
-            show(message: "Your phone call is using the microphone. Photo mode is still available.", details: details)
+            // A phone call owns the microphone: fall back to photos.
+            show(message: CameraNotice.phoneCallUsesMicrophone, details: details)
             engine.setAudio(false)
             audioAttached = false
             if mode == .video, !isRecording {
@@ -209,7 +182,7 @@ final class CameraModel {
                 updateTorch()
             }
         case "video-device-in-use-by-another-client", "video-device-not-available-with-multiple-foreground-apps":
-            show(message: "Your iPhone is using the camera in another app or call.", details: details)
+            show(message: CameraNotice.cameraInUse, details: details)
         case "video-device-not-available-in-background":
             break
         default:
@@ -217,23 +190,17 @@ final class CameraModel {
         }
     }
 
-    private func showNativeError(_ message: String) {
-        if message.range(of: "cancel", options: .caseInsensitive) != nil { return }
-        if message.range(of: "audio-device-in-use-by-another-client|audio.*(busy|in use|another client)",
-                         options: [.regularExpression, .caseInsensitive]) != nil {
-            show(message: "Your phone call is using the microphone. Photo mode is still available.", details: message)
-        } else if message.range(of: "video-device-in-use-by-another-client|camera.*(busy|in use|another client)",
-                                options: [.regularExpression, .caseInsensitive]) != nil {
-            show(message: "Your iPhone is using the camera in another app or call.", details: message)
-        } else {
-            show(message: "The camera could not start.", details: message)
-        }
-    }
+    // MARK: Notices
 
     func show(message: String, details: String? = nil) {
         let detail = details?.trimmingCharacters(in: .whitespacesAndNewlines)
-        notice = CameraNotice(message: message, details: detail == message || detail?.isEmpty == true ? nil : detail)
+        show(CameraNotice(message: message, details: detail == message || detail?.isEmpty == true ? nil : detail))
+    }
+
+    private func show(_ newNotice: CameraNotice) {
+        notice = newNotice
         noticeTimer?.cancel()
+        // Clears itself after 6 s once the preview is running.
         noticeTimer = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 6_000_000_000)
             guard let self, !Task.isCancelled, self.previewReady else { return }
@@ -246,11 +213,11 @@ final class CameraModel {
     // MARK: Controls
 
     var canUseFlash: Bool {
-        guard let info else { return false }
+        guard let info = zoom.info else { return false }
         return mode == .video ? info.hasTorch : info.hasFlash
     }
 
-    var canFlip: Bool { info?.canFlip ?? CameraSessionEngine.canFlip }
+    var canFlip: Bool { zoom.info?.canFlip ?? CameraSessionEngine.canFlip }
 
     var canShoot: Bool {
         permission == .granted && isRunning && previewReady && !isFinalizing && !isCapturingPhoto
@@ -267,9 +234,9 @@ final class CameraModel {
         guard !isRecording, canFlip else { return }
         facing = facing == .back ? .front : .back
         CameraPreferences.facing = facing
-        frozenFrame = engine.latestSnapshot ?? frozenFrame
+        freezeLastFrame()
         previewReady = false
-        retries = 0
+        restartedOnce = false
         previewFailed = false
         engine.configure(facing: facing)
         startWatchdog()
@@ -282,12 +249,12 @@ final class CameraModel {
         mode = newMode
         notice = nil
         updateTorch()
-        guard newMode == .video else { return }
-        if Self.microphoneGranted {
-            if !dictating { attachAudio() }
+        guard newMode == .video, !dictating else { return }
+        if CameraPermission.microphoneGranted {
+            attachAudio()
         } else if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             Task {
-                if await AVCaptureDevice.requestAccess(for: .audio), self.mode == .video, !self.dictating { self.attachAudio() }
+                if await AVCaptureDevice.requestAccess(for: .audio), mode == .video, !dictating { attachAudio() }
             }
         }
     }
@@ -298,54 +265,31 @@ final class CameraModel {
         engine.setAudio(true)
     }
 
-    /// Dictating a note needs the microphone; the camera lets go of it.
+    /// Dictating a note needs the microphone, so the camera lets go of it.
     func beginDictation() {
         dictating = true
-        if audioAttached {
-            audioAttached = false
-            engine.setAudio(false)
-        }
+        guard audioAttached else { return }
+        audioAttached = false
+        engine.setAudio(false)
     }
 
     func endDictation() {
         dictating = false
-        if mode == .video, Self.microphoneGranted { attachAudio() }
+        if mode == .video, CameraPermission.microphoneGranted { attachAudio() }
     }
 
+    /// In video mode the flash button is a torch that stays on.
     private func updateTorch() {
-        engine.setTorch(mode == .video && flashOn && (info?.hasTorch ?? false) && active)
+        engine.setTorch(mode == .video && flashOn && (zoom.info?.hasTorch ?? false) && active)
     }
 
     // MARK: Zoom and focus
 
-    var rawPerDisplay: CGFloat { info?.rawPerDisplay ?? 1 }
-    var displayZoom: CGFloat { rawZoom / max(rawPerDisplay, 0.01) }
-
-    /// Zoom steps this lens can reach; 1× is always offered.
-    var availableSteps: [CGFloat] {
-        guard let info else { return [1] }
-        return Self.zoomSteps.filter { step in
-            step == 1 || (step * info.rawPerDisplay >= info.minZoom - 0.001 && step * info.rawPerDisplay <= info.maxZoom + 0.001)
-        }
-    }
-
-    var activeStep: CGFloat {
-        availableSteps.min { abs($0 - displayZoom) < abs($1 - displayZoom) } ?? 1
-    }
-
-    func label(for step: CGFloat) -> String {
-        if step == activeStep, abs(step - displayZoom) > 0.05 {
-            let value = String(format: "%.1f", displayZoom)
-            return (value.hasPrefix("0") ? String(value.dropFirst()) : value) + "x"
-        }
-        return step == 0.5 ? ".5x" : "\(Int(step))x"
-    }
-
     func zoom(to step: CGFloat) {
-        engine.setZoom(raw: step * rawPerDisplay, animated: true)
+        engine.setZoom(raw: zoom.raw(for: step), animated: true)
     }
 
-    func pinchBegan() { pinchStartZoom = rawZoom }
+    func pinchBegan() { pinchStartZoom = zoom.raw }
 
     func pinchChanged(_ scale: CGFloat) {
         engine.setZoom(raw: pinchStartZoom * scale)
@@ -366,7 +310,8 @@ final class CameraModel {
         guard canShoot, !isRecording else { return }
         notice = nil
         isCapturingPhoto = true
-        engine.capturePhoto(flash: flashOn && (info?.hasFlash ?? false), rotationAngle: captureRotationAngle()) { [weak self] result in
+        let flash = flashOn && (zoom.info?.hasFlash ?? false)
+        engine.capturePhoto(flash: flash, rotationAngle: captureRotationAngle()) { [weak self] result in
             guard let self else { return }
             self.isCapturingPhoto = false
             switch result {
@@ -379,10 +324,8 @@ final class CameraModel {
     private func startRecording() {
         guard canShoot, !isRecording, !recordingStarting else { return }
         Task {
-            if !Self.microphoneGranted {
-                // Records without sound when the microphone isn't allowed.
-                if await Self.ensureMicrophone(), !dictating { attachAudio() }
-            }
+            // Records without sound when the microphone isn't allowed.
+            if !CameraPermission.microphoneGranted, await CameraPermission.ensureMicrophone(), !dictating { attachAudio() }
             notice = nil
             // The UI flips immediately so a second tap is a stop.
             isRecording = true
@@ -390,29 +333,37 @@ final class CameraModel {
             stopRequested = false
             let startedAt = Date()
             recordingStartedAt = startedAt
-            recordingLimit?.cancel()
-            recordingLimit = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.maxVideoSeconds) * 1_000_000_000)
-                guard !Task.isCancelled else { return }
-                self?.stopRecording()
-            }
+            scheduleRecordingLimit()
             engine.startRecording(rotationAngle: captureRotationAngle()) { [weak self] result in
-                guard let self else { return }
-                self.recordingStarting = false
-                switch result {
-                case .success:
-                    if self.stopRequested {
-                        self.stopRequested = false
-                        self.finishRecording(startedAt: startedAt)
-                    }
-                case .failure(let failure):
-                    self.isRecording = false
-                    self.isFinalizing = false
-                    self.recordingLimit?.cancel()
-                    self.resumeWaiters()
-                    self.show(message: failure.message, details: failure.details)
-                }
+                self?.recordingDidStart(result, startedAt: startedAt)
             }
+        }
+    }
+
+    private func recordingDidStart(_ result: Result<Void, CameraFailure>, startedAt: Date) {
+        recordingStarting = false
+        switch result {
+        case .success:
+            // Stop was tapped while the recorder was still starting.
+            if stopRequested {
+                stopRequested = false
+                finishRecording(startedAt: startedAt)
+            }
+        case .failure(let failure):
+            isRecording = false
+            isFinalizing = false
+            recordingLimit?.cancel()
+            resumeFinishWaiters()
+            show(message: failure.message, details: failure.details)
+        }
+    }
+
+    private func scheduleRecordingLimit() {
+        recordingLimit?.cancel()
+        recordingLimit = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.maxVideoSeconds) * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.stopRecording()
         }
     }
 
@@ -438,7 +389,7 @@ final class CameraModel {
             case .success(let url): self.onVideo?(url, durationMs, startedAt)
             case .failure(let failure): self.show(message: failure.message, details: failure.details)
             }
-            self.resumeWaiters()
+            self.resumeFinishWaiters()
         }
     }
 
@@ -450,21 +401,9 @@ final class CameraModel {
         await withCheckedContinuation { continuation in finishWaiters.append(continuation) }
     }
 
-    private func resumeWaiters() {
+    private func resumeFinishWaiters() {
         let waiters = finishWaiters
         finishWaiters.removeAll()
         waiters.forEach { $0.resume() }
-    }
-
-    // MARK: Microphone
-
-    static var microphoneGranted: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
-
-    static func ensureMicrophone() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: return true
-        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .audio)
-        default: return false
-        }
     }
 }

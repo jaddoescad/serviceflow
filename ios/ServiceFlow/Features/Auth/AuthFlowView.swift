@@ -44,14 +44,13 @@ struct SignInView: View {
     var onForgot: () -> Void
 
     @State private var password = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
     @FocusState private var focus: Field?
 
     enum Field { case email, password }
 
     private var canSubmit: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.trimmingCharacters(in: .whitespaces).isEmpty && !loading
+        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
@@ -69,10 +68,10 @@ struct SignInView: View {
                 AuthPasswordField(text: $password, onSubmit: submit)
                     .focused($focus, equals: .password)
             } footer: {
-                AuthError(message: error)
+                AuthErrorText(message: request.error)
             }
 
-            AuthPrimaryButton(title: "Log In", busy: loading, enabled: canSubmit, action: submit)
+            AuthPrimaryButton(title: "Log In", busy: request.isRunning, enabled: canSubmit, action: submit)
 
             Section {
                 Button("Forgot password?", action: onForgot)
@@ -87,25 +86,19 @@ struct SignInView: View {
                 Text("New to ServiceFlow?")
             }
         }
-        .onChange(of: email) { _, _ in error = nil }
-        .onChange(of: password) { _, _ in error = nil }
+        .onChange(of: email) { _, _ in request.error = nil }
+        .onChange(of: password) { _, _ in request.error = nil }
     }
 
     private func submit() {
-        guard canSubmit, let api = model.api else {
-            if !loading { error = "Enter your email and password." }
+        guard canSubmit else {
+            request.error = "Enter your email and password."
             return
         }
-        error = nil
-        loading = true
-        Task {
-            do {
-                try await api.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
-            } catch {
-                self.error = AuthMessage.from(error)
-            }
-            loading = false
-        }
+        guard let api = model.api else { return }
+        let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The password is sent as typed; only the email is trimmed.
+        request.run { try await api.signIn(email: address, password: password) }
     }
 }
 
@@ -117,8 +110,7 @@ struct SignUpView: View {
     var onCodeSent: (String) -> Void
 
     @State private var name = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
 
     var body: some View {
         AuthForm(title: "Create Account") {
@@ -130,30 +122,25 @@ struct SignUpView: View {
                 Text("Start a company, or join your team with an invite code.")
                     .textCase(nil)
             } footer: {
-                if let error { AuthError(message: error) } else { Text("We'll email you a 6-digit code to confirm it's you.") }
+                AuthFooter(error: request.error, hint: "We'll email you a 6-digit code to confirm it's you.")
             }
-            AuthPrimaryButton(title: "Send Code", busy: loading, enabled: !loading, action: submit)
+            AuthPrimaryButton(title: "Send Code", busy: request.isRunning, enabled: true, action: submit)
         }
-        .onChange(of: name) { _, _ in error = nil }
-        .onChange(of: email) { _, _ in error = nil }
+        .onChange(of: name) { _, _ in request.error = nil }
+        .onChange(of: email) { _, _ in request.error = nil }
     }
 
     private func submit() {
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let problem = AccountValidation.name(name) ?? AccountValidation.email(address) {
-            error = problem
+        let fullName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let problem = AccountValidation.name(fullName) ?? AccountValidation.email(address) {
+            request.error = problem
             return
         }
         guard let api = model.api else { return }
-        loading = true
-        Task {
-            do {
-                try await api.sendSignUpCode(email: address, name: name.trimmingCharacters(in: .whitespacesAndNewlines))
-                onCodeSent(address)
-            } catch {
-                self.error = AuthMessage.from(error)
-            }
-            loading = false
+        request.run {
+            try await api.sendSignUpCode(email: address, name: fullName)
+            onCodeSent(address)
         }
     }
 }
@@ -165,8 +152,7 @@ struct ForgotPasswordView: View {
     @Binding var email: String
     var onCodeSent: (String) -> Void
 
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
 
     var body: some View {
         AuthForm(title: "Reset Password") {
@@ -174,29 +160,23 @@ struct ForgotPasswordView: View {
                 AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress,
                               submitLabel: .send, onSubmit: submit)
             } footer: {
-                if let error { AuthError(message: error) } else { Text("We'll email you a 6-digit code to set a new password.") }
+                AuthFooter(error: request.error, hint: "We'll email you a 6-digit code to set a new password.")
             }
-            AuthPrimaryButton(title: "Send Code", busy: loading, enabled: !loading, action: submit)
+            AuthPrimaryButton(title: "Send Code", busy: request.isRunning, enabled: true, action: submit)
         }
-        .onChange(of: email) { _, _ in error = nil }
+        .onChange(of: email) { _, _ in request.error = nil }
     }
 
     private func submit() {
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if let problem = AccountValidation.email(address) {
-            error = problem
+            request.error = problem
             return
         }
         guard let api = model.api else { return }
-        loading = true
-        Task {
-            do {
-                try await api.sendPasswordResetCode(email: address)
-                onCodeSent(address)
-            } catch {
-                self.error = AuthMessage.from(error)
-            }
-            loading = false
+        request.run {
+            try await api.sendPasswordResetCode(email: address)
+            onCodeSent(address)
         }
     }
 }
@@ -210,8 +190,7 @@ struct VerifyCodeView: View {
     var onVerified: () -> Void
 
     @State private var code = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
     @State private var resendNote: String?
 
     var body: some View {
@@ -221,50 +200,45 @@ struct VerifyCodeView: View {
             } header: {
                 Text("Enter the 6-digit code sent to \(email).").textCase(nil)
             } footer: {
-                if let error { AuthError(message: error) } else if let resendNote { Text(resendNote) }
+                AuthFooter(error: request.error, hint: resendNote)
             }
-            AuthPrimaryButton(title: "Continue", busy: loading, enabled: code.count == 6, action: verify)
+            AuthPrimaryButton(title: "Continue", busy: request.isRunning, enabled: code.count == 6, action: verify)
             Section {
                 Button("Send a New Code", action: resend).frame(maxWidth: .infinity)
             }
         }
-        .onChange(of: code) { _, _ in error = nil }
+        .onChange(of: code) { _, _ in request.error = nil }
     }
 
     private func verify() {
-        guard code.count == 6, !loading, let api = model.api else { return }
-        loading = true
-        // Keep these screens up after the code signs the person in, until a
-        // password is set.
-        model.holdAuthFlow = true
-        Task {
+        guard code.count == 6, let api = model.api else { return }
+        let code = code
+        request.run {
+            // Keep these screens up after the code signs the person in, until
+            // a password is set.
+            model.holdAuthFlow = true
             do {
                 switch purpose {
                 case .signUp: try await api.verifyEmailCode(email: email, code: code)
                 case .reset: try await api.verifyPasswordResetCode(email: email, code: code)
                 }
-                onVerified()
             } catch {
                 model.holdAuthFlow = false
-                self.error = AuthMessage.from(error)
+                throw error
             }
-            loading = false
+            onVerified()
         }
     }
 
     private func resend() {
         guard let api = model.api else { return }
         resendNote = nil
-        Task {
-            do {
-                switch purpose {
-                case .signUp: try await api.sendSignInCode(email: email)
-                case .reset: try await api.sendPasswordResetCode(email: email)
-                }
-                resendNote = "A new code is on its way."
-            } catch {
-                self.error = AuthMessage.from(error)
+        request.run {
+            switch purpose {
+            case .signUp: try await api.sendSignInCode(email: email)
+            case .reset: try await api.sendPasswordResetCode(email: email)
             }
+            resendNote = "A new code is on its way."
         }
     }
 }
@@ -276,36 +250,29 @@ struct SetPasswordView: View {
     var purpose: AuthFlowView.CodePurpose
 
     @State private var password = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
 
     var body: some View {
         AuthForm(title: purpose == .signUp ? "Choose a Password" : "New Password") {
             Section {
                 AuthPasswordField(placeholder: "New password", text: $password, content: .newPassword, onSubmit: save)
             } footer: {
-                if let error { AuthError(message: error) } else { Text("Use at least 8 characters. You'll sign in with your email and this password.") }
+                AuthFooter(error: request.error, hint: "Use at least 8 characters. You'll sign in with your email and this password.")
             }
-            AuthPrimaryButton(title: "Save Password", busy: loading, enabled: !password.isEmpty, action: save)
+            AuthPrimaryButton(title: "Save Password", busy: request.isRunning, enabled: !password.isEmpty, action: save)
         }
-        .onChange(of: password) { _, _ in error = nil }
+        .onChange(of: password) { _, _ in request.error = nil }
     }
 
     private func save() {
         if let problem = AccountValidation.password(password) {
-            error = problem
+            request.error = problem
             return
         }
         guard let api = model.api else { return }
-        loading = true
-        Task {
-            do {
-                try await api.updateAccount(password: password)
-                await model.finishAuthFlow()
-            } catch {
-                self.error = AuthMessage.from(error)
-            }
-            loading = false
+        request.run {
+            try await api.updateAccount(password: password)
+            await model.finishAuthFlow()
         }
     }
 }

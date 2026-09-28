@@ -102,16 +102,21 @@ final class TeamMapModel {
     /// A region that shows every coordinate, leaving room for the bottom panel.
     static func region(fitting coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion? {
         guard let first = coordinates.first else { return nil }
-        if coordinates.count == 1 {
+        guard coordinates.count > 1 else {
             return MKCoordinateRegion(center: first, span: MKCoordinateSpan(latitudeDelta: 0.025, longitudeDelta: 0.025))
         }
-        let lats = coordinates.map(\.latitude)
-        let lngs = coordinates.map(\.longitude)
-        let latDelta = max(0.01, (lats.max()! - lats.min()!) * 1.9)
-        let lngDelta = max(0.01, (lngs.max()! - lngs.min()!) * 1.4)
+        var minLat = first.latitude, maxLat = first.latitude
+        var minLng = first.longitude, maxLng = first.longitude
+        for coordinate in coordinates.dropFirst() {
+            minLat = min(minLat, coordinate.latitude)
+            maxLat = max(maxLat, coordinate.latitude)
+            minLng = min(minLng, coordinate.longitude)
+            maxLng = max(maxLng, coordinate.longitude)
+        }
+        let latDelta = max(0.01, (maxLat - minLat) * 1.9)
+        let lngDelta = max(0.01, (maxLng - minLng) * 1.4)
         // Shift the centre south so the pins sit above the bottom panel.
-        let center = CLLocationCoordinate2D(latitude: (lats.max()! + lats.min()!) / 2 - latDelta * 0.18,
-                                            longitude: (lngs.max()! + lngs.min()!) / 2)
+        let center = CLLocationCoordinate2D(latitude: (maxLat + minLat) / 2 - latDelta * 0.18, longitude: (maxLng + minLng) / 2)
         return MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lngDelta))
     }
 

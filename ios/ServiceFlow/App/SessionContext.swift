@@ -8,9 +8,15 @@ import SwiftUI
 @MainActor
 @Observable
 final class SessionContext {
-    struct Profile: Codable {
+    private struct Profile: Codable {
         var fullName: String?
         var email: String?
+    }
+
+    /// One-time prompts and answers, remembered per person.
+    private enum Flag {
+        static let askedNotifications = "askedNotifications"
+        static func answeredOverBudget(_ jobId: String) -> String { "overBudget:\(jobId)" }
     }
 
     let user: CrewMember
@@ -18,6 +24,7 @@ final class SessionContext {
     let config: AppConfig
     let storage: UserStorage
     let tracker: TimeTracker
+    /// Nil when the build has no media Worker configured.
     let uploads: MediaUploadQueue?
     let mediaClient: MediaClient?
     let notifications: NotificationService
@@ -40,11 +47,11 @@ final class SessionContext {
 
     init(user authUser: User, api: ServiceFlowAPI, config: AppConfig, notifications: NotificationService, location: LocationService) {
         let userId = authUser.id.uuidString.lowercased()
-        let metadataName = authUser.userMetadata["full_name"]?.stringValue ?? authUser.userMetadata["name"]?.stringValue
         let storage = UserStorage(userId: userId, root: UserStorage.defaultRoot())
         let profileStore: JSONFileStore<Profile> = storage.store("profile")
-        let profile = profileStore.load()
-        let name = DisplayName.resolve(profileName: profile?.fullName, metadataName: metadataName, email: authUser.email)
+        let metadataName = authUser.userMetadata["full_name"]?.stringValue ?? authUser.userMetadata["name"]?.stringValue
+        let name = DisplayName.resolve(profileName: profileStore.load()?.fullName, metadataName: metadataName, email: authUser.email)
+
         user = CrewMember(id: userId, email: authUser.email, name: name)
         self.api = api
         self.config = config
@@ -60,29 +67,31 @@ final class SessionContext {
             user: user, storage: storage, backend: api, location: location, reminders: notifications,
             appVersion: config.appVersion, uploadsLocation: config.locationTrackingEnabled
         )
-        if let mediaURL = config.mediaURL {
-            let client = MediaClient(baseURL: mediaURL, token: { [api] in try await api.accessToken() })
-            mediaClient = client
-            let queue = MediaUploadQueue(client: client, storage: storage, uploaderName: name)
-            queue.saveDetails = { [api] remote, item in
-                let note = (item.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if !note.isEmpty, let revision = item.detailsRevision {
-                    try await api.editPhotoDetails(projectId: item.projectId, mediaId: remote.id,
-                                                   expectedRevision: item.savedDetailsRevision?.uuidString.lowercased(),
-                                                   revision: revision, description: note)
-                }
-                if let document = item.annotations, !document.isEmpty, let revision = item.annotationsRevision {
-                    try await api.savePhotoAnnotations(projectId: item.projectId, mediaId: remote.id,
-                                                       expectedRevision: item.savedAnnotationsRevision?.uuidString.lowercased(),
-                                                       revision: revision, document: document)
-                }
-            }
-            uploads = queue
-        } else {
-            mediaClient = nil
-            uploads = nil
-        }
+        mediaClient = config.mediaURL.map { MediaClient(baseURL: $0, token: { [api] in try await api.accessToken() }) }
+        uploads = mediaClient.map { Self.makeUploadQueue(client: $0, storage: storage, uploaderName: name, api: api) }
 
+        connectPlatformCallbacks()
+        Task { await self.refreshProfile(into: profileStore) }
+    }
+
+    private static func makeUploadQueue(client: MediaClient, storage: UserStorage, uploaderName: String,
+                                        api: ServiceFlowAPI) -> MediaUploadQueue {
+        let queue = MediaUploadQueue(client: client, storage: storage, uploaderName: uploaderName)
+        // Notes and drawings go up right after the photo, through the same
+        // save path as edits to existing photos.
+        queue.saveDetails = { remote, item in
+            _ = try await savePhotoEdits(
+                api: api, projectId: item.projectId, mediaId: remote.id,
+                description: item.note, annotations: item.annotations,
+                expected: PhotoRevisions(details: item.savedDetailsRevision?.uuidString.lowercased(),
+                                         annotations: item.savedAnnotationsRevision?.uuidString.lowercased()),
+                next: (item.detailsRevision ?? UUID(), item.annotationsRevision ?? UUID())
+            )
+        }
+        return queue
+    }
+
+    private func connectPlatformCallbacks() {
         location.onFix = { [weak self] point in
             Task { await self?.tracker.handleForegroundFix(point) }
         }
@@ -98,7 +107,6 @@ final class SessionContext {
         notifications.onReminderTap = { [weak self] _ in
             self?.showClockIn()
         }
-        Task { await self.loadProfile(profileStore: profileStore) }
     }
 
     var displayName: String { user.name }
@@ -106,11 +114,11 @@ final class SessionContext {
     /// Owners, admins and managers of any of the person's companies.
     var isManager: Bool { memberships.contains(where: \.isManager) }
     var canViewTeamMap: Bool { isManager && config.locationTrackingEnabled }
-    var companyName: String? { memberships.first?.name }
 
     // MARK: Lifecycle
 
     func start(memberships loaded: [CompanyMembership]) {
+        // Offline, the last known memberships stay in place.
         if !loaded.isEmpty {
             memberships = loaded
             membershipStore.save(loaded)
@@ -124,8 +132,7 @@ final class SessionContext {
     }
 
     func stop() {
-        loops.forEach { $0.cancel() }
-        loops = []
+        stopLoops()
         location.stopWatching()
         location.onFix = nil
         location.onAuthorizationChange = nil
@@ -141,45 +148,18 @@ final class SessionContext {
         Task {
             await tracker.appDidBecomeActive()
             await refreshAssignments()
-            if tracker.activeShift != nil, location.authorization.isAuthorized,
-               let point = await location.currentPoint(timeout: TrackingConstants.clockInLocationTimeout) {
-                await tracker.handleForegroundFix(point)
-            }
+            await captureForegroundFix()
         }
     }
 
     func didEnterBackground() {
-        loops.forEach { $0.cancel() }
-        loops = []
+        stopLoops()
         location.stopWatching()
         // Finish pending uploads of time and location while iOS allows it.
         let task = UIApplication.shared.beginBackgroundTask(withName: "ServiceFlowSync")
         Task {
             await tracker.appDidEnterBackground()
             UIApplication.shared.endBackgroundTask(task)
-        }
-    }
-
-    private func startLoops() {
-        guard loops.isEmpty else { return }
-        loops = [
-            repeating(every: 45) { [weak self] in await self?.tracker.refresh() },
-            repeating(every: 60) { [weak self] in await self?.refreshAssignments() },
-            repeating(every: TrackingConstants.foregroundHeartbeat) { [weak self] in
-                guard let self, self.tracker.activeShift != nil, self.location.authorization.isAuthorized,
-                      let point = await self.location.currentPoint(timeout: TrackingConstants.clockInLocationTimeout) else { return }
-                await self.tracker.handleForegroundFix(point)
-            },
-        ]
-    }
-
-    private func repeating(every seconds: TimeInterval, _ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
-        Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                await work()
-            }
         }
     }
 
@@ -192,20 +172,53 @@ final class SessionContext {
         }
     }
 
-    // MARK: Data
+    // MARK: Foreground loops
 
-    private func loadProfile(profileStore: JSONFileStore<Profile>) async {
-        guard let row = try? await api.profile(userId: user.id) else { return }
-        profileStore.save(Profile(fullName: row["full_name"]?.nonEmptyString, email: row["email"]?.nonEmptyString))
+    private func startLoops() {
+        guard loops.isEmpty else { return }
+        loops = [
+            repeating(every: 45) { [weak self] in await self?.tracker.refresh() },
+            repeating(every: 60) { [weak self] in await self?.refreshAssignments() },
+            repeating(every: TrackingConstants.foregroundHeartbeat) { [weak self] in await self?.captureForegroundFix() },
+        ]
     }
 
-    func refreshProjects() async {
+    private func stopLoops() {
+        loops.forEach { $0.cancel() }
+        loops = []
+    }
+
+    private func repeating(every seconds: TimeInterval, _ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await work()
+            }
+        }
+    }
+
+    /// One fresh fix for the running shift (the heartbeat, and on returning to the app).
+    private func captureForegroundFix() async {
+        guard tracker.activeShift != nil, location.authorization.isAuthorized,
+              let point = await location.currentPoint(timeout: TrackingConstants.clockInLocationTimeout) else { return }
+        await tracker.handleForegroundFix(point)
+    }
+
+    // MARK: Data
+
+    private func refreshProfile(into store: JSONFileStore<Profile>) async {
+        guard let row = try? await api.profile(userId: user.id) else { return }
+        store.save(Profile(fullName: row["full_name"]?.nonEmptyString, email: row["email"]?.nonEmptyString))
+    }
+
+    private func refreshProjects() async {
         guard let projects = try? await api.mappedProjects() else { return }
         mappedProjects = projects
         tracker.projects = projects
     }
 
-    func refreshAssignments() async {
+    private func refreshAssignments() async {
         if let ids = try? await api.assignedJobIds(userId: user.id) { assignedJobIds = ids }
     }
 
@@ -218,8 +231,8 @@ final class SessionContext {
         let shift = try await tracker.clockIn(project)
         locationAuthorization = location.authorization
         updateWatching()
-        if flag("askedNotifications") == nil {
-            setFlag("askedNotifications", "1")
+        if flag(Flag.askedNotifications) == nil {
+            setFlag(Flag.askedNotifications, "1")
             _ = await notifications.requestIfUndetermined()
         }
         return shift
@@ -241,25 +254,25 @@ final class SessionContext {
 
     // MARK: Over-budget prompt
 
-    /// The job went over budget and the person hasn't been asked about it yet.
+    /// Hours over budget when the job went over and the person hasn't been
+    /// asked about it yet; nil otherwise.
     func overBudgetHours(jobId: String) async -> Double? {
-        guard flag("overBudget:\(jobId)") == nil,
+        guard flag(Flag.answeredOverBudget(jobId)) == nil,
               let progress = try? await api.budgets(jobIds: [jobId])[jobId],
               let percent = progress.percentUsed, let used = progress.hoursUsed, percent > 100, used > 0 else { return nil }
         return max(0, used - used * 100 / percent)
     }
 
+    /// Records the answer (nil reason = skipped); asked once per job.
     func answerOverBudget(jobId: String, reason: String?, note: String?, hoursOver: Double) async {
-        setFlag("overBudget:\(jobId)", ISODate.string(Date()))
+        setFlag(Flag.answeredOverBudget(jobId), ISODate.string(Date()))
         guard let reason else { return }
         await tracker.submitOverBudgetReason(jobId: jobId, reason: reason, note: note, minutesOver: Int((hoursOver * 60).rounded()))
     }
 
-    // MARK: Flags
+    private func flag(_ key: String) -> String? { flagsStore.load()?[key] }
 
-    func flag(_ key: String) -> String? { flagsStore.load()?[key] }
-
-    func setFlag(_ key: String, _ value: String) {
+    private func setFlag(_ key: String, _ value: String) {
         var flags = flagsStore.load() ?? [:]
         flags[key] = value
         flagsStore.save(flags)
@@ -278,15 +291,4 @@ final class SessionContext {
         await tracker.eraseLocalData()
         storage.removeAll()
     }
-}
-
-enum MainTab: String, CaseIterable, Hashable {
-    case clock, projects, timesheet, teamMap, more
-}
-
-/// A pushed Project Detail.
-struct ProjectRoute: Hashable {
-    enum Action: Hashable { case photos, camera }
-    var project: Project
-    var action: Action?
 }

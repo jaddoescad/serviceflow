@@ -34,10 +34,7 @@ struct ClockedOutView: View {
     @Environment(SessionContext.self) private var session
     @Environment(TimeTracker.self) private var tracker
 
-    @State private var search = Debouncer()
-    @State private var results: [Project] = []
-    @State private var searching = false
-    @State private var searchError: String?
+    @State private var search = ProjectSearch()
     @State private var selected: Project?
     @State private var latest: Project?
     @State private var loadingLatest = true
@@ -56,10 +53,8 @@ struct ClockedOutView: View {
         return latest
     }
 
-    private var isSearching: Bool { !search.text.trimmingCharacters(in: .whitespaces).isEmpty }
-
     var body: some View {
-        @Bindable var search = search
+        @Bindable var query = search.query
         ClockInMap(projects: session.mappedProjects, selected: displayProject, userPoint: $userPoint) { project in
             select(project)
         }
@@ -67,33 +62,27 @@ struct ClockedOutView: View {
         .safeAreaInset(edge: .bottom) {
             if displayProject?.isLead != true || displayProject == nil { clockInPanel }
         }
-        .overlay { if isSearching { searchResults } }
+        .overlay { if search.hasQuery { searchResults } }
         .navigationTitle("Clock In")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search jobs and leads")
+        .searchable(text: $query.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search jobs and leads")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .task { await loadLatest() }
-        .task(id: search.committed) { await runSearch(search.committed) }
-        .onChange(of: search.text) { _, value in
-            if !value.trimmingCharacters(in: .whitespaces).isEmpty { searching = true } else {
-                searching = false
-                results = []
-                searchError = nil
-            }
-        }
+        .task(id: search.query.committed) { await search.run(session.api) }
+        .onChange(of: search.query.text) { _, _ in search.textChanged() }
     }
 
     // MARK: Search
 
     private var searchResults: some View {
         List {
-            if searching && results.isEmpty {
+            if search.isSearching && search.results.isEmpty {
                 HStack { Spacer(); ProgressView(); Spacer() }
-            } else if results.isEmpty {
-                Text(searchError ?? "No matching jobs or leads found.").foregroundStyle(.secondary)
+            } else if search.results.isEmpty {
+                Text(search.error ?? "No matching jobs or leads found.").foregroundStyle(.secondary)
             }
-            ForEach(results) { result in
+            ForEach(search.results) { result in
                 Button { select(result) } label: { ProjectListRow(project: result) }
                     .foregroundStyle(.primary)
             }
@@ -192,8 +181,6 @@ struct ClockedOutView: View {
         hideKeyboard()
         selected = project
         search.clear()
-        results = []
-        searchError = nil
         clockInError = nil
     }
 
@@ -206,45 +193,5 @@ struct ClockedOutView: View {
             latestError = (error as? BackendError)?.message
         }
         loadingLatest = false
-    }
-
-    private func runSearch(_ query: String) async {
-        guard !query.isEmpty else { return }
-        do {
-            let found = try await session.api.searchProjects(query)
-            guard query == search.committed else { return }
-            results = found
-            searchError = nil
-        } catch {
-            guard query == search.committed else { return }
-            results = []
-            searchError = (error as? BackendError)?.message ?? error.localizedDescription
-        }
-        searching = false
-    }
-}
-
-/// A job or lead in a list: name, address and a lead badge.
-struct ProjectListRow: View {
-    var project: Project
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: project.isLead ? "person.crop.circle.badge.plus" : "briefcase.fill")
-                .foregroundStyle(Palette.teal)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(project.name).font(.body.weight(.semibold)).lineLimit(1)
-                    if project.isLead {
-                        Text("LEAD").font(.caption2.weight(.bold)).foregroundStyle(Color(hex: 0x245c9c))
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color(hex: 0xe8f1ff), in: Capsule())
-                    }
-                }
-                Text(project.cardAddress ?? "No address on file").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-            }
-        }
-        .padding(.vertical, 2)
     }
 }

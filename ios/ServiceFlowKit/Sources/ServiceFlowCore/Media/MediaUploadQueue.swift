@@ -41,8 +41,17 @@ public struct PendingUpload: Codable, Hashable, Identifiable, Sendable {
     public var savedAnnotationsRevision: UUID?
 
     public var isHeld: Bool { held == true }
-    var needsDetails: Bool {
-        detailsSaved != true && (!(note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(annotations?.isEmpty ?? true))
+    var hasNote: Bool { !(note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var hasDrawings: Bool { !(annotations?.isEmpty ?? true) }
+    var needsDetails: Bool { detailsSaved != true && (hasNote || hasDrawings) }
+
+    /// The note or drawings changed: send them (again), with fresh revisions.
+    mutating func markDetailsChanged() {
+        detailsSaved = false
+        if status == .uploaded {
+            status = .queued
+            attempts = 0
+        }
     }
 }
 
@@ -105,6 +114,7 @@ public final class MediaUploadQueue {
             return item
         }
         persist()
+        pruneFiles()
         pump()
     }
 
@@ -159,9 +169,8 @@ public final class MediaUploadQueue {
         update(localId) { item in
             guard item.note != note else { return }
             item.note = note
-            item.detailsSaved = false
             item.detailsRevision = nil
-            if item.status == .uploaded { item.status = .queued; item.attempts = 0 }
+            item.markDetailsChanged()
         }
         pump()
     }
@@ -169,29 +178,10 @@ public final class MediaUploadQueue {
     public func setAnnotations(_ localId: String, _ document: AnnotationDocument) {
         update(localId) { item in
             item.annotations = document.sanitized()
-            item.detailsSaved = false
             item.annotationsRevision = nil
-            if item.status == .uploaded { item.status = .queued; item.attempts = 0 }
+            item.markDetailsChanged()
         }
         pump()
-    }
-
-    /// Replaces a photo that hasn't uploaded yet (rotated, cropped or adjusted).
-    public func replacePhoto(_ localId: String, with fileURL: URL, width: Int?, height: Int?) {
-        guard let item = items.first(where: { $0.localId == localId }), item.remote == nil, item.status != .uploading else { return }
-        let target = self.fileURL(for: item)
-        do {
-            try? FileManager.default.removeItem(at: target)
-            try FileManager.default.moveItem(at: fileURL, to: target)
-        } catch {
-            return
-        }
-        update(localId) { item in
-            item.width = width
-            item.height = height
-            // A different file needs a fresh idempotency key.
-            item.uploadId = UUID()
-        }
     }
 
     public func retry(_ localId: String) {
@@ -221,6 +211,7 @@ public final class MediaUploadQueue {
     public func clearCompleted() {
         items.removeAll { $0.status == .uploaded }
         persist()
+        pruneFiles()
     }
 
     /// Restarts uploads that were waiting, e.g. when the app is opened again.
@@ -255,35 +246,10 @@ public final class MediaUploadQueue {
             item.retryAt = nil
             item.error = nil
         }
-        let request = MediaUploadRequest(
-            uploadId: item.uploadId, projectId: item.projectId, projectKind: item.projectKind, fileURL: fileURL(for: item),
-            fileName: item.fileName, mimeType: item.mimeType, width: item.width, height: item.height,
-            durationMs: item.durationMs, capturedAt: item.capturedAt
-        )
         do {
-            var remote: MediaItem
-            if let existing = item.remote {
-                remote = existing
-            } else {
-                remote = try await client.upload(request)
-                remote.uploaderName = uploaderName
-                if remote.kind == .video, let poster = posterURL(for: item) {
-                    try? await client.uploadPoster(mediaId: remote.id, fileURL: poster)
-                }
-                // Remember the row so a retry only sends the details.
-                update(item.localId) { $0.remote = remote }
-            }
-            if let current = items.first(where: { $0.localId == item.localId }), current.needsDetails, let saveDetails {
-                var ready = current
-                if ready.detailsRevision == nil { ready.detailsRevision = UUID() }
-                if ready.annotationsRevision == nil { ready.annotationsRevision = UUID() }
-                update(item.localId) { $0.detailsRevision = ready.detailsRevision; $0.annotationsRevision = ready.annotationsRevision }
-                try await saveDetails(remote, ready)
-                update(item.localId) { item in
-                    item.detailsSaved = true
-                    if !(item.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { item.savedDetailsRevision = ready.detailsRevision }
-                    if !(item.annotations?.isEmpty ?? true) { item.savedAnnotationsRevision = ready.annotationsRevision }
-                }
+            let remote = try await uploadedRow(for: item)
+            if let current = items.first(where: { $0.localId == item.localId }), current.needsDetails {
+                try await sendDetails(of: current, to: remote)
             }
             update(item.localId) { item in
                 item.status = .uploaded
@@ -306,6 +272,40 @@ public final class MediaUploadQueue {
         }
     }
 
+    /// The server row for a capture: uploads the file unless an earlier attempt
+    /// already did (then only the details are retried).
+    private func uploadedRow(for item: PendingUpload) async throws -> MediaItem {
+        if let existing = item.remote { return existing }
+        let request = MediaUploadRequest(
+            uploadId: item.uploadId, projectId: item.projectId, projectKind: item.projectKind, fileURL: fileURL(for: item),
+            fileName: item.fileName, mimeType: item.mimeType, width: item.width, height: item.height,
+            durationMs: item.durationMs, capturedAt: item.capturedAt
+        )
+        var remote = try await client.upload(request)
+        remote.uploaderName = uploaderName
+        if remote.kind == .video, let poster = posterURL(for: item) {
+            try? await client.uploadPoster(mediaId: remote.id, fileURL: poster)
+        }
+        update(item.localId) { $0.remote = remote }
+        return remote
+    }
+
+    /// Saves the note and drawings. The revision ids are stored before sending,
+    /// so a retry after a lost response reuses them and the server sees a replay.
+    private func sendDetails(of item: PendingUpload, to remote: MediaItem) async throws {
+        guard let saveDetails else { return }
+        var ready = item
+        ready.detailsRevision = ready.detailsRevision ?? UUID()
+        ready.annotationsRevision = ready.annotationsRevision ?? UUID()
+        update(item.localId) { $0.detailsRevision = ready.detailsRevision; $0.annotationsRevision = ready.annotationsRevision }
+        try await saveDetails(remote, ready)
+        update(item.localId) { item in
+            item.detailsSaved = true
+            if item.hasNote { item.savedDetailsRevision = ready.detailsRevision }
+            if item.hasDrawings { item.savedAnnotationsRevision = ready.annotationsRevision }
+        }
+    }
+
     // MARK: Helpers
 
     private func update(_ localId: String, _ change: (inout PendingUpload) -> Void) {
@@ -323,7 +323,11 @@ public final class MediaUploadQueue {
 
     private func persist() {
         store.save(items.filter { $0.status != .uploaded })
-        // Files of uploads that are gone from the list are no longer needed.
+    }
+
+    /// Deletes files no item refers to any more (uploaded and cleared, or left
+    /// behind by an interrupted capture).
+    private func pruneFiles() {
         let keep = Set(items.flatMap { [$0.fileName, $0.posterFileName].compactMap { $0 } })
         if let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) {
             for name in names where !keep.contains(name) {

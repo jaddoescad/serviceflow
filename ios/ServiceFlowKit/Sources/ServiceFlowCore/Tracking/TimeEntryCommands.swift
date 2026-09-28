@@ -19,6 +19,12 @@ public enum TimeEntryCommand {
         return value.lowercased().range(of: uuidPattern, options: .regularExpression) != nil
     }
 
+    /// The value when it's a UUID (the only ids the server accepts), else null.
+    static func uuidValue(_ value: String?) -> JSONValue {
+        guard let value, isUUID(value) else { return .null }
+        return .string(value)
+    }
+
     /// The command body for an entry.
     /// - Parameters:
     ///   - includeEndedAt: send `ended_at` (clock-out and edits of completed entries).
@@ -30,9 +36,9 @@ public enum TimeEntryCommand {
                                adjustmentSource: String? = nil, capturedAt: Date) -> JSONValue {
         var body: [String: JSONValue] = [
             "client_entry_id": .string(entry.localId),
-            "server_id": isUUID(entry.serverId) ? .string(entry.serverId!) : .null,
+            "server_id": uuidValue(entry.serverId),
             "user_name": .string(entry.userName),
-            "job_id": isUUID(entry.project.id) ? .string(entry.project.id) : .null,
+            "job_id": uuidValue(entry.project.id),
             "project_name": .string(entry.project.name),
             "project_address": JSONValue(entry.project.fullAddress),
             "original_started_at": JSONValue(entry.originalStartedAt),
@@ -67,7 +73,7 @@ public enum TimeEntryCommand {
     /// The delete command.
     public static func deletion(of entry: TimeEntry, capturedAt: Date) -> JSONValue {
         [
-            "server_id": isUUID(entry.serverId) ? .string(entry.serverId!) : .null,
+            "server_id": uuidValue(entry.serverId),
             "client_entry_id": .string(entry.localId),
             "source": "mobile",
             "captured_at": JSONValue(capturedAt),

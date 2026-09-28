@@ -69,8 +69,7 @@ struct CreateCompanyView: View {
 
     @State private var name = ""
     @State private var trade = ""
-    @State private var error: String?
-    @State private var loading = false
+    @State private var request = RequestState()
 
     static let trades = ["Painting", "Cleaning", "Landscaping", "Construction", "Electrical", "Plumbing", "HVAC",
                          "Roofing", "Flooring", "Handyman", "Other"]
@@ -85,29 +84,24 @@ struct CreateCompanyView: View {
                     ForEach(Self.trades, id: \.self) { Text($0).tag($0) }
                 }
             } footer: {
-                if let error { AuthError(message: error) } else { Text("You'll be the owner. You can change these details later.") }
+                AuthFooter(error: request.error, hint: "You'll be the owner. You can change these details later.")
             }
-            AuthPrimaryButton(title: "Create Company", busy: loading, enabled: !loading, action: create)
+            AuthPrimaryButton(title: "Create Company", busy: request.isRunning, enabled: true, action: create)
         }
-        .onChange(of: name) { _, _ in error = nil }
+        .onChange(of: name) { _, _ in request.error = nil }
     }
 
     private func create() {
-        if let problem = AccountValidation.companyName(name) {
-            error = problem
+        let companyName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let problem = AccountValidation.companyName(companyName) {
+            request.error = problem
             return
         }
         guard let api = model.api else { return }
-        loading = true
-        Task {
-            do {
-                _ = try await api.createCompany(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                                                trade: trade.isEmpty ? nil : trade)
-                await model.refreshAccount()
-            } catch {
-                self.error = (error as? BackendError)?.message ?? AuthMessage.from(error)
-            }
-            loading = false
+        let chosenTrade = trade.isEmpty ? nil : trade
+        request.run {
+            _ = try await api.createCompany(name: companyName, trade: chosenTrade)
+            await model.refreshAccount()
         }
     }
 }
@@ -117,9 +111,8 @@ struct JoinCompanyView: View {
     var onJoined: () -> Void
 
     @State private var code = ""
-    @State private var error: String?
     @State private var joined: String?
-    @State private var loading = false
+    @State private var request = RequestState()
 
     var body: some View {
         AuthForm(title: "Join a Company") {
@@ -132,34 +125,30 @@ struct JoinCompanyView: View {
                     .submitLabel(.join)
                     .onSubmit(join)
                     .onChange(of: code) { _, value in
+                        // Show the code as ABCD-EFGH while it's typed.
                         let formatted = InviteCode.display(value)
                         if formatted != value { code = formatted }
-                        error = nil
+                        request.error = nil
                     }
             } header: {
                 Text("Enter the 8-character invite code from your manager.").textCase(nil)
             } footer: {
-                if let error { AuthError(message: error) } else if let joined { Text("You joined \(joined).") }
+                AuthFooter(error: request.error, hint: joined.map { "You joined \($0)." })
             }
-            AuthPrimaryButton(title: "Join Company", busy: loading, enabled: InviteCode.isComplete(code), action: join)
+            AuthPrimaryButton(title: "Join Company", busy: request.isRunning, enabled: InviteCode.isComplete(code), action: join)
         }
     }
 
     private func join() {
-        guard InviteCode.isComplete(code), !loading, let api = model.api else {
-            error = "Enter the 8-character code from your invitation."
+        guard InviteCode.isComplete(code), let api = model.api else {
+            request.error = "Enter the 8-character code from your invitation."
             return
         }
-        loading = true
-        Task {
-            do {
-                let result = try await api.acceptInvitation(code: InviteCode.normalize(code))
-                joined = result["name"]?.nonEmptyString ?? "the company"
-                onJoined()
-            } catch {
-                self.error = (error as? BackendError)?.message ?? AuthMessage.from(error)
-            }
-            loading = false
+        let normalized = InviteCode.normalize(code)
+        request.run {
+            let result = try await api.acceptInvitation(code: normalized)
+            joined = result["name"]?.nonEmptyString ?? "the company"
+            onJoined()
         }
     }
 }

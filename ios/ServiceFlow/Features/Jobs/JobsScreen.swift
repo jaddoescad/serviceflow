@@ -16,62 +16,20 @@ struct JobsScreen: View {
 
     private var isSearching: Bool { !search.committed.isEmpty }
 
-    /// Jobs you have time on.
-    private var trackedIds: [String] {
-        tracker.myTimeByProject().keys.filter { !$0.isEmpty }.sorted()
+    /// What to load; any change reloads the list from the first page.
+    private var query: JobsQuery {
+        let tracked = tracker.myTimeByProject().keys.filter { !$0.isEmpty }.sorted()
+        var relevant = Set(session.assignedJobIds).union(tracked)
+        if let current = tracker.activeShift?.project.id, !current.isEmpty { relevant.insert(current) }
+        return JobsQuery(search: search.committed, relevantIds: relevant.sorted(), trackedIds: tracked)
     }
-
-    /// Assigned jobs, plus jobs you have time on, plus the current job.
-    private var relevantIds: [String] {
-        var ids = Set(session.assignedJobIds).union(trackedIds)
-        if let current = tracker.activeShift?.project.id, !current.isEmpty { ids.insert(current) }
-        return ids.sorted()
-    }
-
-    private var latestActivity: [String: Date] {
-        tracker.allEntries.reduce(into: [:]) { result, entry in
-            let date = entry.endedAt ?? entry.startedAt
-            if (result[entry.project.id] ?? .distantPast) < date { result[entry.project.id] = date }
-        }
-    }
-
-    private var visibleProjects: [Project] {
-        isSearching ? model.projects : model.projects.filter { !$0.isArchived }
-    }
-
-    private var filtered: [Project] {
-        guard model.filter == .assigned, !isSearching else { return visibleProjects }
-        let ids = Set(relevantIds)
-        return visibleProjects.filter { ids.contains($0.id) }
-    }
-
-    private var sorted: [Project] {
-        let activity = latestActivity
-        return filtered.sorted { lhs, rhs in
-            let l = activity[lhs.id] ?? .distantPast
-            let r = activity[rhs.id] ?? .distantPast
-            if l != r { return l > r }
-            let lu = lhs.updatedAt ?? .distantPast
-            let ru = rhs.updatedAt ?? .distantPast
-            if lu != ru { return lu > ru }
-            return lhs.name.localizedCompare(rhs.name) == .orderedAscending
-        }
-    }
-
-    private var featured: Project? {
-        guard let shift = tracker.activeShift, !isSearching else { return nil }
-        return model.projects.first { $0.id == shift.project.id } ?? shift.project
-    }
-
-    private var remaining: [Project] {
-        guard let featured else { return sorted }
-        return sorted.filter { $0.id != featured.id }
-    }
-
-    private var myTime: [String: TimeInterval] { tracker.myTimeByProject() }
 
     var body: some View {
         @Bindable var search = search
+        let query = self.query
+        let listing = JobsListing(projects: model.projects, filter: model.filter, searching: isSearching,
+                                  relevantIds: query.relevantIds, entries: tracker.allEntries, activeShift: tracker.activeShift)
+        let myTime = tracker.myTimeByProject()
         List {
             if let error = model.error, !error.isEmpty {
                 Section {
@@ -91,7 +49,9 @@ struct JobsScreen: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
             }
-            if !model.hasLoaded {
+            if model.hasLoaded {
+                content(listing, myTime: myTime, query: query)
+            } else {
                 Section {
                     HStack(spacing: 10) {
                         ProgressView()
@@ -101,8 +61,6 @@ struct JobsScreen: View {
                     .padding(.vertical, 24)
                     .listRowBackground(Color.clear)
                 }
-            } else {
-                content
             }
         }
         .listStyle(.insetGrouped)
@@ -110,27 +68,31 @@ struct JobsScreen: View {
         .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search jobs and leads")
         .autocorrectionDisabled()
         .textInputAutocapitalization(.never)
-        .refreshable { await refresh() }
-        .task { await reload() }
-        .onChange(of: search.committed) { _, _ in Task { await reload() } }
-        .onChange(of: model.filter) { _, _ in Task { await reload() } }
-        .onChange(of: relevantIds) { _, _ in Task { await reload() } }
-        .onChange(of: enabled) { _, isEnabled in if isEnabled, model.hasLoaded { Task { await refresh() } } }
+        .refreshable { await model.refresh(query, api: session.api) }
+        .task(id: ReloadKey(query: query, filter: model.filter)) { await model.reload(query, api: session.api) }
         .task(id: enabled) {
+            // Coming back to the tab refreshes, then every 45 s while it's visible.
             guard enabled else { return }
+            if model.hasLoaded { await model.refresh(self.query, api: session.api) }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 45_000_000_000)
                 guard !Task.isCancelled else { return }
-                await refresh()
+                await model.refresh(self.query, api: session.api)
             }
         }
+    }
+
+    /// Search, filter or assignment changes reload from the first page.
+    private struct ReloadKey: Equatable {
+        var query: JobsQuery
+        var filter: JobsModel.Filter
     }
 
     // MARK: Sections
 
     @ViewBuilder
-    private var content: some View {
-        if let featured {
+    private func content(_ listing: JobsListing, myTime: [String: TimeInterval], query: JobsQuery) -> some View {
+        if let featured = listing.featured {
             Section {
                 NavigationLink(value: ProjectRoute(project: featured)) {
                     JobsCurrentCard(project: featured, onSite: tracker.activeShift?.onSite, myTime: myTime[featured.id])
@@ -141,12 +103,12 @@ struct JobsScreen: View {
             }
         }
         Section {
-            ForEach(remaining) { project in
+            ForEach(listing.remaining) { project in
                 NavigationLink(value: ProjectRoute(project: project)) {
                     JobsRow(project: project, myTime: myTime[project.id])
                 }
             }
-            if remaining.isEmpty, featured == nil {
+            if listing.remaining.isEmpty, listing.featured == nil {
                 emptyState
             }
             if model.hasMore {
@@ -157,10 +119,10 @@ struct JobsScreen: View {
                 }
                 .frame(height: 44)
                 .listRowBackground(Color.clear)
-                .onAppear { Task { await loadMore() } }
+                .onAppear { Task { await model.loadMore(query, api: session.api) } }
             }
         } header: {
-            Text("\(sectionTitle) (\(sectionCount))")
+            Text("\(sectionTitle) (\(listing.count))")
         }
     }
 
@@ -169,12 +131,8 @@ struct JobsScreen: View {
         return model.filter == .assigned ? "Assigned Jobs" : "Active Jobs"
     }
 
-    private var sectionCount: Int {
-        (model.filter == .assigned || isSearching) ? filtered.count : visibleProjects.count
-    }
-
     private var emptyState: some View {
-        let copy: (String, String, String)
+        let copy: (title: String, detail: String, icon: String)
         if isSearching {
             copy = ("No matching jobs", "Try another name, email, phone, address, city, or postal code.", "magnifyingglass")
         } else if model.filter == .assigned {
@@ -184,106 +142,52 @@ struct JobsScreen: View {
         } else {
             copy = ("No active jobs yet", "Ask a manager to assign you to an active job.", "folder")
         }
-        return ContentUnavailableView(copy.0, systemImage: copy.2, description: Text(copy.1))
+        return ContentUnavailableView(copy.title, systemImage: copy.icon, description: Text(copy.detail))
             .listRowBackground(Color.clear)
     }
-
-    // MARK: Loading
-
-    private func reload() async {
-        await model.reload(api: session.api, search: search.committed, relevantIds: relevantIds, trackedIds: trackedIds)
-    }
-
-    private func refresh() async {
-        await model.refresh(api: session.api, search: search.committed, relevantIds: relevantIds, trackedIds: trackedIds)
-    }
-
-    private func loadMore() async {
-        await model.loadMore(api: session.api, search: search.committed, relevantIds: relevantIds, trackedIds: trackedIds)
-    }
 }
 
-/// The job you're clocked into (shown on a teal row).
-struct JobsCurrentCard: View {
-    var project: Project
-    var onSite: Bool?
-    var myTime: TimeInterval?
+/// The rows the Jobs list shows, worked out once per render: filtered,
+/// ordered by your latest activity, with the current job pulled out on top.
+struct JobsListing {
+    let featured: Project?
+    let remaining: [Project]
+    /// The count in the section header (loaded rows, not a server total).
+    let count: Int
 
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "mappin")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(Palette.green, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Label(onSite == false ? "Off site" : "Clocked in", systemImage: "circle.fill")
-                    .labelStyle(JobsDotLabelStyle())
-                    .font(.app(12, .semibold))
-                    .foregroundStyle(Color.white.opacity(0.85))
-                Text(project.name).font(.app(17, .semibold)).foregroundStyle(.white).lineLimit(1)
-                Text(project.cardAddress ?? "No address on file")
-                    .font(.app(13)).foregroundStyle(Color.white.opacity(0.82)).lineLimit(1)
-                BudgetProgressBadge(progress: project.budget, dark: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let myTime {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(DurationFormat.hoursMinutes(myTime)).font(.app(20, .bold)).foregroundStyle(.white).monospacedDigit()
-                    Text("Your hours").font(.app(11, .medium)).foregroundStyle(Color.white.opacity(0.82))
-                }
-            }
+    init(projects: [Project], filter: JobsModel.Filter, searching: Bool, relevantIds: [String],
+         entries: [TimeEntry], activeShift: TimeEntry?) {
+        let visible = searching ? projects : projects.filter { !$0.isArchived }
+        let filtered: [Project]
+        if filter == .assigned, !searching {
+            let ids = Set(relevantIds)
+            filtered = visible.filter { ids.contains($0.id) }
+        } else {
+            filtered = visible
         }
-        .padding(.vertical, 6)
-    }
-}
 
-/// A small coloured dot before the label text.
-private struct JobsDotLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 6) {
-            configuration.icon.font(.system(size: 7)).foregroundStyle(Color(hex: 0xa9f1c4))
-            configuration.title
+        let latestActivity = entries.reduce(into: [String: Date]()) { result, entry in
+            let date = entry.endedAt ?? entry.startedAt
+            if (result[entry.project.id] ?? .distantPast) < date { result[entry.project.id] = date }
         }
-    }
-}
-
-/// One job or lead in the list.
-struct JobsRow: View {
-    var project: Project
-    var myTime: TimeInterval?
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "mappin")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(Palette.teal)
-                .frame(width: 42, height: 42)
-                .background(Palette.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(project.name).font(.app(16, .semibold)).foregroundStyle(.primary).lineLimit(1)
-                Text(project.cardAddress ?? "No address on file")
-                    .font(.app(13)).foregroundStyle(.secondary).lineLimit(1)
-                if project.isLead {
-                    Text("Lead · \(project.leadStageLabel)")
-                        .font(.app(11, .semibold))
-                        .foregroundStyle(Palette.teal)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Palette.teal.opacity(0.12), in: Capsule())
-                        .padding(.top, 4)
-                } else {
-                    BudgetProgressBadge(progress: project.budget, dark: false)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if let myTime {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(DurationFormat.hoursMinutes(myTime)).font(.app(15, .semibold)).foregroundStyle(Palette.green).monospacedDigit()
-                    Text("Your hours").font(.app(11)).foregroundStyle(.secondary)
-                }
-            }
+        let sorted = filtered.sorted { lhs, rhs in
+            let l = latestActivity[lhs.id] ?? .distantPast
+            let r = latestActivity[rhs.id] ?? .distantPast
+            if l != r { return l > r }
+            let lu = lhs.updatedAt ?? .distantPast
+            let ru = rhs.updatedAt ?? .distantPast
+            if lu != ru { return lu > ru }
+            return lhs.name.localizedCompare(rhs.name) == .orderedAscending
         }
-        .padding(.vertical, 4)
+
+        if let shift = activeShift, !searching {
+            let current = projects.first { $0.id == shift.project.id } ?? shift.project
+            featured = current
+            remaining = sorted.filter { $0.id != current.id }
+        } else {
+            featured = nil
+            remaining = sorted
+        }
+        count = (filter == .assigned || searching) ? filtered.count : visible.count
     }
 }

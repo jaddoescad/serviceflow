@@ -28,7 +28,4 @@ struct AppConfig {
             buildNumber: value("CFBundleVersion") ?? "0"
         )
     }()
-
-    /// The App Store page, for the update prompt.
-    static let appStoreURL = URL(string: "itms-apps://apps.apple.com/app/id6787451069")!
 }

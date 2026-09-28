@@ -36,11 +36,6 @@ extension View {
             .background(background, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(border, lineWidth: width))
     }
-
-    /// Hides the keyboard.
-    func dismissKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    }
 }
 
 func hideKeyboard() {
@@ -61,8 +56,6 @@ final class Debouncer {
     init(delay: TimeInterval = 0.25) {
         self.delay = delay
     }
-
-    var isPending: Bool { text.trimmingCharacters(in: .whitespaces) != committed }
 
     func clear() {
         task?.cancel()

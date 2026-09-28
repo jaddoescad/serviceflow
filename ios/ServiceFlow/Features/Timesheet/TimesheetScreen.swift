@@ -26,28 +26,28 @@ struct TimesheetScreen: View {
         periods.firstIndex { $0.id == periodId } ?? 0
     }
 
-    private var period: PayPeriod? { periods.indices.contains(selectedIndex) ? periods[selectedIndex] : nil }
-
-    private var days: [TimesheetDay] {
-        guard let period else { return [] }
-        return TimesheetBuilder.days(for: period, entries: tracker.allEntries, now: now)
-    }
+    private static let sectionTitles = ["This Week", "Last Week", "2 Weeks Ago"]
 
     var body: some View {
+        // Built once per render; the summary and the timeline share it.
+        let periods = self.periods
+        let index = selectedIndex
+        let period = periods.indices.contains(index) ? periods[index] : nil
+        let days = period.map { TimesheetBuilder.days(for: $0, entries: tracker.allEntries, now: now) } ?? []
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                summaryCard
+                summaryCard(days)
                     .padding(.top, 4)
 
                 HStack(alignment: .firstTextBaseline) {
-                    TimesheetSectionLabel(text: ["This Week", "Last Week", "2 Weeks Ago"][min(selectedIndex, 2)])
+                    TimesheetSectionLabel(text: Self.sectionTitles[min(index, Self.sectionTitles.count - 1)])
                     Spacer()
                     Text(period?.label ?? "").text(12, .semibold, TimesheetColors.muted)
                 }
                 .padding(.top, 22)
                 .padding(.bottom, 10)
 
-                timeline
+                timeline(days)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 36)
@@ -57,18 +57,18 @@ struct TimesheetScreen: View {
         .navigationTitle("Timesheet")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { periodMenu }
+            ToolbarItem(placement: .topBarTrailing) { periodMenu(periods, selected: period) }
         }
         .navigationDestination(for: TimesheetRoute.self) { route in
             switch route {
             case .day(let dayId):
-                if let day = day(dayId) {
+                if let day = day(dayId, in: periods) {
                     TimesheetDayDetailView(day: day, now: now)
                 } else {
                     ContentUnavailableView("No clock-ins", systemImage: "clock", description: Text("This day has no time logged."))
                 }
             case let .edit(dayId, entryId):
-                if let day = day(dayId), let entry = day.entries.first(where: { $0.localId == entryId }) {
+                if let day = day(dayId, in: periods), let entry = day.entries.first(where: { $0.localId == entryId }) {
                     TimesheetEditTimeView(entry: entry, day: day, painterName: session.displayName) {
                         session.paths[.timesheet] = NavigationPath()
                     }
@@ -97,7 +97,7 @@ struct TimesheetScreen: View {
     }
 
     /// Pay period picker in the navigation bar.
-    private var periodMenu: some View {
+    private func periodMenu(_ periods: [PayPeriod], selected period: PayPeriod?) -> some View {
         Menu {
             Picker("Pay period", selection: Binding(get: { period?.id ?? "" }, set: { periodId = $0 })) {
                 ForEach(periods) { option in
@@ -111,20 +111,15 @@ struct TimesheetScreen: View {
         .accessibilityLabel("Select pay period, currently \(period?.label ?? "")")
     }
 
-    /// A day by id, from the selected period or one of the other two.
-    private func day(_ id: String) -> TimesheetDay? {
-        if let found = days.first(where: { $0.id == id }) { return found }
-        for candidate in periods {
-            if let found = TimesheetBuilder.days(for: candidate, entries: tracker.allEntries, now: now).first(where: { $0.id == id }) {
-                return found
-            }
-        }
-        return nil
+    /// A pushed day by id, from whichever of the recent periods holds it.
+    private func day(_ id: String, in periods: [PayPeriod]) -> TimesheetDay? {
+        guard let period = periods.first(where: { $0.contains(dayKey: id) }) else { return nil }
+        return TimesheetBuilder.days(for: period, entries: tracker.allEntries, now: now).first { $0.id == id }
     }
 
     // MARK: Summary
 
-    private var summaryCard: some View {
+    private func summaryCard(_ days: [TimesheetDay]) -> some View {
         let total = TimesheetBuilder.weekTotalMinutes(days)
         let jobs = Set(days.flatMap(\.entries).map(\.project.id)).count
         return VStack(alignment: .leading, spacing: 0) {
@@ -168,7 +163,7 @@ struct TimesheetScreen: View {
 
     // MARK: Timeline
 
-    private var timeline: some View {
+    private func timeline(_ days: [TimesheetDay]) -> some View {
         VStack(spacing: 12) {
             ForEach(days) { day in
                 TimesheetDayRow(day: day)
@@ -231,7 +226,7 @@ struct TimesheetDayRow: View {
                 Spacer()
                 Image(systemName: "chevron.right").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tertiary)
             }
-            TimesheetFlowLayout(spacing: 6) {
+            WrapLayout(spacing: 6) {
                 ForEach(day.jobs, id: \.self) { job in
                     HStack(spacing: 4) {
                         Image(systemName: "briefcase.fill").font(.system(size: 9)).foregroundStyle(TimesheetColors.tealInk)
@@ -244,7 +239,7 @@ struct TimesheetDayRow: View {
             }
             .padding(.top, 8)
 
-            TimesheetFlowLayout(spacing: 16) {
+            WrapLayout(spacing: 16) {
                 meta("mappin", TimesheetColors.teal, "On site ", DurationFormat.hoursMinutes(minutes: day.onSiteMinutes))
                 meta("car.fill", TimesheetColors.muted, "Off site ", DurationFormat.hoursMinutes(minutes: day.offSiteMinutes))
                 if day.unknownMinutes > 0 {
@@ -284,48 +279,5 @@ struct TimesheetDayRow: View {
         .padding(.horizontal, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .bordered(12, border: TimesheetColors.redBorder, background: TimesheetColors.redBg)
-    }
-}
-
-/// Wraps children onto new lines (job pills, meta items).
-struct TimesheetFlowLayout: Layout {
-    var spacing: CGFloat
-    var lineSpacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var maxX: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
-            if x > 0, x + size.width > width {
-                y += lineHeight + lineSpacing
-                x = 0
-                lineHeight = 0
-            }
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            lineHeight = max(lineHeight, size.height)
-        }
-        return CGSize(width: proposal.width ?? maxX, height: subviews.isEmpty ? 0 : y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var lineHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                y += lineHeight + lineSpacing
-                x = bounds.minX
-                lineHeight = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: min(size.width, bounds.width), height: size.height))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
     }
 }
