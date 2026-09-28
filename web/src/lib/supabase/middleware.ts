@@ -29,6 +29,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   let userId: string | null = null;
+  let staleSession = false;
   try {
     const { data, error } = await supabase.auth.getClaims();
     if (error) throw error;
@@ -39,25 +40,28 @@ export async function updateSession(request: NextRequest) {
       authError.code !== "over_request_rate_limit" &&
       authError.status !== 429
     ) {
-      throw error;
+      // A revoked or expired session (e.g. refresh_token_not_found) means
+      // signed out, not a server error: drop its cookies and send to login.
+      if (!(error as { __isAuthError?: boolean }).__isAuthError) throw error;
+      staleSession = true;
+    } else {
+      // Older sessions can still carry a symmetric JWT after a project moves to
+      // asymmetric signing. Refresh once so subsequent getClaims calls validate
+      // locally with the project's cached ES256 JWKS instead of hitting Auth.
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (!refreshError) {
+        const { data, error: claimsError } = await supabase.auth.getClaims();
+        if (!claimsError) userId = data?.claims.sub ?? null;
+      }
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          message: "Supabase Auth rate-limit recovery",
+          path,
+          recovered: Boolean(userId),
+        }),
+      );
     }
-
-    // Older sessions can still carry a symmetric JWT after a project moves to
-    // asymmetric signing. Refresh once so subsequent getClaims calls validate
-    // locally with the project's cached ES256 JWKS instead of hitting Auth.
-    const { error: refreshError } = await supabase.auth.refreshSession();
-    if (!refreshError) {
-      const { data, error: claimsError } = await supabase.auth.getClaims();
-      if (!claimsError) userId = data?.claims.sub ?? null;
-    }
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        message: "Supabase Auth rate-limit recovery",
-        path,
-        recovered: Boolean(userId),
-      }),
-    );
   }
 
   const isAuthenticated = Boolean(userId);
@@ -72,8 +76,10 @@ export async function updateSession(request: NextRequest) {
     response.cookies
       .getAll()
       .forEach((cookie) => redirectResponse.cookies.set(cookie));
+    if (staleSession) clearAuthCookies(request, redirectResponse);
     return redirectResponse;
   }
+  if (staleSession) clearAuthCookies(request, response);
 
   const sharedPage =
     path === "/" ||
@@ -101,4 +107,13 @@ export async function updateSession(request: NextRequest) {
     }
   }
   return response;
+}
+
+/** Expire the Supabase session cookies (`sb-*-auth-token`, including chunks). */
+function clearAuthCookies(request: NextRequest, response: NextResponse) {
+  for (const { name } of request.cookies.getAll()) {
+    if (name.startsWith("sb-") && name.includes("-auth-token")) {
+      response.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+  }
 }
