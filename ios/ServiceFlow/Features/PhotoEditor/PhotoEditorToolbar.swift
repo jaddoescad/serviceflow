@@ -68,7 +68,7 @@ struct PhotoEditorToolbar: View {
             HStack(spacing: 4) {
                 ForEach(PhotoEditorBrush.allCases) { brush in
                     Button {
-                        model.brush = brush
+                        model.setBrush(brush)
                         self.picker = nil
                     } label: {
                         VStack(spacing: 4) {

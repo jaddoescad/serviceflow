@@ -23,7 +23,7 @@ final class PhotoEditorModel {
     var description: String
 
     var tool: PhotoEditorTool? = .draw
-    var brush: PhotoEditorBrush = .medium
+    private(set) var brush: PhotoEditorBrush = .medium
     var color = PhotoEditorPalette.defaultColor
     var selectedId: String?
     /// The shape being drawn right now (not yet in `shapes`).
@@ -110,21 +110,47 @@ final class PhotoEditorModel {
         if selectedId == id { selectedId = nil }
     }
 
+    var selectedShape: AnnotationShape? {
+        selectedId.flatMap { id in shapes.first { $0.id == id } }
+    }
+
     /// Moves `original` by a normalized offset. Call `checkpoint()` once when
     /// the drag starts, so the whole move is one undo step.
     func move(_ original: AnnotationShape, by offset: CGSize) {
-        guard let index = shapes.firstIndex(where: { $0.id == original.id }) else { return }
         var moved = original
         moved.points = original.points.map { AnnotationPoint(x: $0.x + offset.width, y: $0.y + offset.height) }
-        shapes[index] = moved
+        update(moved)
     }
 
+    /// Replaces a shape while it's being dragged (no undo step of its own).
+    func update(_ shape: AnnotationShape) {
+        guard let index = shapes.firstIndex(where: { $0.id == shape.id }) else { return }
+        shapes[index] = shape
+    }
+
+    /// A copy of the selected shape, nudged so both are visible, and selected.
+    func duplicateSelection() {
+        guard var copy = selectedShape else { return }
+        copy.id = UUID().uuidString.lowercased()
+        copy.points = copy.points.map { AnnotationPoint(x: $0.x + 0.03, y: $0.y + 0.03) }
+        add(copy)
+        selectedId = copy.id
+    }
+
+    /// Colour and size apply to what's selected as well as to what's drawn next.
     func setColor(_ hex: String) {
         color = hex
-        if let id = selectedId, var shape = shapes.first(where: { $0.id == id }) {
+        if var shape = selectedShape {
             shape.color = hex
             replace(shape)
         }
+    }
+
+    func setBrush(_ newBrush: PhotoEditorBrush) {
+        brush = newBrush
+        guard var shape = selectedShape else { return }
+        if shape.type == .text { shape.fontSize = newBrush.fontSize } else { shape.width = newBrush.width }
+        replace(shape)
     }
 
     /// Adds the current date and time as text near the bottom left.
@@ -138,7 +164,7 @@ final class PhotoEditorModel {
     func select(tool newTool: PhotoEditorTool) {
         commitText()
         selectedId = nil
-        // Tapping the active tool again switches to selecting and moving.
+        // Tapping the active tool again turns drawing off (just select and move).
         tool = tool == newTool ? nil : newTool
     }
 
@@ -176,14 +202,28 @@ final class PhotoEditorModel {
 
     // MARK: Text
 
-    /// Starts typing at `point`, or edits the text shape found there.
-    func beginText(at point: AnnotationPoint, imageSize: CGSize) {
+    /// Starts a new text at `point`; it's typed in the bottom panel.
+    func beginText(at point: AnnotationPoint) {
         commitText()
-        if let hit = shape(at: point, imageSize: imageSize), hit.type == .text, let origin = hit.points.first {
-            textDraft = TextDraft(id: hit.id, point: origin, text: hit.text ?? "")
-        } else {
-            textDraft = TextDraft(id: nil, point: point, text: "")
-        }
+        selectedId = nil
+        textDraft = TextDraft(id: nil, point: point, text: "")
+    }
+
+    /// Edits the selected text in the bottom panel.
+    func editSelectedText() {
+        guard let shape = selectedShape, shape.type == .text, let origin = shape.points.first else { return }
+        commitText()
+        textDraft = TextDraft(id: shape.id, point: origin, text: shape.text ?? "")
+    }
+
+    /// The text being typed, drawn on the photo as it will look.
+    var textPreview: AnnotationShape? {
+        guard let edit = textDraft else { return nil }
+        let existing = edit.id.flatMap { id in shapes.first { $0.id == id } }
+        let text = edit.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AnnotationShape(id: edit.id ?? "draft", type: .text, points: [edit.point], color: existing?.color ?? color,
+                               width: existing?.width ?? brush.width, text: text.isEmpty ? "Text" : edit.text,
+                               fontSize: existing?.fontSize ?? brush.fontSize)
     }
 
     /// Saves the text being typed; clearing an existing text removes it.
@@ -199,8 +239,10 @@ final class PhotoEditorModel {
                 replace(shape)
             }
         } else if !text.isEmpty {
-            add(AnnotationShape(type: .text, points: [edit.point], color: color, width: brush.width,
-                                text: text, fontSize: brush.fontSize))
+            let shape = AnnotationShape(type: .text, points: [edit.point], color: color, width: brush.width,
+                                        text: text, fontSize: brush.fontSize)
+            add(shape)
+            selectedId = shape.id
         }
     }
 

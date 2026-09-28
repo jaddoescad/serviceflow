@@ -26,11 +26,10 @@ struct PhotoEditorScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            PhotoEditorCanvas(model: model, textFocused: $textFocused)
+            PhotoEditorCanvas(model: model)
                 .overlay(alignment: .topTrailing) {
                     PhotoEditorToolbar(model: model).padding(.trailing, 8).padding(.top, 4)
                 }
-                .overlay(alignment: .top) { deleteSelectionButton }
                 .simultaneousGesture(TapGesture().onEnded { descriptionFocused = false })
             bottomBar
         }
@@ -73,35 +72,23 @@ struct PhotoEditorScreen: View {
         .opacity(enabled ? 1 : 0.4)
     }
 
-    /// In select mode, a Delete button for the selected shape.
-    @ViewBuilder
-    private var deleteSelectionButton: some View {
-        if model.tool == nil, let id = model.selectedId {
-            Button(role: .destructive) { model.delete(id) } label: {
-                Label("Delete", systemImage: "trash")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .tint(.red)
-            .padding(.top, 12)
-        }
-    }
-
     // MARK: Bottom bar
 
     private var bottomBar: some View {
         VStack(spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 14) {
-                Image(systemName: "text.alignleft").foregroundStyle(.white.opacity(0.8))
-                TextField("Add a description…", text: $model.description, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($descriptionFocused)
-                    .foregroundStyle(.white)
+            if model.textDraft != nil {
+                textEntry
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    Image(systemName: "text.alignleft").foregroundStyle(.white.opacity(0.8))
+                    TextField("Add a description…", text: $model.description, axis: .vertical)
+                        .lineLimit(1...4)
+                        .focused($descriptionFocused)
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
 
             HStack {
                 Spacer()
@@ -117,6 +104,35 @@ struct PhotoEditorScreen: View {
             .padding(.bottom, 8)
         }
         .background(Color.black)
+    }
+
+    /// Text on the photo is typed here, where the keyboard can't hide it; the
+    /// photo shows it live.
+    private var textEntry: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: "textformat").foregroundStyle(.white.opacity(0.8))
+            TextField("Type text for the photo", text: textBinding, axis: .vertical)
+                .lineLimit(1...4)
+                .focused($textFocused)
+                .foregroundStyle(.white)
+                .submitLabel(.done)
+                .onSubmit(finishText)
+            Button("Done", action: finishText)
+                .font(.headline)
+                .foregroundStyle(Color(hex: 0x4da3ff))
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .onAppear { textFocused = true }
+    }
+
+    private var textBinding: Binding<String> {
+        Binding(get: { model.textDraft?.text ?? "" }, set: { model.textDraft?.text = $0 })
+    }
+
+    private func finishText() {
+        textFocused = false
+        model.commitText()
     }
 
     // MARK: Actions
