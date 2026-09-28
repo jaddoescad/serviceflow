@@ -71,65 +71,64 @@ private struct BulletLabelStyle: LabelStyle {
     }
 }
 
-/// Creates an invite code a crew member enters after signing up.
+/// Invites people to the company by email. They join automatically the next
+/// time they sign in to ServiceFlow with that address.
 struct InviteCrewView: View {
     @Environment(SessionContext.self) private var session
     @Environment(\.dismiss) private var dismiss
 
-    @State private var companyId: String?
-    @State private var role = "crew"
-    @State private var code: String?
-    @State private var expires: Date?
+    @State private var email = ""
+    @State private var role: CompanyMembership.Role = .crew
+    @State private var invited: PendingInvitation?
+    @State private var pending: [PendingInvitation] = []
     @State private var request = RequestState()
 
-    private var managedCompanies: [CompanyMembership] { session.memberships.filter(\.isManager) }
-    private var selectedCompany: CompanyMembership? {
-        managedCompanies.first { $0.orgId == (companyId ?? managedCompanies.first?.orgId) }
-    }
-    private var canInviteAdmins: Bool { selectedCompany.map { $0.role == .owner || $0.role == .admin } ?? false }
+    private var company: CompanyMembership? { session.activeCompany }
+    private var canInviteAdmins: Bool { company.map { $0.role == .owner || $0.role == .admin } ?? false }
 
     var body: some View {
         Form {
             Section {
-                if managedCompanies.count > 1 {
-                    Picker("Company", selection: Binding(get: { companyId ?? managedCompanies.first?.orgId ?? "" },
-                                                         set: { companyId = $0 })) {
-                        ForEach(managedCompanies) { Text($0.name).tag($0.orgId) }
-                    }
-                }
+                TextField("Email address", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.send)
+                    .onSubmit(invite)
                 Picker("Role", selection: $role) {
-                    Text("Crew").tag("crew")
-                    Text("Manager").tag("manager")
-                    if canInviteAdmins { Text("Admin").tag("admin") }
+                    Text("Crew").tag(CompanyMembership.Role.crew)
+                    Text("Manager").tag(CompanyMembership.Role.manager)
+                    if canInviteAdmins { Text("Admin").tag(CompanyMembership.Role.admin) }
                 }
             } footer: {
-                Text("They create a ServiceFlow account, then tap Join with an invite code.")
+                AuthFooter(error: request.error,
+                           hint: "They join \(company?.name ?? "your company") when they sign in to ServiceFlow with this email.")
             }
 
-            if let code {
+            AuthPrimaryButton(title: "Send Invite", busy: request.isRunning,
+                              enabled: AccountValidation.email(email) == nil, action: invite)
+
+            if let invited {
                 Section {
-                    VStack(spacing: 6) {
-                        Text(code)
-                            .font(.system(size: 34, weight: .heavy, design: .rounded))
-                            .tracking(4)
-                            .textSelection(.enabled)
-                        if let expires {
-                            Text("Works once. Expires \(expires.formatted(date: .abbreviated, time: .omitted)).")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
+                    ShareLink(item: shareText(for: invited)) {
+                        Label("Let \(invited.email) Know", systemImage: "square.and.arrow.up")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    ShareLink(item: shareText(code)) { Label("Share Code", systemImage: "square.and.arrow.up") }
-                } header: {
-                    Text("Invite code")
+                } footer: {
+                    Text("Invited \(invited.email). Send them a message so they know to install ServiceFlow.")
                 }
             }
 
-            Section {} footer: { AuthErrorText(message: request.error) }
-
-            AuthPrimaryButton(title: code == nil ? "Create Invite Code" : "Create Another Code", busy: request.isRunning,
-                              enabled: !managedCompanies.isEmpty, action: create)
+            if !pending.isEmpty {
+                Section("Waiting to join") {
+                    ForEach(pending) { invitation in
+                        LabeledContent(invitation.email, value: invitation.role.label)
+                            .swipeActions {
+                                Button("Cancel Invite", role: .destructive) { revoke(invitation) }
+                            }
+                    }
+                }
+            }
         }
         .navigationTitle("Invite Crew")
         .navigationBarTitleDisplayMode(.inline)
@@ -137,21 +136,41 @@ struct InviteCrewView: View {
             ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
         }
         .tint(Palette.teal)
+        .task { await loadPending() }
+        .onChange(of: email) { _, _ in request.error = nil }
     }
 
-    private func shareText(_ code: String) -> String {
-        let company = selectedCompany?.name ?? "our company"
-        return "Join \(company) on ServiceFlow: install the app, create an account, then enter invite code \(code)."
+    private func shareText(for invitation: PendingInvitation) -> String {
+        "You're invited to join \(company?.name ?? "our company") on ServiceFlow. Install the app and sign in with \(invitation.email)."
     }
 
-    private func create() {
-        guard let orgId = selectedCompany?.orgId else { return }
+    private func invite() {
+        let address = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let problem = AccountValidation.email(address) {
+            request.error = problem
+            return
+        }
+        guard let orgId = company?.orgId else { return }
         let api = session.api
         let role = role
         request.run {
-            let result = try await api.createInvitation(role: role, email: nil, orgId: orgId)
-            code = result["code"]?.nonEmptyString
-            expires = result["expires_at"]?.dateValue
+            let result = try await api.invite(email: address, role: role, orgId: orgId)
+            invited = PendingInvitation(row: result)
+            email = ""
+            await loadPending()
         }
+    }
+
+    private func revoke(_ invitation: PendingInvitation) {
+        let api = session.api
+        request.run {
+            try await api.revokeInvitation(id: invitation.id)
+            await loadPending()
+        }
+    }
+
+    private func loadPending() async {
+        guard let orgId = company?.orgId else { return }
+        if let list = try? await session.api.pendingInvitations(orgId: orgId) { pending = list }
     }
 }

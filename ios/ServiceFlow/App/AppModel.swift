@@ -88,6 +88,8 @@ final class AppModel {
             return
         }
         async let maintenance = api.maintenanceMode()
+        // Companies that invited this email are joined before anything loads.
+        _ = try? await api.acceptMyInvitations()
         // Nil when offline: carry on with the memberships cached on the device.
         let loaded = try? await api.memberships(userId: session.user.id)
         if await maintenance {

@@ -84,15 +84,32 @@ extension ServiceFlowAPI {
         try await rpc("create_company", ["requested_name": .string(name), "requested_trade": JSONValue(trade)])
     }
 
-    func acceptInvitation(code: String) async throws -> JSONValue {
-        try await rpc("accept_invitation", ["code": .string(code)])
+    /// Joins every company that invited the signed-in person's email.
+    /// Returns the companies joined (usually none).
+    @discardableResult
+    func acceptMyInvitations() async throws -> [JSONValue] {
+        try await rpc("accept_my_invitations", [:]).arrayValue ?? []
     }
 
-    /// Creates an invite code for the person's company (managers only).
-    func createInvitation(role: String, email: String?, orgId: String) async throws -> JSONValue {
-        try await rpc("create_invitation", [
-            "requested_role": .string(role), "requested_email": JSONValue(email), "requested_org_id": .string(orgId),
+    /// Invites an email to a company (managers). They join when they sign in with it.
+    func invite(email: String, role: CompanyMembership.Role, orgId: String) async throws -> JSONValue {
+        try await rpc("invite_to_company", [
+            "requested_email": .string(email), "requested_role": .string(role.rawValue), "requested_org_id": .string(orgId),
         ])
+    }
+
+    /// Open invitations of a company, newest first.
+    func pendingInvitations(orgId: String) async throws -> [PendingInvitation] {
+        try await rows(
+            client.from("org_invitations").select("id,email,role,created_at,expires_at")
+                .eq("org_id", value: orgId).is("accepted_at", value: nil).is("revoked_at", value: nil)
+                .gt("expires_at", value: ISODate.string(Date()))
+                .order("created_at", ascending: false)
+        ).compactMap(PendingInvitation.init(row:))
+    }
+
+    func revokeInvitation(id: String) async throws {
+        _ = try await rpc("revoke_invitation", ["invitation_id": .string(id)])
     }
 
     // MARK: App
@@ -113,5 +130,21 @@ extension ServiceFlowAPI {
                 "app_version": .string(appVersion),
             ],
         ])
+    }
+}
+
+/// An invitation that hasn't been used yet.
+struct PendingInvitation: Identifiable, Hashable {
+    let id: String
+    let email: String
+    let role: CompanyMembership.Role
+    let expiresAt: Date?
+
+    init?(row: JSONValue) {
+        guard let id = row["id"]?.nonEmptyString, let email = row["email"]?.nonEmptyString else { return nil }
+        self.id = id
+        self.email = email
+        role = CompanyMembership.Role(rawValue: row["role"]?.stringValue ?? "") ?? .crew
+        expiresAt = row["expires_at"]?.dateValue
     }
 }

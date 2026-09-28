@@ -18,6 +18,8 @@ struct MainShell: View {
             tab(.more) { MoreScreen() }
         }
         .tint(Palette.green)
+        // Switching company rebuilds every tab so each loads that company's data.
+        .id(session.companyGeneration)
         .onChange(of: session.canViewTeamMap) { _, canView in
             if !canView, session.activeTab == .teamMap { session.activeTab = .clock }
         }

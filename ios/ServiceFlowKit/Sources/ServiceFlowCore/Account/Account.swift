@@ -33,24 +33,6 @@ public struct CompanyMembership: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public enum InviteCode {
-    static let alphabet = Set("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
-
-    /// Upper-cases and keeps only code characters; `abcd efgh` → `ABCDEFGH`.
-    public static func normalize(_ raw: String) -> String {
-        String(raw.uppercased().filter { alphabet.contains($0) })
-    }
-
-    /// Formats as typed: `ABCD-EFGH`.
-    public static func display(_ raw: String) -> String {
-        let code = String(normalize(raw).prefix(8))
-        guard code.count > 4 else { return code }
-        return String(code.prefix(4)) + "-" + String(code.dropFirst(4))
-    }
-
-    public static func isComplete(_ raw: String) -> Bool { normalize(raw).count == 8 }
-}
-
 public enum AccountValidation {
     public static func email(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)

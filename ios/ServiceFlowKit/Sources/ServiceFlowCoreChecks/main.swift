@@ -322,10 +322,7 @@ func runChecks() async {
         expectEqual(summaries.first?.userId, "u2", "you first")
     }
 
-    await check("Invite codes and account rules") {
-        expectEqual(InviteCode.normalize("abcd-efgh"), "ABCDEFGH", "normalize")
-        expectEqual(InviteCode.display("abcdefgh"), "ABCD-EFGH", "display")
-        expectEqual(InviteCode.normalize("ab1o-0l"), "AB", "ambiguous characters dropped")
+    await check("Account rules") {
         expect(AccountValidation.email("pat@example.com") == nil, "valid email")
         expect(AccountValidation.email("pat@") != nil, "invalid email")
         expectEqual(AccountValidation.verificationCode("12 34-56 7"), "123456", "code digits")

@@ -9,7 +9,7 @@ extension ServiceFlowAPI {
 
     /// Visible jobs (`job_feed` applies each job's own visibility flag).
     private func jobFeed() -> PostgrestFilterBuilder {
-        client.from("job_feed").select("*").eq("is_feed_visible", value: true)
+        scoped(client.from("job_feed").select("*").eq("is_feed_visible", value: true))
     }
 
     private func activeJobs() -> PostgrestFilterBuilder {
@@ -83,7 +83,7 @@ extension ServiceFlowAPI {
         var filters = Self.ilike(["name", "email"], pattern)
         // Phone numbers are stored in many formats, so match on digits only.
         if digits.count >= 3 { filters.append("phone.ilike.%\(digits)%") }
-        return try await rows(client.from("contacts").select("id").or(filters.joined(separator: ",")).limit(Self.pageLimit))
+        return try await rows(scoped(client.from("contacts").select("id")).or(filters.joined(separator: ",")).limit(Self.pageLimit))
             .compactMap { $0["id"]?.nonEmptyString }
     }
 
@@ -91,7 +91,7 @@ extension ServiceFlowAPI {
         var filters = Self.ilike(["address", "city", "province", "postal_code", "source", "pipeline_stage_raw"], pattern)
         if !contactIds.isEmpty { filters.append("contact_id.in.(\(contactIds.joined(separator: ",")))") }
         return try await rows(
-            client.from("leads").select("*,contact:contacts(id,name,email,phone),jobs(id)")
+            scoped(client.from("leads").select("*,contact:contacts(id,name,email,phone),jobs(id)"))
                 .or(filters.joined(separator: ",")).order("updated_at", ascending: false).limit(Self.pageLimit)
         )
     }
@@ -122,7 +122,7 @@ extension ServiceFlowAPI {
     }
 
     func assignedJobIds(userId: String) async throws -> [String] {
-        try await rows(client.from("job_assignments").select("job_id").eq("employee_id", value: userId).eq("status", value: "active"))
+        try await rows(scoped(client.from("job_assignments").select("job_id")).eq("employee_id", value: userId).eq("status", value: "active"))
             .compactMap { $0["job_id"]?.nonEmptyString }
     }
 }

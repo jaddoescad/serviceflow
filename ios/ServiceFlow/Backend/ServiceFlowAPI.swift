@@ -8,6 +8,16 @@ import Supabase
 final class ServiceFlowAPI: TimeTrackingBackend, @unchecked Sendable {
     let client: SupabaseClient
 
+    /// The company the person is looking at. Company data (jobs, leads, the
+    /// team map) is limited to it; nil shows every company they belong to.
+    var activeOrgId: String?
+
+    /// Limits a query on a table with an `org_id` column to the active company.
+    func scoped(_ query: PostgrestFilterBuilder) -> PostgrestFilterBuilder {
+        guard let activeOrgId else { return query }
+        return query.eq("org_id", value: activeOrgId)
+    }
+
     init(config: AppConfig) {
         client = SupabaseClient(
             supabaseURL: config.supabaseURL,

@@ -16,6 +16,7 @@ final class SessionContext {
     /// One-time prompts and answers, remembered per person.
     private enum Flag {
         static let askedNotifications = "askedNotifications"
+        static let activeCompany = "activeCompany"
         static func answeredOverBudget(_ jobId: String) -> String { "overBudget:\(jobId)" }
     }
 
@@ -31,6 +32,10 @@ final class SessionContext {
     let location: LocationService
 
     private(set) var memberships: [CompanyMembership]
+    /// The company being shown; a person invited by several switches in More.
+    private(set) var activeCompanyId: String?
+    /// Changes when the company changes, so every screen reloads for it.
+    private(set) var companyGeneration = 0
     /// Scheduled and active jobs with coordinates, for the map and on-site checks.
     private(set) var mappedProjects: [Project] = []
     private(set) var assignedJobIds: [String] = []
@@ -111,8 +116,12 @@ final class SessionContext {
 
     var displayName: String { user.name }
 
-    /// Owners, admins and managers of any of the person's companies.
-    var isManager: Bool { memberships.contains(where: \.isManager) }
+    var activeCompany: CompanyMembership? {
+        memberships.first { $0.orgId == activeCompanyId } ?? memberships.first
+    }
+
+    /// Owners, admins and managers of the company being shown.
+    var isManager: Bool { activeCompany?.isManager ?? false }
     var canViewTeamMap: Bool { isManager && config.locationTrackingEnabled }
 
     // MARK: Lifecycle
@@ -123,6 +132,9 @@ final class SessionContext {
             memberships = loaded
             membershipStore.save(loaded)
         }
+        let remembered = activeCompanyId ?? flag(Flag.activeCompany)
+        activeCompanyId = memberships.contains { $0.orgId == remembered } ? remembered : memberships.first?.orgId
+        api.activeOrgId = activeCompanyId
         guard !started else { return }
         started = true
         tracker.projects = mappedProjects
@@ -210,6 +222,22 @@ final class SessionContext {
     private func refreshProfile(into store: JSONFileStore<Profile>) async {
         guard let row = try? await api.profile(userId: user.id) else { return }
         store.save(Profile(fullName: row["full_name"]?.nonEmptyString, email: row["email"]?.nonEmptyString))
+    }
+
+    /// Shows another of the person's companies.
+    func selectCompany(_ orgId: String) {
+        guard orgId != activeCompany?.orgId, memberships.contains(where: { $0.orgId == orgId }) else { return }
+        activeCompanyId = orgId
+        api.activeOrgId = orgId
+        setFlag(Flag.activeCompany, orgId)
+        paths = [:]
+        mappedProjects = []
+        assignedJobIds = []
+        companyGeneration += 1
+        Task {
+            await refreshProjects()
+            await refreshAssignments()
+        }
     }
 
     private func refreshProjects() async {

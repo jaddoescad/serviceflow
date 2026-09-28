@@ -95,14 +95,16 @@ final class NotificationService: NSObject, ShiftReminderScheduling, UNUserNotifi
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let type = info["type"] as? String
+        let hours = info["hours"] as? Int
+        let action = response.actionIdentifier
         await MainActor.run {
-            switch response.actionIdentifier {
+            switch action {
             case "clock_out":
                 onClockOutAction?()
             case UNNotificationDefaultActionIdentifier:
                 if type == "active_shift_reminder" {
-                    let hours = (info["hours"] as? Int).map { " after \($0) hours" } ?? ""
-                    onReminderTap?("You are still clocked in\(hours). Clock out if you are finished.")
+                    let after = hours.map { " after \($0) hours" } ?? ""
+                    onReminderTap?("You are still clocked in\(after). Clock out if you are finished.")
                 }
             default:
                 break

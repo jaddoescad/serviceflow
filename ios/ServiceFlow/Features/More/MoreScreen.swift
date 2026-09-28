@@ -11,7 +11,7 @@ struct MoreScreen: View {
     @State private var sheet: Sheet?
 
     enum Sheet: String, Identifiable {
-        case invite, join, delete
+        case invite, delete
         var id: String { rawValue }
     }
 
@@ -27,14 +27,28 @@ struct MoreScreen: View {
                 .padding(.vertical, 2)
             }
 
-            Section(session.memberships.count > 1 ? "Companies" : "Company") {
-                ForEach(session.memberships) { membership in
-                    LabeledContent(membership.name, value: membership.role.label)
+            Section {
+                if session.memberships.count > 1 {
+                    // Invited by more than one company: pick the one to show.
+                    Picker("Company", selection: Binding(
+                        get: { session.activeCompany?.orgId ?? "" },
+                        set: { session.selectCompany($0) }
+                    )) {
+                        ForEach(session.memberships) { membership in
+                            Text(membership.name).tag(membership.orgId)
+                        }
+                    }
+                } else if let company = session.activeCompany {
+                    LabeledContent("Company", value: company.name)
+                }
+                if let company = session.activeCompany {
+                    LabeledContent("Role", value: company.role.label)
                 }
                 if session.isManager {
                     Button { sheet = .invite } label: { Label("Invite Crew", systemImage: "person.badge.plus") }
                 }
-                Button { sheet = .join } label: { Label("Join Another Company", systemImage: "person.2") }
+            } header: {
+                Text("Company")
             }
 
             Section {
@@ -92,16 +106,6 @@ struct MoreScreen: View {
                 switch sheet {
                 case .invite:
                     InviteCrewView()
-                case .join:
-                    JoinCompanyView(onJoined: {
-                        Task {
-                            await model.refreshAccount()
-                            self.sheet = nil
-                        }
-                    })
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { self.sheet = nil } }
-                    }
                 case .delete:
                     DeleteAccountView(onDeleted: { Task { await model.accountDeleted() } })
                 }
