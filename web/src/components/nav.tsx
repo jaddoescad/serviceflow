@@ -19,7 +19,7 @@ import { cn } from "@/components/ui";
 import { initials } from "@/lib/format";
 
 const LINKS = [
-  { href: "/today", label: "Today", icon: "/timesheets" },
+  { href: "/", label: "Today", icon: "/timesheets" },
   { href: "/projects", label: "Projects", icon: "/projects" },
   { href: "/jobs", label: "Labour", icon: "/jobs" },
   { href: "/photos", label: "Photos", icon: "/photos" },
@@ -51,8 +51,8 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
           {LINKS.map((link) => {
             const active = link.href.includes("?")
               ? pathname === "/projects" && params.get("view") === "trash"
-              : link.href === "/jobs"
-                ? pathname === "/jobs"
+              : link.href === "/jobs" || link.href === "/"
+                ? pathname === link.href
                 : (pathname.startsWith(link.href) ||
                   (link.href === "/projects" &&
                     pathname.startsWith("/jobs/"))) &&
