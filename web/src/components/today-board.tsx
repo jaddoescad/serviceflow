@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { ProjectMediaPreview } from "@/components/project-media-preview";
 import { fmtDistance, fmtHours, fmtTime, initials } from "@/lib/format";
@@ -19,101 +20,160 @@ export type TodayJob = {
   name: string;
   address: string | null;
   preview: { id: string; media_type: string } | null;
+  budget: { usedHours: number; budgetHours: number } | null;
   crew: TodayCrew[];
 };
 
 export function TodayBoard({ date, jobs }: { date: string; jobs: TodayJob[] }) {
-  const onClock = new Set(jobs.flatMap((job) => job.crew.filter((c) => c.onClock).map((c) => c.id))).size;
-  const active = jobs.filter((job) => job.crew.some((c) => c.onClock)).length;
+  const painters = new Set(jobs.flatMap((job) => job.crew.map((c) => c.id)));
+  const onClock = new Set(jobs.flatMap((job) => job.crew.filter((c) => c.onClock).map((c) => c.id)));
+  const hours = jobs.reduce((sum, job) => sum + job.crew.reduce((s, c) => s + c.hours, 0), 0);
+  const budgeted = jobs.filter((job) => job.budget);
+  const over = budgeted.filter((job) => job.budget!.usedHours > job.budget!.budgetHours).length;
+
   return (
     <section className="workspace-page">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">Today</h1>
-        <span className="text-base text-slate-500">{date}</span>
-      </div>
-      <p className="mt-2 text-sm text-slate-600">
-        {onClock
-          ? `${onClock} ${onClock === 1 ? "painter" : "painters"} on ${active} ${active === 1 ? "job" : "jobs"} right now`
-          : "No one is clocked in right now"}
-      </p>
+      <h1 className="text-3xl font-bold tracking-tight">Today</h1>
+      <p className="mt-1 text-base text-slate-500">{date}</p>
 
-      <div className="mt-5 border-t border-slate-200">
-        {jobs.length === 0 ? (
-          <p className="py-20 text-center text-sm text-slate-500">No hours recorded today yet.</p>
-        ) : (
-          jobs.map((job) => <JobRow key={job.key} job={job} />)
-        )}
-      </div>
+      <dl className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Painters working" value={painters.size}
+          note={onClock.size ? `${onClock.size} on the clock now` : "All clocked out"} live={onClock.size > 0} />
+        <Stat label="Jobs worked" value={jobs.length} />
+        <Stat label="Hours logged" value={fmtHours(hours)} />
+        <Stat label="Over budget" value={budgeted.length ? `${over} of ${budgeted.length}` : "—"}
+          note={budgeted.length < jobs.length ? `${jobs.length - budgeted.length} without a budget` : undefined}
+          tone={over ? "bad" : undefined} />
+      </dl>
+
+      {jobs.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-dashed border-slate-300 py-20 text-center">
+          <p className="text-base font-semibold text-slate-700">No one has clocked in yet today</p>
+          <p className="mt-1 text-sm text-slate-500">Jobs appear here as soon as a painter clocks in.</p>
+        </div>
+      ) : (
+        <div className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          {jobs.map((job) => <JobCard key={job.key} job={job} />)}
+        </div>
+      )}
     </section>
   );
 }
 
-function JobRow({ job }: { job: TodayJob }) {
+function Stat({ label, value, note, live, tone }: {
+  label: string; value: ReactNode; note?: string; live?: boolean; tone?: "bad";
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5">
+      <dt className="text-sm text-slate-500">{label}</dt>
+      <dd className={`mt-1 text-2xl font-bold tabular-nums tracking-tight ${tone === "bad" ? "text-red-600" : "text-slate-900"}`}>
+        {value}
+      </dd>
+      {note ? (
+        <dd className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+          {live ? <LiveDot /> : null}
+          {note}
+        </dd>
+      ) : null}
+    </div>
+  );
+}
+
+function LiveDot() {
+  return (
+    <span className="relative flex h-2 w-2">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+    </span>
+  );
+}
+
+function JobCard({ job }: { job: TodayJob }) {
   const href = job.id ? `/jobs/${job.id}` : null;
+  const live = job.crew.filter((c) => c.onClock).length;
+  const lastOut = job.crew.map((c) => c.endedAt).filter(Boolean).sort().at(-1) ?? null;
   const hours = job.crew.reduce((sum, c) => sum + c.hours, 0);
-  const thumbnail = (
-    <>
+
+  const cover = (
+    <div className="relative aspect-[16/7] overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200">
       {job.preview && job.id ? (
-        <ProjectMediaPreview
-          src={`/api/jobs/${job.id}/media/${job.preview.id}`}
-          video={job.preview.media_type === "video"}
-          alt={job.name}
-        />
+        <ProjectMediaPreview src={`/api/jobs/${job.id}/media/${job.preview.id}`}
+          video={job.preview.media_type === "video"} alt={job.name} />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center text-slate-400">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-            <path d="M3 7h5l2-3h4l2 3h5v13H3z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-4xl font-bold text-slate-300">
+          {initials(job.name)}
         </span>
       )}
-    </>
+      <span className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold shadow-sm ${
+        live ? "bg-white text-emerald-700" : "bg-white/90 text-slate-600"}`}>
+        {live ? <><LiveDot />{live} on site</> : `Wrapped up ${fmtTime(lastOut)}`}
+      </span>
+    </div>
   );
+
   return (
-    <article className="flex gap-3 border-b border-slate-200 py-4 sm:gap-5">
-      {href ? (
-        <Link href={href} prefetch={false} aria-label={`Open ${job.name}`}
-          className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-20 sm:w-20">
-          {thumbnail}
-        </Link>
-      ) : (
-        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-20 sm:w-20">{thumbnail}</div>
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-4">
+    <article className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      {href ? <Link href={href} prefetch={false} aria-label={`Open ${job.name}`}>{cover}</Link> : cover}
+      <div className="flex flex-1 flex-col px-4 pb-4 pt-3">
+        <div className="flex items-baseline justify-between gap-3">
           {href ? (
-            <Link href={href} prefetch={false} className="truncate text-base font-semibold hover:text-blue-600">
-              {job.name}
-            </Link>
+            <Link href={href} prefetch={false} className="truncate text-lg font-semibold hover:text-blue-600">{job.name}</Link>
           ) : (
-            <span className="truncate text-base font-semibold">{job.name}</span>
+            <span className="truncate text-lg font-semibold">{job.name}</span>
           )}
-          <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-slate-500">{fmtHours(hours)} today</span>
+          <span className="shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-slate-600">{fmtHours(hours)} today</span>
         </div>
-        {job.address ? <p className="mt-0.5 truncate text-sm text-slate-500">{job.address}</p> : null}
-        <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-2">
+        {job.address ? <p className="truncate text-sm text-slate-500">{job.address}</p> : null}
+
+        <ul className="mt-3 divide-y divide-slate-100">
           {job.crew.map((c) => (
-            <li key={c.id} className="flex items-start gap-2 text-sm">
-              <span
-                className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                  c.onClock ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {initials(c.name)}
-              </span>
-              <span className="flex flex-wrap items-baseline gap-x-2 pt-1">
-                <span className={c.onClock ? "font-medium text-slate-900" : "text-slate-500"}>{c.name}</span>
-                <span className="whitespace-nowrap text-slate-500">
-                  {c.onClock ? `since ${fmtTime(c.startedAt)}` : `${fmtTime(c.startedAt)} – ${fmtTime(c.endedAt)}`}
+            <li key={c.id} className="flex items-center gap-3 py-2">
+              <span className="relative shrink-0">
+                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
+                  c.onClock ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                  {initials(c.name)}
                 </span>
-                {c.distanceMeters != null ? (
-                  <span className="whitespace-nowrap text-amber-700">{fmtDistance(c.distanceMeters)} from job</span>
+                {c.onClock ? (
+                  <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
                 ) : null}
               </span>
+              <span className="min-w-0 flex-1">
+                <span className={`block truncate text-sm font-medium ${c.onClock ? "text-slate-900" : "text-slate-600"}`}>{c.name}</span>
+                <span className="block text-xs text-slate-500">
+                  {c.onClock ? `On the clock since ${fmtTime(c.startedAt)}` : `${fmtTime(c.startedAt)} – ${fmtTime(c.endedAt)}`}
+                  {c.distanceMeters != null ? (
+                    <span className="text-amber-700"> · {fmtDistance(c.distanceMeters)} from job</span>
+                  ) : null}
+                </span>
+              </span>
+              <span className="shrink-0 text-sm tabular-nums text-slate-600">{fmtHours(c.hours)}</span>
             </li>
           ))}
         </ul>
+
+        <div className="mt-auto pt-3">
+          <BudgetBar budget={job.budget} />
+        </div>
       </div>
     </article>
+  );
+}
+
+function BudgetBar({ budget }: { budget: TodayJob["budget"] }) {
+  if (!budget) return <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">No labour budget</p>;
+  const pct = Math.round((budget.usedHours / budget.budgetHours) * 100);
+  const color = pct > 100 ? "bg-red-500" : pct >= 85 ? "bg-amber-500" : "bg-emerald-500";
+  return (
+    <div className="border-t border-slate-100 pt-3">
+      <div className="flex justify-between text-xs">
+        <span className="text-slate-500">
+          Labour budget · {budget.usedHours.toFixed(1)} of {budget.budgetHours.toFixed(1)} h
+        </span>
+        <span className={`font-semibold tabular-nums ${pct > 100 ? "text-red-600" : "text-slate-700"}`}>{pct}%</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+    </div>
   );
 }

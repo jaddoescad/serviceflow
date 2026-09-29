@@ -24,7 +24,7 @@ export default async function HomePage() {
   for (const entry of entries) {
     const key = entry.companycam_project_id ?? entry.project_name;
     const job = jobs.get(key) ?? {
-      key, id: entry.companycam_project_id, name: entry.project_name, address: entry.project_address, preview: null, crew: [],
+      key, id: entry.companycam_project_id, name: entry.project_name, address: entry.project_address, preview: null, budget: null, crew: [],
     };
     const personId = entry.user_id ?? entry.user_email ?? entry.id;
     // Count only today's share of a shift left open since yesterday.
@@ -52,10 +52,19 @@ export default async function HomePage() {
   const ids = [...jobs.values()].flatMap((job) => (job.id ? [job.id] : []));
   if (ids.length) {
     const client = await createClient();
-    const { data } = await client.rpc("project_directory_previews", { requested_ids: ids });
-    for (const row of data ?? []) {
+    const [previews, feed] = await Promise.all([
+      client.rpc("project_directory_previews", { requested_ids: ids }),
+      client.from("job_feed").select("id,budget_minutes,used_minutes").in("id", ids),
+    ]);
+    for (const row of previews.data ?? []) {
       const job = jobs.get(row.project_id);
       if (job && !job.preview) job.preview = { id: row.id, media_type: row.media_type };
+    }
+    for (const row of feed.data ?? []) {
+      const job = jobs.get(row.id);
+      if (job && Number(row.budget_minutes) > 0) {
+        job.budget = { usedHours: Number(row.used_minutes ?? 0) / 60, budgetHours: Number(row.budget_minutes) / 60 };
+      }
     }
   }
 
