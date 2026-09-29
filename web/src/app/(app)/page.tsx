@@ -5,14 +5,16 @@ import { getTodayEntries } from "@/lib/queries";
 import { computeDurations } from "@/lib/hours";
 import { ottawaStartOfDay } from "@/lib/format";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { TodayBoard, type TodayCrew, type TodayJob } from "@/components/today-board";
+import { TODAY_LAYOUTS, TodayBoard, type TodayCrew, type TodayJob, type TodayLayout } from "@/components/today-board";
 
 export const dynamic = "force-dynamic";
 
 const OFF_SITE_METERS = 250;
 
 /** Home: which jobs are being worked today and who is on each. */
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ layout?: string }> }) {
+  const requested = (await searchParams).layout;
+  const layout: TodayLayout = TODAY_LAYOUTS.find((value) => value === requested) ?? "list";
   const profile = await requireMember();
   if (!["admin", "manager"].includes(profile.role)) redirect("/projects");
 
@@ -43,6 +45,8 @@ export default async function HomePage() {
       const crew: TodayCrew = {
         id: personId, name: entry.user_name ?? "Painter", startedAt: entry.started_at, endedAt: entry.ended_at,
         onClock, hours, distanceMeters: distance,
+        location: entry.clock_in_latitude != null && entry.clock_in_longitude != null
+          ? { lat: entry.clock_in_latitude, lng: entry.clock_in_longitude } : null,
       };
       job.crew.push(crew);
     }
@@ -80,7 +84,7 @@ export default async function HomePage() {
   return (
     <>
       <AutoRefresh everyMs={60_000} />
-      <TodayBoard date={date} jobs={sorted} />
+      <TodayBoard date={date} jobs={sorted} layout={layout} />
     </>
   );
 }
