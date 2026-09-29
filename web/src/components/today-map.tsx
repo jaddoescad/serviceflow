@@ -27,7 +27,7 @@ export function TodayMap({ projects }: { projects: TodayProject[] }) {
         const icon = L.divIcon({
           className: "",
           iconSize: [0, 0],
-          html: `<div style="transform:translate(-50%,-100%);display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;
+          html: `<div style="transform:translate(-50%,-100%);width:max-content;display:flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;
             background:#fff;border-radius:999px;padding:3px 10px 3px 3px;box-shadow:0 1px 4px rgba(0,0,0,.25);font:600 12px system-ui">
             <span style="flex:none;min-width:22px;height:22px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;
               font-size:11px;color:#fff;background:#10b981">${count}</span>
