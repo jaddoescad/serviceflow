@@ -19,6 +19,7 @@ import { cn } from "@/components/ui";
 import { initials } from "@/lib/format";
 
 const LINKS = [
+  { href: "/today", label: "Today", icon: "/timesheets" },
   { href: "/projects", label: "Projects", icon: "/projects" },
   { href: "/jobs", label: "Labour", icon: "/jobs" },
   { href: "/photos", label: "Photos", icon: "/photos" },

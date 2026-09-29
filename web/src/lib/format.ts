@@ -119,6 +119,20 @@ export function dayKey(value: string | Date): string {
   return d.toLocaleDateString("en-CA", { timeZone: OTTAWA_TZ });
 }
 
+/** The UTC instant of midnight today in Ottawa. */
+export function ottawaStartOfDay(now = new Date()): Date {
+  const [year, month, day] = dayKey(now).split("-").map(Number);
+  const utcMidnight = Date.UTC(year!, month! - 1, day!);
+  // Ottawa's offset at that moment (-4h or -5h), read back from Intl.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: OTTAWA_TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date(utcMidnight));
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  const shown = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"));
+  return new Date(utcMidnight + (utcMidnight - shown));
+}
+
 export function initials(name: string | null | undefined): string {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";

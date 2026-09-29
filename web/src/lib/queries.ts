@@ -91,10 +91,13 @@ export async function getTimesheetsPage(filters: TimesheetFilters, page: number)
   return { rows: (data.rows ?? []).map(timeEntry), total: Number(data.total), totalHours: Number(data.totalHours), activeCount: Number(data.activeCount), calculatedAt: String(data.calculatedAt) };
 }
 
-export async function getActiveEntries(): Promise<TimeEntry[]> {
+/** Shifts still open, plus every shift started since `sinceIso`. */
+export async function getTodayEntries(sinceIso: string): Promise<TimeEntry[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("time_entries").select("*").eq("status", "active").order("started_at");
-  if (error) throw new Error(`active entries: ${error.message}`);
+  const { data, error } = await supabase.from("time_entries").select("*")
+    .in("status", ["active", "completed"]).or(`status.eq.active,started_at.gte.${sinceIso}`)
+    .order("started_at");
+  if (error) throw new Error(`today's entries: ${error.message}`);
   return (data ?? []).map(timeEntry);
 }
 
