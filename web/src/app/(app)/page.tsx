@@ -2,89 +2,89 @@ import { redirect } from "next/navigation";
 import { requireMember } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTodayEntries } from "@/lib/queries";
-import { computeDurations } from "@/lib/hours";
 import { ottawaStartOfDay } from "@/lib/format";
 import { AutoRefresh } from "@/components/auto-refresh";
-import { TODAY_LAYOUTS, TodayBoard, type TodayCrew, type TodayJob, type TodayLayout } from "@/components/today-board";
+import { TodayBoard, type TodayPainter, type TodayProject } from "@/components/today-board";
 
 export const dynamic = "force-dynamic";
 
-const OFF_SITE_METERS = 250;
-
-/** Home: which jobs are being worked today and who is on each. */
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ layout?: string }> }) {
-  const requested = (await searchParams).layout;
-  const layout: TodayLayout = TODAY_LAYOUTS.find((value) => value === requested) ?? "list";
+/**
+ * Home: the projects someone clocked in to today. Anyone who clocked in today
+ * counts as active, even after clocking out (crews turn their phones off).
+ */
+export default async function HomePage() {
   const profile = await requireMember();
   if (!["admin", "manager"].includes(profile.role)) redirect("/projects");
 
-  const startOfDay = ottawaStartOfDay();
-  const entries = await getTodayEntries(startOfDay.toISOString());
-  const now = Date.now();
-
-  const jobs = new Map<string, TodayJob>();
-  for (const entry of entries) {
-    const key = entry.companycam_project_id ?? entry.project_name;
-    const job = jobs.get(key) ?? {
-      key, id: entry.companycam_project_id, name: entry.project_name, address: entry.project_address, preview: null, budget: null, crew: [],
-    };
-    const personId = entry.user_id ?? entry.user_email ?? entry.id;
-    // Count only today's share of a shift left open since yesterday.
-    const counted = { ...entry, started_at: new Date(Math.max(Date.parse(entry.started_at), startOfDay.getTime())).toISOString() };
-    const hours = computeDurations(counted, now).totalHours;
-    const onClock = entry.status === "active";
-    const distance = onClock && (entry.last_distance_meters ?? 0) > OFF_SITE_METERS ? entry.last_distance_meters : null;
-    const existing = job.crew.find((c) => c.id === personId);
-    if (existing) {
-      // Several shifts on one job today: first in, latest out, hours summed.
-      existing.hours += hours;
-      existing.endedAt = entry.ended_at;
-      existing.onClock = onClock;
-      existing.distanceMeters = distance;
-    } else {
-      const crew: TodayCrew = {
-        id: personId, name: entry.user_name ?? "Painter", startedAt: entry.started_at, endedAt: entry.ended_at,
-        onClock, hours, distanceMeters: distance,
-        location: entry.clock_in_latitude != null && entry.clock_in_longitude != null
-          ? { lat: entry.clock_in_latitude, lng: entry.clock_in_longitude } : null,
-      };
-      job.crew.push(crew);
-    }
-    jobs.set(key, job);
-  }
-
-  const ids = [...jobs.values()].flatMap((job) => (job.id ? [job.id] : []));
-  if (ids.length) {
-    const client = await createClient();
-    const [previews, feed] = await Promise.all([
-      client.rpc("project_directory_previews", { requested_ids: ids }),
-      client.from("job_feed").select("id,budget_minutes,used_minutes").in("id", ids),
-    ]);
-    for (const row of previews.data ?? []) {
-      const job = jobs.get(row.project_id);
-      if (job && !job.preview) job.preview = { id: row.id, media_type: row.media_type };
-    }
-    for (const row of feed.data ?? []) {
-      const job = jobs.get(row.id);
-      if (job && Number(row.budget_minutes) > 0) {
-        job.budget = { usedHours: Number(row.used_minutes ?? 0) / 60, budgetHours: Number(row.budget_minutes) / 60 };
-      }
-    }
-  }
-
-  const live = (job: TodayJob) => job.crew.some((c) => c.onClock);
-  const sorted = [...jobs.values()]
-    .map((job) => ({ ...job, crew: job.crew.sort((a, b) => Number(b.onClock) - Number(a.onClock) || a.name.localeCompare(b.name)) }))
-    .sort((a, b) => Number(live(b)) - Number(live(a)) || a.name.localeCompare(b.name));
-
+  const today = (await getTodayEntries(ottawaStartOfDay().toISOString())).filter((e) => e.companycam_project_id);
+  const ids = [...new Set(today.map((e) => e.companycam_project_id!))];
   const date = new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Toronto", weekday: "long", month: "long", day: "numeric",
   });
+  if (!ids.length) return <TodayBoard date={date} projects={[]} />;
 
+  const client = await createClient();
+  const [feed, history, previews] = await Promise.all([
+    client.from("job_feed").select("id,name,formatted_address,latitude,longitude,budget_minutes,used_minutes").in("id", ids),
+    client.from("time_entries").select("job_id,employee_id,employee_name,started_at,ended_at")
+      .in("job_id", ids).in("status", ["active", "completed"]),
+    client.rpc("project_directory_previews", { requested_ids: ids }),
+  ]);
+  if (feed.error) throw new Error(`today's projects: ${feed.error.message}`);
+  if (history.error) throw new Error(`project crews: ${history.error.message}`);
+
+  const now = Date.now();
+  const projects = new Map<string, TodayProject>();
+  for (const row of feed.data ?? []) {
+    const budgetMinutes = Number(row.budget_minutes ?? 0);
+    projects.set(row.id, {
+      id: row.id,
+      name: row.name,
+      address: row.formatted_address,
+      preview: null,
+      budget: budgetMinutes > 0 ? { usedHours: Number(row.used_minutes ?? 0) / 60, budgetHours: budgetMinutes / 60 } : null,
+      location: row.latitude != null && row.longitude != null ? { lat: row.latitude, lng: row.longitude } : null,
+      painters: [],
+    });
+  }
+
+  // Everyone who has worked each project, with their total hours there.
+  const crews = new Map<string, Map<string, TodayPainter>>();
+  for (const row of history.data ?? []) {
+    const crew = crews.get(row.job_id) ?? new Map<string, TodayPainter>();
+    const painter = crew.get(row.employee_id) ?? { id: row.employee_id, name: row.employee_name ?? "Painter", hours: 0, todayAt: null };
+    const end = row.ended_at ? Date.parse(row.ended_at) : now;
+    painter.hours += Math.max(0, end - Date.parse(row.started_at)) / 3_600_000;
+    crew.set(row.employee_id, painter);
+    crews.set(row.job_id, crew);
+  }
+  for (const entry of today) {
+    const painter = crews.get(entry.companycam_project_id!)?.get(entry.user_id ?? "");
+    if (painter && (!painter.todayAt || entry.started_at < painter.todayAt)) painter.todayAt = entry.started_at;
+  }
+
+  for (const project of projects.values()) {
+    project.painters = [...(crews.get(project.id)?.values() ?? [])].sort(
+      (a, b) => Number(Boolean(b.todayAt)) - Number(Boolean(a.todayAt)) || b.hours - a.hours,
+    );
+    // No geocoded address: place the pin where today's crew clocked in closest to the site.
+    if (!project.location) {
+      const nearest = today
+        .filter((e) => e.companycam_project_id === project.id && e.clock_in_latitude != null && e.clock_in_longitude != null)
+        .sort((a, b) => (a.last_distance_meters ?? Infinity) - (b.last_distance_meters ?? Infinity))[0];
+      if (nearest) project.location = { lat: nearest.clock_in_latitude!, lng: nearest.clock_in_longitude! };
+    }
+  }
+  for (const row of previews.data ?? []) {
+    const project = projects.get(row.project_id);
+    if (project && !project.preview) project.preview = { id: row.id, media_type: row.media_type };
+  }
+
+  const sorted = [...projects.values()].sort((a, b) => a.name.localeCompare(b.name));
   return (
     <>
       <AutoRefresh everyMs={60_000} />
-      <TodayBoard date={date} jobs={sorted} layout={layout} />
+      <TodayBoard date={date} projects={sorted} />
     </>
   );
 }
