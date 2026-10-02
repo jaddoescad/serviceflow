@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
-import { deleteDocument, renameDocument, savePageDocument } from "@/lib/actions/project-documents";
+import { deleteDocument, loadPageDocument, renameDocument, savePageDocument } from "@/lib/actions/project-documents";
 import {
   PROJECT_DOCUMENTS_BUCKET,
   pageImagePath,
@@ -160,14 +160,25 @@ export function DocumentEditor({
     // Load the saved body once; later server re-renders must not overwrite typing.
     if (!node || initialized.current) return;
     initialized.current = true;
-    node.innerHTML = page.bodyHtml || EMPTY_BODY;
-    node.dataset.empty = hasContent(page.bodyHtml) ? "false" : "true";
-    setHeadings(
-      Array.from(node.querySelectorAll("h1")).map((heading, index) => ({
-        id: index,
-        text: heading.textContent?.trim() || "Untitled heading",
-      })),
-    );
+    const show = (html: string) => {
+      node.innerHTML = html || EMPTY_BODY;
+      node.dataset.empty = hasContent(html) ? "false" : "true";
+      setHeadings(
+        Array.from(node.querySelectorAll("h1")).map((heading, index) => ({
+          id: index,
+          text: heading.textContent?.trim() || "Untitled heading",
+        })),
+      );
+    };
+    show(page.bodyHtml);
+    // Reopening a page can render Next's cached copy from before the last
+    // edits; fetch the saved version unless the person has started typing.
+    void loadPageDocument(page.projectId, page.id).then((latest) => {
+      if (!latest || dirty.current || latest.updatedAt === expectedUpdatedAt.current) return;
+      expectedUpdatedAt.current = latest.updatedAt;
+      show(latest.bodyHtml);
+      setSave({ status: "saved", at: latest.updatedAt });
+    }, () => undefined);
     if (canEdit) {
       try {
         document.execCommand("defaultParagraphSeparator", false, "p");
@@ -176,7 +187,7 @@ export function DocumentEditor({
         /* older browsers keep their defaults */
       }
     }
-  }, [canEdit, page.bodyHtml]);
+  }, [canEdit, page.bodyHtml, page.id, page.projectId]);
 
   useEffect(() => {
     function onSelectionChange() {

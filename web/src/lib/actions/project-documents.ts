@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireStaff } from "@/lib/auth";
+import { requireMember, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { PROJECT_DOCUMENTS_BUCKET } from "@/lib/project-document-types";
+import { PROJECT_DOCUMENTS_BUCKET, type ProjectPageDocument } from "@/lib/project-document-types";
+import { getProjectPageDocument } from "@/lib/project-documents";
 import { sanitizeRichText } from "@/lib/rich-text";
 
 export type ActionResult = { ok: boolean; error?: string };
@@ -201,6 +202,15 @@ export async function createPageDocument(input: {
   if (error) return { ok: false, error: error.message };
   revalidateDocuments(input.projectId);
   return { ok: true, documentId: data.id };
+}
+
+/**
+ * The page as saved now. The editor calls this on open because Next can show a
+ * cached copy of the page from before the last edits.
+ */
+export async function loadPageDocument(projectId: string, documentId: string): Promise<ProjectPageDocument | null> {
+  await requireMember();
+  return getProjectPageDocument(projectId, documentId);
 }
 
 /**
