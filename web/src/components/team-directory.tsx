@@ -3,7 +3,7 @@ import { useId, useMemo, useRef, useState, useTransition } from "react";
 import { initials } from "@/lib/format";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { setActive, setRole } from "@/lib/actions/employees";
+import { setActive, setPayRate, setRole } from "@/lib/actions/employees";
 import dynamic from "next/dynamic";
 import { Button } from "./ui";
 const CreateTeamMember = dynamic(() =>
@@ -67,6 +67,112 @@ function MemberRole({
         </p>
       ) : null}
     </>
+  );
+}
+
+function MemberRate({ member }: { member: TeamMember }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+  const name = member.full_name || member.email;
+  if (!editing)
+    return (
+      <span className="inline-flex items-center gap-1">
+        {member.hourly_rate == null
+          ? "—"
+          : `$${member.hourly_rate.toFixed(2)}/hr`}
+        <button
+          type="button"
+          aria-label={`Edit hourly rate for ${name}`}
+          onClick={() => {
+            setValue(member.hourly_rate?.toString() ?? "");
+            setError("");
+            setEditing(true);
+          }}
+          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+          >
+            <path d="M12.5 4.5 15.5 7.5 7.5 15.5H4.5v-3zM11 6l3 3" />
+          </svg>
+        </button>
+      </span>
+    );
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        setError("");
+        startTransition(async () => {
+          try {
+            const result = await setPayRate({
+              userId: member.id,
+              hourlyRate: Number(value),
+              effectiveFrom: new Date().toLocaleDateString("en-CA", {
+                timeZone: "America/Toronto",
+              }),
+            });
+            if (result.error) setError(result.error);
+            else {
+              setEditing(false);
+              router.refresh();
+            }
+          } catch {
+            setError("Could not save rate. Try again.");
+          }
+        });
+      }}
+    >
+      <div className="flex items-center gap-1">
+        <span className="text-slate-500">$</span>
+        <input
+          autoFocus
+          type="number"
+          min="0.01"
+          step="0.01"
+          required
+          aria-label={`Hourly rate for ${name}`}
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setEditing(false);
+          }}
+          className="h-8 w-16 rounded border border-slate-300 px-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
+      <div className="mt-1 flex gap-2 text-xs">
+        <button
+          type="submit"
+          disabled={pending}
+          className="font-medium text-blue-600 hover:underline disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => setEditing(false)}
+          className="text-slate-500 hover:underline"
+        >
+          Cancel
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-1 text-xs text-red-700">
+          {error}
+        </p>
+      ) : null}
+    </form>
   );
 }
 
@@ -225,7 +331,7 @@ export function TeamDirectory({
             <col className="w-[32%]" />
             <col className="w-[16%]" />
             <col />
-            {showRates ? <col className="w-28" /> : null}
+            {showRates ? <col className="w-36" /> : null}
             <col className="w-32" />
             {canManage ? <col className="w-14" /> : null}
           </colgroup>
@@ -297,9 +403,7 @@ export function TeamDirectory({
                 </td>
                 {showRates ? (
                   <td className="px-4 py-5 tabular-nums">
-                    {member.hourly_rate == null
-                      ? "—"
-                      : `$${member.hourly_rate.toFixed(2)}/hr`}
+                    <MemberRate member={member} />
                   </td>
                 ) : null}
                 <td className="px-4 py-5 text-xs">
