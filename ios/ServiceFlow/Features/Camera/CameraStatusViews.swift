@@ -42,7 +42,7 @@ struct CameraPermissionCard: View {
             Text("Camera access needed").font(.title3.weight(.bold)).foregroundStyle(.white)
             Text("ServiceFlow needs camera access to capture project photos and videos.")
                 .font(.subheadline).foregroundStyle(.white.opacity(0.72)).multilineTextAlignment(.center)
-            Button(permission == .notDetermined ? "Allow Camera" : "Open Settings") {
+            Button(permission == .notDetermined ? "Continue" : "Open Settings") {
                 if permission == .notDetermined {
                     onAllow()
                 } else if let url = URL(string: UIApplication.openSettingsURLString) {

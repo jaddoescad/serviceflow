@@ -64,21 +64,4 @@ extension ServiceFlowAPI {
     func stopWatching(_ channel: RealtimeChannelV2) async {
         await client.realtimeV2.removeChannel(channel)
     }
-
-    // MARK: Team map
-
-    func trackingStatuses() async throws -> [TeamMemberStatus] {
-        try await rows(scoped(client.from("employee_tracking_status").select("*")).order("last_location_at", ascending: false, nullsFirst: false))
-            .compactMap(TeamMemberStatus.init(row:))
-    }
-
-    /// Location points recorded between `start` and `end`.
-    func locationPoints(employeeId: String?, from start: Date, to end: Date, ascending: Bool = true,
-                        limit: Int = 2000) async throws -> [TeamLocationPoint] {
-        var query = scoped(client.from("employee_location_points")
-            .select("id,client_event_id,employee_id,latitude,longitude,accuracy_meters,event_type,is_on_site,job_id,captured_at")
-            .gte("captured_at", value: ISODate.string(start)).lt("captured_at", value: ISODate.string(end)))
-        if let employeeId { query = query.eq("employee_id", value: employeeId) }
-        return try await rows(query.order("captured_at", ascending: ascending).limit(limit)).compactMap(TeamLocationPoint.init(row:))
-    }
 }

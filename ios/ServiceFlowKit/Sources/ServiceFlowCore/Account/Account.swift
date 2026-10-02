@@ -17,7 +17,7 @@ public struct CompanyMembership: Codable, Hashable, Identifiable, Sendable {
         self.trade = trade
     }
 
-    /// Owners, admins and managers run the company: team map, team time.
+    /// Owners, admins and managers run the company: team time.
     public var isManager: Bool { role != .crew }
 
     public init?(row: JSONValue) {

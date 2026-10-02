@@ -78,7 +78,7 @@ The RN behaviour is described in `spec/`; these were bugs or App Store problems:
 | Reconciled on `status == "complete"` (server writes `completed`) | Checks `completed` |
 | Shift and queue not tied to the user | Per-user storage; sign-out asks what to do with a running shift |
 | Upload queue in memory, no idempotency key, posters never sent | Persisted queue, `x-upload-id`, posters uploaded |
-| Team Map coloured people red when location was "stale" and drew straight-line "routes" | "Last seen" times, neutral colours, discrete points, clocked-out people off the map |
+| Team Map showed crew locations | Team Map removed |
 | "Change Project" on a time edit never saved on the server | Removed |
 | 8 h / 10 h reminder re-fired on every cold launch | Only future reminders are scheduled |
 | Delete photo said "permanently" (it goes to a recoverable trash) | Copy fixed |

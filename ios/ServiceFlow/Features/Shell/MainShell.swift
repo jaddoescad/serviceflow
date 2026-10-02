@@ -12,17 +12,11 @@ struct MainShell: View {
             tab(.clock) { ClockInScreen(enabled: isEnabled(.clock)) }
             tab(.projects) { JobsScreen(enabled: isEnabled(.projects)) }
             tab(.timesheet) { TimesheetScreen() }
-            if session.canViewTeamMap {
-                tab(.teamMap) { TeamMapScreen(enabled: isEnabled(.teamMap)) }
-            }
             tab(.more) { MoreScreen() }
         }
         .tint(Palette.green)
         // Switching company rebuilds every tab so each loads that company's data.
         .id(session.companyGeneration)
-        .onChange(of: session.canViewTeamMap) { _, canView in
-            if !canView, session.activeTab == .teamMap { session.activeTab = .clock }
-        }
     }
 
     private func isEnabled(_ tab: MainTab) -> Bool {
@@ -54,7 +48,6 @@ extension MainTab {
         case .clock: return "Clock In"
         case .projects: return "Jobs"
         case .timesheet: return "Timesheet"
-        case .teamMap: return "Team Map"
         case .more: return "More"
         }
     }
@@ -64,7 +57,6 @@ extension MainTab {
         case .clock: return "clock"
         case .projects: return "folder.fill"
         case .timesheet: return "doc.text"
-        case .teamMap: return "map"
         case .more: return "ellipsis"
         }
     }

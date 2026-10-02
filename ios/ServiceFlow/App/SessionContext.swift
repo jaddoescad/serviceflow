@@ -122,7 +122,6 @@ final class SessionContext {
 
     /// Owners, admins and managers of the company being shown.
     var isManager: Bool { activeCompany?.isManager ?? false }
-    var canViewTeamMap: Bool { isManager && config.locationTrackingEnabled }
 
     // MARK: Lifecycle
 
