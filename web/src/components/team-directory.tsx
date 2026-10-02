@@ -24,6 +24,7 @@ type TeamMember = {
   email: string | null;
   role: string;
   is_active: boolean;
+  hourly_rate: number | null;
 };
 function MemberRole({
   member,
@@ -159,10 +160,12 @@ export function TeamDirectory({
   members,
   actorId,
   canManage,
+  showRates,
 }: {
   members: TeamMember[];
   actorId: string;
   canManage: boolean;
+  showRates: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<TeamMember | null>(null);
@@ -222,6 +225,7 @@ export function TeamDirectory({
             <col className="w-[32%]" />
             <col className="w-[16%]" />
             <col />
+            {showRates ? <col className="w-28" /> : null}
             <col className="w-32" />
             {canManage ? <col className="w-14" /> : null}
           </colgroup>
@@ -230,6 +234,9 @@ export function TeamDirectory({
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Role</th>
               <th className="px-4 py-3 font-medium">Contact</th>
+              {showRates ? (
+                <th className="px-4 py-3 font-medium">Hourly rate</th>
+              ) : null}
               <th className="px-4 py-3 font-medium">Status</th>
               {canManage ? (
                 <th>
@@ -288,6 +295,13 @@ export function TeamDirectory({
                     </a>
                   ) : null}
                 </td>
+                {showRates ? (
+                  <td className="px-4 py-5 tabular-nums">
+                    {member.hourly_rate == null
+                      ? "—"
+                      : `$${member.hourly_rate.toFixed(2)}/hr`}
+                  </td>
+                ) : null}
                 <td className="px-4 py-5 text-xs">
                   {member.is_active ? (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
