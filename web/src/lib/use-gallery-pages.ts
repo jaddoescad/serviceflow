@@ -17,6 +17,7 @@ export function useGalleryPages(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const handledRetry = useRef(0);
   const generation = useRef(0);
   const busy = useRef(false);
   const key = JSON.stringify(filters);
@@ -24,7 +25,12 @@ export function useGalleryPages(
   useEffect(() => {
     const request = ++generation.current;
     busy.current = false;
-    if (key === JSON.stringify(DEFAULT_GALLERY_FILTERS) && retry === 0) {
+    // "Try again" forces a fetch. Otherwise the unfiltered gallery uses the
+    // page the server rendered, which router.refresh() keeps current after
+    // edits, so it is never fetched a second time.
+    const forced = retry !== handledRetry.current;
+    handledRetry.current = retry;
+    if (key === JSON.stringify(DEFAULT_GALLERY_FILTERS) && !forced) {
       loadedKey.current = key;
       setPage(initialPage);
       setError(null);

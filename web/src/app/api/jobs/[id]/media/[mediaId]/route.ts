@@ -70,6 +70,7 @@ async function proxyMedia(
     return new Response("Media service unavailable", { status: 503 });
 
   const range = request.headers.get("range");
+  const ifNoneMatch = request.headers.get("if-none-match");
   let upstream: Response;
   try {
     upstream = await fetch(
@@ -79,6 +80,7 @@ async function proxyMedia(
         headers: {
           Authorization: `Bearer ${token}`,
           ...(range && !preview ? { Range: range } : {}),
+          ...(ifNoneMatch && !trash ? { "If-None-Match": ifNoneMatch } : {}),
         },
         cache: "no-store",
         signal: AbortSignal.timeout(30000),
@@ -87,6 +89,17 @@ async function proxyMedia(
   } catch {
     return new Response("Media service unavailable. Try again.", {
       status: 503,
+    });
+  }
+
+  // A media id's bytes never change, so the browser may keep its copy. The
+  // cache is private to the signed-in browser; trashed media is never kept.
+  const cacheControl = trash ? "private, no-store" : "private, max-age=2592000, immutable";
+  if (upstream.status === 304) {
+    const etag = upstream.headers.get("etag");
+    return new Response(null, {
+      status: 304,
+      headers: { "Cache-Control": cacheControl, ...(etag ? { ETag: etag } : {}) },
     });
   }
 
@@ -113,7 +126,7 @@ async function proxyMedia(
 
   const headers = new Headers({
     "Content-Type": contentType,
-    "Cache-Control": "private, no-cache",
+    "Cache-Control": cacheControl,
     "X-Content-Type-Options": "nosniff",
   });
   for (const name of [

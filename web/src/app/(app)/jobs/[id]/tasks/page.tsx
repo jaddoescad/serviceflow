@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
-import { getProjectShell } from "@/lib/project-data";
+import { requireStaff } from "@/lib/auth";
+import { getProjectShell, getProjectTasks } from "@/lib/project-data";
 import { JobShell } from "@/components/job-shell";
 import { TasksSlot } from "@/components/project-slots";
 import { TasksPanelSkeleton } from "@/components/skeletons";
@@ -10,7 +11,9 @@ export const dynamic = "force-dynamic";
 export default async function JobTasksPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jobId = decodeURIComponent(id);
-  const shell = await getProjectShell(jobId);
+  // Start the tab's data now so it loads alongside the header, not after it.
+  void getProjectTasks(jobId).catch(() => undefined);
+  const [shell] = await Promise.all([getProjectShell(jobId), requireStaff()]);
   if (!shell) notFound();
   if (shell.canonicalJobId) {
     redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/tasks`);

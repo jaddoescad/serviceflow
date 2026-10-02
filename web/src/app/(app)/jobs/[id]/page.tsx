@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
-import { getProjectPresentation } from "@/lib/project-data";
+import { getProjectMediaData, getProjectPresentation } from "@/lib/project-data";
 import { getWorkspaceProject, getProjectLabels } from "@/lib/project-workspace";
 import { requireMember } from "@/lib/auth";
 import { ProjectProfilePanel } from "@/components/project-profile-panel";
@@ -17,6 +17,8 @@ export default async function ProjectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Start the photo gallery now so it loads alongside the header, not after it.
+  void getProjectMediaData(id).catch(() => undefined);
   const [presentation, project, labels, profile] = await Promise.all([
     getProjectPresentation(id),
     getWorkspaceProject(id),

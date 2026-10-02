@@ -50,7 +50,8 @@ export function JobsListSkeleton() {
 }
 
 /** Route fallback: header shape only — no fake interactive elements. */
-export function JobPageSkeleton() {
+/** Job header and tabs, with the active tab's panel below. */
+export function JobPageSkeleton({ children }: { children: React.ReactNode }) {
   return (
     <div aria-busy="true" aria-label="Loading job">
       <Block className="mb-3 h-3 w-40" />
@@ -59,7 +60,7 @@ export function JobPageSkeleton() {
       <div className="mt-5 mb-6">
         <Block className="h-11 w-[320px] max-w-full rounded-xl" />
       </div>
-      <OverviewPanelSkeleton />
+      {children}
     </div>
   );
 }

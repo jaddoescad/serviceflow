@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PhotoFeed } from "@/components/photo-feed";
-import { requireMember } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { initials } from "@/lib/format";
 import { getPhotoFeed } from "@/lib/photo-feed";
 import { createClient } from "@/lib/supabase/server";
@@ -13,28 +13,29 @@ export default async function TeamMemberPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireMember();
   const { id } = await params;
   if (
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   )
     notFound();
   const client = await createClient();
-  const { data: member, error } = await client
-    .from("employees")
-    .select("id,full_name,email,role,is_active")
-    .eq("id", id)
-    .maybeSingle();
+  const [, { data: member, error }, { batch, summary }] = await Promise.all([
+    requireStaff(),
+    client
+      .from("employees")
+      .select("id,full_name,email,role,is_active")
+      .eq("id", id)
+      .maybeSingle(),
+    getPhotoFeed({
+      uploader_filter: id,
+      project_filters: null,
+      creator_filters: null,
+      media_filter: null,
+      since_filter: null,
+    }),
+  ]);
   if (error) throw new Error("Could not load team member.");
   if (!member) notFound();
-
-  const { batch, summary } = await getPhotoFeed({
-    uploader_filter: id,
-    project_filters: null,
-    creator_filters: null,
-    media_filter: null,
-    since_filter: null,
-  });
   const name = member.full_name || member.email || "Team member";
 
   return (

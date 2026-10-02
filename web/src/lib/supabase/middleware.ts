@@ -81,31 +81,9 @@ export async function updateSession(request: NextRequest) {
   }
   if (staleSession) clearAuthCookies(request, response);
 
-  const sharedPage =
-    path === "/" ||
-    /^\/(projects(?:\/.*)?|photos|labels|contacts(?:\/.*)?|employees|jobs\/[0-9a-f-]+)$/.test(
-      path,
-    );
-  if (
-    isAuthenticated &&
-    !isPublic &&
-    !path.startsWith("/api/") &&
-    path !== "/not-authorized" &&
-    !sharedPage
-  ) {
-    const { data: profile } = await supabase
-      .from("employees")
-      .select("role,is_active")
-      .eq("id", userId!)
-      .maybeSingle();
-    if (!profile?.is_active || !["admin", "manager"].includes(profile.role)) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/not-authorized";
-      const denied = NextResponse.redirect(url);
-      response.cookies.getAll().forEach((cookie) => denied.cookies.set(cookie));
-      return denied;
-    }
-  }
+  // Role checks live in the pages (requireStaff/requireMember), which reuse the
+  // profile they already load; querying it here too cost every navigation an
+  // extra database round trip before rendering could start.
   return response;
 }
 

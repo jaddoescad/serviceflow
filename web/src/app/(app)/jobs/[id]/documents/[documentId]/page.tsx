@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { requireMember } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { getProjectShell } from "@/lib/project-data";
 import { getProjectPageDocument } from "@/lib/project-documents";
 import { DocumentEditor } from "@/components/document-editor";
@@ -17,7 +17,7 @@ export default async function JobDocumentPage({
   const [shell, document, profile] = await Promise.all([
     getProjectShell(jobId),
     getProjectPageDocument(jobId, docId),
-    requireMember(),
+    requireStaff(),
   ]);
   if (!shell) notFound();
   if (shell.canonicalJobId) {

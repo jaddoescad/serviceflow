@@ -13,12 +13,15 @@ export async function loadGalleryPage(
   filters: GalleryFilters,
   cursor: GalleryCursor | null = null,
 ): Promise<GalleryPage> {
-  await requireMember();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc(
-    "project_gallery_filtered_page",
-    galleryArguments(projectId, filters, cursor),
-  );
+  // RLS guards the rows; the membership check runs alongside the query.
+  const [, { data, error }] = await Promise.all([
+    requireMember(),
+    supabase.rpc(
+      "project_gallery_filtered_page",
+      galleryArguments(projectId, filters, cursor),
+    ),
+  ]);
   if (error) throw new Error("Could not load photos. Try again.");
   return data as GalleryPage;
 }

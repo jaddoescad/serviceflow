@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getProjectData } from "@/lib/project-data";
+import { getProjectData, getProjectTasks } from "@/lib/project-data";
 import { ProjectOverviewPanel } from "@/components/project-detail";
 import { ProjectTasksPanel } from "@/components/project-tasks";
 import { ProjectDocumentsPanel } from "@/components/project-documents";
@@ -18,12 +18,12 @@ export async function OverviewSlot({ projectId }: { projectId: string }) {
 }
 
 export async function TasksSlot({ projectId }: { projectId: string }) {
-  const data = await getProjectData(projectId);
+  const data = await getProjectTasks(projectId);
   if (!data) notFound();
   return (
     <ProjectTasksPanel
       projectId={projectId}
-      projectName={data.project.name}
+      projectName={data.name}
       taskProgress={data.taskProgress}
       canManage={data.canManage}
     />

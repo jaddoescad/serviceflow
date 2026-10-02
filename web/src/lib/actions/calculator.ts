@@ -19,50 +19,74 @@ export type LoadCalculatorResult =
     }
   | { ok: false; error: string };
 
+// The calculator only reads a quote's id and saved calculator document.
+const QUOTE_FIELDS = "id,calculator_doc";
+
+/**
+ * Resolves the job or lead and the quote whose calculator to open. The job
+ * (with its accepted quote embedded) and the lead's quotes are looked up in one
+ * wave; only a job without an accepted quote needs its lead's quotes after.
+ */
 async function context(supabase: Awaited<ReturnType<typeof createClient>>, entityId: string) {
-  const { data: job, error: jobError } = await supabase
-    .from("jobs")
-    .select("id,lead_id,accepted_quote_id")
-    .eq("id", entityId)
-    .maybeSingle();
+  const latestQuotes = (leadId: string) =>
+    Promise.all([
+      supabase
+        .from("quotes")
+        .select(QUOTE_FIELDS)
+        .eq("lead_id", leadId)
+        .not("calculator_doc", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("quotes")
+        .select(QUOTE_FIELDS)
+        .eq("lead_id", leadId)
+        .order("updated_at", { ascending: false })
+        .limit(1),
+    ]).then(([withDoc, latest]) => {
+      if (withDoc.error) throw new Error(withDoc.error.message);
+      if (latest.error) throw new Error(latest.error.message);
+      return { withDoc: withDoc.data?.[0] ?? null, latest: latest.data?.[0] ?? null };
+    });
+
+  const [{ data: job, error: jobError }, { data: lead, error: leadError }, leadQuotes] =
+    await Promise.all([
+      supabase
+        .from("jobs")
+        .select(`id,lead_id,accepted_quote_id,accepted_quote:quotes!jobs_accepted_quote_id_fkey(${QUOTE_FIELDS})`)
+        .eq("id", entityId)
+        .maybeSingle(),
+      supabase.from("leads").select("id").eq("id", entityId).maybeSingle(),
+      latestQuotes(entityId),
+    ]);
   if (jobError) throw new Error(jobError.message);
   if (job) {
-    if (!job.accepted_quote_id && !job.lead_id) {
-      return { kind: "job" as const, entityId, leadId: null, quote: null };
+    if (job.accepted_quote_id) {
+      const accepted = Array.isArray(job.accepted_quote) ? job.accepted_quote[0] : job.accepted_quote;
+      return { kind: "job" as const, entityId, leadId: job.lead_id, quote: accepted ?? null };
     }
-    const quoteQuery = supabase.from("quotes").select("*");
-    const { data: quoteRows, error } = job.accepted_quote_id
-      ? await quoteQuery.eq("id", job.accepted_quote_id).limit(1)
-      : await quoteQuery.eq("lead_id", job.lead_id).order("updated_at", { ascending: false }).limit(1);
-    if (error) throw new Error(error.message);
-    return { kind: "job" as const, entityId, leadId: job.lead_id, quote: (quoteRows ?? [])[0] ?? null };
+    if (!job.lead_id) return { kind: "job" as const, entityId, leadId: null, quote: null };
+    const { latest } = await latestQuotes(job.lead_id);
+    return { kind: "job" as const, entityId, leadId: job.lead_id, quote: latest };
   }
-  const { data: lead, error: leadError } = await supabase
-    .from("leads")
-    .select("id")
-    .eq("id", entityId)
-    .maybeSingle();
   if (leadError) throw new Error(leadError.message);
   if (!lead) return null;
-  const { data: quotes, error } = await supabase
-    .from("quotes")
-    .select("*")
-    .eq("lead_id", entityId)
-    .order("updated_at", { ascending: false })
-    .limit(20);
-  if (error) throw new Error(error.message);
-  const quote = (quotes ?? []).find((row) => row.calculator_doc) ?? (quotes ?? [])[0] ?? null;
-  return { kind: "lead" as const, entityId, leadId: entityId, quote };
+  // A lead opens the most recent quote that has a calculator, else its latest quote.
+  return { kind: "lead" as const, entityId, leadId: entityId, quote: leadQuotes.withDoc ?? leadQuotes.latest };
 }
 
 export async function loadCalculator(entityId: string): Promise<LoadCalculatorResult> {
-  await requireStaff();
   const supabase = await createClient();
+  // Start the reads alongside the staff check, but await the check outside the
+  // try so its not-authorized redirect is not turned into an error message.
+  const reads = Promise.all([
+    context(supabase, entityId),
+    supabase.from("app_config").select("settings").eq("id", "default").maybeSingle(),
+  ]);
+  reads.catch(() => undefined);
+  await requireStaff();
   try {
-    const [resolved, settings] = await Promise.all([
-      context(supabase, entityId),
-      supabase.from("app_config").select("settings").eq("id", "default").maybeSingle(),
-    ]);
+    const [resolved, settings] = await reads;
     if (!resolved) return { ok: false, error: "Lead or job not found." };
     const doc = resolved.quote?.calculator_doc
       ? reviveProjectCalculator(resolved.quote.calculator_doc)

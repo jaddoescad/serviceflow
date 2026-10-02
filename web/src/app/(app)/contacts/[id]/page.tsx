@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProjectMediaPreview } from "@/components/project-media-preview";
 import { LabelChip } from "@/components/label-chip";
 import { getContactDetail } from "@/lib/contacts";
-import { createClient } from "@/lib/supabase/server";
+import { getProjectPreviews } from "@/lib/project-workspace";
 import { CustomerActions } from "@/components/customer-actions";
 import { requireMember } from "@/lib/auth";
 
@@ -23,20 +23,14 @@ export default async function ContactDetailPage({
     notFound();
   const query = await searchParams;
   const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1);
-  const contact = await getContactDetail(id, page);
-  const profile = await requireMember();
+  const [contact, profile] = await Promise.all([
+    getContactDetail(id, page),
+    requireMember(),
+  ]);
   if (!contact) notFound();
   const pages = Math.max(1, Math.ceil(contact.projectCount / 40));
   if (page > pages) redirect(`/contacts/${id}?page=${pages}`);
-  const previews: Record<string, { id: string; media_type: string }[]> = {};
-  if (contact.projects.length) {
-    const client = await createClient();
-    const { data, error } = await client.rpc("project_directory_previews", {
-      requested_ids: contact.projects.map((project) => project.id),
-    });
-    if (error) throw new Error("Could not load project previews.");
-    for (const row of data ?? []) (previews[row.project_id] ??= []).push(row);
-  }
+  const previews = await getProjectPreviews(contact.projects.map((project) => project.id));
   return (
     <section className="workspace-page">
       <Link

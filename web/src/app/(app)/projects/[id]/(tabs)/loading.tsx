@@ -1,5 +1,9 @@
-import { JobPageSkeleton } from "@/components/skeletons";
+import { JobPageSkeleton, PhotosPanelSkeleton } from "@/components/skeletons";
 
 export default function Loading() {
-  return <JobPageSkeleton />;
+  return (
+    <JobPageSkeleton>
+      <PhotosPanelSkeleton />
+    </JobPageSkeleton>
+  );
 }

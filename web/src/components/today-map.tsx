@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import type { TodayProject } from "@/components/today-board";
+import "leaflet/dist/leaflet.css";
+import "./today-map.css";
 
 const OTTAWA: [number, number] = [45.4215, -75.6972];
 

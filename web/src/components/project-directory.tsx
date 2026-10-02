@@ -3,8 +3,9 @@
 import { CreateWorkspaceProject } from "./create-workspace-project";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
-import type { ProjectLabel, WorkspaceProject } from "@/lib/project-workspace";
+import { Suspense, use, useEffect, useRef, useState, useTransition } from "react";
+import type { ProjectLabel, ProjectPreviews, WorkspaceProject } from "@/lib/project-workspace";
+import { photoLink } from "@/lib/photo-link";
 import { changeProjectLifecycle } from "@/lib/actions/project-workspace";
 import { ProjectMediaPreview } from "./project-media-preview";
 
@@ -30,7 +31,8 @@ export function ProjectDirectory({
   view: string;
   labels: ProjectLabel[];
   label: string;
-  previews: Record<string, { id: string; media_type: string }[]>;
+  /** Streams in after the list renders. */
+  previews: Promise<ProjectPreviews>;
   canManage: boolean;
   sort: "name" | "updated_at";
   direction: "asc" | "desc";
@@ -194,7 +196,6 @@ export function ProjectDirectory({
           </span>
         </div>
         {projects.map((project) => {
-          const media = previews[project.id] ?? [];
           const href = `/jobs/${project.id}`;
           return (
             <article
@@ -202,31 +203,18 @@ export function ProjectDirectory({
               className="group relative flex items-center gap-5 border-b border-slate-200 py-4 hover:bg-slate-50"
             >
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-slate-100">
-                {media[0] ? (
-                  <ProjectMediaPreview
-                    src={`/api/jobs/${project.id}/media/${media[0].id}`}
-                    video={media[0].media_type === "video"}
-                    alt={project.name}
-                  />
-                ) : (
-                  <span className="absolute inset-0 flex items-center justify-center text-slate-400">
-                    <svg
-                      width="22"
-                      height="22"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                    >
-                      <path d="M3 7h5l2-3h4l2 3h5v13H3z" />
-                      <circle cx="12" cy="13" r="4" />
-                    </svg>
-                  </span>
-                )}
+                <Suspense fallback={null}>
+                  <ProjectCover previews={previews} project={project} />
+                </Suspense>
               </div>
               <div className="min-w-0 flex-1">
                 <Link
                   href={href}
                   prefetch={false}
+                  // Prefetch on intent rather than for every row on screen, so
+                  // the job's loading screen shows the moment it is clicked.
+                  onMouseEnter={() => router.prefetch(href)}
+                  onFocus={() => router.prefetch(href)}
                   className="text-base font-semibold group-hover:text-blue-600 after:absolute after:inset-0"
                 >
                   {project.name}
@@ -279,21 +267,9 @@ export function ProjectDirectory({
                 </div>
               ) : (
                 <div className="relative z-10 hidden w-64 shrink-0 gap-2 xl:flex">
-                  {media.slice(0, 3).map((item) => (
-                    <Link
-                      key={item.id}
-                      href={`${href}?photo=${item.id}`}
-                      prefetch={false}
-                      className="relative h-20 w-20 overflow-hidden rounded-md bg-slate-100"
-                      aria-label={`View media from ${project.name}`}
-                    >
-                      <ProjectMediaPreview
-                        src={`/api/jobs/${project.id}/media/${item.id}`}
-                        video={item.media_type === "video"}
-                        alt={project.name}
-                      />
-                    </Link>
-                  ))}
+                  <Suspense fallback={null}>
+                    <ProjectPhotoStrip previews={previews} project={project} href={href} />
+                  </Suspense>
                 </div>
               )}
             </article>
@@ -329,4 +305,60 @@ export function ProjectDirectory({
       </div>
     </section>
   );
+}
+
+/** The row's cover photo, or a camera placeholder when the project has none. */
+function ProjectCover({
+  previews,
+  project,
+}: {
+  previews: Promise<ProjectPreviews>;
+  project: WorkspaceProject;
+}) {
+  const cover = use(previews)[project.id]?.[0];
+  if (!cover) {
+    return (
+      <span className="absolute inset-0 flex items-center justify-center text-slate-400">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M3 7h5l2-3h4l2 3h5v13H3z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <ProjectMediaPreview
+      src={`/api/jobs/${project.id}/media/${cover.id}`}
+      video={cover.media_type === "video"}
+      alt={project.name}
+    />
+  );
+}
+
+/** Up to three recent photos; each opens the project with that photo shown. */
+function ProjectPhotoStrip({
+  previews,
+  project,
+  href,
+}: {
+  previews: Promise<ProjectPreviews>;
+  project: WorkspaceProject;
+  href: string;
+}) {
+  const media = use(previews)[project.id] ?? [];
+  return media.slice(0, 3).map((item) => (
+    <Link
+      key={item.id}
+      href={photoLink(href, "", item.id)}
+      prefetch={false}
+      className="relative h-20 w-20 overflow-hidden rounded-md bg-slate-100"
+      aria-label={`View media from ${project.name}`}
+    >
+      <ProjectMediaPreview
+        src={`/api/jobs/${project.id}/media/${item.id}`}
+        video={item.media_type === "video"}
+        alt={project.name}
+      />
+    </Link>
+  ));
 }

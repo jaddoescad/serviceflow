@@ -42,50 +42,6 @@ export type TimeEntry = {
   updated_at: string;
 };
 
-export type EmployeeTrackingStatus = {
-  user_id: string;
-  user_email: string | null;
-  user_name: string | null;
-  time_entry_id: string | null;
-  client_entry_id: string | null;
-  companycam_project_id: string | null;
-  project_name: string | null;
-  project_address: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  accuracy_meters: number | null;
-  last_location_at: string | null;
-  last_sync_at: string | null;
-  tracking_mode: "clocked_out" | "painting" | "stationary" | "travel" | "unavailable" | "unknown";
-  task_status: "running" | "geofence" | "paused" | "stopped" | "error";
-  metadata: {
-    on_site?: boolean | null;
-    distance_from_project_meters?: number | null;
-    reason?: string | null;
-  } | null;
-  updated_at: string;
-};
-
-export type EmployeeLocationPoint = {
-  id: string;
-  client_event_id: string;
-  user_id: string;
-  time_entry_id: string | null;
-  client_entry_id: string;
-  companycam_project_id: string | null;
-  latitude: number;
-  longitude: number;
-  accuracy_meters: number | null;
-  speed_mps: number | null;
-  heading_degrees: number | null;
-  tracking_mode: "painting" | "stationary" | "travel" | "unknown";
-  event_type: "location" | "clock_in" | "clock_out" | "arrival" | "departure" | "project_switch";
-  distance_from_project_meters: number | null;
-  is_on_site: boolean | null;
-  captured_at: string;
-  received_at: string;
-};
-
 export type Project = {
   companycam_id: string;
   name: string;

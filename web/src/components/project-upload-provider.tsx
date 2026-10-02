@@ -3,14 +3,18 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { listUploadScopes } from '@/lib/media-upload-storage';
-import { ProjectUploadSession, type UploadSummary } from '@/components/project-media-upload';
+import dynamic from 'next/dynamic';
+import type { UploadSummary } from '@/components/project-media-upload';
 import { Button } from '@/components/ui';
+
+// Upload sessions only mount once a project has uploads, so their code loads on demand.
+const ProjectUploadSession=dynamic(()=>import('@/components/project-media-upload').then(module=>module.ProjectUploadSession),{ssr:false});
 
 type ProjectQueue = {projectId:string;isLead:boolean;label:string;summary?:UploadSummary};
 const queueKey=(projectId:string,isLead:boolean)=>`${isLead?'leads':'jobs'}/${projectId}`;
 const UploadContext=createContext<{register:(projectId:string,isLead:boolean,label:string)=>void;open:(key:string)=>void;ready:boolean}|null>(null);
 
-/** Root-layout ownership keeps transfers alive when a project page unmounts. */
+/** Owned by the app layout, which stays mounted across navigation, so transfers survive leaving a project page. */
 export function ProjectUploadProvider({children}:{children:React.ReactNode}) {
   const [userId,setUserId]=useState<string|null>(null);
   const owner=useRef<string|null>(null);

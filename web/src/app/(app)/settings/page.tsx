@@ -1,4 +1,4 @@
-import { requireMember } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { getCompanySettings, getLabourBudgetSettings } from "@/lib/actions/settings";
 import { LabourBudgetSettingsForm } from "@/components/labour-budget-settings";
 import { CompanyProfileForm } from "@/components/settings/company-profile-form";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const [profile, company, labour] = await Promise.all([
-    requireMember(),
+    requireStaff(),
     getCompanySettings(),
     getLabourBudgetSettings(),
   ]);

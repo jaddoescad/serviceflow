@@ -3,14 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { JobShell } from "@/components/job-shell";
 import { OverviewSlot } from "@/components/project-slots";
 import { OverviewPanelSkeleton } from "@/components/skeletons";
-import { getProjectShell } from "@/lib/project-data";
+import { requireStaff } from "@/lib/auth";
+import { getProjectData, getProjectShell } from "@/lib/project-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobLabourPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jobId = decodeURIComponent(id);
-  const shell = await getProjectShell(jobId);
+  // Start the tab's data now so it loads alongside the header, not after it.
+  void getProjectData(jobId).catch(() => undefined);
+  const [shell] = await Promise.all([getProjectShell(jobId), requireStaff()]);
   if (!shell) notFound();
   if (shell.canonicalJobId) {
     redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/labour`);

@@ -2,10 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { selectCurrentOperationalBudgets } from "@/lib/job-budget-selection";
 import type {
   Assignment,
-  EmployeeLocationPoint,
   EmployeePayRate,
   EmployeeProfile,
-  EmployeeTrackingStatus,
   MarketingLead,
   Project,
   ProjectBudget,
@@ -94,7 +92,9 @@ export async function getTimesheetsPage(filters: TimesheetFilters, page: number)
 /** Shifts still open, plus every shift started since `sinceIso`. */
 export async function getTodayEntries(sinceIso: string): Promise<TimeEntry[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("time_entries").select("*")
+  // Only what the Today board reads; full rows carry segment and edit history.
+  const { data, error } = await supabase.from("time_entries")
+    .select("id,employee_id,employee_email,employee_name,job_id,job_name,job_address,started_at,ended_at,status,clock_in_latitude,clock_in_longitude,last_distance_meters")
     .in("status", ["active", "completed"]).or(`status.eq.active,started_at.gte.${sinceIso}`)
     .order("started_at");
   if (error) throw new Error(`today's entries: ${error.message}`);
@@ -106,51 +106,6 @@ export async function getEmployees(): Promise<EmployeeProfile[]> {
   const { data, error } = await supabase.from("employees").select("*").order("full_name", { ascending: true, nullsFirst: false });
   if (error) throw new Error(`employees: ${error.message}`);
   return (data ?? []).map((row: any) => ({ ...row, user_id: row.id }));
-}
-
-export async function getEmployeeTrackingStatuses(userIds: string[]): Promise<EmployeeTrackingStatus[]> {
-  if (!userIds.length) return [];
-  const supabase = await createClient();
-  const users = [...new Set(userIds)];
-  const data: any[] = [];
-  for (let offset = 0; offset < users.length; offset += 50) {
-    const result = await supabase.from("employee_tracking_status").select("*")
-      .in("employee_id", users.slice(offset, offset + 50));
-    if (result.error) throw new Error(`tracking status: ${result.error.message}`);
-    data.push(...(result.data ?? []));
-  }
-  return data.map((row: any) => ({
-    ...row,
-    user_id: row.employee_id,
-    user_email: row.employee_email,
-    user_name: row.employee_name,
-    companycam_project_id: row.job_id,
-    project_name: row.job_name,
-    project_address: row.job_address,
-  }));
-}
-
-export async function getEmployeeLocationPoints(userIds: string[], sinceIso: string): Promise<EmployeeLocationPoint[]> {
-  if (!userIds.length) return [];
-  const supabase = await createClient();
-  const data: any[] = [];
-  const users = [...new Set(userIds)];
-  for (let userOffset = 0; userOffset < users.length; userOffset += 50) {
-    for (let offset = 0; ; offset += 500) {
-      const result = await supabase.from("employee_location_points").select("*")
-        .in("employee_id", users.slice(userOffset, userOffset + 50)).gte("captured_at", sinceIso)
-        .order("captured_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 499);
-      if (result.error) throw new Error(`location points: ${result.error.message}`);
-      data.push(...(result.data ?? []));
-      if ((result.data?.length ?? 0) < 500) break;
-    }
-  }
-  return (data ?? []).map((row: any) => ({
-    ...row,
-    user_id: row.employee_id,
-    companycam_project_id: row.job_id,
-    distance_from_project_meters: row.distance_from_job_meters,
-  }));
 }
 
 export async function getEmployeePayRates(): Promise<EmployeePayRate[]> {
@@ -282,9 +237,12 @@ export async function getBudgets(projectId?: string): Promise<ProjectBudget[]> {
   });
 }
 
+// Task rows carry a large `versions` history; the task lists only need these.
+const LABOUR_TASK_COLUMNS = "id,job_id,title,notes,budget_minutes,status,sort_order,completed_at,completed_by";
+
 export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("job_tasks").select("*").order("sort_order");
+  const { data, error } = await supabase.from("job_tasks").select(LABOUR_TASK_COLUMNS).order("sort_order");
   if (error) throw new Error(`job tasks: ${error.message}`);
   return (data ?? []).map((row: any) => ({
     id: row.id,
@@ -315,7 +273,11 @@ export async function getAssignments(projectId?: string): Promise<Assignment[]> 
 
 export async function getProjectById(projectId: string): Promise<Project | null> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("jobs").select("*").eq("id", projectId).maybeSingle();
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("id,name,status,started_on,completed_on,production_month,formatted_address,address_line_1,city,province,postal_code,latitude,longitude,updated_at")
+    .eq("id", projectId)
+    .maybeSingle();
   if (error) throw new Error(`job: ${error.message}`);
   return data ? project(data) : null;
 }
@@ -407,7 +369,7 @@ export async function getProjectAssignments(projectId: string): Promise<Assignme
 
 export async function getLabourTasksForProject(projectId: string): Promise<ProjectLabourTask[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("job_tasks").select("*").eq("job_id", projectId).order("sort_order");
+  const { data, error } = await supabase.from("job_tasks").select(LABOUR_TASK_COLUMNS).eq("job_id", projectId).order("sort_order");
   if (error) throw new Error(`job tasks: ${error.message}`);
   return (data ?? []).map((row: any) => ({
     id: row.id,

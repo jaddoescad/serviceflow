@@ -2,6 +2,7 @@ import { SITE_NAME } from "@/lib/site-brand";
 import { requireMember } from "@/lib/auth";
 import { MobileNav, Nav, SidebarHeader } from "@/components/nav";
 import { SignOutButton } from "@/components/sign-out";
+import { ProjectUploadProvider } from "@/components/project-upload-provider";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -43,24 +44,26 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <aside
-        data-sidebar
-        className="sticky top-0 hidden h-svh w-[230px] shrink-0 flex-col bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] md:flex"
-      >
-        <SidebarHeader
-          name={name}
-          role={profile.role}
-          userId={profile.user_id}
-        />
-        <Nav />
-      </aside>
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--color-bg)]">
-        <MobileNav name={name} role={profile.role} userId={profile.user_id} />
-        <div className="app-content mx-auto w-full max-w-none flex-1 px-4 py-5 lg:px-6 lg:py-6">
-          {children}
-        </div>
-      </main>
-    </div>
+    <ProjectUploadProvider>
+      <div className="flex min-h-screen">
+        <aside
+          data-sidebar
+          className="sticky top-0 hidden h-svh w-[230px] shrink-0 flex-col bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] md:flex"
+        >
+          <SidebarHeader
+            name={name}
+            role={profile.role}
+            userId={profile.user_id}
+          />
+          <Nav />
+        </aside>
+        <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--color-bg)]">
+          <MobileNav name={name} role={profile.role} userId={profile.user_id} />
+          <div className="app-content mx-auto w-full max-w-none flex-1 px-4 py-5 lg:px-6 lg:py-6">
+            {children}
+          </div>
+        </main>
+      </div>
+    </ProjectUploadProvider>
   );
 }

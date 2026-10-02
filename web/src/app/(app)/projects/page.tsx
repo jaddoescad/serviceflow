@@ -2,6 +2,7 @@ import { requireMember } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import {
   getProjectLabels,
+  getProjectPreviews,
   type WorkspaceProject,
 } from "@/lib/project-workspace";
 import { ProjectDirectory } from "@/components/project-directory";
@@ -88,15 +89,10 @@ export default async function ProjectsPage({
     redirect(`/projects${destination.size ? `?${destination}` : ""}`);
   }
   const projects = (result.data ?? []) as WorkspaceProject[];
-  const previews: Record<string, { id: string; media_type: string }[]> = {};
-  // Three indexed rows per project, fetched together by the database.
-  if (projects.length && view !== "trash") {
-    const { data, error } = await client.rpc("project_directory_previews", {
-      requested_ids: projects.map((project) => project.id),
-    });
-    if (error) throw new Error("Project previews could not load.");
-    for (const row of data ?? []) (previews[row.project_id] ??= []).push(row);
-  }
+  // The list renders without waiting for thumbnails; they stream in after.
+  const previews = getProjectPreviews(
+    view === "trash" ? [] : projects.map((project) => project.id),
+  );
   return (
     <ProjectDirectory
       projects={projects}

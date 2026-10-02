@@ -13,10 +13,13 @@ export const dynamic = "force-dynamic";
  * counts as active, even after clocking out (crews turn their phones off).
  */
 export default async function HomePage() {
-  const profile = await requireMember();
+  const [profile, entries] = await Promise.all([
+    requireMember(),
+    getTodayEntries(ottawaStartOfDay().toISOString()),
+  ]);
   if (!["admin", "manager"].includes(profile.role)) redirect("/projects");
 
-  const today = (await getTodayEntries(ottawaStartOfDay().toISOString())).filter((e) => e.companycam_project_id);
+  const today = entries.filter((e) => e.companycam_project_id);
   const ids = [...new Set(today.map((e) => e.companycam_project_id!))];
   const date = new Date().toLocaleDateString("en-CA", {
     timeZone: "America/Toronto", weekday: "long", month: "long", day: "numeric",

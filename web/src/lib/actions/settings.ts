@@ -101,17 +101,21 @@ function companyFromRpc(data: Row): CompanySettings {
 }
 
 export async function getLabourBudgetSettings(): Promise<LabourBudgetSettings> {
-  await requireMember();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_labour_budget_settings");
+  const [, { data, error }] = await Promise.all([
+    requireMember(),
+    supabase.rpc("get_labour_budget_settings"),
+  ]);
   if (error || !data) throw new Error("Could not load labour budget settings.");
   return labourFromRpc(row(data));
 }
 
 export async function getCompanySettings(): Promise<CompanySettings> {
-  await requireMember();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_company_settings");
+  const [, { data, error }] = await Promise.all([
+    requireMember(),
+    supabase.rpc("get_company_settings"),
+  ]);
   if (error || !data) throw new Error("Could not load company settings.");
   return companyFromRpc(row(data));
 }

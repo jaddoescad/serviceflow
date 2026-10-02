@@ -138,10 +138,22 @@ function emptyLeadRollup(
   };
 }
 
-/** Shared presentation fields for both unconverted leads and operational jobs. */
+const CONTACT_FIELDS = "name,email,phone,metadata";
+const LEAD_FIELDS = `address,city,province,postal_code,metadata,contact:contacts(${CONTACT_FIELDS})`;
+
+/**
+ * Shared presentation fields for both unconverted leads and operational jobs.
+ * The id may be either, so the job (with its source lead embedded) and the
+ * lead lookups run in one parallel wave rather than one after another.
+ */
 export const getProjectPresentation = cache(async (projectId: string) => {
   const supabase = await createClient();
-  const [{ data: workspace }, { data: job, error }] = await Promise.all([
+  const [
+    { data: workspace },
+    { data: job, error },
+    { data: lead, error: leadError },
+    { data: quotes, error: quotesError },
+  ] = await Promise.all([
     supabase
       .from("project_workspace")
       .select("name,description")
@@ -150,34 +162,27 @@ export const getProjectPresentation = cache(async (projectId: string) => {
     supabase
       .from("jobs")
       .select(
-        "id,name,status,formatted_address,address_line_1,lead_id,contact_id,metadata,contact:contacts(name,email,phone,metadata)",
+        `id,name,status,formatted_address,address_line_1,metadata,contact:contacts(${CONTACT_FIELDS}),lead:leads(${LEAD_FIELDS})`,
       )
       .eq("id", projectId)
       .maybeSingle(),
+    supabase
+      .from("leads")
+      .select(`id,status,${LEAD_FIELDS}`)
+      .eq("id", projectId)
+      .maybeSingle(),
+    supabase
+      .from("quotes")
+      .select("id,status,accepted_at,updated_at,job:jobs(id,is_feed_visible)")
+      .eq("lead_id", projectId)
+      .order("accepted_at", { ascending: false, nullsFirst: false })
+      .order("updated_at", { ascending: false }),
     requireMember(),
   ]);
 
   if (error) throw new Error(`project presentation: ${error.message}`);
 
   if (!job) {
-    const [
-      { data: lead, error: leadError },
-      { data: quotes, error: quotesError },
-    ] = await Promise.all([
-      supabase
-        .from("leads")
-        .select(
-          "id,status,address,city,province,postal_code,metadata,contact:contacts(name,email,phone,metadata)",
-        )
-        .eq("id", projectId)
-        .maybeSingle(),
-      supabase
-        .from("quotes")
-        .select("id,status,accepted_at,updated_at,job:jobs(id,is_feed_visible)")
-        .eq("lead_id", projectId)
-        .order("accepted_at", { ascending: false, nullsFirst: false })
-        .order("updated_at", { ascending: false }),
-    ]);
     if (leadError) throw new Error(`lead presentation: ${leadError.message}`);
     if (quotesError)
       throw new Error(`lead project jobs lookup: ${quotesError.message}`);
@@ -219,22 +224,8 @@ export const getProjectPresentation = cache(async (projectId: string) => {
     };
   }
 
-  let sourceLead: JsonRecord = {};
-  let leadMetadata: JsonRecord = {};
-  if (job.lead_id) {
-    const { data: lead, error: leadError } = await supabase
-      .from("leads")
-      .select(
-        "address,city,province,postal_code,metadata,contact:contacts(name,email,phone,metadata)",
-      )
-      .eq("id", job.lead_id)
-      .maybeSingle();
-    if (leadError)
-      throw new Error(`project lead presentation: ${leadError.message}`);
-    sourceLead = asRecord(lead);
-    leadMetadata = asRecord(lead?.metadata);
-  }
-
+  const sourceLead = relatedRow(job.lead);
+  const leadMetadata = asRecord(sourceLead.metadata);
   const metadata = asRecord(job.metadata);
   const linkedContact = leadContact(sourceLead);
   const directContact = relatedRow(job.contact);
@@ -284,11 +275,33 @@ export const getProjectMediaData = cache(async (projectId: string) => {
 });
 
 /**
- * Loads one job's data (entries, budget, tasks) instead of the whole
- * company's history. cache() dedupes calls within a request.
+ * Loads one job's labour data (entries, budget, tasks) instead of the whole
+ * company's history. Everything starts in one parallel wave; for a lead the
+ * job queries simply come back empty. cache() dedupes calls within a request.
  */
 export const getProjectData = cache(async (projectId: string) => {
-  const presentation = await getProjectPresentation(projectId);
+  const now = Date.now();
+  const [
+    presentation,
+    profile,
+    project,
+    entries,
+    payRates,
+    budgets,
+    assignments,
+    labourTasks,
+    employees,
+  ] = await Promise.all([
+    getProjectPresentation(projectId),
+    requireStaff(),
+    getProjectById(projectId),
+    getProjectTimeEntries(projectId, new Date(now - 180 * DAY).toISOString()),
+    getEmployeePayRates(),
+    getProjectBudgetRows(projectId),
+    getProjectAssignments(projectId),
+    getLabourTasksForProject(projectId),
+    getEmployees(),
+  ]);
   if (!presentation) return null;
   if (presentation.isLead) {
     return {
@@ -303,28 +316,6 @@ export const getProjectData = cache(async (projectId: string) => {
       taskProgress: [],
     };
   }
-
-  const now = Date.now();
-  const [
-    profile,
-    project,
-    entries,
-    payRates,
-    budgets,
-    assignments,
-    labourTasks,
-    employees,
-  ] = await Promise.all([
-    requireStaff(),
-    getProjectById(projectId),
-    getProjectTimeEntries(projectId, new Date(now - 180 * DAY).toISOString()),
-    getEmployeePayRates(),
-    getProjectBudgetRows(projectId),
-    getProjectAssignments(projectId),
-    getLabourTasksForProject(projectId),
-    getEmployees(),
-  ]);
-
   if (!project) return null;
 
   const rows = rollupProjects(
@@ -342,6 +333,25 @@ export const getProjectData = cache(async (projectId: string) => {
     canManage: ["admin", "manager"].includes(profile.role),
     project: rollup,
     detail: projectDetails(entries, payRates, now)[projectId],
+    taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
+  };
+});
+
+/** The task list only needs the tasks and who completed them, not labour data. */
+export const getProjectTasks = cache(async (projectId: string) => {
+  const [presentation, profile, labourTasks, employees] = await Promise.all([
+    getProjectPresentation(projectId),
+    requireStaff(),
+    getLabourTasksForProject(projectId),
+    getEmployees(),
+  ]);
+  if (!presentation) return null;
+  if (presentation.isLead) {
+    return { name: presentation.name, canManage: false, taskProgress: [] };
+  }
+  return {
+    name: presentation.name,
+    canManage: ["admin", "manager"].includes(profile.role),
     taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
   };
 });

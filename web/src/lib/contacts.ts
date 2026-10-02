@@ -46,9 +46,19 @@ export async function getCustomerContactsPage(
 
 export const getContactDetail = cache(
   async (contactId: string, page = 1): Promise<ContactDetail | null> => {
-    await requireMember();
     const supabase = await createClient();
-    const [contactResult, countResult] = await Promise.all([
+    const projectPage = (pageNumber: number) =>
+      supabase
+        .from("project_directory")
+        .select("*")
+        .eq("contact_id", contactId)
+        .is("trashed_at", null)
+        .order("updated_at", { ascending: false })
+        .order("id")
+        .range((pageNumber - 1) * 40, pageNumber * 40 - 1);
+    // One wave: membership, the customer, the project count and the requested page.
+    const [, contactResult, countResult, requestedPage] = await Promise.all([
+      requireMember(),
       supabase
         .from("contacts")
         .select("id,name,email,phone,metadata,created_at")
@@ -60,6 +70,7 @@ export const getContactDetail = cache(
         .select("id", { count: "exact", head: true })
         .eq("contact_id", contactId)
         .is("trashed_at", null),
+      projectPage(page),
     ]);
     if (contactResult.error) throw new Error("Could not load customer.");
     if (countResult.error) throw new Error("Could not load customer projects.");
@@ -67,14 +78,9 @@ export const getContactDetail = cache(
     if (!contact) return null;
     const projectCount = countResult.count ?? 0;
     const safePage = Math.min(page, Math.max(1, Math.ceil(projectCount / 40)));
-    const projectResult = await supabase
-      .from("project_directory")
-      .select("*")
-      .eq("contact_id", contactId)
-      .is("trashed_at", null)
-      .order("updated_at", { ascending: false })
-      .order("id")
-      .range((safePage - 1) * 40, safePage * 40 - 1);
+    // Only a page past the end (e.g. after deletions) needs a second request.
+    const projectResult =
+      safePage === page ? requestedPage : await projectPage(safePage);
     if (projectResult.error)
       throw new Error("Could not load customer projects.");
     return {

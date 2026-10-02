@@ -436,7 +436,6 @@ export function ProjectPhotosPanel({
                               disabled={selectionLocked}
                               onBusy={setSelectionLocked}
                               onSaved={() => {
-                                gallery.reload();
                                 router.refresh();
                               }}
                             />
@@ -486,7 +485,6 @@ export function ProjectPhotosPanel({
           onClear={() => setSelected(new Map())}
           onBusy={setSelectionLocked}
           onSaved={() => {
-            gallery.reload();
             router.refresh();
           }}
         />
@@ -546,7 +544,6 @@ export function ProjectPhotosPanel({
                   beforeAction={mayLeave}
                   onSuccess={() => {
                     setActiveImageId(null);
-                    gallery.reload();
                     router.refresh();
                   }}
                 />
