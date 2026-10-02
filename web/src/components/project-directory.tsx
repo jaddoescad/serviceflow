@@ -199,14 +199,9 @@ export function ProjectDirectory({
           return (
             <article
               key={project.id}
-              className="flex items-center gap-5 border-b border-slate-200 py-4"
+              className="group relative flex items-center gap-5 border-b border-slate-200 py-4 hover:bg-slate-50"
             >
-              <Link
-                href={href}
-                prefetch={false}
-                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-slate-100"
-                aria-label={`Open ${project.name}`}
-              >
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-slate-100">
                 {media[0] ? (
                   <ProjectMediaPreview
                     src={`/api/jobs/${project.id}/media/${media[0].id}`}
@@ -227,12 +222,12 @@ export function ProjectDirectory({
                     </svg>
                   </span>
                 )}
-              </Link>
+              </div>
               <div className="min-w-0 flex-1">
                 <Link
                   href={href}
                   prefetch={false}
-                  className="text-base font-semibold hover:text-blue-600"
+                  className="text-base font-semibold group-hover:text-blue-600 after:absolute after:inset-0"
                 >
                   {project.name}
                 </Link>
@@ -259,7 +254,7 @@ export function ProjectDirectory({
                 })}
               </time>
               {view === "trash" ? (
-                <div className="text-right">
+                <div className="relative z-10 text-right">
                   <p className="mb-2 text-xs text-slate-500">
                     {Math.max(
                       0,
@@ -283,7 +278,7 @@ export function ProjectDirectory({
                   ) : null}
                 </div>
               ) : (
-                <div className="hidden w-64 shrink-0 gap-2 xl:flex">
+                <div className="relative z-10 hidden w-64 shrink-0 gap-2 xl:flex">
                   {media.slice(0, 3).map((item) => (
                     <Link
                       key={item.id}
