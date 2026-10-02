@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 export type ProjectTabKey =
   | "photos"
+  | "documents"
   | "labour"
   | "tasks"
   | "calculator";
@@ -17,17 +18,21 @@ export function ProjectTabs({
   activeOverride,
   isLead: _isLead = false,
   photoCount,
+  documentCount,
 }: {
   projectId: string;
   projectName: string;
   activeOverride?: ProjectTabKey;
   isLead?: boolean;
   photoCount?: number;
+  documentCount?: number;
 }) {
   const pathname = usePathname();
   const active: ProjectTabKey =
     activeOverride ??
-    (pathname.endsWith("/tasks")
+    (pathname.endsWith("/documents")
+      ? "documents"
+      : pathname.endsWith("/tasks")
       ? "tasks"
       : pathname.endsWith("/labour")
         ? "labour"
@@ -43,6 +48,7 @@ export function ProjectTabs({
     count?: number;
   }[] = [
     { key: "photos", label: "Photos", href: base, count: photoCount },
+    { key: "documents", label: "Documents", href: `${base}/documents`, count: documentCount },
     { key: "labour", label: "Labour budget", href: `${base}/labour` },
     { key: "tasks", label: "Tasks", href: `${base}/tasks` },
     {

@@ -24,6 +24,7 @@ export function JobShell({
   address,
   status = null,
   photoCount,
+  documentCount,
   isLead,
   activeTab,
   children,
@@ -33,6 +34,7 @@ export function JobShell({
   address: string | null;
   status?: string | null;
   photoCount?: number;
+  documentCount?: number;
   isLead: boolean;
   activeTab: ProjectTabKey;
   children: React.ReactNode;
@@ -64,6 +66,7 @@ export function JobShell({
         activeOverride={activeTab}
         isLead={isLead}
         photoCount={photoCount}
+        documentCount={documentCount}
       />
 
       {children}

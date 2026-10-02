@@ -17,7 +17,8 @@
     "test:project-routing": "tsc src/lib/project-routing.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/project-routing --skipLibCheck && node --test scripts/project-routing.test.mjs",
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
-    "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs"
+    "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
+    "test:rich-text": "tsc src/lib/rich-text.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/rich-text --skipLibCheck && node --test scripts/rich-text.test.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",
