@@ -266,6 +266,14 @@ func runChecks() async {
         entry.clockOutReason = .manual
         let summary = SegmentSummary(entry, now: t0.addingTimeInterval(6 * 3600))
         expectEqual(Int(summary.onSite + summary.offSite + summary.unknown), 5 * 3600, "buckets add up to the shift")
+
+        // Shortened on both ends: the removed time no longer counts.
+        entry.startedAt = t0.addingTimeInterval(3600)
+        entry.endedAt = t0.addingTimeInterval(4 * 3600)
+        let edited = SegmentSummary(entry, now: t0.addingTimeInterval(6 * 3600))
+        expectEqual(Int(edited.onSite + edited.offSite + edited.unknown), 3 * 3600, "buckets follow edited times")
+        expectEqual(Int(summary.onSite), 600, "first ten minutes on site before the edit")
+        expectEqual(Int(edited.onSite), 0, "on-site time before the new start no longer counts")
     }
 
     await check("Formatters match the RN app") {

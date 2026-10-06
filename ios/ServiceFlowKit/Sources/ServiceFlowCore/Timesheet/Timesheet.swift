@@ -93,7 +93,8 @@ public struct SegmentSummary: Equatable, Sendable {
     }
 
     /// The entry's segments with a synthetic one when it has none; a running
-    /// entry's last segment runs until now.
+    /// entry's last segment runs until now. Segments are cut to the entry's
+    /// own times, so an edited start or end doesn't keep counting the time it removed.
     static func segments(of entry: TimeEntry, now: Date) -> [ShiftSegment] {
         var segments = entry.segments
         if segments.isEmpty {
@@ -107,7 +108,13 @@ public struct SegmentSummary: Equatable, Sendable {
                 segments[index].endedAt = entry.endedAt ?? now
             }
         }
-        return segments
+        let end = entry.isActive ? now : (entry.endedAt ?? now)
+        return segments.compactMap { segment in
+            var clipped = segment
+            clipped.startedAt = max(segment.startedAt, entry.startedAt)
+            clipped.endedAt = min(segment.endedAt ?? end, end)
+            return clipped.endedAt! > clipped.startedAt ? clipped : nil
+        }
     }
 
     public var distanceLabel: String {

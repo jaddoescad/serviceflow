@@ -110,7 +110,8 @@ data class SegmentSummary(
 
         /**
          * The entry's segments with a synthetic one when it has none; a running
-         * entry's last segment runs until now.
+         * entry's last segment runs until now. Segments are cut to the entry's
+         * own times, so an edited start or end doesn't keep counting the time it removed.
          */
         internal fun segments(entry: TimeEntry, now: Instant): List<ShiftSegment> {
             val segments = entry.segments.ifEmpty {
@@ -128,7 +129,12 @@ data class SegmentSummary(
                     if (segments[index].endedAt == null) segments[index] = segments[index].copy(endedAt = entry.endedAt ?: now)
                 }
             }
-            return segments
+            val end = if (entry.isActive) now else entry.endedAt ?: now
+            return segments.mapNotNull { segment ->
+                val start = maxOf(segment.startedAt, entry.startedAt)
+                val stop = minOf(segment.endedAt ?: end, end)
+                if (stop > start) segment.copy(startedAt = start, endedAt = stop) else null
+            }
         }
     }
 }

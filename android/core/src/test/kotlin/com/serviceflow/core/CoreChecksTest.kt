@@ -291,6 +291,13 @@ class CoreChecksTest {
         entry = entry.copy(clockOutReason = ClockOutReason.Manual)
         val summary = SegmentSummary(entry, now = t0.addingTimeInterval(6.0 * 3600))
         assertEquals("buckets add up to the shift", 5 * 3600, (summary.onSite + summary.offSite + summary.unknown).toInt())
+
+        // Shortened on both ends: the removed time no longer counts.
+        entry = entry.copy(startedAt = t0.addingTimeInterval(3600.0), endedAt = t0.addingTimeInterval(4.0 * 3600))
+        val edited = SegmentSummary(entry, now = t0.addingTimeInterval(6.0 * 3600))
+        assertEquals("buckets follow edited times", 3 * 3600, (edited.onSite + edited.offSite + edited.unknown).toInt())
+        assertEquals("first ten minutes on site before the edit", 600, summary.onSite.toInt())
+        assertEquals("on-site time before the new start no longer counts", 0, edited.onSite.toInt())
     }
 
     @Test
