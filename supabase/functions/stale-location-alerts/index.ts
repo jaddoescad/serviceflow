@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { sendPushBatch } from "../_shared/push.ts";
 
 type ServiceClient = SupabaseClient;
 
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const TRAVEL_STALE_AFTER_MS = 15 * 60 * 1000;
 const STATIONARY_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
 const PAINTING_STALE_AFTER_MS = 8 * 60 * 60 * 1000;
@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
     });
 
     let sent = 0;
+    let failed = 0;
+    const failedTokens = new Set<string>();
+    const notifiedEntryIds = new Set<string>();
     // Each alert goes only to the managers of the company the entry belongs to.
     const tokensFor = (entry: { org_id: string }) => tokensByOrg.get(entry.org_id) || [];
     const managerTokenCount = [...tokensByOrg.values()].reduce((total, list) => total + list.length, 0);
@@ -90,8 +93,25 @@ Deno.serve(async (req) => {
         })),
       );
       for (const batch of chunk(messages, BATCH_SIZE)) {
-        sent += await sendPushBatch(batch);
+        const tickets = await sendPushBatch(batch);
+        tickets.forEach((ticket, index) => {
+          if (ticket.status === "ok") {
+            sent += 1;
+            notifiedEntryIds.add(batch[index].data.timeEntryId);
+          } else {
+            failed += 1;
+            if (ticket.details?.error === "DeviceNotRegistered") failedTokens.add(batch[index].to);
+          }
+        });
       }
+    }
+
+    if (failedTokens.size) {
+      const { error } = await supabase.from("push_tokens")
+        .update({ is_active: false })
+        .in("expo_push_token", [...failedTokens])
+        .lte("last_registered_at", now.toISOString());
+      if (error) throw new Error(error.message);
     }
 
     if (notifyEntries.length) {
@@ -101,7 +121,7 @@ Deno.serve(async (req) => {
           employee_id: entry.employee_id,
           time_entry_id: entry.id,
           stale_since: new Date(now.getTime() - staleThresholdMs(status?.tracking_mode)).toISOString(),
-          last_notified_at: tokensFor(entry).length ? now.toISOString() : null,
+          last_notified_at: notifiedEntryIds.has(entry.id) ? now.toISOString() : null,
           resolved_at: null,
         };
       });
@@ -116,6 +136,7 @@ Deno.serve(async (req) => {
       staleEntries: staleEntries.length,
       managerTokens: managerTokenCount,
       notificationsSent: sent,
+      notificationsFailed: failed,
       resolved: alertsToResolve.length,
     });
   } catch (error) {
@@ -168,10 +189,9 @@ async function fetchManagerTokensByOrg(supabase: ServiceClient) {
     .in("employee_id", managerIds)
     .eq("is_active", true);
   if (error) throw new Error(error.message);
-  // Native iOS tokens (`apns:`) can't be delivered through Expo.
   const tokensByUser = new Map<string, string[]>();
   for (const row of data || []) {
-    if (!row.expo_push_token || row.expo_push_token.startsWith("apns:")) continue;
+    if (!row.expo_push_token) continue;
     tokensByUser.set(row.employee_id, [...(tokensByUser.get(row.employee_id) || []), row.expo_push_token]);
   }
 
@@ -184,19 +204,6 @@ async function fetchManagerTokensByOrg(supabase: ServiceClient) {
     byOrg.set(manager.org_id, list);
   }
   return byOrg;
-}
-
-async function sendPushBatch(messages: Record<string, unknown>[]) {
-  const response = await fetch(EXPO_PUSH_URL, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(messages),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Expo push returned ${response.status}`);
-  return Array.isArray(payload?.data)
-    ? payload.data.filter((ticket: Record<string, unknown>) => ticket?.status === "ok").length
-    : 0;
 }
 
 function chunk<T>(rows: T[], size: number) {

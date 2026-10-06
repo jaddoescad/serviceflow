@@ -1,8 +1,8 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { sendPushBatch } from "../_shared/push.ts";
 
 type ServiceClient = SupabaseClient;
 
-const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const EXPO_RECEIPT_URL = "https://exp.host/--/api/v2/push/getReceipts";
 const BATCH_SIZE = 100;
 const REMINDERS = {
@@ -54,8 +54,10 @@ Deno.serve(async (req) => {
   try {
     const requestBody = await req.json().catch(() => ({}));
     const reminder = getReminder(requestBody?.reminder_type);
+    const sendStartedAt = new Date().toISOString();
     const tokens = await fetchActiveTokens(supabase);
     let sent = 0;
+    let failed = 0;
     const receiptTickets: { id: string; token: string }[] = [];
     const failedTokens: string[] = [];
 
@@ -68,14 +70,15 @@ Deno.serve(async (req) => {
         data: { type: reminder.dataType },
       }));
 
-      const tickets = await sendExpoBatch(messages);
+      const tickets = await sendPushBatch(messages);
       tickets.forEach((ticket, index) => {
         const token = batch[index]?.expo_push_token;
-        if (ticket?.status === "ok" && ticket.id && token) {
-          receiptTickets.push({ id: ticket.id, token });
+        if (ticket?.status === "ok" && token) {
+          if (ticket.id) receiptTickets.push({ id: ticket.id, token });
           sent += 1;
-        } else if (token && isExpoDeviceError(ticket?.details?.error)) {
-          failedTokens.push(token);
+        } else {
+          failed += 1;
+          if (token && isDeviceError(ticket?.details?.error)) failedTokens.push(token);
         }
       });
     }
@@ -86,17 +89,19 @@ Deno.serve(async (req) => {
     const deactivated = await deactivateTokens(
       supabase,
       Array.from(new Set(failedTokens)),
+      sendStartedAt,
     );
 
     return json({
       tokens: tokens.length,
       sent,
+      failed,
       deactivated,
       receiptsChecked: receiptTickets.length,
       reminderType: reminder.dataType,
     });
   } catch (error) {
-    return json({ error: error?.message || "Daily reminder send failed" }, 500);
+    return json({ error: (error as Error)?.message || "Daily reminder send failed" }, 500);
   }
 });
 
@@ -120,24 +125,6 @@ async function fetchActiveTokens(supabase: ServiceClient) {
     seen.add(token);
     return true;
   });
-}
-
-async function sendExpoBatch(messages: Record<string, unknown>[]) {
-  const response = await fetch(EXPO_PUSH_URL, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(messages),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`Expo push returned ${response.status}: ${JSON.stringify(payload)}`);
-  }
-
-  return Array.isArray(payload?.data) ? payload.data : [];
 }
 
 async function collectReceiptFailures(receiptTickets: { id: string; token: string }[]) {
@@ -166,26 +153,28 @@ async function collectReceiptFailures(receiptTickets: { id: string; token: strin
     for (const [receiptId, receipt] of Object.entries(receipts)) {
       const errorName = (receipt as Record<string, any>)?.details?.error;
       const token = tokenByReceiptId.get(receiptId);
-      if (token && isExpoDeviceError(errorName)) failedTokens.push(token);
+      if (token && isDeviceError(errorName)) failedTokens.push(token);
     }
   }
 
   return failedTokens;
 }
 
-async function deactivateTokens(supabase: ServiceClient, tokens: string[]) {
+async function deactivateTokens(supabase: ServiceClient, tokens: string[], sendStartedAt: string) {
   if (!tokens.length) return 0;
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("push_tokens")
     .update({ is_active: false })
-    .in("expo_push_token", tokens);
+    .in("expo_push_token", tokens)
+    .lte("last_registered_at", sendStartedAt)
+    .select("id");
 
   if (error) throw new Error(error.message);
-  return tokens.length;
+  return data?.length ?? 0;
 }
 
-function isExpoDeviceError(errorName: unknown) {
+function isDeviceError(errorName: unknown) {
   return errorName === "DeviceNotRegistered";
 }
 
