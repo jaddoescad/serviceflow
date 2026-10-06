@@ -161,6 +161,7 @@ private fun Pressed(onClick: () -> Unit, label: String, modifier: Modifier = Mod
 }
 
 /** A local video that autoplays and loops, with the system controls. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun CameraLoopingVideo(file: File, modifier: Modifier = Modifier) {
     val context = LocalContext.current
