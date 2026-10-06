@@ -2,7 +2,7 @@
 
 The SwiftUI crew app. It replaces the React Native build on the App Store under
 the same listing (bundle id `com.ottawapainters.app`, App Store Connect app
-`6787451069`). Android keeps using `mobile/` for now.
+`6787451069`). Its Android counterpart is `android/` (see `android/README.md`).
 
 ## Layout
 

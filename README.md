@@ -5,7 +5,9 @@ One private repository for the ServiceFlow admin website, mobile app and backend
 | Folder | What | Release |
 | --- | --- | --- |
 | `web/` | Admin website (Next.js) | Push `main`; Vercel (Root Directory `web`) deploys https://serviceflow-admin.vercel.app |
-| `mobile/` | Crew app (Expo / React Native) | Expo EAS channels `preview`, `pilot`, `production` |
+| `ios/` | Native iOS crew app (SwiftUI) | App Store; see `ios/README.md` |
+| `android/` | Native Android crew app (Kotlin / Compose) | Not released yet; will replace `mobile/` on Google Play; see `android/README.md` |
+| `mobile/` | Crew app (Expo / React Native), current Google Play build | Expo EAS channels `preview`, `pilot`, `production` |
 | `supabase/` | Shared backend: migrations, edge functions, SQL tests | Supabase project `bwbckdkouqghdadpkjvn` |
 | `docs/` | Cross-project plans and ownership notes | — |
 
