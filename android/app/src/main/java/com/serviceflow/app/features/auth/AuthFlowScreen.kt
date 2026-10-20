@@ -71,6 +71,7 @@ private val StepsSaver = Saver<List<Step>, ArrayList<String>>(
 fun AuthFlowScreen() {
     var path by rememberSaveable(stateSaver = StepsSaver) { mutableStateOf(emptyList<Step>()) }
     var email by rememberSaveable { mutableStateOf("") }
+    var signUpName by rememberSaveable { mutableStateOf("") }
     fun push(step: Step) { path = path + step }
     val back = { path = path.dropLast(1) }
 
@@ -80,7 +81,7 @@ fun AuthFlowScreen() {
     BrandTint {
         when (val step = path.lastOrNull()) {
             null -> SignInScreen(email, { email = it }, onCreateAccount = { push(Step.SignUp) }, onForgot = { push(Step.Forgot) })
-            Step.SignUp -> SignUpScreen(email, { email = it }, onBack = back) { push(Step.Verify(it, CodePurpose.SignUp)) }
+            Step.SignUp -> SignUpScreen(email, { email = it }, signUpName, { signUpName = it }, onBack = back) { push(Step.Verify(it, CodePurpose.SignUp)) }
             Step.Forgot -> ForgotPasswordScreen(email, { email = it }, onBack = back) { push(Step.Verify(it, CodePurpose.Reset)) }
             is Step.Verify -> VerifyCodeScreen(step.email, step.purpose, onBack = back) { push(Step.SetPassword(step.purpose)) }
             is Step.SetPassword -> SetPasswordScreen(step.purpose)
@@ -94,6 +95,7 @@ fun AuthFlowScreen() {
 private fun SignInScreen(email: String, onEmailChange: (String) -> Unit, onCreateAccount: () -> Unit, onForgot: () -> Unit) {
     val model = LocalAppModel.current
     var password by rememberSaveable { mutableStateOf("") }
+    var emailError by rememberSaveable { mutableStateOf<String?>(null) }
     val request = rememberRequestState()
     val canSubmit = email.isNotBlank() && password.isNotBlank()
 
@@ -102,8 +104,10 @@ private fun SignInScreen(email: String, onEmailChange: (String) -> Unit, onCreat
             request.error = "Enter your email and password."
             return
         }
-        val api = model.api ?: return
         val address = email.trim()
+        emailError = AccountValidation.email(address)
+        if (emailError != null) return
+        val api = model.api ?: return
         // The password is sent as typed; only the email is trimmed.
         request.run { api.signIn(email = address, password = password) }
     }
@@ -111,8 +115,9 @@ private fun SignInScreen(email: String, onEmailChange: (String) -> Unit, onCreat
     AuthForm(title = null, onBack = null) {
         AuthLogo(Modifier.padding(bottom = 16.dp))
         AuthTextField(
-            label = "Email", value = email, onValueChange = { onEmailChange(it); request.error = null },
+            label = "Email", value = email, onValueChange = { onEmailChange(it); emailError = null; request.error = null },
             content = ContentType.EmailAddress + ContentType.Username, keyboard = KeyboardType.Email,
+            error = emailError,
         )
         AuthPasswordField(
             value = password, onValueChange = { password = it; request.error = null },
@@ -135,9 +140,9 @@ private fun SignInScreen(email: String, onEmailChange: (String) -> Unit, onCreat
 // MARK: Create account
 
 @Composable
-private fun SignUpScreen(email: String, onEmailChange: (String) -> Unit, onBack: () -> Unit, onCodeSent: (String) -> Unit) {
+private fun SignUpScreen(email: String, onEmailChange: (String) -> Unit, name: String, onNameChange: (String) -> Unit,
+                         onBack: () -> Unit, onCodeSent: (String) -> Unit) {
     val model = LocalAppModel.current
-    var name by rememberSaveable { mutableStateOf("") }
     val request = rememberRequestState()
 
     fun submit() {
@@ -158,7 +163,7 @@ private fun SignUpScreen(email: String, onEmailChange: (String) -> Unit, onBack:
     AuthForm(title = "Create Account", onBack = onBack) {
         AuthHeader("Start a company, or join your team with an invite code.")
         AuthTextField(
-            label = "Your name", value = name, onValueChange = { name = it; request.error = null },
+            label = "Your name", value = name, onValueChange = { onNameChange(it); request.error = null },
             content = ContentType.PersonFullName, capitalization = KeyboardCapitalization.Words,
         )
         AuthTextField(

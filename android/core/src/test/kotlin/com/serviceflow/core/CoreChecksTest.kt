@@ -349,6 +349,30 @@ class CoreChecksTest {
     }
 
     @Test
+    fun timesheetMissingDaysBeginOnAccountCreationInLocalTime() {
+        val zone = ZoneId.of("America/Toronto")
+        val now = ISODate.parse("2026-10-18T16:00:00Z")!!
+        // UTC Sunday is still Saturday evening in Toronto, after the grid's noon.
+        val created = ISODate.parse("2026-10-18T01:00:00Z")!!
+        val periods = PayPeriod.recent(now, zone)
+        val days = TimesheetBuilder.days(periods[0], emptyList(), now, zone, accountCreatedAt = created)
+        assertEquals("include creation day and subsequent missing days only", listOf("2026-10-18", "2026-10-17"), days.map { it.id })
+        assertTrue("missing days still have no recorded time", days.all { !it.isWorked && it.totalMinutes == 0 })
+        assertTrue("weeks before signup have no missing days", TimesheetBuilder.days(periods[1], emptyList(), now, zone, created).isEmpty())
+        assertEquals("unknown creation date retains full week", 7, TimesheetBuilder.days(periods[0], emptyList(), now, zone).size)
+
+        val earlier = ISODate.parse("2026-10-15T13:00:00Z")!!
+        val entry = TimeEntry(
+            localId = "imported", userId = userId, userEmail = null, userName = "Pat", project = jobA,
+            originalStartedAt = earlier, startedAt = earlier, endedAt = earlier.addingTimeInterval(3600.0),
+            clockOutReason = ClockOutReason.Manual,
+        )
+        val recordedDays = TimesheetBuilder.days(periods[0], listOf(entry), now, zone, created)
+        assertEquals("keep actual entries before signup", listOf("2026-10-18", "2026-10-17", "2026-10-15"), recordedDays.map { it.id })
+        assertEquals("recorded hours remain in totals", 60, TimesheetBuilder.weekTotalMinutes(recordedDays))
+    }
+
+    @Test
     fun projectDetailGroupsPaintersById() {
         val a = TimeEntry(
             localId = "1", userId = "u1", userEmail = null, userName = "Sam", project = jobA, originalStartedAt = start,

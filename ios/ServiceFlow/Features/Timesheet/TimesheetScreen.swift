@@ -9,7 +9,7 @@ enum TimesheetRoute: Hashable {
 }
 
 /// The signed-in person's own time: three Monday–Sunday weeks, each day of
-/// the week shown (missing days in red). Days and edits are pushed on the
+/// the week since account creation shown (missing days in red). Days and edits are pushed on the
 /// tab's navigation stack.
 struct TimesheetScreen: View {
     @Environment(SessionContext.self) private var session
@@ -33,7 +33,7 @@ struct TimesheetScreen: View {
         let periods = self.periods
         let index = selectedIndex
         let period = periods.indices.contains(index) ? periods[index] : nil
-        let days = period.map { TimesheetBuilder.days(for: $0, entries: tracker.allEntries, now: now) } ?? []
+        let days = period.map { TimesheetBuilder.days(for: $0, entries: tracker.allEntries, now: now, accountCreatedAt: session.accountCreatedAt) } ?? []
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 summaryCard(days)
@@ -114,7 +114,7 @@ struct TimesheetScreen: View {
     /// A pushed day by id, from whichever of the recent periods holds it.
     private func day(_ id: String, in periods: [PayPeriod]) -> TimesheetDay? {
         guard let period = periods.first(where: { $0.contains(dayKey: id) }) else { return nil }
-        return TimesheetBuilder.days(for: period, entries: tracker.allEntries, now: now).first { $0.id == id }
+        return TimesheetBuilder.days(for: period, entries: tracker.allEntries, now: now, accountCreatedAt: session.accountCreatedAt).first { $0.id == id }
     }
 
     // MARK: Summary
@@ -122,6 +122,7 @@ struct TimesheetScreen: View {
     private func summaryCard(_ days: [TimesheetDay]) -> some View {
         let total = TimesheetBuilder.weekTotalMinutes(days)
         let jobs = Set(days.flatMap(\.entries).map(\.project.id)).count
+        let daysWorked = TimesheetBuilder.daysWorked(days)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Text(Initials.of(session.displayName, fallback: "C"))
@@ -137,9 +138,9 @@ struct TimesheetScreen: View {
             HStack(spacing: 0) {
                 stat(DurationFormat.hoursMinutes(minutes: total), "Logged")
                 divider
-                stat("\(TimesheetBuilder.daysWorked(days))", "Days")
+                stat("\(daysWorked)", daysWorked == 1 ? "Day" : "Days")
                 divider
-                stat("\(jobs)", "Jobs")
+                stat("\(jobs)", jobs == 1 ? "Job" : "Jobs")
             }
             .padding(.vertical, 12)
             .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))

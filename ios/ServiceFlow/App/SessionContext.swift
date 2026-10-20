@@ -21,6 +21,7 @@ final class SessionContext {
     }
 
     let user: CrewMember
+    let accountCreatedAt: Date
     let api: ServiceFlowAPI
     let config: AppConfig
     let storage: UserStorage
@@ -58,6 +59,7 @@ final class SessionContext {
         let name = DisplayName.resolve(profileName: profileStore.load()?.fullName, metadataName: metadataName, email: authUser.email)
 
         user = CrewMember(id: userId, email: authUser.email, name: name)
+        accountCreatedAt = authUser.createdAt
         self.api = api
         self.config = config
         self.storage = storage

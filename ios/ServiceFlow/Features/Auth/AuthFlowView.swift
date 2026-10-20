@@ -14,6 +14,7 @@ struct AuthFlowView: View {
 
     @State private var path: [Step] = []
     @State private var email = ""
+    @State private var signUpName = ""
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -21,7 +22,7 @@ struct AuthFlowView: View {
                 .navigationDestination(for: Step.self) { step in
                     switch step {
                     case .signUp:
-                        SignUpView(email: $email) { path.append(.verify(email: $0, purpose: .signUp)) }
+                        SignUpView(email: $email, name: $signUpName) { path.append(.verify(email: $0, purpose: .signUp)) }
                     case .forgot:
                         ForgotPasswordView(email: $email) { path.append(.verify(email: $0, purpose: .reset)) }
                     case let .verify(address, purpose):
@@ -44,6 +45,7 @@ struct SignInView: View {
     var onForgot: () -> Void
 
     @State private var password = ""
+    @State private var emailError: String?
     @State private var request = RequestState()
     @FocusState private var focus: Field?
 
@@ -61,10 +63,13 @@ struct SignInView: View {
             .listRowBackground(Color.clear)
 
             Section {
-                AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress) {
-                    focus = .password
+                VStack(alignment: .leading, spacing: 6) {
+                    AuthTextField(placeholder: "Email", text: $email, content: .emailAddress, keyboard: .emailAddress) {
+                        focus = .password
+                    }
+                    .focused($focus, equals: .email)
+                    AuthErrorText(message: emailError).font(.footnote)
                 }
-                .focused($focus, equals: .email)
                 AuthPasswordField(text: $password, onSubmit: submit)
                     .focused($focus, equals: .password)
             } footer: {
@@ -86,7 +91,7 @@ struct SignInView: View {
                 Text("New to ServiceFlow?")
             }
         }
-        .onChange(of: email) { _, _ in request.error = nil }
+        .onChange(of: email) { _, _ in emailError = nil; request.error = nil }
         .onChange(of: password) { _, _ in request.error = nil }
     }
 
@@ -95,8 +100,9 @@ struct SignInView: View {
             request.error = "Enter your email and password."
             return
         }
-        guard let api = model.api else { return }
         let address = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        emailError = AccountValidation.email(address)
+        guard emailError == nil, let api = model.api else { return }
         // The password is sent as typed; only the email is trimmed.
         request.run { try await api.signIn(email: address, password: password) }
     }
@@ -107,9 +113,9 @@ struct SignInView: View {
 struct SignUpView: View {
     @Environment(AppModel.self) private var model
     @Binding var email: String
+    @Binding var name: String
     var onCodeSent: (String) -> Void
 
-    @State private var name = ""
     @State private var request = RequestState()
 
     var body: some View {

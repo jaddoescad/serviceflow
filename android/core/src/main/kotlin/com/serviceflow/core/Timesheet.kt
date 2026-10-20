@@ -174,16 +174,19 @@ data class TimesheetDay(
 object TimesheetBuilder {
     /**
      * Every past or current day of `period`, newest first; days without an
-     * entry are included as missing days.
+     * entry are included as missing days from the account's creation day onward.
+     * Recorded entries are always kept, even if they predate account creation.
      */
-    fun days(period: PayPeriod, entries: List<TimeEntry>, now: Instant, zone: ZoneId = ZoneId.systemDefault()): List<TimesheetDay> {
+    fun days(period: PayPeriod, entries: List<TimeEntry>, now: Instant, zone: ZoneId = ZoneId.systemDefault(),
+             accountCreatedAt: Instant? = null): List<TimesheetDay> {
         val grouped = entries.groupBy { DayKey.of(it.startedAt, zone) }
         val todayKey = DayKey.of(now, zone)
+        val firstDayKey = accountCreatedAt?.let { DayKey.of(it, zone) }
         val keys = mutableListOf<String>()
         var cursor = period.end
         while (cursor >= period.start.addingTimeInterval(-60.0)) {
             val key = DayKey.of(cursor, zone)
-            if (key <= todayKey) keys.add(key)
+            if (key <= todayKey && (firstDayKey == null || key >= firstDayKey)) keys.add(key)
             cursor = cursor.atZone(zone).minusDays(1).toInstant()
         }
         for (key in grouped.keys) {

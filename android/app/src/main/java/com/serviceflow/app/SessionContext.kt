@@ -83,6 +83,8 @@ class SessionContext(
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val user: CrewMember
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    val accountCreatedAt: Instant? = authUser.createdAt?.let { Instant.ofEpochSecond(it.epochSeconds, it.nanosecondsOfSecond.toLong()) }
     val storage: UserStorage
     val tracker: TimeTracker
     /** Nil when the build has no media Worker configured. */

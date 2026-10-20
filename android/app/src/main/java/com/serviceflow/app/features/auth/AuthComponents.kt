@@ -121,12 +121,15 @@ fun AuthTextField(
     capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
     imeAction: ImeAction = ImeAction.Next,
     onSubmit: (() -> Unit)? = null,
+    error: String? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
+        isError = error != null,
+        supportingText = error?.let { message -> { Text(message) } },
         keyboardOptions = KeyboardOptions(
             capitalization = capitalization,
             autoCorrectEnabled = false,

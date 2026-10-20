@@ -83,7 +83,7 @@ private val sectionTitles = listOf("This Week", "Last Week", "2 Weeks Ago")
 
 /**
  * The signed-in person's own time: three Monday–Sunday weeks, each day of
- * the week shown (missing days in red). Days and edits are pushed on the
+ * the week since account creation shown (missing days in red). Days and edits are pushed on the
  * tab's back stack.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,8 +101,8 @@ fun TimesheetScreen() {
     val periods = remember(now) { PayPeriod.recent(now = now) }
     val index = periods.indexOfFirst { it.id == periodId }.coerceAtLeast(0)
     val period = periods.getOrNull(index)
-    val days = remember(period, entries, now) {
-        period?.let { TimesheetBuilder.days(it, entries = entries, now = now) } ?: emptyList()
+    val days = remember(period, entries, now, session.accountCreatedAt) {
+        period?.let { TimesheetBuilder.days(it, entries = entries, now = now, accountCreatedAt = session.accountCreatedAt) } ?: emptyList()
     }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -179,6 +179,7 @@ fun TimesheetScreen() {
 private fun SummaryCard(name: String, days: List<TimesheetDay>, modifier: Modifier = Modifier) {
     val total = TimesheetBuilder.weekTotalMinutes(days)
     val jobs = days.flatMap { it.entries }.map { it.project.id }.toSet().size
+    val daysWorked = TimesheetBuilder.daysWorked(days)
     Column(
         modifier
             .fillMaxWidth()
@@ -204,9 +205,9 @@ private fun SummaryCard(name: String, days: List<TimesheetDay>, modifier: Modifi
         ) {
             Stat(DurationFormat.hoursMinutes(minutes = total), "Logged")
             StatDivider()
-            Stat("${TimesheetBuilder.daysWorked(days)}", "Days")
+            Stat("$daysWorked", if (daysWorked == 1) "Day" else "Days")
             StatDivider()
-            Stat("$jobs", "Jobs")
+            Stat("$jobs", if (jobs == 1) "Job" else "Jobs")
         }
     }
 }

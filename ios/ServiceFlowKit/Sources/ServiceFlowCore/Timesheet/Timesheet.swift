@@ -152,15 +152,18 @@ public struct TimesheetDay: Identifiable, Hashable, Sendable {
 
 public enum TimesheetBuilder {
     /// Every past or current day of `period`, newest first; days without an
-    /// entry are included as missing days.
-    public static func days(for period: PayPeriod, entries: [TimeEntry], now: Date, calendar: Calendar = .current) -> [TimesheetDay] {
+    /// entry are included as missing days from the account's creation day onward.
+    /// Recorded entries are always kept, even if they predate account creation.
+    public static func days(for period: PayPeriod, entries: [TimeEntry], now: Date, calendar: Calendar = .current,
+                            accountCreatedAt: Date? = nil) -> [TimesheetDay] {
         let grouped = Dictionary(grouping: entries) { DayKey.of($0.startedAt, calendar: calendar) }
         let todayKey = DayKey.of(now, calendar: calendar)
+        let firstDayKey = accountCreatedAt.map { DayKey.of($0, calendar: calendar) }
         var keys: [String] = []
         var cursor = period.end
         while cursor >= period.start.addingTimeInterval(-60) {
             let key = DayKey.of(cursor, calendar: calendar)
-            if key <= todayKey { keys.append(key) }
+            if key <= todayKey && (firstDayKey.map { key >= $0 } ?? true) { keys.append(key) }
             guard let previous = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
             cursor = previous
         }

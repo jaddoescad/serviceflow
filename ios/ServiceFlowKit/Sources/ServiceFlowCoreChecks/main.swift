@@ -320,6 +320,30 @@ func runChecks() async {
         expectEqual(TimesheetBuilder.daysWorked(days), 1, "one day worked")
     }
 
+    await check("Timesheet missing days begin on account creation in local time") {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Toronto")!
+        let now = ISODate.parse("2026-10-18T16:00:00Z")!
+        // UTC Sunday is still Saturday evening in Toronto, after the grid's noon.
+        let created = ISODate.parse("2026-10-18T01:00:00Z")!
+        let periods = PayPeriod.recent(now: now, calendar: calendar)
+        let days = TimesheetBuilder.days(for: periods[0], entries: [], now: now, calendar: calendar, accountCreatedAt: created)
+        expectEqual(days.map(\.id), ["2026-10-18", "2026-10-17"], "include creation day and subsequent missing days only")
+        expect(days.allSatisfy { !$0.isWorked && $0.totalMinutes == 0 }, "missing days still have no recorded time")
+        expect(TimesheetBuilder.days(for: periods[1], entries: [], now: now, calendar: calendar, accountCreatedAt: created).isEmpty,
+               "weeks before signup have no missing days")
+        expectEqual(TimesheetBuilder.days(for: periods[0], entries: [], now: now, calendar: calendar).count, 7,
+                    "unknown creation date retains full week")
+
+        let earlier = ISODate.parse("2026-10-15T13:00:00Z")!
+        let entry = TimeEntry(localId: "imported", userId: userId, userEmail: nil, userName: "Pat", project: jobA,
+                              originalStartedAt: earlier, startedAt: earlier, endedAt: earlier.addingTimeInterval(3600),
+                              clockOutReason: .manual)
+        let recordedDays = TimesheetBuilder.days(for: periods[0], entries: [entry], now: now, calendar: calendar, accountCreatedAt: created)
+        expectEqual(recordedDays.map(\.id), ["2026-10-18", "2026-10-17", "2026-10-15"], "keep actual entries before signup")
+        expectEqual(TimesheetBuilder.weekTotalMinutes(recordedDays), 60, "recorded hours remain in totals")
+    }
+
     await check("Project detail groups painters by id") {
         let a = TimeEntry(localId: "1", userId: "u1", userEmail: nil, userName: "Sam", project: jobA, originalStartedAt: start,
                           startedAt: start, endedAt: start.addingTimeInterval(3600), clockOutReason: .manual)
