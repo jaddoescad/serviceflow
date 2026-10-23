@@ -99,6 +99,19 @@ async function createEmployee(
     await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
     throw httpError(error.message, 500);
   }
+  if (role === "painter") {
+    const { error: payRateError } = await supabase
+      .from("employee_pay_rates")
+      .insert({
+        employee_id: employee.id,
+        hourly_rate_cents: 3000,
+        effective_from: authData.user.created_at.slice(0, 10),
+      });
+    if (payRateError) {
+      await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
+      throw httpError(payRateError.message, 500);
+    }
+  }
   return {
     employee: { ...employee, user_id: employee.id },
     temporaryPassword: suppliedPassword ? null : password,
