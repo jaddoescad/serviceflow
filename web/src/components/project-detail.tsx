@@ -1,4 +1,4 @@
-import type { BudgetUse, ProjectCrewHours, ProjectDetail, ProjectRollup } from "@/lib/metrics";
+import { DEFAULT_PAY_RATE, type BudgetUse, type ProjectCrewHours, type ProjectDetail, type ProjectRollup } from "@/lib/metrics";
 import { fmtDate, fmtHours, fmtMoney, fmtTime } from "@/lib/format";
 import { Card, CardHeader, cn } from "@/components/ui";
 
@@ -58,7 +58,7 @@ export function ProjectOverviewPanel({
   const tone = budget != null ? budgetTone(used, budget) : null;
   // Like the job total, a painter's hours count at their pay ÷ the budget rate.
   const budgetHoursOf = (member: ProjectCrewHours) =>
-    rate ? member.wageCost / rate + member.unpricedHours : member.hours;
+    rate ? (member.wageCost + member.unpricedHours * DEFAULT_PAY_RATE) / rate : member.hours;
 
   return (
     <div className="space-y-4">

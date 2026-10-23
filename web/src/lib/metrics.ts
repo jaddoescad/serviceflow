@@ -19,6 +19,8 @@ export type LabourCostSource = "clocked_hours";
 export const LABOUR_MIN_PERCENT = 35;
 export const LABOUR_MAX_PERCENT = 37;
 export const LABOUR_ALERT_PERCENT = 40;
+// Budget hours count painters without a pay rate at this rate, as job_feed does.
+export const DEFAULT_PAY_RATE = 30;
 
 // An open job this quiet is almost certainly finished on site and just waiting
 // for someone to confirm completion.
