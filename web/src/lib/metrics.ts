@@ -112,6 +112,13 @@ export type ProjectDetail = {
   entries: ProjectEntryDetail[];
 };
 
+/** A job's budget as the crew app shows it (`job_feed`): used hours count each painter's pay ÷ `rate`. */
+export type BudgetUse = {
+  budgetHours: number | null;
+  usedHours: number;
+  rate: number | null;
+};
+
 export type ProjectTaskProgress = {
   id: string;
   title: string;

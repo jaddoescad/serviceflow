@@ -148,7 +148,7 @@ export function LabourBudgetSettingsForm({
       <div className="grid gap-5 sm:grid-cols-3">
         <NumberField
           label="Standard hourly rate"
-          hint="What an average crew hour costs you."
+          hint="Each painter's hour counts as their pay ÷ this rate."
           prefix="$"
           suffix="/ hour"
           value={rate}

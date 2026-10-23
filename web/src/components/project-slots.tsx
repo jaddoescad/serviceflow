@@ -13,6 +13,7 @@ export async function OverviewSlot({ projectId }: { projectId: string }) {
     <ProjectOverviewPanel
       project={data.project}
       detail={data.detail}
+      budgetUse={data.budgetUse}
     />
   );
 }

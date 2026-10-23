@@ -1,4 +1,4 @@
-import type { ProjectDetail, ProjectRollup } from "@/lib/metrics";
+import type { BudgetUse, ProjectCrewHours, ProjectDetail, ProjectRollup } from "@/lib/metrics";
 import { fmtDate, fmtHours, fmtMoney, fmtTime } from "@/lib/format";
 import { Card, CardHeader, cn } from "@/components/ui";
 
@@ -37,13 +37,16 @@ function HoursBar({ label, hours, scale, fill }: { label: string; hours: number;
 export function ProjectOverviewPanel({
   project,
   detail,
+  budgetUse,
 }: {
   project: ProjectRollup;
   detail?: ProjectDetail;
+  budgetUse: BudgetUse | null;
 }) {
-  const used = project.loggedHours;
-  const budget = project.budgetedHours && project.budgetedHours > 0 ? project.budgetedHours : null;
-  const rate = project.hourlyRate;
+  const clocked = project.loggedHours;
+  const used = budgetUse?.usedHours ?? clocked;
+  const budget = budgetUse?.budgetHours && budgetUse.budgetHours > 0 ? budgetUse.budgetHours : null;
+  const rate = budgetUse?.rate ?? null;
   const amount = project.amountBeforeTax;
   const budgetDollars = budget != null && rate != null ? budget * rate : null;
   const budgetShare =
@@ -53,6 +56,9 @@ export function ProjectOverviewPanel({
   const crew = [...(detail?.crew ?? [])].sort((a, b) => b.hours - a.hours);
   const entries = detail?.entries ?? [];
   const tone = budget != null ? budgetTone(used, budget) : null;
+  // Like the job total, a painter's hours count at their pay ÷ the budget rate.
+  const budgetHoursOf = (member: ProjectCrewHours) =>
+    rate ? member.wageCost / rate + member.unpricedHours : member.hours;
 
   return (
     <div className="space-y-4">
@@ -64,7 +70,7 @@ export function ProjectOverviewPanel({
               {amount == null
                 ? "This job has no job amount, so no budget hours can be worked out."
                 : "Budget hours have not been set for this job."}{" "}
-              {fmtHours(used)} recorded.
+              {fmtHours(clocked)} recorded.
             </p>
           </>
         ) : (
@@ -85,6 +91,8 @@ export function ProjectOverviewPanel({
                   ? `${budgetShare}% of the ${fmtMoney(amount)} job (before HST) = `
                   : ""}
                 {fmtMoney(budgetDollars)} labour ÷ {fmtMoney(rate)}/h = {fmtHours(budget)}
+                <br />
+                Each hour counts at the painter&apos;s pay ÷ {fmtMoney(rate)}/h · {fmtHours(clocked)} clocked
               </p>
             ) : null}
           </>
@@ -103,7 +111,7 @@ export function ProjectOverviewPanel({
                     <span className="font-semibold">{fmtHours(member.hours)}</span>
                     {budget != null ? (
                       <span className="text-[var(--color-muted)]">
-                        {" "}· {Math.round((member.hours / budget) * 100)}% of budget
+                        {" "}· {Math.round((budgetHoursOf(member) / budget) * 100)}% of budget
                       </span>
                     ) : null}
                   </span>
@@ -112,7 +120,7 @@ export function ProjectOverviewPanel({
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
                     <div
                       className="h-full bg-[var(--color-brand)]"
-                      style={{ width: `${Math.min(100, (member.hours / budget) * 100)}%` }}
+                      style={{ width: `${Math.min(100, (budgetHoursOf(member) / budget) * 100)}%` }}
                     />
                   </div>
                 ) : null}

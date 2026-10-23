@@ -17,6 +17,7 @@ import {
   projectDetails,
   projectTaskProgress,
   rollupProjects,
+  type BudgetUse,
   type ProjectRollup,
 } from "@/lib/metrics";
 import { createClient } from "@/lib/supabase/server";
@@ -291,6 +292,7 @@ export const getProjectData = cache(async (projectId: string) => {
     assignments,
     labourTasks,
     employees,
+    feed,
   ] = await Promise.all([
     getProjectPresentation(projectId),
     requireStaff(),
@@ -301,12 +303,21 @@ export const getProjectData = cache(async (projectId: string) => {
     getProjectAssignments(projectId),
     getLabourTasksForProject(projectId),
     getEmployees(),
+    createClient().then((supabase) =>
+      supabase
+        .from("job_feed")
+        .select("budget_minutes,used_minutes,budget_hourly_rate_cents")
+        .eq("id", projectId)
+        .maybeSingle(),
+    ),
   ]);
+  if (feed.error) throw new Error(`job budget: ${feed.error.message}`);
   if (!presentation) return null;
   if (presentation.isLead) {
     return {
       canManage: false,
       project: emptyLeadRollup(projectId, presentation),
+      budgetUse: null,
       detail: {
         entryCount: 0,
         activeEntryCount: 0,
@@ -329,9 +340,19 @@ export const getProjectData = cache(async (projectId: string) => {
   const rollup = rows.find((row) => row.projectId === projectId);
   if (!rollup) return null;
 
+  // The crew app's numbers; hidden jobs are not in job_feed and keep plain hours.
+  const budgetUse: BudgetUse = feed.data
+    ? {
+        budgetHours: feed.data.budget_minutes == null ? null : Number(feed.data.budget_minutes) / 60,
+        usedHours: Number(feed.data.used_minutes ?? 0) / 60,
+        rate: feed.data.budget_hourly_rate_cents == null ? null : Number(feed.data.budget_hourly_rate_cents) / 100,
+      }
+    : { budgetHours: rollup.budgetedHours, usedHours: rollup.loggedHours, rate: rollup.hourlyRate };
+
   return {
     canManage: ["admin", "manager"].includes(profile.role),
     project: rollup,
+    budgetUse,
     detail: projectDetails(entries, payRates, now)[projectId],
     taskProgress: projectTaskProgress(labourTasks, employees)[projectId] ?? [],
   };
