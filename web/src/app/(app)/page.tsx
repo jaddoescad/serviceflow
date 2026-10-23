@@ -27,18 +27,23 @@ export default async function HomePage() {
   if (!ids.length) return <TodayBoard date={date} projects={[]} />;
 
   const client = await createClient();
-  const [feed, history, previews] = await Promise.all([
+  const [feed, history, previews, directory] = await Promise.all([
     client.from("job_feed").select("id,name,formatted_address,latitude,longitude,budget_minutes,used_minutes").in("id", ids),
     client.from("time_entries").select("job_id,employee_id,employee_name,started_at,ended_at")
       .in("job_id", ids).in("status", ["active", "completed"]),
     client.rpc("project_directory_previews", { requested_ids: ids }),
+    client.from("project_directory").select("id").in("id", ids)
+      .is("archived_at", null).is("trashed_at", null),
   ]);
   if (feed.error) throw new Error(`today's projects: ${feed.error.message}`);
   if (history.error) throw new Error(`project crews: ${history.error.message}`);
+  if (directory.error) throw new Error(`today's project visibility: ${directory.error.message}`);
 
   const now = Date.now();
+  const visibleIds = new Set((directory.data ?? []).map((row) => row.id));
   const projects = new Map<string, TodayProject>();
   for (const row of feed.data ?? []) {
+    if (!visibleIds.has(row.id)) continue;
     const budgetMinutes = Number(row.budget_minutes ?? 0);
     projects.set(row.id, {
       id: row.id,
