@@ -66,9 +66,6 @@ object HoursFormat {
         return "${formatFixed(hours, 1)}h"
     }
 
-    /** Milliseconds as hours with one decimal: `3.5h`. */
-    fun fromMilliseconds(ms: Double): String = "${formatFixed(max(0.0, ms) / 3_600_000, 1)}h"
-
     /** Shortest decimal representation, as JavaScript prints numbers. */
     internal fun shortest(value: Double): String {
         if (value == value.roundedSwift()) return value.toLong().toString()

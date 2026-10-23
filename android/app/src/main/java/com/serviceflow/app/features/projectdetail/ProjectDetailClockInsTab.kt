@@ -50,7 +50,6 @@ import com.serviceflow.app.features.jobs.ContentUnavailable
 import com.serviceflow.app.features.media.JobPhotosPanel
 import com.serviceflow.core.DateText
 import com.serviceflow.core.DurationFormat
-import com.serviceflow.core.HoursFormat
 import com.serviceflow.core.Initials
 import com.serviceflow.core.Project
 import com.serviceflow.core.ProjectClockIns
@@ -199,16 +198,15 @@ private fun CurrentRow(shift: TimeEntry) {
 @Composable
 private fun HoursPanel(model: ProjectDetailModel, clockIns: JobClockIns) {
     val session = LocalSession.current
-    val me = session.user
-    val isMine: (TimeEntry) -> Boolean = { it.userId == me.id || (it.userEmail != null && it.userEmail == me.email) }
-    val yourSeconds = clockIns.entries.filter(isMine).sumOf { it.duration(clockIns.now) }
-    val teamSeconds = clockIns.entries.sumOf { it.duration(clockIns.now) }
+    // The same minutes as the clock-in rows below, so both read alike.
+    val yourMinutes = clockIns.summaries.firstOrNull { it.isYou }?.totalMinutes ?: 0
+    val teamMinutes = clockIns.summaries.sumOf { it.totalMinutes }
     BudgetHoursPanel(
         progress = model.shownBudget,
         loading = model.budgetLoading,
-        yourHours = HoursFormat.fromMilliseconds(yourSeconds * 1000),
+        yourHours = DurationFormat.hoursMinutes(minutes = yourMinutes),
         secondaryLabel = if (session.isManager) "Team total" else "Entries shown",
-        secondaryValue = HoursFormat.fromMilliseconds(teamSeconds * 1000),
+        secondaryValue = DurationFormat.hoursMinutes(minutes = teamMinutes),
         modifier = Modifier.padding(16.dp),
     )
 }

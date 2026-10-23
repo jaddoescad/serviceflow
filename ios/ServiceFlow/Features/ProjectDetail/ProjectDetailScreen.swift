@@ -56,8 +56,8 @@ struct ProjectDetailScreen: View {
         Group {
             switch tab {
             case .clock:
-                ProjectDetailClockInsTab(project: project, title: title, model: model, entries: entries, summaries: summaries,
-                                         now: liveNow, onOpenMedia: { tab = .media }, onOverBudget: { overBudget = $0 })
+                ProjectDetailClockInsTab(project: project, title: title, model: model, summaries: summaries,
+                                         onOpenMedia: { tab = .media }, onOverBudget: { overBudget = $0 })
             case .media:
                 mediaTab
             }

@@ -7,10 +7,7 @@ struct ProjectDetailClockInsTab: View {
     let project: Project
     let title: String
     let model: ProjectDetailModel
-    /// This job's entries (crew only get their own).
-    let entries: [TimeEntry]
     let summaries: [PainterClockInSummary]
-    let now: Date
     let onOpenMedia: () -> Void
     let onOverBudget: (OverBudgetPromptItem) -> Void
 
@@ -109,16 +106,15 @@ struct ProjectDetailClockInsTab: View {
     }
 
     private var hoursPanel: some View {
-        let me = session.user
-        let isMine: (TimeEntry) -> Bool = { $0.userId == me.id || ($0.userEmail != nil && $0.userEmail == me.email) }
-        let yourSeconds = entries.filter(isMine).reduce(0) { $0 + $1.duration(at: now) }
-        let teamSeconds = entries.reduce(0) { $0 + $1.duration(at: now) }
+        // The same minutes as the clock-in rows below, so both read alike.
+        let yourMinutes = summaries.first(where: \.isYou)?.totalMinutes ?? 0
+        let teamMinutes = summaries.reduce(0) { $0 + $1.totalMinutes }
         return BudgetHoursPanel(
             progress: model.shownBudget,
             loading: model.budgetLoading,
-            yourHours: HoursFormat.fromMilliseconds(yourSeconds * 1000),
+            yourHours: DurationFormat.hoursMinutes(minutes: yourMinutes),
             secondaryLabel: session.isManager ? "Team total" : "Entries shown",
-            secondaryValue: HoursFormat.fromMilliseconds(teamSeconds * 1000)
+            secondaryValue: DurationFormat.hoursMinutes(minutes: teamMinutes)
         )
         .padding(.vertical, 6)
     }

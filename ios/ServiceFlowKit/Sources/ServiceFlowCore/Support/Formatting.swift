@@ -22,11 +22,6 @@ public enum HoursFormat {
         return String(format: "%.1fh", hours)
     }
 
-    /// Milliseconds as hours with one decimal: `3.5h`.
-    public static func fromMilliseconds(_ ms: Double) -> String {
-        String(format: "%.1fh", max(0, ms) / 3_600_000)
-    }
-
     /// Shortest decimal representation, as JavaScript prints numbers.
     static func shortest(_ value: Double) -> String {
         if value == value.rounded() { return String(Int64(value)) }
