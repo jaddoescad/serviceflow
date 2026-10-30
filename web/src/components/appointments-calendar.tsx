@@ -30,6 +30,7 @@ import {
 } from "./calendar-month-grid";
 import { ProjectModal } from "./project-profile-panel";
 import { AddressInput } from "./address-input";
+import { SuggestTimes } from "./suggest-times";
 import { Button, Field, Input, Select, StatusText, Textarea, cn, type TagTone } from "./ui";
 
 export type AppointmentsView = "month" | "3day";
@@ -371,11 +372,14 @@ function DaysView({
 
 function AppointmentDialog({
   draft: initial,
+  today,
   team,
   confirmationKinds,
   onClose,
 }: {
   draft: Draft;
+  /** Today in Ottawa, YYYY-MM-DD. */
+  today: string;
   team: TeamMember[];
   /** Types an enabled confirmation is set up for. */
   confirmationKinds: AppointmentKind[];
@@ -399,6 +403,11 @@ function AppointmentDialog({
       draft.minutes !== initial.minutes ||
       draft.kind !== initial.kind);
   const canConfirm = confirmable && confirmationKinds.includes(draft.kind);
+  const [startHour, startMinute] = draft.start.split(":").map(Number);
+  const chosen =
+    draft.date && draft.assignedTo && Number.isFinite(startHour)
+      ? { start: instant(draft.date, startHour * 60 + startMinute).toISOString(), userId: draft.assignedTo }
+      : null;
 
   useEffect(() => {
     if (draft.projectId || !query.trim()) {
@@ -549,6 +558,26 @@ function AppointmentDialog({
               ))}
             </datalist>
           </Field>
+          <Field label="Location">
+            <AddressInput maxLength={500} value={draft.location} onChange={(location) => patch({ location })} />
+          </Field>
+          {draft.status === "completed" ? null : (
+            <SuggestTimes
+              search={{
+                address: draft.location,
+                minutes: draft.minutes,
+                userId: draft.assignedTo || null,
+                appointmentId: isNew ? null : draft.id,
+              }}
+              today={today}
+              startOpen={isNew}
+              chosen={chosen}
+              onPick={(time) => {
+                const starts = wall(time.start);
+                patch({ date: starts.day, start: inputTime(starts.minutes), assignedTo: time.userId });
+              }}
+            />
+          )}
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7.5rem_7.5rem]">
             <Field label="Date">
               <Input required type="date" value={draft.date} onChange={(event) => patch({ date: event.target.value })} />
@@ -566,9 +595,6 @@ function AppointmentDialog({
               </Select>
             </Field>
           </div>
-          <Field label="Location">
-            <AddressInput maxLength={500} value={draft.location} onChange={(location) => patch({ location })} />
-          </Field>
           <Field label="Notes">
             <Textarea rows={3} maxLength={4000} value={draft.notes} onChange={(event) => patch({ notes: event.target.value })} />
           </Field>
@@ -756,6 +782,7 @@ export function AppointmentsCalendar({
         <AppointmentDialog
           key={draft.id}
           draft={draft}
+          today={today}
           team={team}
           confirmationKinds={confirmationKinds}
           onClose={() => {

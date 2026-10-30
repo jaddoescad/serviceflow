@@ -6,11 +6,11 @@ const FUNCTIONS_URL =
 
 /**
  * Calls a Supabase edge function with the signed-in admin/manager's JWT. The
- * function (admin-time-entries / project-assignments / quo) re-verifies the
+ * function (admin-time-entries / project-assignments / quo / booking) re-verifies the
  * caller's role server-side before doing anything.
  */
 export async function callEdge<T = unknown>(
-  fn: "admin-time-entries" | "project-assignments" | "quo",
+  fn: "admin-time-entries" | "project-assignments" | "quo" | "booking",
   body: Record<string, unknown>,
 ): Promise<T> {
   const token = await getSessionToken();

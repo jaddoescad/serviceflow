@@ -15,6 +15,7 @@ const SETTINGS_SECTIONS = [
   { id: "reviews", label: "Reviews & aftercare" },
   { id: "payments", label: "Online payments" },
   { id: "lead-intake", label: "Lead intake" },
+  { id: "availability", label: "Availability" },
   { id: "integrations", label: "Integrations" },
   { id: "calendar", label: "Google Calendar" },
   { id: "account", label: "Your account" },
