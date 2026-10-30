@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { Card, Field, Input, Button } from "@/components/ui";
+import { Field, Input, Button } from "@/components/ui";
 import { fmtMoney } from "@/lib/format";
 import { LABOUR_MIN_PERCENT, type ProjectRollup } from "@/lib/metrics";
 export function AmountDialog({
@@ -60,22 +60,25 @@ export function AmountDialog({
   }, [onClose, pending]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5">
-        <div
-          ref={dialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="job-amount-dialog-title"
-          aria-describedby="job-amount-dialog-description"
-          tabIndex={-1}
-          onClick={(e) => e.stopPropagation()}
-          className="outline-none"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="job-amount-dialog-title"
+        aria-describedby="job-amount-dialog-description"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)] outline-none"
+      >
+        <h3
+          id="job-amount-dialog-title"
+          className="truncate border-b border-[var(--color-border)] px-5 py-3.5 text-[15px] font-semibold text-[var(--color-heading)]"
         >
-          <h3 id="job-amount-dialog-title" className="text-sm font-semibold">
-            Job amount · {project.name}
-          </h3>
-          <p id="job-amount-dialog-description" className="mb-4 text-xs text-[var(--color-muted)]">
+          Job amount · {project.name}
+        </h3>
+        <div className="p-5">
+          <p id="job-amount-dialog-description" className="mb-4 text-[13px] text-[var(--color-muted)]">
             Enter the job amount before HST. The dashboard uses exactly what you enter.
           </p>
           <Field label="Job amount before HST (CAD)">
@@ -88,44 +91,43 @@ export function AmountDialog({
               placeholder="e.g. 5,650.00"
             />
           </Field>
-
-          <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-4">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-[var(--color-muted)]">Entered job amount</span>
-              <span className="font-semibold tabular-nums">{fmtMoney(numericAmount)}</span>
+          <dl className="mt-4 rounded-[var(--radius)] bg-[var(--color-surface-2)] px-3 py-2.5 text-[13px]">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[var(--color-muted)]">Entered job amount</dt>
+              <dd className="font-semibold tabular-nums text-[var(--color-heading)]">{fmtMoney(numericAmount)}</dd>
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-sm">
-              <span className="text-[var(--color-muted)]">
+            <div className="mt-1.5 flex items-center justify-between gap-3">
+              <dt className="text-[var(--color-muted)]">
                 {Math.min(LABOUR_MIN_PERCENT, crewHoursPercent)}–{crewHoursPercent}% labour allowance
-              </span>
-              <span className="font-semibold tabular-nums">
+              </dt>
+              <dd className="font-semibold tabular-nums text-[var(--color-heading)]">
                 {allowanceLow != null && allowanceHigh != null
                   ? `${fmtMoney(allowanceLow)}–${fmtMoney(allowanceHigh)}`
                   : "—"}
-              </span>
+              </dd>
             </div>
-            <p className="mt-3 text-[11px] leading-4 text-[var(--color-muted)]">
-              If a change order changes the total, update this amount once and the labour figures recalculate immediately.
-            </p>
-          </div>
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose} disabled={pending}>
-              Cancel
-            </Button>
-            <Button
-              disabled={pending}
-              onClick={() =>
-                onSave({
-                  projectId: project.projectId,
-                  amountBeforeTax: amount.trim() === "" ? null : Number(amount),
-                })
-              }
-            >
-              {pending ? "Saving…" : "Save amount"}
-            </Button>
-          </div>
+          </dl>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            If a change order changes the total, update this amount once and the labour figures recalculate immediately.
+          </p>
         </div>
-      </Card>
+        <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button
+            disabled={pending}
+            onClick={() =>
+              onSave({
+                projectId: project.projectId,
+                amountBeforeTax: amount.trim() === "" ? null : Number(amount),
+              })
+            }
+          >
+            {pending ? "Saving…" : "Save amount"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -134,7 +134,6 @@ export function LabourBudgetSettingsForm({
             <SaveStatus
               error={error || (!valid ? "Rate must be $1–$500 and percentages 1–100." : "")}
               message={message}
-              hint="Applies to jobs created after you save."
             />
             <Button className="ml-auto" onClick={save} disabled={pending || !valid || !changed}>
               {pending ? "Saving…" : "Save"}

@@ -11,7 +11,9 @@ import {
   DeleteLabelDialog,
   LabelColorPicker,
 } from "./label-editor";
-import { Button } from "./ui";
+import { PageHeader } from "./kpi";
+import { DataTable, TablePanel, TableToolbar, Td, Th, Tr } from "./table-ui";
+import { Button, EmptyState, Input } from "./ui";
 
 type Sort = "name" | "project_count" | "updated_at";
 
@@ -66,8 +68,8 @@ function LabelRow({
     });
   }
   return (
-    <tr className={`border-b border-slate-200 ${draft ? "bg-slate-50" : ""}`}>
-      <td className="relative w-20 px-4 py-5">
+    <Tr className={draft ? "bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-2)]" : undefined}>
+      <Td className="relative">
         <button
           disabled={!canManage || pending}
           aria-label={
@@ -84,7 +86,7 @@ function LabelRow({
                   : Math.max(8, bounds.top - 225),
             });
           }}
-          className="h-8 w-8 rounded-lg"
+          className="block h-5 w-5 rounded-[5px] outline-none focus-visible:shadow-[var(--focus-ring)] disabled:cursor-default"
           style={{ backgroundColor: color }}
         />
         <div
@@ -92,7 +94,7 @@ function LabelRow({
           ref={colorPopover}
           popover="auto"
           style={colorPosition}
-          className="fixed m-0 w-72 rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-lg"
+          className="fixed m-0 w-72 rounded-[var(--radius)] border-0 bg-[var(--color-surface)] p-3 font-normal text-[var(--color-text)] shadow-[var(--shadow-pop)]"
         >
           <LabelColorPicker
             value={color}
@@ -104,15 +106,17 @@ function LabelRow({
               } else save({ name: label.name, color });
             }}
           />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => colorPopover.current?.hidePopover()}
-            className="mt-4 text-sm text-slate-500"
+            className="mt-3"
           >
             Close
-          </button>
+          </Button>
         </div>
-      </td>
-      <td className="px-4 py-5">
+      </Td>
+      <Td>
         {canManage ? (
           <input
             aria-label={draft ? "New label name" : `Name for ${label.name}`}
@@ -139,31 +143,31 @@ function LabelRow({
                 event.currentTarget.value = label.name;
               }
             }}
-            className="w-full rounded border border-transparent bg-transparent px-1 py-1 font-semibold hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+            className="h-7 w-full rounded-[var(--radius-control)] border border-transparent bg-transparent px-1.5 font-semibold text-[var(--color-heading)] outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:shadow-[var(--focus-ring)]"
           />
         ) : (
-          <span className="font-semibold">{label.name}</span>
+          <span className="font-semibold text-[var(--color-heading)]">{label.name}</span>
         )}
         {error ? (
-          <p role="alert" className="mt-1 text-xs text-red-700">
+          <p role="alert" className="mt-1 text-xs text-[var(--color-bad)]">
             {error}
           </p>
         ) : null}
-      </td>
-      <td className="px-4 py-5">
+      </Td>
+      <Td>
         {draft ? null : label.project_count ? (
           <Link
             href={`/projects?label=${label.id}`}
-            className="font-semibold text-slate-600 hover:text-blue-600"
+            className="text-[var(--color-text)] hover:underline"
           >
             {label.project_count}{" "}
             {label.project_count === 1 ? "Project" : "Projects"}
           </Link>
         ) : (
-          <span className="text-slate-500">None</span>
+          <span className="text-[var(--color-faint)]">None</span>
         )}
-      </td>
-      <td className="whitespace-nowrap px-4 py-5 text-slate-500">
+      </Td>
+      <Td muted className="whitespace-nowrap">
         {draft
           ? null
           : label.updated_at
@@ -175,13 +179,13 @@ function LabelRow({
                 minute: "2-digit",
               })
             : "—"}
-      </td>
-      <td className="w-16 px-4 py-5">
+      </Td>
+      <Td className="text-right">
         {canManage && !draft ? (
           <LabelMenu label={label} onEdit={onEdit} onDelete={onDelete} />
         ) : null}
-      </td>
-    </tr>
+      </Td>
+    </Tr>
   );
 }
 
@@ -218,44 +222,39 @@ export function ProjectLabels({
     }
   }
   return (
-    <section className="workspace-page">
-      <header className="flex flex-wrap items-center gap-6">
-        <h1 className="text-4xl font-extrabold tracking-tight">Labels</h1>
-        <input
-          type="search"
-          aria-label="Find a Label"
-          placeholder="Find a Label…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="h-10 w-52 rounded-lg border border-slate-300 px-3 text-sm"
-        />
-        {canManage ? (
-          <div className="ml-auto">
-            {!creating ? (
-              <Button
-                onClick={() => {
-                  setSearch("");
-                  setCreating(true);
-                }}
-              >
-                ＋ Create Label
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </header>
-      <div className="relative mt-10 overflow-x-auto">
-        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
-          <colgroup>
-            <col className="w-20" />
-            <col />
-            <col />
-            <col />
-            <col className="w-16" />
-          </colgroup>
-          <thead className="border-b-2 border-slate-200 text-slate-600">
+    <div className="page-fill">
+      <PageHeader
+        title="Labels"
+        subtitle={labels.length}
+        actions={
+          canManage && !creating ? (
+            <Button
+              onClick={() => {
+                setSearch("");
+                setCreating(true);
+              }}
+            >
+              + Create Label
+            </Button>
+          ) : null
+        }
+      />
+      <TableToolbar>
+        <div className="w-full sm:w-64">
+          <Input
+            type="search"
+            aria-label="Find a Label"
+            placeholder="Find a Label…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+      </TableToolbar>
+      <TablePanel fill>
+        <DataTable minWidth={640}>
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-semibold">Color</th>
+              <Th className="w-14">Color</Th>
               {(
                 [
                   ["name", "Name"],
@@ -263,28 +262,30 @@ export function ProjectLabels({
                   ["updated_at", "Last Updated"],
                 ] as const
               ).map(([value, title]) => (
-                <th
+                <Th
                   key={value}
-                  aria-sort={
+                  sort={
                     sort === value
                       ? descending
                         ? "descending"
                         : "ascending"
                       : "none"
                   }
-                  className="px-4 py-3 font-semibold"
                 >
-                  <button onClick={() => changeSort(value)}>
+                  <button
+                    onClick={() => changeSort(value)}
+                    className="inline-flex items-center gap-1 hover:text-[var(--color-heading)]"
+                  >
                     {title}
-                    <span aria-hidden="true" className="ml-2">
+                    <span aria-hidden="true" className="text-[var(--color-faint)]">
                       {sort === value ? (descending ? "↓" : "↑") : "↕"}
                     </span>
                   </button>
-                </th>
+                </Th>
               ))}
-              <th>
+              <Th className="w-12">
                 <span className="sr-only">Actions</span>
-              </th>
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -308,13 +309,11 @@ export function ProjectLabels({
               />
             ))}
           </tbody>
-        </table>
+        </DataTable>
         {!visible.length && !creating ? (
-          <p className="py-16 text-center text-sm text-slate-500">
-            {search ? "No matching labels" : "No labels yet"}
-          </p>
+          <EmptyState>{search ? "No matching labels" : "No labels yet"}</EmptyState>
         ) : null}
-      </div>
+      </TablePanel>
       {editing ? (
         <LabelEditor
           label={editing}
@@ -335,6 +334,6 @@ export function ProjectLabels({
           }}
         />
       ) : null}
-    </section>
+    </div>
   );
 }

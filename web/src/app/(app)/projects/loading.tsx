@@ -1,5 +1,5 @@
-import { JobsListSkeleton } from "@/components/skeletons";
+import { ListPageSkeleton } from "@/components/page-skeleton";
 
 export default function Loading() {
-  return <JobsListSkeleton />;
+  return <ListPageSkeleton label="Loading projects" />;
 }

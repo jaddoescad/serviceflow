@@ -24,9 +24,9 @@ function budgetTone(used: number, budget: number): Tone {
 
 function HoursBar({ label, hours, scale, fill }: { label: string; hours: number; scale: number; fill: string }) {
   return (
-    <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3 text-sm">
+    <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3 text-[13px]">
       <span className="text-[var(--color-muted)]">{label}</span>
-      <div className="h-3 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--tag-gray-bg)]">
         <div className={cn("h-full rounded-full", fill)} style={{ width: `${scale > 0 ? (hours / scale) * 100 : 0}%` }} />
       </div>
       <span className="min-w-16 text-right font-semibold tabular-nums">{fmtHours(hours)}</span>
@@ -61,12 +61,12 @@ export function ProjectOverviewPanel({
     rate ? (member.wageCost + member.unpricedHours * DEFAULT_PAY_RATE) / rate : member.hours;
 
   return (
-    <div className="space-y-4">
-      <Card className="p-5">
+    <div className="max-w-3xl space-y-4">
+      <Card className="p-4">
         {budget == null || tone == null ? (
           <>
-            <p className="text-lg font-semibold text-[var(--color-heading)]">No labour budget</p>
-            <p className="mt-1 text-sm text-[var(--color-muted)]">
+            <p className="text-sm font-semibold text-[var(--color-heading)]">No labour budget</p>
+            <p className="mt-1 text-[13px] text-[var(--color-muted)]">
               {amount == null
                 ? "This job has no job amount, so no budget hours can be worked out."
                 : "Budget hours have not been set for this job."}{" "}
@@ -75,18 +75,18 @@ export function ProjectOverviewPanel({
           </>
         ) : (
           <>
-            <p className={cn("text-sm font-semibold", toneText[tone])}>
+            <p className={cn("text-[13px] font-semibold", toneText[tone])}>
               {tone === "bad" ? "Over budget" : tone === "warn" ? "Almost at budget" : "Under budget"}
             </p>
-            <p className="mt-1 font-display text-3xl font-semibold text-[var(--color-heading)]">
+            <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-heading)]">
               {used > budget ? `${fmtHours(used - budget)} over` : `${fmtHours(budget - used)} left`}
             </p>
-            <div className="mt-5 space-y-2">
+            <div className="mt-4 space-y-2">
               <HoursBar label="Budget" hours={budget} scale={Math.max(used, budget)} fill="bg-[var(--color-muted)]" />
               <HoursBar label="Used" hours={used} scale={Math.max(used, budget)} fill={toneFill[tone]} />
             </div>
             {budgetDollars != null && rate != null ? (
-              <p className="mt-4 border-t border-[var(--color-border)] pt-4 text-sm text-[var(--color-muted)]">
+              <p className="mt-4 border-t border-[var(--color-border)] pt-3 text-xs leading-5 text-[var(--color-muted)]">
                 {budgetShare != null && amount != null
                   ? `${budgetShare}% of the ${fmtMoney(amount)} job (before HST) = `
                   : ""}
@@ -104,8 +104,8 @@ export function ProjectOverviewPanel({
           <CardHeader title="Hours by painter" />
           <ul className="divide-y divide-[var(--color-border)]">
             {crew.map((member) => (
-              <li key={member.crewId} className="px-5 py-3">
-                <div className="flex items-baseline justify-between gap-4 text-sm">
+              <li key={member.crewId} className="px-4 py-2.5">
+                <div className="flex items-baseline justify-between gap-4 text-[13px]">
                   <span className="font-medium text-[var(--color-heading)]">{member.name}</span>
                   <span className="tabular-nums">
                     <span className="font-semibold">{fmtHours(member.hours)}</span>
@@ -117,7 +117,7 @@ export function ProjectOverviewPanel({
                   </span>
                 </div>
                 {budget != null ? (
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--tag-gray-bg)]">
                     <div
                       className="h-full bg-[var(--color-brand)]"
                       style={{ width: `${Math.min(100, (budgetHoursOf(member) / budget) * 100)}%` }}
@@ -135,10 +135,10 @@ export function ProjectOverviewPanel({
           <CardHeader title="Time log" />
           <ul className="divide-y divide-[var(--color-border)]">
             {entries.map((entry) => (
-              <li key={entry.id} className="flex items-center justify-between gap-4 px-5 py-3 text-sm">
+              <li key={entry.id} className="flex items-center justify-between gap-4 px-4 py-2.5 text-[13px]">
                 <div className="min-w-0">
                   <p className="font-medium text-[var(--color-heading)]">{entry.userName}</p>
-                  <p className="mt-0.5 text-xs text-[var(--color-muted)]">
+                  <p className="text-xs text-[var(--color-muted)]">
                     {fmtDate(entry.startedAt)} · {fmtTime(entry.startedAt)} –{" "}
                     {entry.endedAt ? fmtTime(entry.endedAt) : "Clocked in"}
                   </p>

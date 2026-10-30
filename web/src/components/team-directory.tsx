@@ -1,11 +1,12 @@
 "use client";
 import { useId, useMemo, useRef, useState, useTransition } from "react";
 import { initials } from "@/lib/format";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { setActive, setPayRate, setRole } from "@/lib/actions/employees";
 import dynamic from "next/dynamic";
-import { Button } from "./ui";
+import { PageHeader } from "./kpi";
+import { DataTable, RowLink, TablePanel, TableToolbar, Td, Th, Tr } from "./table-ui";
+import { Avatar, Button, EmptyState, Input, Select, StatusText } from "./ui";
 const CreateTeamMember = dynamic(() =>
   import("./create-team-member").then((module) => module.CreateTeamMember),
 );
@@ -42,7 +43,7 @@ function MemberRole({
         aria-label={`Role for ${member.full_name || member.email}`}
         value={member.role}
         disabled={disabled || pending}
-        className="rounded border border-transparent bg-transparent py-1 pr-4 capitalize hover:border-slate-300 disabled:appearance-none"
+        className="h-7 rounded-[var(--radius-control)] border border-transparent bg-transparent pl-1 pr-5 text-[13px] capitalize text-[var(--color-text)] outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:shadow-[var(--focus-ring)] disabled:appearance-none disabled:hover:border-transparent"
         onChange={(event) => {
           const role = event.target.value as Role;
           setError("");
@@ -62,7 +63,7 @@ function MemberRole({
         <option value="painter">Painter</option>
       </select>
       {error ? (
-        <p role="alert" className="mt-1 max-w-xs text-xs text-red-700">
+        <p role="alert" className="mt-1 max-w-xs text-xs text-[var(--color-bad)]">
           {error}
         </p>
       ) : null}
@@ -91,7 +92,7 @@ function MemberRate({ member }: { member: TeamMember }) {
             setError("");
             setEditing(true);
           }}
-          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          className="rounded-md p-1 text-[var(--color-faint)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)]"
         >
           <svg
             aria-hidden="true"
@@ -133,42 +134,40 @@ function MemberRate({ member }: { member: TeamMember }) {
       }}
     >
       <div className="flex items-center gap-1">
-        <span className="text-slate-500">$</span>
-        <input
-          autoFocus
-          type="number"
-          min="0.01"
-          step="0.01"
-          required
-          aria-label={`Hourly rate for ${name}`}
-          value={value}
-          disabled={pending}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setEditing(false);
-          }}
-          className="h-8 w-16 rounded border border-slate-300 px-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-        />
+        <span className="text-[var(--color-muted)]">$</span>
+        <div className="w-20">
+          <Input
+            autoFocus
+            type="number"
+            min="0.01"
+            step="0.01"
+            required
+            aria-label={`Hourly rate for ${name}`}
+            value={value}
+            disabled={pending}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setEditing(false);
+            }}
+          />
+        </div>
       </div>
-      <div className="mt-1 flex gap-2 text-xs">
-        <button
-          type="submit"
-          disabled={pending}
-          className="font-medium text-blue-600 hover:underline disabled:opacity-50"
-        >
+      <div className="mt-1 flex gap-1">
+        <Button type="submit" size="sm" disabled={pending}>
           Save
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           disabled={pending}
           onClick={() => setEditing(false)}
-          className="text-slate-500 hover:underline"
         >
           Cancel
-        </button>
+        </Button>
       </div>
       {error ? (
-        <p role="alert" className="mt-1 text-xs text-red-700">
+        <p role="alert" className="mt-1 text-xs text-[var(--color-bad)]">
           {error}
         </p>
       ) : null}
@@ -211,7 +210,7 @@ function MemberMenu({
                 : Math.max(8, bounds.top - 100),
           });
         }}
-        className="h-9 w-9 rounded text-xl hover:bg-slate-100 disabled:opacity-50"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-base text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] disabled:opacity-50"
       >
         ···
       </button>
@@ -220,7 +219,7 @@ function MemberMenu({
         ref={menu}
         popover="auto"
         style={position}
-        className="fixed m-0 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm shadow-lg"
+        className="fixed m-0 w-48 rounded-[var(--radius)] border-0 bg-[var(--color-surface)] p-1 text-[13px] shadow-[var(--shadow-pop)]"
       >
         <button
           type="button"
@@ -228,14 +227,14 @@ function MemberMenu({
             menu.current?.hidePopover();
             onEdit();
           }}
-          className="w-full rounded px-3 py-2 text-left text-slate-800 hover:bg-slate-100"
+          className="flex h-8 w-full items-center rounded-md px-2 text-left text-[var(--color-text)] hover:bg-[var(--color-hover)]"
         >
           Edit User
         </button>
         <button
           type="button"
           disabled={pending || isSelf}
-          className={`w-full rounded px-3 py-2 text-left hover:bg-slate-100 ${member.is_active ? "text-red-700" : "text-slate-800"}`}
+          className={`flex h-8 w-full items-center rounded-md px-2 text-left hover:bg-[var(--color-hover)] disabled:opacity-50 ${member.is_active ? "text-[var(--color-bad)]" : "text-[var(--color-text)]"}`}
           onClick={() => {
             menu.current?.hidePopover();
             setError("");
@@ -254,7 +253,7 @@ function MemberMenu({
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mt-1 max-w-xs text-xs text-red-700">
+        <p role="alert" className="mt-1 max-w-xs text-xs text-[var(--color-bad)]">
           {error}
         </p>
       ) : null}
@@ -297,95 +296,79 @@ export function TeamDirectory({
     [members, search, status],
   );
   return (
-    <section className="workspace-page">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-4xl font-extrabold tracking-tight">Team</h1>
-        {canManage ? (
-          <Button onClick={() => setCreating(true)}>＋ Add User</Button>
-        ) : null}
-      </div>
-      <div className="mt-7 flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          aria-label="Find a team member"
-          placeholder="Find a team member…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-80"
-        />
-        <select
+    <div className="page-fill">
+      <PageHeader
+        title="Team"
+        subtitle={visible.length}
+        actions={canManage ? <Button onClick={() => setCreating(true)}>+ Add User</Button> : null}
+      />
+      <TableToolbar>
+        <div className="w-full sm:w-64">
+          <Input
+            type="search"
+            aria-label="Find a team member"
+            placeholder="Find a team member…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+        <Select
           aria-label="Team status"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
         >
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="all">All users</option>
-        </select>
-
-      </div>
-      <div className="relative mt-6 overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full min-w-[680px] table-fixed text-left text-sm">
-          <colgroup>
-            <col className="w-[32%]" />
-            <col className="w-[16%]" />
-            <col />
-            {showRates ? <col className="w-36" /> : null}
-            <col className="w-32" />
-            {canManage ? <col className="w-14" /> : null}
-          </colgroup>
-          <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+        </Select>
+      </TableToolbar>
+      <TablePanel fill>
+        <DataTable minWidth={680}>
+          <thead>
             <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Role</th>
-              <th className="px-4 py-3 font-medium">Contact</th>
-              {showRates ? (
-                <th className="px-4 py-3 font-medium">Hourly rate</th>
-              ) : null}
-              <th className="px-4 py-3 font-medium">Status</th>
+              <Th>Name</Th>
+              <Th>Role</Th>
+              <Th>Contact</Th>
+              {showRates ? <Th>Hourly rate</Th> : null}
+              <Th>Status</Th>
               {canManage ? (
-                <th>
+                <Th className="w-12">
                   <span className="sr-only">Manage user</span>
-                </th>
+                </Th>
               ) : null}
             </tr>
           </thead>
           <tbody>
             {visible.map((member) => (
-              <tr
-                key={member.id}
-                className={`border-b border-slate-100 last:border-0 hover:bg-slate-50/70 ${member.is_active ? "" : "text-slate-500"}`}
-              >
-                <td className="px-4 py-5">
-                  <Link
-                    href={`/employees/${member.id}`}
-                    className="flex items-center gap-4 rounded-sm hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-600">
-                      {initials(member.full_name ?? member.email ?? "?")}
-                    </span>
-                    <span className="min-w-0 break-words font-semibold">
-                      {member.full_name || member.email}
-                      {member.job_title ? (
-                        <span className="mt-1 block text-xs font-normal text-slate-500">
-                          {member.job_title}
+              <Tr key={member.id}>
+                <Td>
+                  <div className="flex items-center gap-2.5">
+                    <Avatar label={initials(member.full_name ?? member.email ?? "?")} />
+                    <div className="min-w-0">
+                      <RowLink href={`/employees/${member.id}`}>
+                        <span className={member.is_active ? undefined : "text-[var(--color-muted)]"}>
+                          {member.full_name || member.email}
                         </span>
+                      </RowLink>
+                      {member.job_title ? (
+                        <div className="text-xs font-normal text-[var(--color-muted)]">
+                          {member.job_title}
+                        </div>
                       ) : null}
-                    </span>
-                  </Link>
-                </td>
-                <td className="px-4 py-5 capitalize">
+                    </div>
+                  </div>
+                </Td>
+                <Td>
                   <MemberRole
                     member={member}
                     disabled={!canManage || member.id === actorId}
                   />
-                </td>
-                <td className="break-words px-4 py-5 text-sm text-slate-500">
+                </Td>
+                <Td muted className="break-words">
                   {member.email ? (
                     <a
                       href={`mailto:${member.email}`}
-                      className="hover:text-blue-600"
+                      className="hover:text-[var(--color-heading)] hover:underline"
                     >
                       {member.email}
                     </a>
@@ -395,54 +378,43 @@ export function TeamDirectory({
                   {member.phone ? (
                     <a
                       href={`tel:${member.phone}`}
-                      className="mt-1 block hover:text-blue-600"
+                      className="block hover:text-[var(--color-heading)] hover:underline"
                     >
                       {member.phone}
                     </a>
                   ) : null}
-                </td>
+                </Td>
                 {showRates ? (
-                  <td className="px-4 py-5 tabular-nums">
+                  <Td className="whitespace-nowrap tabular-nums">
                     <MemberRate member={member} />
-                  </td>
+                  </Td>
                 ) : null}
-                <td className="px-4 py-5 text-xs">
-                  {member.is_active ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
-                      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                      Active
-                    </span>
-                  ) : (
-                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-500">
-                      Deactivated
-                    </span>
-                  )}
-                </td>
+                <Td>
+                  <StatusText tone={member.is_active ? "good" : "neutral"}>
+                    {member.is_active ? "Active" : "Deactivated"}
+                  </StatusText>
+                </Td>
                 {canManage ? (
-                  <td className="px-2 py-5">
+                  <Td className="text-right">
                     <MemberMenu
                       member={member}
                       isSelf={member.id === actorId}
                       onEdit={() => setEditing(member)}
                     />
-                  </td>
+                  </Td>
                 ) : null}
-              </tr>
+              </Tr>
             ))}
           </tbody>
-        </table>
-      </div>
-      {!visible.length ? (
-        <p className="py-16 text-center text-sm text-slate-500">
-          No team members match.
-        </p>
-      ) : null}
+        </DataTable>
+        {visible.length ? null : <EmptyState>No team members match.</EmptyState>}
+      </TablePanel>
       {editing ? (
         <EditTeamMember member={editing} onClose={() => setEditing(null)} />
       ) : null}
       {creating ? (
         <CreateTeamMember onClose={() => setCreating(false)} />
       ) : null}
-    </section>
+    </div>
   );
 }

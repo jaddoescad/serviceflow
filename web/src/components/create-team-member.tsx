@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createEmployee } from "@/lib/actions/employees";
 import type { Role } from "@/lib/types";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { Button, Field, Input, Select } from "./ui";
 
 export function CreateTeamMember({ onClose }: { onClose: () => void }) {
@@ -24,31 +24,32 @@ export function CreateTeamMember({ onClose }: { onClose: () => void }) {
       }}
     >
       {created ? (
-        <div className="space-y-5 p-6">
-          <p className="text-sm">
-            {name} can sign in with {email}.
-          </p>
-          {password ? (
-            <Field label="Temporary password">
-              <Input
-                readOnly
-                value={password}
-                autoComplete="off"
-                onFocus={(event) => event.target.select()}
-              />
-            </Field>
-          ) : null}
-          <p className="text-sm text-slate-500">
-            Share these sign-in details securely. The password is shown only
-            here.
-          </p>
-          <div className="flex justify-end">
-            <Button onClick={onClose}>Done</Button>
+        <>
+          <div className="space-y-4 p-5">
+            <p className="text-[13px] text-[var(--color-text)]">
+              {name} can sign in with {email}.
+            </p>
+            {password ? (
+              <Field label="Temporary password">
+                <Input
+                  readOnly
+                  value={password}
+                  autoComplete="off"
+                  onFocus={(event) => event.target.select()}
+                />
+              </Field>
+            ) : null}
+            <p className="text-[13px] text-[var(--color-muted)]">
+              Share these sign-in details securely. The password is shown only
+              here.
+            </p>
           </div>
-        </div>
+          <ModalFooter>
+            <Button onClick={onClose}>Done</Button>
+          </ModalFooter>
+        </>
       ) : (
         <form
-          className="space-y-5 p-6"
           onSubmit={(event) => {
             event.preventDefault();
             if (pending) return;
@@ -75,48 +76,50 @@ export function CreateTeamMember({ onClose }: { onClose: () => void }) {
             });
           }}
         >
-          <Field label="Full name">
-            <Input
-              autoFocus
-              required
-              maxLength={120}
-              disabled={pending}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoComplete="name"
-            />
-          </Field>
-          <Field label="Email">
-            <Input
-              type="email"
-              required
-              maxLength={254}
-              disabled={pending}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-            />
-          </Field>
-          <Field label="Role">
-            <Select
-              value={role}
-              disabled={pending}
-              onChange={(event) => setRole(event.target.value as Role)}
-            >
-              <option value="painter">Painter</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </Select>
-          </Field>
-          {error ? (
-            <p role="alert" className="text-sm text-red-700">
-              {error}
-            </p>
-          ) : null}
-          <footer className="flex justify-end gap-3 border-t border-slate-200 pt-5">
+          <div className="space-y-4 p-5">
+            <Field label="Full name">
+              <Input
+                autoFocus
+                required
+                maxLength={120}
+                disabled={pending}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                autoComplete="name"
+              />
+            </Field>
+            <Field label="Email">
+              <Input
+                type="email"
+                required
+                maxLength={254}
+                disabled={pending}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+              />
+            </Field>
+            <Field label="Role">
+              <Select
+                value={role}
+                disabled={pending}
+                onChange={(event) => setRole(event.target.value as Role)}
+              >
+                <option value="painter">Painter</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </Select>
+            </Field>
+            {error ? (
+              <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+                {error}
+              </p>
+            ) : null}
+          </div>
+          <ModalFooter>
             <Button
               type="button"
-              variant="subtle"
+              variant="secondary"
               disabled={pending}
               onClick={onClose}
             >
@@ -128,7 +131,7 @@ export function CreateTeamMember({ onClose }: { onClose: () => void }) {
             >
               {pending ? "Creating…" : "Create User"}
             </Button>
-          </footer>
+          </ModalFooter>
         </form>
       )}
     </ProjectModal>

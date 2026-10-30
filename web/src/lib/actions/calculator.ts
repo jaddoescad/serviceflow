@@ -21,6 +21,8 @@ export type LoadCalculatorResult =
 
 // The calculator only reads a quote's id and saved calculator document.
 const QUOTE_FIELDS = "id,calculator_doc";
+// Line-item proposals keep their own totals; the calculator never publishes over them.
+const PROPOSAL_SOURCE = "proposal";
 
 /**
  * Resolves the job or lead and the quote whose calculator to open. The job
@@ -34,6 +36,7 @@ async function context(supabase: Awaited<ReturnType<typeof createClient>>, entit
         .from("quotes")
         .select(QUOTE_FIELDS)
         .eq("lead_id", leadId)
+        .neq("source", PROPOSAL_SOURCE)
         .not("calculator_doc", "is", null)
         .order("updated_at", { ascending: false })
         .limit(1),
@@ -41,6 +44,7 @@ async function context(supabase: Awaited<ReturnType<typeof createClient>>, entit
         .from("quotes")
         .select(QUOTE_FIELDS)
         .eq("lead_id", leadId)
+        .neq("source", PROPOSAL_SOURCE)
         .order("updated_at", { ascending: false })
         .limit(1),
     ]).then(([withDoc, latest]) => {

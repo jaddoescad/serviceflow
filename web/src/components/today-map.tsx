@@ -50,7 +50,7 @@ export function TodayMap({ projects }: { projects: TodayProject[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return <div ref={container} className="mt-4 h-80 overflow-hidden rounded-lg border border-slate-200 lg:h-96" />;
+  return <div ref={container} className="mt-4 h-80 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] lg:h-96" />;
 }
 
 function escapeHtml(value: string) {

@@ -9,7 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Field, Input } from "@/components/ui";
+import { AddressInput } from "@/components/address-input";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import {
   updateProjectContact,
   updateProjectDescription,
@@ -75,7 +76,7 @@ function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -86,18 +87,18 @@ function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-dialog-title"
-        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl ${wide ? "max-w-3xl" : "max-w-xl"}`}
+        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-[var(--radius-lg)] bg-[var(--color-surface)] text-[13px] shadow-[var(--shadow-pop)] outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}
       >
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-5">
-          <div>
+        <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
+          <div className="min-w-0">
             <h2
               id="project-dialog-title"
-              className="font-display text-xl font-semibold text-[var(--color-heading)]"
+              className="text-[15px] font-semibold text-[var(--color-heading)]"
             >
               {title}
             </h2>
             {subtitle ? (
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
+              <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">
                 {subtitle}
               </p>
             ) : null}
@@ -106,9 +107,11 @@ function Modal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-heading)]"
+            className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--color-muted)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)]"
           >
-            ×
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
         </header>
         {children}
@@ -119,10 +122,20 @@ function Modal({
 
 export { Modal as ProjectModal };
 
+/** Dialog footer: hairline above, actions on the right (secondary Cancel,
+ * then the primary action). Put it last inside the Modal or its form. */
+export function ModalFooter({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+      {children}
+    </div>
+  );
+}
+
 function PanelHeader({ title, action }: { title: string; action: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
-      <h2 className="font-display text-base font-semibold text-[var(--color-heading)]">
+    <div className="flex h-10 items-center justify-between gap-3">
+      <h2 className="text-[13px] font-semibold text-[var(--color-heading)]">
         {title}
       </h2>
       {action}
@@ -139,7 +152,6 @@ function EditButton({
 }) {
   return (
     <Button type="button" variant="ghost" size="sm" onClick={onClick}>
-      <span aria-hidden="true">✎</span>
       {label}
     </Button>
   );
@@ -149,7 +161,7 @@ function ActionError({ message }: { message: string | null }) {
   return message ? (
     <p
       role="alert"
-      className="rounded-lg bg-[var(--color-bad-soft)] px-3 py-2 text-sm text-[var(--color-bad)]"
+      className="rounded-[var(--radius-control)] bg-[var(--color-bad-soft)] px-3 py-2 text-[13px] text-[var(--color-bad)]"
     >
       {message}
     </p>
@@ -211,59 +223,56 @@ function ContactEditor({
       }}
       wide
     >
-      <form onSubmit={submit} className="space-y-5 p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Contact name">
-            <Input
-              value={name}
+      <form onSubmit={submit}>
+        <div className="space-y-4 p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Contact name">
+              <Input
+                value={name}
+                disabled={pending}
+                onChange={(event) => setName(event.target.value)}
+                required
+                autoFocus
+              />
+            </Field>
+            <Field label="Phone">
+              <Input
+                value={phone}
+                disabled={pending}
+                onChange={(event) => setPhone(event.target.value)}
+                type="tel"
+                autoComplete="tel"
+              />
+            </Field>
+            <Field label="Email">
+              <Input
+                value={email}
+                disabled={pending}
+                onChange={(event) => setEmail(event.target.value)}
+                type="email"
+                autoComplete="email"
+              />
+            </Field>
+            <Field label="Project / customer address">
+              <AddressInput value={address} disabled={pending} onChange={setAddress} />
+            </Field>
+          </div>
+          <Field label="Customer notes">
+            <Textarea
+              value={customerNotes}
               disabled={pending}
-              onChange={(event) => setName(event.target.value)}
-              required
-              autoFocus
+              onChange={(event) => setCustomerNotes(event.target.value)}
+              rows={5}
+              placeholder="Add access details, preferences, or anything the team should know…"
+              className="resize-y"
             />
           </Field>
-          <Field label="Phone">
-            <Input
-              value={phone}
-              disabled={pending}
-              onChange={(event) => setPhone(event.target.value)}
-              type="tel"
-              autoComplete="tel"
-            />
-          </Field>
-          <Field label="Email">
-            <Input
-              value={email}
-              disabled={pending}
-              onChange={(event) => setEmail(event.target.value)}
-              type="email"
-              autoComplete="email"
-            />
-          </Field>
-          <Field label="Project / customer address">
-            <Input
-              value={address}
-              disabled={pending}
-              onChange={(event) => setAddress(event.target.value)}
-              autoComplete="street-address"
-            />
-          </Field>
+          <ActionError message={error} />
         </div>
-        <Field label="Customer notes">
-          <textarea
-            value={customerNotes}
-            disabled={pending}
-            onChange={(event) => setCustomerNotes(event.target.value)}
-            rows={5}
-            placeholder="Add access details, preferences, or anything the team should know…"
-            className="w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-sm leading-6 text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)] focus:border-[var(--color-brand)]"
-          />
-        </Field>
-        <ActionError message={error} />
-        <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-5">
+        <ModalFooter>
           <Button
             type="button"
-            variant="subtle"
+            variant="secondary"
             onClick={onClose}
             disabled={pending}
           >
@@ -272,7 +281,7 @@ function ContactEditor({
           <Button type="submit" disabled={pending}>
             {pending ? "Saving…" : "Save contact"}
           </Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -327,23 +336,25 @@ function TextEditor({
       }}
       wide
     >
-      <form onSubmit={submit} className="space-y-5 p-6">
-        <Field label={label}>
-          <textarea
-            value={value}
-            disabled={pending}
-            onChange={(event) => setValue(event.target.value)}
-            rows={12}
-            autoFocus
-            placeholder={placeholder}
-            className="w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-sm leading-6 text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)] focus:border-[var(--color-brand)]"
-          />
-        </Field>
-        <ActionError message={error} />
-        <div className="flex justify-end gap-2 border-t border-[var(--color-border)] pt-5">
+      <form onSubmit={submit}>
+        <div className="space-y-4 p-5">
+          <Field label={label}>
+            <Textarea
+              value={value}
+              disabled={pending}
+              onChange={(event) => setValue(event.target.value)}
+              rows={12}
+              autoFocus
+              placeholder={placeholder}
+              className="resize-y"
+            />
+          </Field>
+          <ActionError message={error} />
+        </div>
+        <ModalFooter>
           <Button
             type="button"
-            variant="subtle"
+            variant="secondary"
             onClick={onClose}
             disabled={pending}
           >
@@ -352,7 +363,7 @@ function TextEditor({
           <Button type="submit" disabled={pending}>
             {pending ? "Saving…" : "Save"}
           </Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -373,18 +384,18 @@ export function ProjectProfilePanel({
 
   return (
     <>
-      <aside className="space-y-4 self-start rounded-md bg-slate-50 p-4 xl:sticky xl:top-6">
-        <Card className="overflow-hidden rounded-md! shadow-none!">
+      <aside className="self-start xl:sticky xl:top-6">
+        <section className="border-b border-[var(--color-border)] pb-3">
           <PanelHeader
-            title="Contact Info"
+            title="Contact"
             action={
               canEdit ? (
                 <EditButton onClick={() => setOpenPanel("contact")} />
               ) : null
             }
           />
-          <div className="space-y-2 px-5 py-5 text-sm leading-6">
-            <div className="font-semibold text-[var(--color-heading)]">
+          <div className="space-y-1 text-[13px] leading-5">
+            <div className="font-medium text-[var(--color-heading)]">
               {contact.name ?? "No contact name"}
             </div>
             {contact.email ? (
@@ -395,7 +406,7 @@ export function ProjectProfilePanel({
                 {contact.email}
               </a>
             ) : (
-              <div className="text-[var(--color-muted)]">No email</div>
+              <div className="text-[var(--color-faint)]">No email</div>
             )}
             {contact.phone ? (
               <a
@@ -405,31 +416,29 @@ export function ProjectProfilePanel({
                 {contact.phone}
               </a>
             ) : (
-              <div className="text-[var(--color-muted)]">No phone</div>
+              <div className="text-[var(--color-faint)]">No phone</div>
             )}
             <div
               className={
                 contact.address
                   ? "text-[var(--color-text)]"
-                  : "text-[var(--color-muted)]"
+                  : "text-[var(--color-faint)]"
               }
             >
               {contact.address ?? "No address"}
             </div>
             {contact.customerNotes ? (
-              <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-                  Customer notes
-                </div>
-                <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[var(--color-text)]">
+              <div className="pt-2">
+                <div className="text-xs text-[var(--color-muted)]">Customer notes</div>
+                <p className="line-clamp-3 whitespace-pre-wrap text-[var(--color-text)]">
                   {contact.customerNotes}
                 </p>
               </div>
             ) : null}
           </div>
-        </Card>
+        </section>
 
-        <Card className="overflow-hidden rounded-md! shadow-none!">
+        <section className="pb-3">
           <PanelHeader
             title="Description"
             action={
@@ -438,14 +447,14 @@ export function ProjectProfilePanel({
               ) : null
             }
           />
-          <div className="whitespace-pre-wrap px-5 py-5 text-sm leading-6 text-[var(--color-text)]">
+          <div className="whitespace-pre-wrap text-[13px] leading-5 text-[var(--color-text)]">
             {description || (
-              <span className="text-[var(--color-muted)]">
+              <span className="text-[var(--color-faint)]">
                 No project description yet.
               </span>
             )}
           </div>
-        </Card>
+        </section>
       </aside>
 
       {openPanel === "contact" ? (
@@ -458,7 +467,6 @@ export function ProjectProfilePanel({
       {openPanel === "description" ? (
         <TextEditor
           title="Edit project description"
-
           label="Description"
           placeholder="Add scope, measurements, colour details, and project instructions…"
           initialValue={description}

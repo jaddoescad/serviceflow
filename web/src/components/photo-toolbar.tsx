@@ -67,7 +67,7 @@ function Popover({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className={`flex h-10 items-center gap-3 rounded-lg border px-4 text-sm font-semibold ${onClear ? "pr-9" : ""} ${open ? "border-slate-700 ring-1 ring-slate-700" : "border-[#d9dbdf]"} ${active ? "border-[#253549] bg-[#253549] text-white" : "bg-white text-[#49515b]"}`}
+        className={`flex h-8 items-center gap-2 rounded-[var(--radius-control)] border px-3 text-[13px] font-medium outline-none transition-colors focus-visible:shadow-[var(--focus-ring)] ${onClear ? "pr-8" : ""} ${active ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-ink)]" : open ? "border-[var(--color-brand)] bg-[var(--color-surface)] text-[var(--color-heading)]" : "border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-heading)] hover:bg-[var(--color-hover)]"}`}
       >
         {label}
         {showChevron && (
@@ -91,7 +91,7 @@ function Popover({
             onClear();
             trigger.current?.focus();
           }}
-          className="absolute right-1 top-1 flex h-8 w-7 items-center justify-center rounded text-white hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded text-[var(--color-primary-ink)] hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
         >
           ×
         </button>
@@ -100,7 +100,7 @@ function Popover({
         <div
           ref={panel}
           style={{ transform: `translateX(${horizontalOffset}px)` }}
-          className={`absolute top-full z-30 mt-2 max-w-[calc(100vw-32px)] rounded-lg border border-slate-100 bg-white shadow-lg ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute top-full z-30 mt-1 max-w-[calc(100vw-32px)] rounded-[var(--radius)] bg-[var(--color-surface)] text-[13px] shadow-[var(--shadow-pop)] ${align === "right" ? "right-0" : "left-0"}`}
         >
           {children}
         </div>
@@ -136,13 +136,13 @@ function ChoiceFilter({
           placeholder="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="mb-3 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-slate-600"
+          className="mb-2 h-8 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] px-2.5 text-[13px] outline-none placeholder:text-[var(--color-faint)] focus:border-[var(--color-brand)] focus:shadow-[var(--focus-ring)]"
         />
         {selected.length ? (
           <button
             type="button"
             onClick={() => onChange([])}
-            className="mb-2 text-xs font-medium text-blue-700"
+            className="mb-2 text-xs font-medium text-[var(--color-brand-strong)]"
           >
             Clear selection
           </button>
@@ -151,7 +151,7 @@ function ChoiceFilter({
           {matches.map(([id, name]) => (
             <label
               key={id}
-              className="flex cursor-pointer items-start gap-2 rounded px-1 py-2 text-sm hover:bg-slate-50"
+              className="flex cursor-pointer items-start gap-2 rounded-md px-1.5 py-1.5 text-[13px] hover:bg-[var(--color-hover)]"
             >
               <input
                 type="checkbox"
@@ -163,13 +163,13 @@ function ChoiceFilter({
                       : selected.filter((value) => value !== id),
                   )
                 }
-                className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-brand)]"
               />
               <span>{name}</span>
             </label>
           ))}
           {!matches.length ? (
-            <p className="py-3 text-sm text-slate-500">No matches</p>
+            <p className="py-3 text-[13px] text-[var(--color-muted)]">No matches</p>
           ) : null}
         </div>
       </div>
@@ -234,7 +234,7 @@ function CalendarRange({
             type="button"
             aria-label="Previous month"
             onClick={() => setMonth(new Date(year, index - 1, 1))}
-            className="h-8 w-8 rounded hover:bg-slate-100"
+            className="h-7 w-7 rounded-md hover:bg-[var(--color-hover)]"
           >
             ‹
           </button>
@@ -248,7 +248,7 @@ function CalendarRange({
             type="button"
             aria-label="Next month"
             onClick={() => setMonth(new Date(year, index + 1, 1))}
-            className="h-8 w-8 rounded hover:bg-slate-100"
+            className="h-7 w-7 rounded-md hover:bg-[var(--color-hover)]"
           >
             ›
           </button>
@@ -273,7 +273,7 @@ function CalendarRange({
                 aria-label={value}
                 aria-pressed={selected}
                 onClick={() => select(value)}
-                className={`h-8 rounded ${selected ? "bg-[#253549] text-white" : inRange ? "bg-blue-50" : value === todayKey ? "font-bold ring-1 ring-inset ring-slate-300" : "hover:bg-slate-100"}`}
+                className={`h-8 rounded-md ${selected ? "bg-[var(--color-primary)] text-[var(--color-primary-ink)]" : inRange ? "bg-[var(--color-brand-soft)]" : value === todayKey ? "font-semibold text-[var(--color-brand-strong)]" : "hover:bg-[var(--color-hover)]"}`}
               >
                 {i + 1}
               </button>
@@ -362,7 +362,7 @@ export function PhotoToolbar({
             tags?.onChange([]);
             onUsers([]);
           }}
-          className="px-2 text-sm text-blue-700"
+          className="h-8 rounded-md px-2 text-[13px] font-medium text-[var(--color-brand-strong)] hover:bg-[var(--color-hover)]"
         >
           Clear filters
         </button>
@@ -371,7 +371,7 @@ export function PhotoToolbar({
         <Popover label="View" align="right">
           <div className="w-72 space-y-4 p-4">
             <fieldset>
-              <legend className="mb-2 text-xs font-semibold text-slate-500">
+              <legend className="mb-2 text-xs font-medium text-[var(--color-muted)]">
                 Type
               </legend>
               <div className="flex flex-wrap gap-2">
@@ -398,7 +398,7 @@ export function PhotoToolbar({
               </div>
             </fieldset>
             <fieldset>
-              <legend className="mb-2 text-xs font-semibold text-slate-500">
+              <legend className="mb-2 text-xs font-medium text-[var(--color-muted)]">
                 Photo Size
               </legend>
               <div className="flex gap-4">
@@ -425,7 +425,7 @@ export function PhotoToolbar({
               </div>
             </fieldset>
             <fieldset>
-              <legend className="mb-2 text-xs font-semibold text-slate-500">
+              <legend className="mb-2 text-xs font-medium text-[var(--color-muted)]">
                 Order
               </legend>
               <div className="flex gap-4">

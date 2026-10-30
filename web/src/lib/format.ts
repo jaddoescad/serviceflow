@@ -23,23 +23,6 @@ export function fmtMoney(value: number | null | undefined): string {
   }).format(value);
 }
 
-export function fmtCurrencyTotals(
-  totals: Partial<Record<"CAD" | "USD", number>>,
-): string {
-  const parts = (["CAD", "USD"] as const)
-    .filter((currency) => Number(totals[currency] ?? 0) !== 0)
-    .map((currency) =>
-      new Intl.NumberFormat("en-CA", {
-        style: "currency",
-        currency,
-        currencyDisplay: "narrowSymbol",
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }).format(Number(totals[currency])),
-    );
-  return parts.length ? parts.join(" + ") : "—";
-}
-
 export function fmtDateTime(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -74,19 +57,6 @@ export function fmtDate(value: string | null): string {
     timeZone: OTTAWA_TZ,
     month: "short",
     day: "numeric",
-    year: "numeric",
-  });
-}
-
-export function fmtMonthYear(value: string | null): string {
-  if (!value) return "—";
-  const d = new Date(
-    /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value,
-  );
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-CA", {
-    timeZone: OTTAWA_TZ,
-    month: "short",
     year: "numeric",
   });
 }
@@ -134,7 +104,9 @@ export function ottawaStartOfDay(now = new Date()): Date {
 }
 
 export function initials(name: string | null | undefined): string {
-  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  // Words only, so "Michael & Erin Doyle" reads MD rather than M&.
+  const parts = String(name || "").trim().split(/\s+/).filter((part) => /^[\p{L}\p{N}]/u.test(part));
   if (!parts.length) return "?";
-  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
+  const picked = parts.length > 2 ? [parts[0]!, parts[parts.length - 1]!] : parts;
+  return picked.map((p) => p[0]!.toUpperCase()).join("");
 }

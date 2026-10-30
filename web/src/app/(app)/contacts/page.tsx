@@ -1,34 +1,37 @@
 import { ContactsTable } from "@/components/contacts-table";
-import { getCustomerContactsPage } from "@/lib/contacts";
+import { requireMember } from "@/lib/auth";
+import { getCustomerList, getCustomerListOptions } from "@/lib/contacts";
+import { CUSTOMER_PAGE_SIZE, parseCustomerListParams } from "@/lib/customer-list";
+import { getProjectLabels } from "@/lib/project-workspace";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ create?: string; q?: string; page?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { create, q, page: pageParam } = await searchParams;
-  const query = (q ?? "").slice(0, 200);
-  const requestedPage = Math.max(
-    1,
-    Math.min(1000000, Number.parseInt(pageParam ?? "1", 10) || 1),
-  );
-  const { rows: contacts, total } = await getCustomerContactsPage(
-    query,
-    requestedPage,
-  );
-  const page = Math.min(requestedPage, Math.max(1, Math.ceil(total / 50)));
+  const raw = await searchParams;
+  const params = parseCustomerListParams(raw);
+  const [profile, { rows, total }, options, labels] = await Promise.all([
+    requireMember(),
+    getCustomerList(params),
+    getCustomerListOptions(),
+    getProjectLabels(),
+  ]);
+  const page = Math.min(params.page, Math.max(1, Math.ceil(total / CUSTOMER_PAGE_SIZE)));
 
   return (
-    <section className="workspace-page">
+    <div className="page-fill">
       <ContactsTable
-        initiallyOpen={create === "1"}
-        contacts={contacts}
+        initiallyOpen={raw.create === "1"}
+        rows={rows}
         total={total}
-        currentPage={page}
-        query={query}
+        params={{ ...params, page }}
+        options={options}
+        labels={labels}
+        canManage={["admin", "manager"].includes(profile.role)}
       />
-    </section>
+    </div>
   );
 }

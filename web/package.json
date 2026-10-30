@@ -6,7 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "next dev -p 3100",
+    "dev": "next dev --turbopack -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
     "lint": "next lint",
@@ -18,7 +18,8 @@
     "test:calculator": "tsc src/lib/calculator/engine.ts src/lib/calculator/operations.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist --skipLibCheck && node --test scripts/calculator-engine.test.mjs",
     "test:dripjobs-live-ingest": "node --test scripts/dripjobs-live-ingest.test.mjs",
     "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
-    "test:rich-text": "tsc src/lib/rich-text.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/rich-text --skipLibCheck && node --test scripts/rich-text.test.mjs"
+    "test:rich-text": "tsc src/lib/rich-text.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/rich-text --skipLibCheck && node --test scripts/rich-text.test.mjs",
+    "test:line-items": "tsc src/lib/line-items.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/line-items --skipLibCheck && node --test scripts/line-items.test.mjs"
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",
@@ -29,6 +30,7 @@
     "next": "^15.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

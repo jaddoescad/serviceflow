@@ -566,51 +566,6 @@ export function projectDetails(
   );
 }
 
-export function rollupEmployees(
-  entries: TimeEntry[],
-  employees: EmployeeProfile[],
-  now = Date.now(),
-): EmployeeRollup[] {
-  const byId = new Map<string, EmployeeRollup>();
-  for (const emp of employees) {
-    byId.set(emp.user_id, {
-      userId: emp.user_id,
-      name: emp.full_name ?? emp.email ?? "Unknown",
-      email: emp.email,
-      role: emp.role,
-      isActive: emp.is_active,
-      loggedHours: 0,
-      entryCount: 0,
-      lastActivity: null,
-    });
-  }
-
-  for (const e of entries) {
-    if (!e.user_id) continue;
-    let row = byId.get(e.user_id);
-    if (!row) {
-      row = {
-        userId: e.user_id,
-        name: e.user_name ?? e.user_email ?? "Unknown",
-        email: e.user_email,
-        role: "painter",
-        isActive: true,
-        loggedHours: 0,
-        entryCount: 0,
-        lastActivity: null,
-      };
-      byId.set(e.user_id, row);
-    }
-    row.loggedHours += computeDurations(e, now).totalHours;
-    row.entryCount += 1;
-    if (!row.lastActivity || new Date(e.started_at) > new Date(row.lastActivity)) {
-      row.lastActivity = e.started_at;
-    }
-  }
-
-  return [...byId.values()].sort((a, b) => b.loggedHours - a.loggedHours);
-}
-
 /** Stacked on-site/off-site hours per local day, ascending, filled for range. */
 export function hoursByDay(entries: TimeEntry[], days: number, now = Date.now()) {
   const buckets = new Map<string, { onSite: number; offSite: number }>();
@@ -634,28 +589,6 @@ export function hoursByDay(entries: TimeEntry[], days: number, now = Date.now())
     offSite: round1(v.offSite),
     total: round1(v.onSite + v.offSite),
   }));
-}
-
-export function sumHours(entries: TimeEntry[], now = Date.now()): number {
-  return entries.reduce((acc, e) => acc + computeDurations(e, now).totalHours, 0);
-}
-
-export type Attention = {
-  missingClockOut: TimeEntry[];
-  edited: TimeEntry[];
-  offSite: TimeEntry[];
-};
-
-export function attentionLists(entries: TimeEntry[], now = Date.now()): Attention {
-  const missingClockOut: TimeEntry[] = [];
-  const edited: TimeEntry[] = [];
-  const offSite: TimeEntry[] = [];
-  for (const e of entries) {
-    if (isStaleActive(e, now)) missingClockOut.push(e);
-    if (wasEdited(e)) edited.push(e);
-    if ((e.last_distance_meters ?? 0) > OFFSITE_DISTANCE_METERS) offSite.push(e);
-  }
-  return { missingClockOut, edited, offSite };
 }
 
 function round1(n: number): number {

@@ -116,55 +116,6 @@ export async function setActive(
   }
 }
 
-export async function assignProject(input: {
-  userId: string;
-  projectId: string;
-}): Promise<ActionResult> {
-  await requireStaff();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("set_job_assignment", {
-    requested_job_id: input.projectId,
-    requested_employee_id: input.userId,
-    requested_active: true,
-  });
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/jobs");
-  revalidatePath("/employees");
-  return { ok: true };
-}
-
-export async function removeAssignment(input: {
-  userId: string;
-  projectId: string;
-}): Promise<ActionResult> {
-  await requireStaff();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("set_job_assignment", {
-    requested_job_id: input.projectId,
-    requested_employee_id: input.userId,
-    requested_active: false,
-  });
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/jobs");
-  revalidatePath("/employees");
-  return { ok: true };
-}
-
-export async function getPayRateHistory(userId: string) {
-  await requireStaff();
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_crew_pay_history", {
-    employee: userId,
-  });
-  if (error) throw new Error("Rate history could not load.");
-  return data as {
-    id: string;
-    user_id: string;
-    hourly_rate: number;
-    effective_from: string;
-  }[];
-}
-
 export async function editTeamProfile(input: {
   userId: string;
   fullName: string;

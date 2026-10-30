@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireMember } from "@/lib/auth";
+import { getHomeOrgId, requireMember } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTodayEntries } from "@/lib/queries";
 import { ottawaStartOfDay } from "@/lib/format";
@@ -13,11 +13,9 @@ export const dynamic = "force-dynamic";
  * counts as active, even after clocking out (crews turn their phones off).
  */
 export default async function HomePage() {
-  const [profile, entries] = await Promise.all([
-    requireMember(),
-    getTodayEntries(ottawaStartOfDay().toISOString()),
-  ]);
+  const [profile, orgId] = await Promise.all([requireMember(), getHomeOrgId()]);
   if (!["admin", "manager"].includes(profile.role)) redirect("/projects");
+  const entries = orgId ? await getTodayEntries(orgId, ottawaStartOfDay().toISOString()) : [];
 
   const today = entries.filter((e) => e.companycam_project_id);
   const ids = [...new Set(today.map((e) => e.companycam_project_id!))];

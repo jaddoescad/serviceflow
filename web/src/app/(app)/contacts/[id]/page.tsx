@@ -5,6 +5,10 @@ import { LabelChip } from "@/components/label-chip";
 import { getContactDetail } from "@/lib/contacts";
 import { getProjectPreviews } from "@/lib/project-workspace";
 import { CustomerActions } from "@/components/customer-actions";
+import { PortalLinkButton } from "@/components/portal-link-button";
+import { PageHeader } from "@/components/kpi";
+import { NAV_ICONS } from "@/components/nav-icons";
+import { EmptyState, Tag, buttonClassName } from "@/components/ui";
 import { requireMember } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -32,47 +36,52 @@ export default async function ContactDetailPage({
   if (page > pages) redirect(`/contacts/${id}?page=${pages}`);
   const previews = await getProjectPreviews(contact.projects.map((project) => project.id));
   return (
-    <section className="workspace-page">
-      <Link
-        href="/contacts"
-        className="text-sm text-slate-500 hover:text-blue-600"
-      >
-        ‹ Customers
-      </Link>
-      <div className="mt-6 flex items-center justify-between gap-4">
-        <h1 className="break-words text-4xl font-extrabold tracking-tight">
-          {contact.name}
-        </h1>
-        {["admin", "manager"].includes(profile.role) && (
-          <CustomerActions
-            customer={{
-              id: contact.id,
-              name: contact.name,
-              email: contact.email,
-              phone: contact.phone,
-              address: contact.address,
-            }}
-          />
-        )}
-      </div>
-      <div className="mt-8 grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_280px]">
+    <section>
+      <PageHeader
+        title={
+          <>
+            <Link href="/contacts" className="font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]">
+              Customers
+            </Link>
+            <span className="mx-1.5 font-normal text-[var(--color-faint)]">/</span>
+            {contact.name}
+          </>
+        }
+        actions={
+          ["admin", "manager"].includes(profile.role) ? (
+            <div className="flex items-center gap-2">
+              <PortalLinkButton contactId={contact.id} className="h-8 px-3 text-[13px]" />
+              <CustomerActions
+                customer={{
+                  id: contact.id,
+                  name: contact.name,
+                  email: contact.email,
+                  phone: contact.phone,
+                  address: contact.address,
+                }}
+              />
+            </div>
+          ) : null
+        }
+      />
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
         <section aria-labelledby="customer-projects">
           <h2
             id="customer-projects"
-            className="border-b border-slate-200 pb-4 text-lg font-semibold"
+            className="flex items-center gap-2 border-b border-[var(--color-border)] pb-2 text-sm font-semibold text-[var(--color-heading)]"
           >
-            Projects ({contact.projectCount})
+            Projects <Tag>{contact.projectCount}</Tag>
           </h2>
           {contact.projects.map((project) => (
             <article
               key={project.id}
-              className="flex items-center gap-4 border-b border-slate-200 py-5"
+              className="flex items-center gap-3 border-b border-[var(--color-border)] py-2.5"
             >
               <Link
                 href={`/jobs/${project.id}`}
                 prefetch={false}
                 aria-label={`Open ${project.name}`}
-                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100"
+                className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--color-surface-2)] text-[var(--color-faint)]"
               >
                 {previews[project.id]?.[0] ? (
                   <ProjectMediaPreview
@@ -81,65 +90,52 @@ export default async function ContactDetailPage({
                     video={previews[project.id][0].media_type === "video"}
                   />
                 ) : (
-                  <span
-                    aria-hidden="true"
-                    className="absolute inset-0 flex items-center justify-center text-slate-400"
-                  >
-                    ▧
-                  </span>
+                  NAV_ICONS["/projects"]
                 )}
               </Link>
               <div className="min-w-0 flex-1">
                 <Link
                   href={`/jobs/${project.id}`}
                   prefetch={false}
-                  className="font-semibold hover:text-blue-600"
+                  className="text-[13px] font-semibold text-[var(--color-heading)] hover:underline"
                 >
                   {project.name}
                 </Link>
                 {project.address && (
-                  <p className="mt-1 truncate text-sm text-slate-500">
+                  <p className="truncate text-xs text-[var(--color-muted)]">
                     {project.address}
                   </p>
                 )}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {project.archived_at && (
-                    <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">
-                      Archived
-                    </span>
-                  )}
-                  {project.labels.map((label) => (
-                    <LabelChip key={label.id} label={label} />
-                  ))}
-                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                {project.archived_at && <Tag>Archived</Tag>}
+                {project.labels.map((label) => (
+                  <LabelChip key={label.id} label={label} />
+                ))}
               </div>
             </article>
           ))}
-          {!contact.projects.length && (
-            <p className="py-14 text-center text-sm text-slate-500">
-              No projects yet.
-            </p>
-          )}
+          {!contact.projects.length && <EmptyState>No projects yet.</EmptyState>}
           {pages > 1 && (
             <nav
               aria-label="Customer project pages"
-              className="mt-5 flex items-center justify-end gap-4 text-sm"
+              className="mt-3 flex items-center justify-end gap-2 text-xs text-[var(--color-muted)]"
             >
               {page > 1 && (
                 <Link
                   href={`/contacts/${id}?page=${page - 1}`}
-                  className="text-blue-600"
+                  className={buttonClassName({ variant: "secondary", size: "sm" })}
                 >
                   Previous
                 </Link>
               )}
-              <span className="text-slate-500">
-                {page} / {pages}
+              <span className="tabular-nums">
+                Page {page} of {pages}
               </span>
               {page < pages && (
                 <Link
                   href={`/contacts/${id}?page=${page + 1}`}
-                  className="text-blue-600"
+                  className={buttonClassName({ variant: "secondary", size: "sm" })}
                 >
                   Next
                 </Link>
@@ -147,56 +143,33 @@ export default async function ContactDetailPage({
             </nav>
           )}
         </section>
-        <aside className="text-sm">
-          <h2 className="border-b border-slate-200 pb-4 text-lg font-semibold">
-            Contact Info
+        <aside aria-labelledby="customer-details">
+          <h2
+            id="customer-details"
+            className="border-b border-[var(--color-border)] pb-2 text-sm font-semibold text-[var(--color-heading)]"
+          >
+            Details
           </h2>
-          <dl className="space-y-5 pt-5">
-            {contact.email && (
-              <div>
-                <dt className="text-xs text-slate-500">Email</dt>
-                <dd className="mt-1 break-all">
-                  <a
-                    href={`mailto:${contact.email}`}
-                    className="hover:text-blue-600"
-                  >
-                    {contact.email}
-                  </a>
+          <dl>
+            {(
+              [
+                ["Email", contact.email ? <a href={`mailto:${contact.email}`} className="break-all hover:underline">{contact.email}</a> : null],
+                ["Phone", contact.phone ? <a href={`tel:${contact.phone}`} className="hover:underline">{contact.phone}</a> : null],
+                ["Address", contact.address ? <span className="whitespace-pre-line">{contact.address}</span> : null],
+                ["Notes", contact.notes ? <span className="whitespace-pre-wrap">{contact.notes}</span> : null],
+              ] as const
+            ).map(([label, value]) => (
+              <div
+                key={label}
+                className="flex min-h-9 items-start justify-between gap-4 border-b border-[var(--color-border)] py-2"
+              >
+                <dt className="shrink-0 text-xs text-[var(--color-muted)]">{label}</dt>
+                <dd className="min-w-0 text-right text-[13px] text-[var(--color-text)]">
+                  {value ?? <span className="text-[var(--color-faint)]">—</span>}
                 </dd>
               </div>
-            )}
-            {contact.phone && (
-              <div>
-                <dt className="text-xs text-slate-500">Phone</dt>
-                <dd className="mt-1">
-                  <a
-                    href={`tel:${contact.phone}`}
-                    className="hover:text-blue-600"
-                  >
-                    {contact.phone}
-                  </a>
-                </dd>
-              </div>
-            )}
-            {contact.address && (
-              <div>
-                <dt className="text-xs text-slate-500">Address</dt>
-                <dd className="mt-1 whitespace-pre-line">{contact.address}</dd>
-              </div>
-            )}
-            {contact.notes && (
-              <div>
-                <dt className="text-xs text-slate-500">Notes</dt>
-                <dd className="mt-1 whitespace-pre-wrap">{contact.notes}</dd>
-              </div>
-            )}
+            ))}
           </dl>
-          {!contact.email &&
-            !contact.phone &&
-            !contact.address &&
-            !contact.notes && (
-              <p className="pt-5 text-slate-500">No contact details.</p>
-            )}
         </aside>
       </div>
     </section>

@@ -9,7 +9,10 @@ import { photoLink } from "@/lib/photo-link";
 import { changeProjectLifecycle } from "@/lib/actions/project-workspace";
 import { ProjectMediaPreview } from "./project-media-preview";
 
+import { PageHeader } from "./kpi";
 import { LabelChip } from "./label-chip";
+import { DataTable, FilterPills, RowLink, TablePanel, TableToolbar, Td, Th, Tr } from "./table-ui";
+import { Button, EmptyState, Input, Select } from "./ui";
 
 export function ProjectDirectory({
   projects,
@@ -105,205 +108,190 @@ export function ProjectDirectory({
             : "desc",
     });
   }
+  const pages = Math.max(1, Math.ceil(total / 40));
+  const ariaSort = (column: "name" | "updated_at") =>
+    sort === column ? (direction === "asc" ? "ascending" : "descending") : "none";
+  const sortLabel = (column: "name" | "updated_at", label: string) => (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => sortBy(column)}
+      className="inline-flex items-center gap-1 hover:text-[var(--color-heading)]"
+      aria-label={`Sort by ${label.toLowerCase()}`}
+    >
+      {label}
+      <span aria-hidden="true" className="text-[var(--color-faint)]">
+        {sort === column ? (direction === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  );
   return (
-    <section className="workspace-page" aria-busy={pending}>
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold tracking-tight">
-          {view === "trash" ? "Project Trash" : "Projects"}
-        </h1>
-        {canManage && view !== "trash" ? <CreateWorkspaceProject /> : null}
-      </div>
-      <div className="mt-7 flex flex-wrap items-center gap-3 border-b border-slate-200 pb-5">
-        <input
-          type="search"
-          aria-label="Find a project"
-          placeholder="Find a project…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm sm:w-72"
-        />
-        <div
-          className="flex gap-1 rounded-md bg-slate-100 p-1"
-          aria-label="Project status"
-        >
-          {["all", "archived", "trash"].map((value) => (
-            <button
-              key={value}
-              onClick={() => navigate({ view: value })}
-              aria-pressed={view === value}
-              className={`rounded px-3 py-1.5 text-sm ${view === value ? "bg-white font-semibold shadow-sm" : "text-slate-600"}`}
-            >
-              {value === "all"
-                ? "All"
-                : value === "archived"
-                  ? "Archived"
-                  : "Trash"}
-            </button>
-          ))}
+    <div className="page-fill">
+      <PageHeader
+        title={view === "trash" ? "Project Trash" : "Projects"}
+        subtitle={total.toLocaleString("en-CA")}
+        actions={canManage && view !== "trash" ? <CreateWorkspaceProject /> : null}
+      />
+      <TableToolbar>
+        <div className="w-full sm:w-64">
+          <Input
+            type="search"
+            aria-label="Find a project"
+            placeholder="Find a project…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
-        <select
+        <FilterPills
+          label="Project status"
+          value={view}
+          onChange={(value) => navigate({ view: value })}
+          options={[
+            { value: "all", label: "All" },
+            { value: "archived", label: "Archived" },
+            { value: "trash", label: "Trash" },
+          ]}
+        />
+        <Select
           aria-label="Filter by label"
           value={label}
           onChange={(event) => navigate({ label: event.target.value })}
-          className="h-10 rounded-md border border-slate-300 px-3 text-sm"
         >
-          <option value="">Labels</option>
+          <option value="">All labels</option>
           {labels.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>
           ))}
-        </select>
-      </div>
-      {view === "trash" ? (
-        <p className="py-4 text-sm text-slate-500">
-          Projects can be restored for 90 days after deletion.
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="py-3 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
-      <div>
-        <div className="flex items-center gap-5 border-b border-slate-200 py-4 text-sm text-slate-600">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => sortBy("name")}
-            className="flex-1 text-left font-medium"
-            aria-label={`Sort by project name${sort === "name" ? `, currently ${direction === "asc" ? "ascending" : "descending"}` : ""}`}
-          >
-            Project Name{" "}
-            <span aria-hidden="true">
-              {sort === "name" ? (direction === "asc" ? "↑" : "↓") : "↕"}
-            </span>
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => sortBy("updated_at")}
-            className="w-32 shrink-0 text-left font-medium"
-            aria-label={`Sort by last updated${sort === "updated_at" ? `, currently ${direction === "asc" ? "ascending" : "descending"}` : ""}`}
-          >
-            Last Updated{" "}
-            <span aria-hidden="true">
-              {sort === "updated_at" ? (direction === "asc" ? "↑" : "↓") : "↕"}
-            </span>
-          </button>
-          <span className="hidden w-64 shrink-0 xl:block">
-            {view === "trash" ? "Retention" : "Recent Photos"}
+        </Select>
+        {view === "trash" ? (
+          <span className="text-xs text-[var(--color-muted)]">
+            Projects can be restored for 90 days after deletion.
           </span>
-        </div>
-        {projects.map((project) => {
-          const href = `/jobs/${project.id}`;
-          return (
-            <article
-              key={project.id}
-              className="group relative flex items-center gap-5 border-b border-slate-200 py-4 hover:bg-slate-50"
-            >
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md bg-slate-100">
-                <Suspense fallback={null}>
-                  <ProjectCover previews={previews} project={project} />
-                </Suspense>
-              </div>
-              <div className="min-w-0 flex-1">
-                <Link
-                  href={href}
-                  prefetch={false}
-                  // Prefetch on intent rather than for every row on screen, so
-                  // the job's loading screen shows the moment it is clicked.
-                  onMouseEnter={() => router.prefetch(href)}
-                  onFocus={() => router.prefetch(href)}
-                  className="text-base font-semibold group-hover:text-blue-600 after:absolute after:inset-0"
-                >
-                  {project.name}
-                </Link>
-                {project.address ? (
-                  <p className="mt-1 truncate text-sm text-slate-500">
-                    {project.address}
-                  </p>
-                ) : null}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {project.labels.map((item) => (
-                    <LabelChip key={item.id} label={item} />
-                  ))}
-                </div>
-              </div>
-              <time
-                className="hidden w-32 shrink-0 text-sm text-slate-500 lg:block"
-                dateTime={project.updated_at}
-              >
-                {new Date(project.updated_at).toLocaleDateString("en-CA", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  timeZone: "America/Toronto",
-                })}
-              </time>
-              {view === "trash" ? (
-                <div className="relative z-10 text-right">
-                  <p className="mb-2 text-xs text-slate-500">
-                    {Math.max(
-                      0,
-                      Math.ceil(
-                        (Date.parse(project.trashed_at!) +
-                          90 * 86400000 -
-                          Date.now()) /
-                          86400000,
-                      ),
-                    )}{" "}
-                    days remaining
-                  </p>
-                  {canManage ? (
-                    <button
-                      disabled={pending}
-                      onClick={() => void restore(project.id)}
-                      className="text-sm font-semibold text-blue-600"
-                    >
-                      Restore
-                    </button>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="relative z-10 hidden w-64 shrink-0 gap-2 xl:flex">
-                  <Suspense fallback={null}>
-                    <ProjectPhotoStrip previews={previews} project={project} href={href} />
-                  </Suspense>
-                </div>
-              )}
-            </article>
-          );
-        })}
-        {!projects.length ? (
-          <p className="py-20 text-center text-sm text-slate-500">
-            No projects match.
-          </p>
         ) : null}
-      </div>
-      <div className="mt-6 flex items-center justify-between text-sm text-slate-500">
-        <span>{total.toLocaleString()} projects</span>
-        <div className="flex items-center gap-4">
-          <button
-            disabled={pending || page <= 1}
-            onClick={() => navigate({ page: page - 1 })}
-            className="disabled:opacity-30"
-          >
-            Previous
-          </button>
-          <span>
-            {page} / {Math.max(1, Math.ceil(total / 40))}
+        {error ? (
+          <span role="alert" className="text-xs text-[var(--color-bad)]">
+            {error}
           </span>
-          <button
-            disabled={pending || page * 40 >= total}
-            onClick={() => navigate({ page: page + 1 })}
-            className="disabled:opacity-30"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-    </section>
+        ) : null}
+      </TableToolbar>
+      <TablePanel
+        fill
+        busy={pending}
+        footer={
+          <>
+            <span>{total.toLocaleString("en-CA")} projects</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending || page <= 1}
+                onClick={() => navigate({ page: page - 1 })}
+              >
+                Previous
+              </Button>
+              <span className="tabular-nums">
+                Page {page} of {pages}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pending || page >= pages}
+                onClick={() => navigate({ page: page + 1 })}
+              >
+                Next
+              </Button>
+            </div>
+          </>
+        }
+      >
+        <DataTable>
+          <thead>
+            <tr>
+              <Th sort={ariaSort("name")}>{sortLabel("name", "Project")}</Th>
+              <Th sort={ariaSort("updated_at")} className="hidden lg:table-cell">
+                {sortLabel("updated_at", "Last updated")}
+              </Th>
+              <Th className="hidden xl:table-cell">{view === "trash" ? "Retention" : "Recent photos"}</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map((project) => {
+              const href = `/jobs/${project.id}`;
+              return (
+                <Tr key={project.id}>
+                  <Td>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-[var(--color-surface-2)]">
+                        <Suspense fallback={null}>
+                          <ProjectCover previews={previews} project={project} />
+                        </Suspense>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <RowLink href={href}>{project.name}</RowLink>
+                          {project.labels.map((item) => (
+                            <LabelChip key={item.id} label={item} />
+                          ))}
+                        </div>
+                        {project.address ? (
+                          <p className="truncate text-xs font-normal text-[var(--color-muted)]">
+                            {project.address}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </Td>
+                  <Td muted className="hidden whitespace-nowrap lg:table-cell">
+                    <time dateTime={project.updated_at}>
+                      {new Date(project.updated_at).toLocaleDateString("en-CA", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        timeZone: "America/Toronto",
+                      })}
+                    </time>
+                  </Td>
+                  <Td className="hidden xl:table-cell">
+                    {view === "trash" ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-[var(--color-muted)]">
+                          {Math.max(
+                            0,
+                            Math.ceil(
+                              (Date.parse(project.trashed_at!) + 90 * 86400000 - Date.now()) /
+                                86400000,
+                            ),
+                          )}{" "}
+                          days remaining
+                        </span>
+                        {canManage ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => void restore(project.id)}
+                          >
+                            Restore
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="flex gap-1.5">
+                        <Suspense fallback={null}>
+                          <ProjectPhotoStrip previews={previews} project={project} href={href} />
+                        </Suspense>
+                      </div>
+                    )}
+                  </Td>
+                </Tr>
+              );
+            })}
+          </tbody>
+        </DataTable>
+        {projects.length ? null : <EmptyState>No projects match.</EmptyState>}
+      </TablePanel>
+    </div>
   );
 }
 
@@ -318,8 +306,8 @@ function ProjectCover({
   const cover = use(previews)[project.id]?.[0];
   if (!cover) {
     return (
-      <span className="absolute inset-0 flex items-center justify-center text-slate-400">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <span className="absolute inset-0 flex items-center justify-center text-[var(--color-faint)]">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
           <path d="M3 7h5l2-3h4l2 3h5v13H3z" />
           <circle cx="12" cy="13" r="4" />
         </svg>
@@ -351,7 +339,7 @@ function ProjectPhotoStrip({
       key={item.id}
       href={photoLink(href, "", item.id)}
       prefetch={false}
-      className="relative h-20 w-20 overflow-hidden rounded-md bg-slate-100"
+      className="relative h-9 w-9 overflow-hidden rounded-md bg-[var(--color-surface-2)]"
       aria-label={`View media from ${project.name}`}
     >
       <ProjectMediaPreview

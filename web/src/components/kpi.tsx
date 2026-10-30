@@ -1,66 +1,25 @@
 import * as React from "react";
-import { Card, cn } from "@/components/ui";
 
+/** The page's 56px top bar: title, an optional count or key figure beside it,
+ * and actions (view toggles, filters, buttons) on the right. It spans the full
+ * width above the page content; see .page-bar in globals.css. The title may be
+ * a breadcrumb, e.g. <><Link href="/contacts">Customers</Link> / Jane</>. */
 export function PageHeader({
   title,
   subtitle,
   actions,
 }: {
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-end justify-between gap-4">
-      <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-[var(--color-heading)]">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-[var(--color-muted)]">{subtitle}</p> : null}
+    <header className="page-bar flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[var(--color-border)] py-2.5">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <h1 className="truncate text-base font-semibold text-[var(--color-heading)]">{title}</h1>
+        {subtitle ? <span className="truncate text-[13px] text-[var(--color-muted)]">{subtitle}</span> : null}
       </div>
-      {actions}
-    </div>
-  );
-}
-
-export function Kpi({
-  label,
-  value,
-  hint,
-  delta,
-  tone = "neutral",
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: React.ReactNode;
-  delta?: { value: number; suffix?: string } | null;
-  tone?: "neutral" | "good" | "warn" | "bad";
-}) {
-  const toneColor = {
-    neutral: "text-[var(--color-heading)]",
-    good: "text-[var(--color-good)]",
-    warn: "text-[var(--color-warn)]",
-    bad: "text-[var(--color-bad)]",
-  }[tone];
-
-  return (
-    <Card className="p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
-        {label}
-      </div>
-      <div className={cn("font-display mt-2 text-2xl font-semibold tabular-nums", toneColor)}>{value}</div>
-      <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-        {delta ? (
-          <span
-            className={cn(
-              "font-medium",
-              delta.value > 0 ? "text-[var(--color-good)]" : delta.value < 0 ? "text-[var(--color-bad)]" : "",
-            )}
-          >
-            {delta.value > 0 ? "▲" : delta.value < 0 ? "▼" : "•"} {Math.abs(delta.value)}
-            {delta.suffix ?? "%"}
-          </span>
-        ) : null}
-        {hint ? <span>{hint}</span> : null}
-      </div>
-    </Card>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </header>
   );
 }

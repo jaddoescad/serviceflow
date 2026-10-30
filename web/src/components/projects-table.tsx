@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Badge, Button, Card, CardHeader, EmptyState, Field, Input } from "@/components/ui";
+import { PageHeader } from "@/components/kpi";
+import { DataTable, RowLink, TablePanel, TableToolbar, Td, Th, Tr } from "@/components/table-ui";
+import { Badge, Button, EmptyState, Input, buttonClassName } from "@/components/ui";
 import { fmtMoney, fmtHours } from "@/lib/format";
 import { setJobAmount } from "@/lib/actions/budgets";
 import { budgetStatus } from "@/lib/metrics";
@@ -11,7 +12,6 @@ import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import { AmountDialog } from "@/components/job-amount-dialog";
 
 type ProjectTableRow = ProjectRollup;
-
 
 function painterBudget(row: ProjectTableRow): number | null {
   return row.amountBeforeTax == null
@@ -35,7 +35,7 @@ function UsageBar({
   return (
     <div>
       <div className="flex items-center gap-2">
-        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--color-surface-2)] xl:w-20">
+        <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--tag-gray-bg)] xl:w-20">
           <div
             className="h-full rounded-full"
             style={{ width: `${Math.min(100, (percent / targetPercent) * 100)}%`, background: color }}
@@ -43,7 +43,6 @@ function UsageBar({
         </div>
         <span className="whitespace-nowrap text-xs font-medium tabular-nums text-[var(--color-text)]">{percent.toFixed(1)}%</span>
       </div>
-
     </div>
   );
 }
@@ -87,7 +86,6 @@ export function ProjectsTable({
     const timer = setTimeout(() => navigate(1, search), 300);
     return () => clearTimeout(timer);
   }, [search, query]);
-  const filtered = rows;
   const totalPages = Math.max(1, Math.ceil(total / 50));
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
     setError(null);
@@ -100,144 +98,148 @@ export function ProjectsTable({
 
   return (
     <>
-      <Card>
-        <CardHeader
-          title="Jobs & costs"
-          subtitle="Compare clocked wages with each job’s labour budget"
-          right={
-            <div className="flex flex-wrap gap-2">
-              {totals.readyToCloseCount ? (
-                <Badge tone="warn">{totals.readyToCloseCount} ready to complete</Badge>
-              ) : null}
-              <Badge tone={totals.overCount ? "bad" : "good"}>
-                {totals.overCount ? `${totals.overCount} over labour target` : "all within labour target"}
-              </Badge>
-            </div>
-          }
-        />
-        <div className="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] p-4">
-          <Field label="Search">
-            <Input placeholder="Job name…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56" />
-          </Field>
-
-
+      <PageHeader
+        title="Labour"
+        subtitle={`${total.toLocaleString("en-CA")} jobs`}
+        actions={
+          <>
+            {totals.readyToCloseCount ? (
+              <Badge tone="warn">{totals.readyToCloseCount} ready to complete</Badge>
+            ) : null}
+            <Badge tone={totals.overCount ? "bad" : "good"}>
+              {totals.overCount ? `${totals.overCount} over labour target` : "All within labour target"}
+            </Badge>
+          </>
+        }
+      />
+      <TableToolbar>
+        <div className="w-full sm:w-64">
+          <Input
+            type="search"
+            aria-label="Search jobs"
+            placeholder="Search jobs"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-
         {error ? (
-          <div className="border-b border-[var(--color-border)] bg-[var(--color-bad-soft)] px-4 py-2 text-sm text-[var(--color-bad)]">
+          <span role="alert" className="text-xs text-[var(--color-bad)]">
             {error}
-          </div>
+          </span>
         ) : null}
+      </TableToolbar>
 
-        {filtered.length === 0 ? (
-          <EmptyState>
-            No jobs match the current filters.
-          </EmptyState>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] table-fixed text-[13px]">
-              <colgroup><col className="w-[28%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[18%]" /></colgroup>
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
-                  <th className="px-2.5 py-2.5 font-medium">Job</th>
-
-
-                  <th className="px-2.5 py-2.5 text-right font-medium">Amount (before HST)</th>
-                  <th className="px-2.5 py-2.5 text-right font-medium" title="Job amount × the job's labour cost target">Painter budget</th>
-                  <th
-                    className="px-2.5 py-2.5 text-right font-medium"
-                    title="Dollar cost of priced clocked hours"
-                  >
-                    Clocked hours ($)
-                  </th>
-                  <th className="px-2.5 py-2.5 font-medium">Hourly usage</th>
-
-
-
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r) => (
-                  <tr
-                    key={r.projectId}
-                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]"
-                  >
-                    <td className="px-2.5 py-2.5">
-                      <Link
-                        href={`/jobs/${encodeURIComponent(r.projectId)}`}
-                        prefetch={false}
-                        className="block w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-surface)]"
-                        aria-label={`View details for ${r.name}`}
+      <TablePanel
+        fill
+        busy={pending}
+        footer={
+          <>
+            <span className="tabular-nums">
+              {total
+                ? `${(currentPage - 1) * 50 + 1}–${Math.min(currentPage * 50, total)} of ${total}`
+                : "0 jobs"}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, query)}>
+                Previous
+              </Button>
+              <span className="tabular-nums">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button size="sm" variant="secondary" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, query)}>
+                Next
+              </Button>
+            </div>
+          </>
+        }
+      >
+        <DataTable minWidth={760}>
+          <thead>
+            <tr>
+              <Th>Job</Th>
+              <Th numeric>Amount (before HST)</Th>
+              <Th numeric>
+                <span title="Job amount × the job's labour cost target">Painter budget</span>
+              </Th>
+              <Th numeric>
+                <span title="Dollar cost of priced clocked hours">Clocked hours ($)</span>
+              </Th>
+              <Th>Hourly usage</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <Tr key={r.projectId}>
+                <Td>
+                  <RowLink href={`/jobs/${encodeURIComponent(r.projectId)}`}>{r.name}</RowLink>
+                  {r.address ? (
+                    <div className="truncate text-xs font-normal text-[var(--color-muted)]">{r.address}</div>
+                  ) : null}
+                </Td>
+                <Td numeric muted>
+                  <div className="flex items-center justify-end gap-1">
+                    <span>{fmtMoney(r.amountBeforeTax)}</span>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        onClick={() => setBudgetFor(r)}
+                        disabled={pending}
+                        aria-label={`Edit amount for ${r.name}`}
+                        title="Edit amount"
+                        className={buttonClassName({ variant: "ghost", size: "sm", className: "w-7 px-0" })}
                       >
-                        <div className="truncate font-medium text-[var(--color-heading)] underline decoration-transparent underline-offset-4 transition-colors hover:text-[var(--color-brand-strong)] hover:decoration-current">
-                          {r.name}
-                        </div>
-                        {r.address ? (
-                          <div className="truncate text-xs text-[var(--color-muted)]">{r.address}</div>
-                        ) : null}
-                      </Link>
-                    </td>
-
-
-                    <td className="whitespace-nowrap px-2.5 py-2.5 text-right tabular-nums text-[var(--color-muted)]">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <span>{fmtMoney(r.amountBeforeTax)}</span>
-                        {canManage ? (
-                          <button
-                            type="button"
-                            onClick={() => setBudgetFor(r)}
-                            disabled={pending}
-                            aria-label={`Edit amount for ${r.name}`}
-                            title="Edit amount"
-                            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
-                              <path
-                                d="M13.75 3.75a1.768 1.768 0 0 1 2.5 2.5l-8.5 8.5-3.25.75.75-3.25 8.5-8.5Z"
-                                stroke="currentColor"
-                                strokeWidth="1.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-2.5 py-2.5 text-right font-medium tabular-nums">
-                      {r.labourExcluded ? "—" : <>{fmtMoney(painterBudget(r))} <span className="text-xs text-[var(--color-muted)]">({r.budgetedHours == null ? "hours not set" : fmtHours(r.budgetedHours)})</span></>}
-                    </td>
-                    <td
-                      className="px-2.5 py-2.5 text-right font-medium tabular-nums"
-                      title={
-                        r.unpricedHours > 0
-                          ? `${r.unpricedHours.toFixed(1)} clocked hours have no pay rate and are excluded`
-                          : "Priced clocked wages before any invoice override"
-                      }
-                    >
-                      {r.labourExcluded ? "—" : <>{fmtMoney(r.clockedWageCost)} <span className="text-xs text-[var(--color-muted)]">({fmtHours(r.clockedHours)})</span></>}
-                    </td>
-                    <td className="px-2.5 py-2.5">
-                      <UsageBar
-                        percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost)}
-                        status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost), r.costTargetPercent)}
-                        targetPercent={r.costTargetPercent}
-                      />
-                    </td>
-
-
-
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {total > 0 ? <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3">
-          <span className="text-xs text-[var(--color-muted)]">{(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, total)} of {total}</span>
-          <div className="flex items-center gap-2"><Button size="sm" variant="subtle" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, query)}>Previous</Button><span className="text-xs">Page {currentPage} of {totalPages}</span><Button size="sm" variant="subtle" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, query)}>Next</Button></div>
-        </div> : null}
-      </Card>
+                        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5">
+                          <path
+                            d="M13.75 3.75a1.768 1.768 0 0 1 2.5 2.5l-8.5 8.5-3.25.75.75-3.25 8.5-8.5Z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
+                </Td>
+                <Td numeric>
+                  {r.labourExcluded ? "—" : (
+                    <>
+                      {fmtMoney(painterBudget(r))}{" "}
+                      <span className="text-xs text-[var(--color-muted)]">
+                        ({r.budgetedHours == null ? "hours not set" : fmtHours(r.budgetedHours)})
+                      </span>
+                    </>
+                  )}
+                </Td>
+                <Td numeric>
+                  <span
+                    title={
+                      r.unpricedHours > 0
+                        ? `${r.unpricedHours.toFixed(1)} clocked hours have no pay rate and are excluded`
+                        : "Priced clocked wages before any invoice override"
+                    }
+                  >
+                    {r.labourExcluded ? "—" : (
+                      <>
+                        {fmtMoney(r.clockedWageCost)}{" "}
+                        <span className="text-xs text-[var(--color-muted)]">({fmtHours(r.clockedHours)})</span>
+                      </>
+                    )}
+                  </span>
+                </Td>
+                <Td>
+                  <UsageBar
+                    percent={r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost)}
+                    status={budgetStatus(r.labourExcluded ? null : labourShare(r.amountBeforeTax, r.clockedWageCost), r.costTargetPercent)}
+                    targetPercent={r.costTargetPercent}
+                  />
+                </Td>
+              </Tr>
+            ))}
+          </tbody>
+        </DataTable>
+        {rows.length ? null : <EmptyState>No jobs match this search.</EmptyState>}
+      </TablePanel>
 
       {budgetFor ? (
         <AmountDialog

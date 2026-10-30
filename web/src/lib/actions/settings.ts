@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireMember } from "@/lib/auth";
+import { requireMember, requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { staffWrite } from "./rpc";
 
 export type LabourBudgetSettings = {
   hourlyRate: number;
@@ -12,18 +13,23 @@ export type LabourBudgetSettings = {
 };
 
 export type CompanyProfile = {
+  id: string;
   name: string;
   trade: string | null;
   phone: string | null;
   address: string | null;
   timezone: string;
   createdAt: string;
+  logoPath: string | null;
+  brandColor: string | null;
 };
 
 export type CompanySettings = {
   company: CompanyProfile;
   myRole: string | null;
   canEdit: boolean;
+  /** Owners, admins and managers: branding and company documents. */
+  isManager: boolean;
   team: {
     active: number;
     inactive: number;
@@ -62,15 +68,19 @@ function companyFromRpc(data: Row): CompanySettings {
   const appPhotos = row(integrations?.app_photos);
   return {
     company: {
+      id: text(company.id) ?? "",
       name: text(company.name) ?? "Your company",
       trade: text(company.trade),
       phone: text(company.phone),
       address: text(company.address),
       timezone: text(company.timezone) ?? "America/Toronto",
       createdAt: text(company.created_at) ?? "",
+      logoPath: text(company.logo_path),
+      brandColor: text(company.brand_color),
     },
     myRole: text(data.my_role),
     canEdit: Boolean(data.can_edit),
+    isManager: Boolean(data.is_manager),
     team: {
       active: Number(team.active ?? 0),
       inactive: Number(team.inactive ?? 0),
@@ -171,4 +181,64 @@ export async function saveCompanyProfile(input: {
 
   revalidatePath("/settings");
   return { ok: true, settings: companyFromRpc(row(data)) };
+}
+
+/** Saves the logo and colour together; an empty string clears either. */
+export async function saveCompanyBranding(input: { logoPath: string; brandColor: string }) {
+  const brandColor = input.brandColor.trim().toLowerCase();
+  if (brandColor && !/^#[0-9a-f]{6}$/.test(brandColor)) {
+    return { ok: false, error: "Choose a colour like #2f6bff." };
+  }
+  return staffWrite(
+    "save_company_branding",
+    { requested_logo_path: input.logoPath, requested_brand_color: brandColor },
+    ["/settings"],
+  );
+}
+
+export type CompanyDocument = { id: string; name: string; path: string };
+
+export async function getCompanyDocuments(orgId: string): Promise<CompanyDocument[]> {
+  await requireStaff();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("company_documents")
+    .select("id,name,storage_path")
+    .eq("org_id", orgId)
+    .order("name");
+  if (error) throw new Error("Could not load company documents.");
+  return data.map((doc) => ({ id: doc.id, name: doc.name, path: doc.storage_path }));
+}
+
+/** Records a file already uploaded to document-assets under the company's folder. */
+export async function addCompanyDocument(input: {
+  name: string;
+  path: string;
+  mimeType: string;
+  byteSize: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const name = input.name.trim().slice(0, 200);
+  if (!name) return { ok: false, error: "The file needs a name." };
+  await requireStaff();
+  const supabase = await createClient();
+  const { error } = await supabase.from("company_documents").insert({
+    name,
+    storage_path: input.path,
+    mime_type: input.mimeType || null,
+    byte_size: Math.max(0, Math.round(input.byteSize)),
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Deletes the row; the browser then removes the stored file. */
+export async function deleteCompanyDocument(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireStaff();
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("company_documents").delete().eq("id", id).select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data.length) return { ok: false, error: "Could not delete that document. Refresh and try again." };
+  revalidatePath("/settings");
+  return { ok: true };
 }

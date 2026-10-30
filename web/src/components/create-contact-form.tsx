@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { AddressInput } from "@/components/address-input";
 import { Button, Field, Input } from "@/components/ui";
 import { createContact, updateCustomer } from "@/lib/actions/contacts";
 
@@ -71,7 +72,7 @@ export function CreateContactModal({
           }}
           className="shrink-0"
         >
-          {customer ? "Edit Customer" : "＋ Customer"}
+          {customer ? "Edit Customer" : "+ New Customer"}
         </Button>
       ) : null}
       {open ? (
@@ -82,7 +83,7 @@ export function CreateContactModal({
             event.preventDefault();
             close();
           }}
-          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[600px] overflow-hidden rounded-xl bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-900/60"
+          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[520px] overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-0 text-[13px] text-[var(--color-text)] shadow-[var(--shadow-pop)] backdrop:bg-black/30"
         >
           <form
             className="flex max-h-[calc(100dvh-2rem)] flex-col"
@@ -131,26 +132,26 @@ export function CreateContactModal({
               });
             }}
           >
-            <header className="flex shrink-0 items-center justify-between px-8 pb-5 pt-7">
-              <h2 id="create-contact-title" className="text-xl font-bold">
-                {customer ? "Edit Customer" : "Customer"}
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4">
+              <h2 id="create-contact-title" className="text-[15px] font-semibold text-[var(--color-heading)]">
+                {customer ? "Edit Customer" : "New Customer"}
               </h2>
               <button
                 type="button"
                 aria-label="Close customer form"
                 disabled={pending}
                 onClick={close}
-                className="flex h-8 w-8 items-center justify-center text-2xl text-slate-500 disabled:opacity-40"
+                className="-mr-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-muted)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)] disabled:opacity-40"
               >
-                ×
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
               </button>
             </header>
-            <div className="min-h-0 overflow-y-auto px-8 pb-8">
+            <div className="min-h-0 overflow-y-auto p-5">
               <fieldset disabled={pending}>
-                <legend className="mb-4 text-sm font-semibold">
-                  Contact Details
-                </legend>
-                <div className="space-y-5 rounded border border-slate-200 p-4">
+                <legend className="sr-only">Contact details</legend>
+                <div className="space-y-4">
                   <Field label="Name *">
                     <Input
                       name="name"
@@ -182,27 +183,22 @@ export function CreateContactModal({
                     />
                   </Field>
                 </div>
-                <div className="mt-7">
+                <div className="mt-4">
                   <Field label="Address">
-                    <Input
-                      name="address"
-                      defaultValue={customer?.address ?? ""}
-                      maxLength={500}
-                      autoComplete="street-address"
-                    />
+                    <AddressInput name="address" defaultValue={customer?.address ?? ""} maxLength={500} />
                   </Field>
                 </div>
               </fieldset>
               {error ? (
-                <p role="alert" className="mt-4 text-sm text-red-700">
+                <p role="alert" className="mt-4 text-[13px] text-[var(--color-bad)]">
                   {error}
                 </p>
               ) : null}
             </div>
-            <footer className="flex shrink-0 justify-end gap-3 border-t border-slate-200 px-6 py-4">
+            <footer className="flex shrink-0 justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
               <Button
                 type="button"
-                variant="subtle"
+                variant="secondary"
                 onClick={close}
                 disabled={pending}
               >

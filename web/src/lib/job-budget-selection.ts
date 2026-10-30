@@ -39,19 +39,3 @@ export function selectCurrentOperationalBudgets<
   }
   return current;
 }
-
-/** Only validated DripJobs list imports may define automated job amounts. */
-export function isDripJobsJobAmountBudget(
-  budget: OperationalJobBudget | null | undefined,
-): boolean {
-  const authority = budget?.metadata?.job_amount_authority;
-
-  return (
-    DRIPJOBS_JOB_AMOUNT_AUTHORITY_SOURCES.has(
-      authority?.source_type,
-    ) &&
-    typeof authority?.source_sha256 === "string" &&
-    authority.source_sha256.length > 0 &&
-    Number(budget?.amount_including_tax_cents ?? 0) > 0
-  );
-}

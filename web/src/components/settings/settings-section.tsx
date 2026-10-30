@@ -1,23 +1,5 @@
 import type { ReactNode } from "react";
 
-export const TRADES: Array<{ value: string; label: string }> = [
-  { value: "painting", label: "Painting" },
-  { value: "plumbing", label: "Plumbing" },
-  { value: "electrical", label: "Electrical" },
-  { value: "hvac", label: "HVAC" },
-  { value: "cleaning", label: "Cleaning" },
-  { value: "landscaping", label: "Landscaping" },
-  { value: "general_contracting", label: "General contracting" },
-  { value: "other", label: "Other" },
-];
-
-export const ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  manager: "Manager",
-  crew: "Crew",
-};
-
 /** One settings card: heading and description, content, optional footer bar. */
 export function SettingsSection({
   id,
@@ -36,17 +18,17 @@ export function SettingsSection({
     <section
       id={id}
       aria-labelledby={`${id}-title`}
-      className="scroll-mt-6 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+      className="scroll-mt-6 overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
     >
-      <div className="px-6 pt-6">
-        <h2 id={`${id}-title`} className="text-lg font-semibold tracking-tight text-[var(--color-heading)]">
+      <div className="px-5 pt-4">
+        <h2 id={`${id}-title`} className="text-sm font-semibold text-[var(--color-heading)]">
           {title}
         </h2>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
+        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{description}</p>
       </div>
-      <div className="px-6 pb-6 pt-5">{children}</div>
+      <div className="px-5 pb-5 pt-4">{children}</div>
       {footer ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 py-3 text-sm text-[var(--color-muted)]">
+        <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-2.5 text-[13px] text-[var(--color-muted)]">
           {footer}
         </div>
       ) : null}
@@ -58,8 +40,8 @@ export function SettingsSection({
 export function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-xs font-medium text-[var(--color-muted)]">{label}</div>
-      <div className="mt-1 text-sm text-[var(--color-text)]">{children}</div>
+      <div className="text-xs text-[var(--color-muted)]">{label}</div>
+      <div className="mt-0.5 text-[13px] text-[var(--color-text)]">{children}</div>
     </div>
   );
 }

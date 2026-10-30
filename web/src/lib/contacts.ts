@@ -2,18 +2,13 @@ import { cache } from "react";
 import { requireMember } from "@/lib/auth";
 import type { WorkspaceProject } from "@/lib/project-workspace";
 import { createClient } from "@/lib/supabase/server";
-
-export type ContactSummary = {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-  jobCount: number;
-  leadCount: number;
-  projectCount: number;
-  lastActivityAt: string;
-};
+import {
+  CUSTOMER_PAGE_SIZE,
+  customerListFilters,
+  type CustomerListOptions,
+  type CustomerListParams,
+  type CustomerRow,
+} from "@/lib/customer-list";
 
 export type ContactDetail = {
   id: string;
@@ -31,16 +26,30 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export async function getCustomerContactsPage(
-  search: string,
-  page: number,
-): Promise<{ rows: ContactSummary[]; total: number }> {
+/** One page of the customers list for these params, in the home company. */
+export async function getCustomerList(
+  params: CustomerListParams,
+  pageSize = CUSTOMER_PAGE_SIZE,
+): Promise<{ rows: CustomerRow[]; total: number }> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_contacts_page", {
-    search_text: search,
-    page_number: page,
+  const { data, error } = await supabase.rpc("get_customer_list", {
+    search_text: params.search,
+    filters: customerListFilters(params),
+    sort_key: params.sort,
+    sort_desc: params.desc,
+    page_number: params.page,
+    page_size: pageSize,
   });
-  if (error) throw new Error(`contacts: ${error.message}`);
+  if (error) throw new Error(`customers: ${error.message}`);
+  return data;
+}
+
+/** Lead sources, the team and open sales columns, for the list's filters,
+ * bulk tools and import. */
+export async function getCustomerListOptions(): Promise<CustomerListOptions> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_customer_list_options");
+  if (error) throw new Error(`customer options: ${error.message}`);
   return data;
 }
 

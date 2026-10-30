@@ -15,7 +15,8 @@ const FeedMediaViewer = dynamic(
 );
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { cn } from "@/components/ui";
+import { PageHeader } from "@/components/kpi";
+import { buttonClassName, cn } from "@/components/ui";
 import type { PhotoFeedItem, PhotoBatch, PhotoSummary } from "@/lib/photo-feed";
 
 import {
@@ -195,20 +196,13 @@ export function PhotoFeed({
   return (
     <div
       data-app-content="full-bleed"
-      className="min-h-full bg-white text-[#263143]"
+      className="min-h-full bg-[var(--color-surface)] text-[var(--color-text)]"
     >
-      <div className="mx-auto w-full px-4 pb-14 pt-7 sm:px-7 lg:px-12 lg:pt-12">
-        {header ?? (
-          <div>
-            <div>
-              <h1 className="font-display text-[36px] font-extrabold leading-none tracking-[-0.035em] text-[#172235]">
-                Photos
-              </h1>
-            </div>
-          </div>
-        )}
+      {/* Full-bleed route: this container carries the page gutter itself. */}
+      <div className="w-full px-[var(--gutter)] pb-14 pt-[var(--page-pad-y)]">
+        {header ?? <PageHeader title="Photos" />}
 
-        <fieldset disabled={selectionLocked} className="mt-7">
+        <fieldset disabled={selectionLocked} className={header ? "mt-6" : undefined}>
           <PhotoToolbar
             projects={projectOptions}
             users={creatorOptions.map(([name]) => [name, name])}
@@ -242,7 +236,7 @@ export function PhotoFeed({
           />
         ) : null}
         {error ? (
-          <div role="alert" className="mt-4 text-sm text-red-700">
+          <div role="alert" className="mt-4 text-[13px] text-[var(--color-bad)]">
             {error}{" "}
             <button
               type="button"
@@ -255,7 +249,7 @@ export function PhotoFeed({
         ) : null}
         {groups.length ? (
           <div
-            className={`mt-8 space-y-7 ${loading ? "pointer-events-none opacity-50" : ""}`}
+            className={`mt-6 space-y-7 ${loading ? "pointer-events-none opacity-50" : ""}`}
           >
             {groups.map((items) => (
               <section
@@ -285,9 +279,9 @@ export function PhotoFeed({
                         return next;
                       });
                     }}
-                    className="h-5 w-5 accent-blue-600"
+                    className="h-4 w-4 accent-[var(--color-brand)]"
                   />
-                  <h2 className="font-display text-[17px] font-semibold text-[#273244]">
+                  <h2 className="text-sm font-semibold text-[var(--color-heading)]">
                     {dateHeading(items[0].capturedAt)}
                   </h2>
                 </div>
@@ -307,7 +301,7 @@ export function PhotoFeed({
                     const duration = durationLabel(photo.durationMs);
                     return (
                       <figure key={photo.id} className="min-w-0">
-                        <div className="group relative aspect-square overflow-hidden rounded-[8px] bg-[#edf0f4]">
+                        <div className="group relative aspect-square overflow-hidden rounded-[var(--radius)] bg-[var(--color-surface-2)]">
                           <button
                             type="button"
                             onClick={(event) =>
@@ -316,7 +310,7 @@ export function PhotoFeed({
                                 : setActivePhotoId(photo.id)
                             }
                             aria-label={`View ${photo.mediaType === "video" ? "video" : "photo"} from ${photo.projectName}`}
-                            className="relative block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                            className="relative block h-full w-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-brand)]"
                           >
                             <ProjectMediaPreview
                               src={url}
@@ -331,7 +325,7 @@ export function PhotoFeed({
                           </button>
 
                           {selected.has(photo.id) ? (
-                            <span className="pointer-events-none absolute inset-0 bg-black/30 ring-2 ring-inset ring-blue-500" />
+                            <span className="pointer-events-none absolute inset-0 bg-black/30 ring-2 ring-inset ring-[var(--color-brand)]" />
                           ) : null}
                           <input
                             type="checkbox"
@@ -346,7 +340,7 @@ export function PhotoFeed({
                                 ),
                               )
                             }
-                            className={`absolute left-2 top-2 h-5 w-5 cursor-pointer accent-blue-600 focus:opacity-100 ${selected.size ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"}`}
+                            className={`absolute left-2 top-2 h-5 w-5 cursor-pointer accent-[var(--color-brand)] focus:opacity-100 ${selected.size ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"}`}
                           />
                           <MediaItemMenu
                             mediaId={photo.id}
@@ -357,7 +351,7 @@ export function PhotoFeed({
                             onBusy={setSelectionLocked}
                             onSaved={() => void load(false, true)}
                           />
-                          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-[#f7f8fa] px-1 text-[10px] font-bold text-[#536073] shadow-sm">
+                          <span className="pointer-events-none absolute bottom-2 left-2 inline-flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-white bg-[var(--color-surface-2)] px-1 text-[10px] font-bold text-[var(--color-muted)] shadow-[var(--shadow-pop-lite)]">
                             {initials(photo.creatorName)}
                           </span>
                           {duration ? (
@@ -370,7 +364,7 @@ export function PhotoFeed({
                         <figcaption className="mt-2 min-w-0 leading-tight">
                           <Link
                             href={`/jobs/${encodeURIComponent(photo.ownerProjectId)}`}
-                            className="block truncate text-[12px] font-normal text-[#344056] hover:text-[#246fcb] hover:underline"
+                            className="block truncate text-xs font-normal text-[var(--color-text)] hover:text-[var(--color-brand-strong)] hover:underline"
                             title={
                               photo.address
                                 ? `${photo.projectName} · ${photo.address}`
@@ -379,7 +373,7 @@ export function PhotoFeed({
                           >
                             {photo.projectName}
                           </Link>
-                          <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-[#8a95a5]">
+                          <div className="mt-1 flex min-w-0 items-center gap-1 text-[11px] text-[var(--color-faint)]">
                             <time
                               dateTime={photo.capturedAt}
                               className="shrink-0 whitespace-nowrap"
@@ -404,7 +398,7 @@ export function PhotoFeed({
                   type="button"
                   disabled={loading}
                   onClick={() => void load(true)}
-                  className="h-10 rounded-lg border border-[#d8dde5] bg-white px-5 text-[13px] font-semibold text-[#4a5568] shadow-sm hover:border-[#b8c2d0] hover:bg-[#f8f9fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5794ea]/30"
+                  className={buttonClassName({ variant: "secondary" })}
                 >
                   Load more photos
                 </button>
@@ -412,14 +406,14 @@ export function PhotoFeed({
             ) : null}
           </div>
         ) : (
-          <div className="mt-16 flex min-h-72 items-center justify-center rounded-xl border border-dashed border-[#d6dce5] bg-[#fafbfc] p-8 text-center">
+          <div className="mt-6 flex min-h-72 items-center justify-center rounded-[var(--radius)] border border-dashed border-[var(--color-border-strong)] p-8 text-center">
             <div>
-              <div className="font-display text-lg font-semibold text-[#283448]">
+              <div className="text-sm font-semibold text-[var(--color-heading)]">
                 {hasFilters
                   ? "No photos or videos match these filters"
                   : "No photos or videos yet"}
               </div>
-              <p className="mt-1 text-sm text-[#7d8899]">
+              <p className="mt-1 text-[13px] text-[var(--color-muted)]">
                 {hasFilters
                   ? "Change your filters to see more media."
                   : "Photos and videos added to projects will appear here."}

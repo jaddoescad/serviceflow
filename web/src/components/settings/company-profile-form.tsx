@@ -4,7 +4,18 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveCompanyProfile, type CompanyProfile } from "@/lib/actions/settings";
 import { Button, Field, Input, Select } from "@/components/ui";
-import { Detail, SaveStatus, SettingsSection, TRADES } from "./settings-section";
+import { Detail, SaveStatus, SettingsSection } from "./settings-section";
+
+const TRADES: Array<{ value: string; label: string }> = [
+  { value: "painting", label: "Painting" },
+  { value: "plumbing", label: "Plumbing" },
+  { value: "electrical", label: "Electrical" },
+  { value: "hvac", label: "HVAC" },
+  { value: "cleaning", label: "Cleaning" },
+  { value: "landscaping", label: "Landscaping" },
+  { value: "general_contracting", label: "General contracting" },
+  { value: "other", label: "Other" },
+];
 
 // Fixed names: Intl's long names differ between Node and browsers, which
 // breaks hydration.
@@ -80,7 +91,7 @@ export function CompanyProfileForm({
       footer={
         canEdit ? (
           <>
-            <SaveStatus error={error} message={message} hint="Shown to your team across ServiceFlow." />
+            <SaveStatus error={error} message={message} />
             <Button className="ml-auto" onClick={save} disabled={pending || !changed || !name.trim()}>
               {pending ? "Saving…" : "Save"}
             </Button>
@@ -124,10 +135,10 @@ export function CompanyProfileForm({
           />
         </Field>
       </div>
-      <div className="mt-5 border-t border-[var(--color-border)] pt-5">
+      <div className="mt-4 border-t border-[var(--color-border)] pt-4">
         <Detail label="Time zone">
           {timeZoneLabel(saved.timezone)}
-          <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+          <span className="mt-0.5 block text-xs text-[var(--color-faint)]">
             Clock-ins, timesheets and reminders use this time zone.
           </span>
         </Detail>

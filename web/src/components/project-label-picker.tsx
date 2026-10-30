@@ -79,8 +79,8 @@ export function ProjectLabelPicker({
         if (!pending) onClose();
       }}
     >
-      <div className="p-6">
-        <div className="mb-5 flex min-h-8 flex-wrap items-center gap-2">
+      <div className="p-5">
+        <div className="mb-4 flex min-h-6 flex-wrap items-center gap-1.5">
           {selected.length ? (
             options
               .filter((label) => selected.includes(label.id))
@@ -90,18 +90,18 @@ export function ProjectLabelPicker({
                   disabled={pending}
                   onClick={() => toggle(label.id)}
                   aria-label={`Remove ${label.name}`}
-                  className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm"
+                  className="flex h-6 items-center gap-1.5 rounded-[5px] bg-[var(--tag-gray-bg)] px-2 text-xs font-medium text-[var(--tag-gray-text)] hover:bg-[var(--color-selected)]"
                 >
                   <span
-                    className="h-2.5 w-2.5 rounded-full"
+                    className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: label.color }}
                   />
                   {label.name}
-                  <span aria-hidden="true">×</span>
+                  <span aria-hidden="true" className="text-[var(--color-faint)]">×</span>
                 </button>
               ))
           ) : (
-            <span className="text-sm text-slate-500">No labels selected</span>
+            <span className="text-[13px] text-[var(--color-muted)]">No labels selected</span>
           )}
         </div>
         <Input
@@ -111,13 +111,13 @@ export function ProjectLabelPicker({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        <div className="mt-4 grid max-h-[45vh] gap-x-6 overflow-y-auto sm:grid-cols-2">
+        <div className="mt-3 grid max-h-[45vh] gap-x-4 overflow-y-auto sm:grid-cols-2">
           {visible.map((label) => (
             <div
               key={label.id}
-              className="flex items-center rounded-lg hover:bg-slate-50"
+              className="flex items-center rounded-md hover:bg-[var(--color-hover)]"
             >
-              <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-2">
+              <label className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2.5 pl-2">
                 <input
                   type="checkbox"
                   disabled={
@@ -126,13 +126,13 @@ export function ProjectLabelPicker({
                   }
                   checked={selected.includes(label.id)}
                   onChange={() => toggle(label.id)}
-                  className="h-5 w-5 shrink-0 accent-blue-600"
+                  className="h-4 w-4 shrink-0 accent-[var(--color-brand)]"
                 />
                 <span
-                  className="h-3 w-3 shrink-0 rounded-full"
+                  className="h-2 w-2 shrink-0 rounded-full"
                   style={{ backgroundColor: label.color }}
                 />
-                <span className="truncate text-sm">{label.name}</span>
+                <span className="truncate text-[13px] text-[var(--color-text)]">{label.name}</span>
               </label>
               <LabelMenu
                 disabled={pending}
@@ -143,26 +143,27 @@ export function ProjectLabelPicker({
             </div>
           ))}
           {!visible.length ? (
-            <p className="col-span-full py-10 text-center text-sm text-slate-500">
+            <p className="col-span-full py-10 text-center text-[13px] text-[var(--color-muted)]">
               {options.length ? "No matching labels" : "No labels yet"}
             </p>
           ) : null}
         </div>
         {error ? (
-          <p role="alert" className="mt-4 text-sm text-red-700">
+          <p role="alert" className="mt-3 text-[13px] text-[var(--color-bad)]">
             {error}
           </p>
         ) : null}
       </div>
-      <footer className="flex items-center gap-3 border-t border-slate-200 p-6">
-        <button
+      <footer className="flex items-center gap-2 border-t border-[var(--color-border)] px-5 py-3">
+        <Button
+          variant="ghost"
           disabled={pending}
           onClick={() => setEditing("new")}
-          className="mr-auto text-sm font-semibold text-blue-600"
+          className="-ml-2 mr-auto text-[var(--color-brand-strong)]"
         >
-          ＋ Create Label
-        </button>
-        <Button variant="subtle" disabled={pending} onClick={onClose}>
+          + Create Label
+        </Button>
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
           Cancel
         </Button>
         <Button

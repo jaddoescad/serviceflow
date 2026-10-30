@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { TimesheetFilters } from "@/lib/queries";
-import { Badge, Button, Card, EmptyState, Field, Input, Select } from "@/components/ui";
+import { DataTable, TablePanel, TableToolbar, Td, Th, Tr } from "@/components/table-ui";
+import { Badge, Button, EmptyState, Field, Input, Select } from "@/components/ui";
 import { computeDurations, isStaleActive, wasEdited } from "@/lib/hours";
 import { fmtHours, fmtDate, fmtTime, fmtDistance } from "@/lib/format";
 import {
@@ -125,8 +126,7 @@ export function TimesheetsTable({
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const now = Date.parse(result.calculatedAt);
-  const { activeCount, totalHours } = result;
-  const filtered = entries;
+  const { activeCount } = result;
   const previousFilters = useRef(filters);
   useEffect(() => {
     const old = previousFilters.current;
@@ -166,195 +166,186 @@ export function TimesheetsTable({
   }
 
   return (
-    <Card>
-      <div className="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] p-4">
-        <Field label="Search">
+    <>
+      <TableToolbar>
+        <div className="w-full sm:w-52">
           <Input
+            type="search"
+            aria-label="Search painter or job"
             placeholder="Painter or job…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-48"
           />
-        </Field>
-        <Field label="Crew">
-          <Select value={employee} onChange={(e) => setEmployee(e.target.value)}>
-            <option value="all">All crew</option>
-            {employees.map((emp) => (
-              <option key={emp.user_id} value={emp.user_id}>
-                {emp.full_name ?? emp.email}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Job">
-          <Select value={project} onChange={(e) => setProject(e.target.value)}>
-            <option value="all">All jobs</option>
-            {projects.map((p) => (
-              <option key={p.companycam_id} value={p.companycam_id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Status">
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="complete">Complete</option>
-          </Select>
-        </Field>
+        </div>
+        <Select aria-label="Crew" value={employee} onChange={(e) => setEmployee(e.target.value)}>
+          <option value="all">All crew</option>
+          {employees.map((emp) => (
+            <option key={emp.user_id} value={emp.user_id}>
+              {emp.full_name ?? emp.email}
+            </option>
+          ))}
+        </Select>
+        <Select aria-label="Job" value={project} onChange={(e) => setProject(e.target.value)} className="max-w-56">
+          <option value="all">All jobs</option>
+          {projects.map((p) => (
+            <option key={p.companycam_id} value={p.companycam_id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
+        <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="complete">Complete</option>
+        </Select>
         <Button
           type="button"
-          variant={status === "active" ? "primary" : "subtle"}
-          size="sm"
+          variant={status === "active" ? "primary" : "secondary"}
+          aria-pressed={status === "active"}
           onClick={() => setStatus((current) => (current === "active" ? "all" : "active"))}
         >
           {activeCount} on clock
         </Button>
-        <div className="ml-auto text-right">
-          <div className="text-xs text-[var(--color-muted)]">
-            {result.total} entries
-          </div>
-          <div className="text-lg font-semibold tabular-nums">{fmtHours(totalHours)}</div>
-        </div>
-      </div>
+      </TableToolbar>
 
       {error ? (
-        <div className="border-b border-[var(--color-border)] bg-[var(--color-bad-soft)] px-4 py-2 text-sm text-[var(--color-bad)]">
+        <div role="alert" className="shrink-0 border-b border-[var(--color-border)] bg-[var(--tag-red-bg)] px-[var(--gutter)] py-2 text-[13px] text-[var(--tag-red-text)]">
           {error}
         </div>
       ) : null}
       {notice ? (
         <div
-          className="border-b border-[var(--color-border)] bg-[var(--color-good-soft)] px-4 py-2 text-sm text-[var(--color-good)]"
+          className="shrink-0 border-b border-[var(--color-border)] bg-[var(--tag-green-bg)] px-[var(--gutter)] py-2 text-[13px] text-[var(--tag-green-text)]"
           role="status"
         >
           {notice}
         </div>
       ) : null}
 
-      {filtered.length === 0 ? (
-        <EmptyState>No time entries match these filters.</EmptyState>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
-                <th className="px-4 py-2.5 font-medium">Painter</th>
-                <th className="px-4 py-2.5 font-medium">Job</th>
-                <th className="px-4 py-2.5 font-medium">Date</th>
-                <th className="px-4 py-2.5 font-medium">In</th>
-                <th className="px-4 py-2.5 font-medium">Out</th>
-                <th className="px-4 py-2.5 text-right font-medium">Hours</th>
-                <th className="px-4 py-2.5 font-medium">Flags</th>
-                <th className="px-4 py-2.5 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e) => {
-                const dur = computeDurations(e, now);
-                const stale = isStaleActive(e, now);
-                const edited = wasEdited(e);
-                const offSite = (e.last_distance_meters ?? 0) > 250;
-                return (
-                  <tr
-                    key={e.id}
-                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]"
-                  >
-                    <td className="px-4 py-2.5 font-medium">{e.user_name ?? "Painter"}</td>
-                    <td className="max-w-[200px] truncate px-4 py-2.5 text-[var(--color-muted)]">
-                      {e.project_name}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-muted)]">
-                      {fmtDate(e.started_at)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5">{fmtTime(e.started_at)}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5">
+      <TablePanel
+        fill
+        busy={pending}
+        footer={
+          result.total > 0 ? (
+            <>
+              <span className="tabular-nums">
+                {(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, result.total)} of {result.total}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, filters)}>Previous</Button>
+                <span className="tabular-nums">Page {currentPage} of {totalPages}</span>
+                <Button size="sm" variant="secondary" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, filters)}>Next</Button>
+              </div>
+            </>
+          ) : null
+        }
+      >
+        <DataTable minWidth={820}>
+          <thead>
+            <tr>
+              <Th>Painter</Th>
+              <Th>Job</Th>
+              <Th>Date</Th>
+              <Th>In</Th>
+              <Th>Out</Th>
+              <Th numeric>Hours</Th>
+              <Th>Flags</Th>
+              <Th numeric>
+                <span className="sr-only">Actions</span>
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => {
+              const dur = computeDurations(e, now);
+              const stale = isStaleActive(e, now);
+              const edited = wasEdited(e);
+              const offSite = (e.last_distance_meters ?? 0) > 250;
+              return (
+                <Tr key={e.id}>
+                  <Td className="whitespace-nowrap">{e.user_name ?? "Painter"}</Td>
+                  <Td muted className="max-w-[220px] truncate">
+                    {e.project_name}
+                  </Td>
+                  <Td muted className="whitespace-nowrap">
+                    {fmtDate(e.started_at)}
+                  </Td>
+                  <Td className="whitespace-nowrap tabular-nums">{fmtTime(e.started_at)}</Td>
+                  <Td className="whitespace-nowrap tabular-nums">
+                    {e.status === "active" ? <Badge tone="good">On clock</Badge> : fmtTime(e.ended_at)}
+                  </Td>
+                  <Td numeric className="font-medium text-[var(--color-heading)]">
+                    {fmtHours(dur.totalHours)}
+                  </Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-1">
+                      {stale ? <Badge tone="bad">Missing out</Badge> : null}
+                      {edited ? <Badge tone="warn">Edited</Badge> : null}
+                      {offSite ? <Badge tone="orange">{fmtDistance(e.last_distance_meters)}</Badge> : null}
+                      {!stale && !edited && !offSite ? (
+                        <span className="text-[var(--color-faint)]">—</span>
+                      ) : null}
+                    </div>
+                  </Td>
+                  <Td>
+                    <div className="flex items-center justify-end gap-1">
                       {e.status === "active" ? (
-                        <Badge tone="good">on clock</Badge>
-                      ) : (
-                        fmtTime(e.ended_at)
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right font-medium tabular-nums">
-                      {fmtHours(dur.totalHours)}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1">
-                        {stale ? <Badge tone="bad">missing out</Badge> : null}
-                        {edited ? <Badge tone="warn">edited</Badge> : null}
-                        {offSite ? <Badge tone="warn">{fmtDistance(e.last_distance_meters)}</Badge> : null}
-                        {!stale && !edited && !offSite ? (
-                          <span className="text-xs text-[var(--color-muted)]">—</span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center justify-end gap-1">
-                        {e.status === "active" ? (
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              setError(null);
-                              setNotice(null);
-                              setClockingOut(e);
-                            }}
-                            disabled={pending}
-                          >
-                            Clock out
-                          </Button>
-                        ) : null}
-                        <details className="relative" onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            event.currentTarget.open = false;
-                            event.currentTarget.querySelector("summary")?.focus();
-                          }
-                        }} onBlur={(event) => {
-                          if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-                        }}>
-                          <summary aria-label={`Time entry actions for ${e.user_name ?? "painter"}`} className="cursor-pointer list-none rounded-lg px-3 py-1.5 text-lg hover:bg-[var(--color-surface)] [&::-webkit-details-marker]:hidden">⋯</summary>
-                          <div className="relative z-20 flex min-w-32 flex-col rounded-lg border border-[var(--color-border)] bg-white p-1 shadow-lg">
-                            <Button variant="ghost" size="sm" disabled={pending} onClick={(event) => {
-                              event.currentTarget.closest("details")?.removeAttribute("open");
-                              setError(null);
-                              setNotice(null);
-                              setEditing(e);
-                            }}>Fix time</Button>
-                        {canDelete ? (
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={(event) => {
-                              event.currentTarget.closest("details")?.removeAttribute("open");
-                              if (confirm("Delete this time entry? This cannot be undone.")) {
-                                run(() => deleteEntry(e.id), "Time entry deleted.");
-                              }
-                            }}
-                            disabled={pending}
-                          >
-                            Delete
-                          </Button>
-                        ) : null}
-                          </div>
-                        </details>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {result.total > 0 ? <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-3">
-        <span className="text-xs text-[var(--color-muted)]">{(currentPage - 1) * 50 + 1}–{Math.min(currentPage * 50, result.total)} of {result.total}</span>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="subtle" disabled={pending || currentPage <= 1} onClick={() => navigate(currentPage - 1, filters)}>Previous</Button>
-          <span className="text-xs">Page {currentPage} of {totalPages}</span>
-          <Button size="sm" variant="subtle" disabled={pending || currentPage >= totalPages} onClick={() => navigate(currentPage + 1, filters)}>Next</Button>
-        </div>
-      </div> : null}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setError(null);
+                            setNotice(null);
+                            setClockingOut(e);
+                          }}
+                          disabled={pending}
+                        >
+                          Clock out
+                        </Button>
+                      ) : null}
+                      <details className="relative" onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.currentTarget.open = false;
+                          event.currentTarget.querySelector("summary")?.focus();
+                        }
+                      }} onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+                      }}>
+                        <summary aria-label={`Time entry actions for ${e.user_name ?? "painter"}`} className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md text-base text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] [&::-webkit-details-marker]:hidden">⋯</summary>
+                        <div className="absolute right-0 top-full z-20 mt-1 flex min-w-36 flex-col rounded-[var(--radius)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-pop)]">
+                          <Button variant="ghost" size="sm" className="justify-start text-[var(--color-text)]" disabled={pending} onClick={(event) => {
+                            event.currentTarget.closest("details")?.removeAttribute("open");
+                            setError(null);
+                            setNotice(null);
+                            setEditing(e);
+                          }}>Fix time</Button>
+                          {canDelete ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="justify-start text-[var(--color-bad)]"
+                              onClick={(event) => {
+                                event.currentTarget.closest("details")?.removeAttribute("open");
+                                if (confirm("Delete this time entry? This cannot be undone.")) {
+                                  run(() => deleteEntry(e.id), "Time entry deleted.");
+                                }
+                              }}
+                              disabled={pending}
+                            >
+                              Delete
+                            </Button>
+                          ) : null}
+                        </div>
+                      </details>
+                    </div>
+                  </Td>
+                </Tr>
+              );
+            })}
+          </tbody>
+        </DataTable>
+        {entries.length ? null : <EmptyState>No time entries match these filters.</EmptyState>}
+      </TablePanel>
       {editing ? (
         <EditDialog
           entry={editing}
@@ -378,7 +369,7 @@ export function TimesheetsTable({
           }
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -419,13 +410,15 @@ function ClockOutDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]">
         <form onClick={(event) => event.stopPropagation()} onSubmit={submit}>
-          <h3 className="text-base font-semibold">Clock out {entry.user_name ?? "painter"}</h3>
-          <p className="mt-0.5 text-xs text-[var(--color-muted)]">{entry.project_name}</p>
-
-          <div className="my-4 grid grid-cols-2 gap-3 rounded-lg bg-[var(--color-surface-2)] p-3 text-sm">
+          <div className="border-b border-[var(--color-border)] px-5 py-3.5">
+            <h3 className="text-[15px] font-semibold text-[var(--color-heading)]">Clock out {entry.user_name ?? "painter"}</h3>
+            <p className="text-xs text-[var(--color-muted)]">{entry.project_name}</p>
+          </div>
+          <div className="p-5">
+          <div className="mb-4 grid grid-cols-2 gap-3 rounded-[var(--radius)] bg-[var(--color-surface-2)] p-3 text-[13px]">
             <div>
               <div className="text-xs text-[var(--color-muted)]">Clocked in</div>
               <div className="font-medium">{fmtDate(entry.started_at)} · {fmtTime(entry.started_at)}</div>
@@ -447,13 +440,13 @@ function ClockOutDialog({
             />
           </Field>
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button type="button" variant="subtle" size="sm" onClick={() => setEndedAt(toLocalInput(new Date().toISOString()))}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setEndedAt(toLocalInput(new Date().toISOString()))}>
               Now
             </Button>
-            <Button type="button" variant="subtle" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 17))}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 17))}>
               5:00 PM
             </Button>
-            <Button type="button" variant="subtle" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 18))}>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 18))}>
               6:00 PM
             </Button>
           </div>
@@ -465,14 +458,15 @@ function ClockOutDialog({
           </div>
 
           {formError || actionError ? (
-            <p className="mt-3 text-sm text-[var(--color-bad)]">{formError ?? actionError}</p>
+            <p className="mt-3 text-[13px] text-[var(--color-bad)]">{formError ?? actionError}</p>
           ) : null}
           <p className="mt-3 text-xs text-[var(--color-muted)]">
             This ends the active shift and leaves it pending payroll approval.
           </p>
+          </div>
 
-          <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
+          <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending || !preview}>
@@ -480,7 +474,7 @@ function ClockOutDialog({
             </Button>
           </div>
         </form>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -527,13 +521,16 @@ function EditDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]">
         <form onClick={(event) => event.stopPropagation()} onSubmit={submit}>
-          <h3 className="text-base font-semibold">Fix time</h3>
-          <p className="mb-4 mt-0.5 text-xs text-[var(--color-muted)]">
-            {entry.user_name} · {entry.project_name}
-          </p>
+          <div className="border-b border-[var(--color-border)] px-5 py-3.5">
+            <h3 className="text-[15px] font-semibold text-[var(--color-heading)]">Fix time</h3>
+            <p className="text-xs text-[var(--color-muted)]">
+              {entry.user_name} · {entry.project_name}
+            </p>
+          </div>
+          <div className="p-5">
           <div className="space-y-3">
             <Field label="Clock-in time (Ottawa)">
               <Input name="startedAt" type="datetime-local" value={startedAt} onChange={(event) => setStartedAt(event.target.value)} required />
@@ -543,10 +540,10 @@ function EditDialog({
             </Field>
             {entry.status === "active" ? (
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="subtle" size="sm" onClick={() => setEndedAt(toLocalInput(new Date().toISOString()))}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setEndedAt(toLocalInput(new Date().toISOString()))}>
                   Clock out now
                 </Button>
-                <Button type="button" variant="subtle" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 18))}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setEndedAt(presetTime(endedAt, 18))}>
                   Set 6:00 PM
                 </Button>
               </div>
@@ -556,7 +553,7 @@ function EditDialog({
             </Field>
           </div>
 
-          <div className="mt-4 rounded-lg bg-[var(--color-surface-2)] p-3 text-sm">
+          <div className="mt-4 rounded-[var(--radius)] bg-[var(--color-surface-2)] p-3 text-[13px]">
             {endedAt ? (
               <span>Corrected shift total: <strong>{preview ?? "Check the time range"}</strong></span>
             ) : (
@@ -564,11 +561,12 @@ function EditDialog({
             )}
           </div>
           {formError || actionError ? (
-            <p className="mt-3 text-sm text-[var(--color-bad)]">{formError ?? actionError}</p>
+            <p className="mt-3 text-[13px] text-[var(--color-bad)]">{formError ?? actionError}</p>
           ) : null}
+          </div>
 
-          <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
+          <div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending || (Boolean(endedAt) && !preview)}>
@@ -576,7 +574,7 @@ function EditDialog({
             </Button>
           </div>
         </form>
-      </Card>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   deleteProjectLabel,
 } from "@/lib/actions/project-workspace";
 import type { ProjectLabel } from "@/lib/project-workspace";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { Button, Field, Input } from "./ui";
 
 export const LABEL_COLORS = [
@@ -33,8 +33,8 @@ export function LabelColorPicker({
   const name = useId();
   return (
     <fieldset disabled={disabled}>
-      <legend className="mb-3 text-sm font-semibold">Color</legend>
-      <div className="flex flex-wrap gap-3">
+      <legend className="mb-1 text-xs font-medium text-[var(--color-muted)]">Color</legend>
+      <div className="flex flex-wrap gap-2">
         {LABEL_COLORS.map(([label, color]) => (
           <label key={color} title={label} className="relative cursor-pointer">
             <input
@@ -46,7 +46,7 @@ export function LabelColorPicker({
               className="peer sr-only"
             />
             <span
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-black/5 text-white peer-checked:ring-2 peer-checked:ring-slate-800 peer-checked:ring-offset-2 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-600 peer-focus-visible:ring-offset-2"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-black/5 text-white peer-checked:ring-2 peer-checked:ring-[var(--color-heading)] peer-checked:ring-offset-2 peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-brand)] peer-focus-visible:ring-offset-2"
               style={{ backgroundColor: color }}
             >
               {value === color ? <span aria-hidden="true">✓</span> : null}
@@ -79,7 +79,6 @@ export function LabelEditor({
       }}
     >
       <form
-        className="space-y-7 p-6"
         onSubmit={(event) => {
           event.preventDefault();
           setError("");
@@ -98,31 +97,33 @@ export function LabelEditor({
           });
         }}
       >
-        <Field label="Name">
-          <Input
-            autoFocus
-            required
-            maxLength={60}
+        <div className="space-y-4 p-5">
+          <Field label="Name">
+            <Input
+              autoFocus
+              required
+              maxLength={60}
+              disabled={pending}
+              placeholder="Give your new label a name…"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <LabelColorPicker
+            value={color}
+            onChange={setColor}
             disabled={pending}
-            placeholder="Give your new label a name…"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
           />
-        </Field>
-        <LabelColorPicker
-          value={color}
-          onChange={setColor}
-          disabled={pending}
-        />
-        {error ? (
-          <p role="alert" className="text-sm text-red-700">
-            {error}
-          </p>
-        ) : null}
-        <footer className="flex justify-end gap-3 border-t border-slate-200 pt-5">
+          {error ? (
+            <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <ModalFooter>
           <Button
             type="button"
-            variant="subtle"
+            variant="secondary"
             disabled={pending}
             onClick={onClose}
           >
@@ -131,7 +132,7 @@ export function LabelEditor({
           <Button type="submit" disabled={pending || !name.trim()}>
             {pending ? "Saving…" : "Save"}
           </Button>
-        </footer>
+        </ModalFooter>
       </form>
     </ProjectModal>
   );
@@ -155,38 +156,39 @@ export function DeleteLabelDialog({
         if (!pending) onClose();
       }}
     >
-      <div className="space-y-6 p-6">
-        <p className="text-sm">
+      <div className="space-y-3 p-5">
+        <p className="text-[13px] text-[var(--color-text)]">
           Delete “{label.name}”? This removes the label from every project.
           Projects and photos will be kept.
         </p>
         {error ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-[13px] text-[var(--color-bad)]">
             {error}
           </p>
         ) : null}
-        <div className="flex justify-end gap-3">
-          <Button variant="subtle" disabled={pending} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                try {
-                  const result = await deleteProjectLabel(label.id);
-                  if (result.error) setError(result.error);
-                  else onDeleted();
-                } catch {
-                  setError("Could not delete label.");
-                }
-              })
-            }
-          >
-            {pending ? "Deleting…" : "Delete Label"}
-          </Button>
-        </div>
       </div>
+      <ModalFooter>
+        <Button variant="secondary" disabled={pending} onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="danger"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              try {
+                const result = await deleteProjectLabel(label.id);
+                if (result.error) setError(result.error);
+                else onDeleted();
+              } catch {
+                setError("Could not delete label.");
+              }
+            })
+          }
+        >
+          {pending ? "Deleting…" : "Delete Label"}
+        </Button>
+      </ModalFooter>
     </ProjectModal>
   );
 }
@@ -229,7 +231,7 @@ export function LabelMenu({
                 : Math.max(8, bounds.top - 92),
           });
         }}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xl hover:bg-slate-100 disabled:opacity-50"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-base text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] disabled:opacity-50"
       >
         ···
       </button>
@@ -245,19 +247,19 @@ export function LabelMenu({
           if (event.key === "Escape") event.stopPropagation();
         }}
         style={position}
-        className="fixed m-0 w-36 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-900 shadow-lg"
+        className="fixed m-0 w-36 rounded-[var(--radius)] bg-[var(--color-surface)] p-1 text-[13px] text-[var(--color-text)] shadow-[var(--shadow-pop)]"
       >
         <button
           type="button"
           onClick={() => choose(onEdit)}
-          className="w-full rounded px-3 py-2 text-left hover:bg-slate-100"
+          className="flex h-8 w-full items-center rounded-md px-2 text-left hover:bg-[var(--color-hover)]"
         >
           Edit
         </button>
         <button
           type="button"
           onClick={() => choose(onDelete)}
-          className="w-full rounded px-3 py-2 text-left text-red-700 hover:bg-red-50"
+          className="flex h-8 w-full items-center rounded-md px-2 text-left text-[var(--color-bad)] hover:bg-[var(--color-bad-soft)]"
         >
           Delete
         </button>

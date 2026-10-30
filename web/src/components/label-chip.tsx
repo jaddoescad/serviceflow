@@ -1,18 +1,13 @@
 import type { ProjectLabel } from "@/lib/project-workspace";
 
+/** A project label as a Tag, tinted from the label's own colour. */
 export function LabelChip({ label }: { label: ProjectLabel }) {
   return (
     <span
-      className="inline-flex rounded px-2 py-1 text-xs font-medium text-slate-900"
+      className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-[5px] px-1.5 text-xs font-medium"
       style={{
-        backgroundColor: label.color,
-        color:
-          parseInt(label.color.slice(1, 3), 16) * 0.299 +
-            parseInt(label.color.slice(3, 5), 16) * 0.587 +
-            parseInt(label.color.slice(5, 7), 16) * 0.114 >
-          150
-            ? "#172235"
-            : "white",
+        backgroundColor: `color-mix(in srgb, ${label.color} 16%, white)`,
+        color: `color-mix(in srgb, ${label.color} 72%, black)`,
       }}
     >
       {label.name}

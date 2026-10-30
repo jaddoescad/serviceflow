@@ -1,41 +1,86 @@
 @import "tailwindcss";
 
-/* Design tokens: every color, type and shape value the app uses. */
+/* Design tokens (Attio-like: white canvas, hairlines, near-black primary,
+   colour only for status). Components use these variables, never raw hex. */
 :root {
-  --color-bg: #eef1f6;
+  /* Surfaces */
+  --color-bg: #ffffff;
   --color-surface: #ffffff;
-  --color-surface-2: #f4f6fa;
-  --color-border: #e3e8f0;
-  --color-text: #26303f;
-  --color-heading: #101725;
-  --color-muted: #6b7688;
+  --color-surface-2: #f7f7f8;
+  --color-hover: #f4f4f5;
+  --color-row-hover: #fafafa;
+  --color-selected: #ececee;
+
+  /* Lines */
+  --color-border: #ebebed;
+  --color-border-strong: #dcdcdf;
+
+  /* Text */
+  --color-heading: #111113;
+  --color-text: #2b2b30;
+  --color-muted: #6b6b74;
+  --color-faint: #9b9ba3;
+
+  /* Primary action: near-black */
+  --color-primary: #111113;
+  --color-primary-hover: #2b2b30;
+  --color-primary-ink: #ffffff;
+
+  /* Accent: links, focus, selection */
   --color-brand: #2f6bff;
   --color-brand-ink: #ffffff;
-  --color-brand-soft: #e7eeff;
+  --color-brand-soft: #edf2ff;
   --color-brand-strong: #2456d8;
-  --color-good: #17935a;
-  --color-good-soft: #e2f5ec;
-  --color-warn: #b7770f;
-  --color-warn-soft: #fbf1dd;
-  --color-bad: #d3453e;
-  --color-bad-soft: #fbe6e5;
-  --color-chip-muted: #eef1f6;
-  --chart-grid: #e6ebf3;
-  --chart-axis: #93a0b4;
-  --radius: 14px;
-  --shadow: 0 1px 2px rgba(16, 23, 37, 0.05), 0 1px 3px rgba(16, 23, 37, 0.04);
-  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --display-space: -0.02em;
-}
+  --focus-ring: 0 0 0 3px rgba(47, 107, 255, 0.15);
 
-:root {
-  --sidebar-bg: #172b3f;
-  --sidebar-surface: #20364c;
-  --sidebar-active: #31475f;
-  --sidebar-border: #3a5066;
-  --sidebar-text: #f4f7fb;
-  --sidebar-muted: #aab7c7;
+  /* Status tints: background / text */
+  --tag-gray-bg: #f2f2f4;
+  --tag-gray-text: #4b4b55;
+  --tag-blue-bg: #eaf1ff;
+  --tag-blue-text: #1f56d6;
+  --tag-green-bg: #e7f6ee;
+  --tag-green-text: #16794a;
+  --tag-yellow-bg: #fdf4d6;
+  --tag-yellow-text: #8a6200;
+  --tag-orange-bg: #fff0e4;
+  --tag-orange-text: #b4540b;
+  --tag-red-bg: #fdecec;
+  --tag-red-text: #b42323;
+  --tag-red-border: #f3c7c7;
+  --tag-purple-bg: #f1ecfd;
+  --tag-purple-text: #6a3fd0;
+
+  /* Semantic aliases kept for existing components */
+  --color-good: var(--tag-green-text);
+  --color-good-soft: var(--tag-green-bg);
+  --color-warn: var(--tag-yellow-text);
+  --color-warn-soft: var(--tag-yellow-bg);
+  --color-bad: var(--tag-red-text);
+  --color-bad-soft: var(--tag-red-bg);
+  --color-chip-muted: var(--tag-gray-bg);
+  --chart-grid: #ebebed;
+  --chart-axis: #9b9ba3;
+
+  /* Shape and depth: panels are flat; only floating things get a shadow */
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-control: 6px;
+  --shadow: none;
+  --shadow-pop: 0 8px 24px rgba(17, 17, 19, 0.08), 0 0 0 1px rgba(17, 17, 19, 0.05);
+  --shadow-pop-lite: 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  /* Type */
+  --font-display: var(--font-inter), "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: var(--font-inter), "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display-space: -0.011em;
+
+  /* Sidebar (light) */
+  --sidebar-bg: #fafafa;
+  --sidebar-surface: var(--color-hover);
+  --sidebar-active: var(--color-selected);
+  --sidebar-border: var(--color-border);
+  --sidebar-text: var(--color-text);
+  --sidebar-muted: var(--color-muted);
 }
 
 html,
@@ -45,25 +90,66 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
+/* UI text is 13px, but the root stays at the browser's 16px so Tailwind's rem
+   scale keeps its real sizes (h-8 = 32px controls, text-xs = 12px). */
+body {
+  font-size: 13px;
+}
 
-/* Most dashboard pages stay within a readable centered column. Routes with a
-   persistent workspace rail (the calculator assistant) can opt into the full
-   area between the navigation and the viewport edge. */
+/* Page layout. Every page opens with the 56px top bar (PageHeader, .page-bar);
+   tab and filter bars (.page-subbar) sit directly under it. Both span the full
+   width over the gutter, and content below starts --page-pad-y further down.
+   Full-bleed routes (photos, calculator) take the whole area. */
+.app-content {
+  --gutter: 1rem;
+  --page-pad-y: 1.25rem;
+  padding: var(--page-pad-y) var(--gutter);
+}
+@media (min-width: 1024px) {
+  .app-content {
+    --gutter: 1.5rem;
+    --page-pad-y: 1.5rem;
+  }
+}
 .app-content:has(> [data-app-content="full-bleed"]) {
-  max-width: none;
   padding: 0;
 }
-
-* {
-  border-color: var(--color-border);
+.page-bar,
+.page-subbar {
+  margin: 0 calc(-1 * var(--gutter)) var(--page-pad-y);
+  padding-inline: var(--gutter);
+}
+.page-bar:first-child,
+.page-bar + .page-subbar,
+.page-subbar + .page-subbar {
+  margin-top: calc(-1 * var(--page-pad-y));
 }
 
-[data-sidebar] {
-  color-scheme: dark;
+/* List pages, boards and calendars: edge to edge and exactly one viewport
+   tall, so their table or board runs to the bottom and scrolls inside.
+   Phones keep normal page scrolling. */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  margin: calc(-1 * var(--page-pad-y)) calc(-1 * var(--gutter));
+}
+.page-fill > .page-bar,
+.page-fill > .page-subbar {
+  margin: 0;
+}
+@media (min-width: 768px) {
+  .page-fill {
+    height: 100svh;
+    min-height: 30rem;
+  }
 }
 
-[data-sidebar] * {
-  border-color: var(--sidebar-border);
+/* Default border colors live in the base layer so border-color utilities
+   (active tab underlines, focus rings, spinners) can override them. */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 .font-display {
@@ -90,8 +176,42 @@ body {
   background: transparent;
 }
 
-/* CompanyCam-style operational workspace. */
-.workspace-page { background: white; min-height: calc(100vh - 3rem); padding: 12px 20px 32px; }
-.app-content:has(.workspace-page), .app-content:has([data-project-workspace]) { background: #fff; }
-[data-project-workspace] { color: #202b39; }
-@media (max-width: 640px) { .workspace-page { padding: 8px 0 24px; } }
+/* Scrollable strips (tabs, sidebar) scroll without a visible bar, like Attio. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Customer documents (/p, /co, /i): "Download PDF" prints a clean letter-size
+   page without the buttons, the accept form or the photo viewer. */
+@media print {
+  @page public-document {
+    size: letter;
+    margin: 0.6in;
+  }
+  .public-document {
+    page: public-document;
+    min-height: 0;
+    background: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .public-document .public-document-noprint {
+    display: none;
+  }
+  .public-document-main {
+    padding: 0;
+  }
+  .public-document-line,
+  .public-document-totals,
+  .public-document-file,
+  .public-document-photo,
+  .public-document-keep {
+    break-inside: avoid;
+  }
+  .public-document-photos {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

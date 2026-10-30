@@ -13,87 +13,184 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NAV_ICONS } from "@/components/nav-icons";
+import { ReportPending, usePendingHref } from "@/components/navigation-pending";
 import { ProjectSearch } from "@/components/project-search";
 import { SignOutButton } from "@/components/sign-out";
+import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/components/ui";
+import { useUnreadInbox } from "@/components/unread-inbox";
 import { initials } from "@/lib/format";
 
-const LINKS = [
-  { href: "/", label: "Today", icon: "/timesheets" },
-  { href: "/projects", label: "Projects", icon: "/projects" },
-  { href: "/jobs", label: "Labour", icon: "/jobs" },
-  { href: "/photos", label: "Photos", icon: "/photos" },
-  { href: "/contacts", label: "Customers", icon: "/contacts" },
-  { href: "/employees", label: "Team", icon: "/employees" },
-  { href: "/settings", label: "Settings", icon: "/settings" },
-  { href: "/labels", label: "Labels", icon: "/labels" },
-  { href: "/projects?view=trash", label: "Project Trash", icon: "/trash" },
+type NavLink = { href: string; label: string };
+
+const TRASH_HREF = "/projects?view=trash";
+
+// Grouped like DripJobs. The first group has no heading; Resources collapses.
+const GROUPS: { title?: string; links: NavLink[] }[] = [
+  {
+    links: [
+      { href: "/", label: "Today" },
+      { href: "/inbox", label: "Inbox" },
+    ],
+  },
+  {
+    title: "Sales",
+    links: [
+      { href: "/contacts", label: "Customers" },
+      { href: "/pipeline/sales", label: "Sales Pipeline" },
+      { href: "/appointments", label: "Appointments" },
+      { href: "/proposals", label: "Proposals" },
+    ],
+  },
+  {
+    title: "Jobs",
+    links: [
+      { href: "/pipeline/jobs", label: "Jobs Pipeline" },
+      { href: "/schedule", label: "Job Schedule" },
+      { href: "/projects", label: "Projects" },
+      { href: "/change-orders", label: "Change Orders" },
+      { href: "/work-orders", label: "Work Orders" },
+      { href: "/jobs", label: "Labour" },
+    ],
+  },
+  {
+    title: "Daily Operations",
+    links: [
+      { href: "/photos", label: "Photos" },
+      { href: "/employees", label: "Team" },
+    ],
+  },
+  {
+    title: "Financials",
+    links: [
+      { href: "/invoices", label: "Invoices" },
+      { href: "/job-costing", label: "Job Costing" },
+      { href: "/metrics", label: "Metrics" },
+      { href: "/reports", label: "Reports" },
+    ],
+  },
+  { title: "Marketing", links: [{ href: "/drips", label: "Drips" }] },
+  { title: "Company", links: [{ href: "/settings", label: "Settings" }] },
+  {
+    title: "Resources",
+    links: [
+      { href: "/labels", label: "Labels" },
+      { href: TRASH_HREF, label: "Project Trash" },
+    ],
+  },
 ];
 
+const within = (pathname: string, base: string) =>
+  pathname === base || pathname.startsWith(`${base}/`);
+
+/** Which link owns the current page. A job's pages (/jobs/[id]/…) belong to
+ * Projects; /jobs alone is the Labour list. */
+function isActive(href: string, pathname: string, trash: boolean): boolean {
+  switch (href) {
+    case TRASH_HREF:
+      return pathname === "/projects" && trash;
+    case "/projects":
+      return (
+        !trash &&
+        (within(pathname, "/projects") ||
+          (pathname.startsWith("/jobs/") &&
+            !/^\/jobs\/[^/]+\/(proposals|invoices|change-orders)(\/|$)/.test(pathname)))
+      );
+    case "/invoices":
+      return within(pathname, href) || /^\/jobs\/[^/]+\/invoices(\/|$)/.test(pathname);
+    case "/change-orders":
+      return within(pathname, href) || /^\/jobs\/[^/]+\/change-orders(\/|$)/.test(pathname);
+    case "/jobs":
+    case "/":
+      return pathname === href;
+    case "/pipeline/sales":
+      return within(pathname, href) || within(pathname, "/deals");
+    case "/proposals":
+      return within(pathname, href) || /^\/jobs\/[^/]+\/proposals(\/|$)/.test(pathname);
+    default:
+      return within(pathname, href);
+  }
+}
+
 export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
-  const pathname = usePathname();
-  const params = useSearchParams();
-  const [resourcesOpen, setResourcesOpen] = useState(true);
+  const unreadInbox = useUnreadInbox();
+  // A clicked item shows as selected while its page loads.
+  const pending = usePendingHref();
+  const currentPath = usePathname();
+  const currentTrash = useSearchParams().get("view") === "trash";
+  const pathname = pending?.split("?")[0] ?? currentPath;
+  const trash = pending ? pending.includes("view=trash") : currentTrash;
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ProjectSearch onNavigate={onNavigate} />
 
-      <div className="px-5 pb-2 pt-5 text-xs font-semibold text-[var(--sidebar-text)]">
-        ServiceFlow
-      </div>
-
       <nav
         aria-label="Main navigation"
-        className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"
+        className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-20 pt-2"
       >
-        <div className="flex flex-col gap-0.5">
-          {LINKS.map((link) => {
-            const active = link.href.includes("?")
-              ? pathname === "/projects" && params.get("view") === "trash"
-              : link.href === "/jobs" || link.href === "/"
-                ? pathname === link.href
-                : (pathname.startsWith(link.href) ||
-                  (link.href === "/projects" &&
-                    pathname.startsWith("/jobs/"))) &&
-                !(link.href === "/projects" && params.get("view") === "trash");
-            return (
-              <div key={link.href}>
-                {link.href === "/labels" ? (
-                  <button
-                    type="button"
-                    aria-expanded={resourcesOpen}
-                    onClick={() => setResourcesOpen(!resourcesOpen)}
-                    className="flex w-full items-center justify-between px-3 pb-2 pt-7 text-xs font-semibold text-[var(--sidebar-muted)] hover:text-white"
-                  >
-                    Resources{" "}
-                    <span aria-hidden="true">{resourcesOpen ? "⌃" : "⌄"}</span>
-                  </button>
-                ) : null}
-                <Link
-                  hidden={
-                    !resourcesOpen && ["/labels", "/trash"].includes(link.icon)
+        {GROUPS.map((group) => {
+          const closed = group.title ? collapsed[group.title] : false;
+          return (
+            <div key={group.title ?? "home"} className={group.title ? "mt-3" : undefined}>
+              {group.title ? (
+                <button
+                  type="button"
+                  aria-expanded={!closed}
+                  onClick={() =>
+                    setCollapsed((current) => ({ ...current, [group.title!]: !closed }))
                   }
-                  href={link.href}
-                  aria-current={active ? "page" : undefined}
-                  onClick={onNavigate}
-                  className={cn(
-                    "relative items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#6ea8ff]",
-                    !resourcesOpen && ["/labels", "/trash"].includes(link.icon)
-                      ? "hidden"
-                      : "flex",
-                    active
-                      ? "bg-[var(--sidebar-active)] font-semibold text-[var(--sidebar-text)] before:absolute before:-left-3 before:inset-y-2 before:w-1 before:rounded-r-full before:bg-[#6ea8ff]"
-                      : "text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-surface)] hover:text-[var(--sidebar-text)]",
-                  )}
+                  className="flex h-7 w-full items-center gap-1 rounded-md px-2 text-[11px] font-medium text-[var(--color-faint)] outline-none hover:text-[var(--color-muted)] focus-visible:shadow-[var(--focus-ring)]"
                 >
-                  {NAV_ICONS[link.icon]}
-                  <span>{link.label}</span>
-                </Link>
-              </div>
-            );
-          })}
-        </div>
+                  {group.title}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className={cn("h-3 w-3 transition-transform", closed && "-rotate-90")}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              ) : null}
+              {closed ? null : (
+                <div className="flex flex-col gap-px">
+                  {group.links.map((link) => {
+                    const active = isActive(link.href, pathname, trash);
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        aria-current={active ? "page" : undefined}
+                        onClick={onNavigate}
+                        className={cn(
+                          "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
+                          active
+                            ? "bg-[var(--sidebar-active)] font-medium text-[var(--color-heading)]"
+                            : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-surface)]",
+                        )}
+                      >
+                        <span className={active ? "text-[var(--color-heading)]" : "text-[var(--sidebar-muted)]"}>
+                          {NAV_ICONS[link.href]}
+                        </span>
+                        <span className="truncate">{link.label}</span>
+                        <ReportPending href={link.href} />
+                        {link.href === "/inbox" && unreadInbox > 0 ? (
+                          <span className="ml-auto rounded-full bg-[var(--color-brand)] px-1.5 text-[11px] font-semibold leading-[18px] text-white tabular-nums">
+                            {unreadInbox > 99 ? "99+" : unreadInbox}
+                          </span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
     </div>
   );
@@ -138,20 +235,29 @@ export function SidebarHeader({
       element?.removeEventListener("keydown", escape);
     };
   }, [menu]);
+  const menuItem =
+    "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-[var(--color-text)] outline-none hover:bg-[var(--color-hover)] focus-visible:bg-[var(--color-hover)]";
+  const iconButton =
+    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--color-muted)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)]";
   return (
     <>
       <div
         ref={root}
-        className="relative z-40 flex h-16 shrink-0 items-center gap-3 px-4"
+        className="relative z-40 flex h-14 shrink-0 items-center gap-1 px-3"
       >
         <Link
           href="/projects"
-          aria-label={SITE_NAME}
           onClick={onNavigate}
-          className="mr-auto flex h-8 w-8 items-center justify-center rounded-lg bg-[#2979ff] text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          className="mr-auto flex min-w-0 items-center gap-2 rounded-md px-1 py-1 outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]"
         >
-          {SITE_INITIALS}
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--color-primary)] text-[9px] font-bold text-[var(--color-primary-ink)]">
+            {SITE_INITIALS}
+          </span>
+          <span className="truncate text-[13px] font-semibold text-[var(--color-heading)]">
+            {SITE_NAME}
+          </span>
         </Link>
+        <NotificationBell userId={userId} />
         {["admin", "manager"].includes(role) && (
           <button
             ref={createButton}
@@ -160,19 +266,18 @@ export function SidebarHeader({
             title="Create"
             aria-expanded={menu === "create"}
             onClick={() => setMenu(menu === "create" ? null : "create")}
-            className="flex h-8 w-8 items-center justify-center rounded text-[var(--sidebar-muted)] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+            className={iconButton}
           >
             <svg
               aria-hidden="true"
-              width="22"
-              height="22"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.7"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className="h-4 w-4"
             >
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v10M7 12h10" />
+              <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
         )}
@@ -183,7 +288,7 @@ export function SidebarHeader({
           title={name}
           aria-expanded={menu === "account"}
           onClick={() => setMenu(menu === "account" ? null : "account")}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--tag-gray-bg)] text-[10px] font-semibold text-[var(--tag-gray-text)] outline-none focus-visible:shadow-[var(--focus-ring)]"
         >
           {initials(name)}
         </button>
@@ -191,38 +296,38 @@ export function SidebarHeader({
         {menu && (
           <div
             ref={panel}
-            className="absolute right-3 top-[54px] w-56 rounded-lg border border-slate-200 bg-white p-2 text-sm text-slate-800 shadow-xl md:left-[116px] md:right-auto"
+            className="absolute right-3 top-12 w-56 rounded-[var(--radius)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-pop)] md:left-3 md:right-auto"
           >
             {menu === "create" ? (
               <button
                 type="button"
-                className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-slate-100 focus-visible:bg-slate-100"
+                className={menuItem}
                 onClick={() => {
                   setMenu(null);
                   setCreating(true);
                 }}
               >
-                {NAV_ICONS["/projects"]}Create Project
+                <span className="text-[var(--color-muted)]">{NAV_ICONS["/projects"]}</span>
+                Create Project
               </button>
             ) : (
               <>
-                <div className="border-b border-slate-100 px-3 py-2">
-                  <p className="truncate font-semibold">{name}</p>
-                  <p className="mt-1 text-xs capitalize text-slate-500">
-                    {role}
-                  </p>
+                <div className="mb-1 border-b border-[var(--color-border)] px-2 pb-2 pt-1.5">
+                  <p className="truncate text-[13px] font-semibold text-[var(--color-heading)]">{name}</p>
+                  <p className="text-xs capitalize text-[var(--color-muted)]">{role}</p>
                 </div>
                 <Link
                   href={`/employees/${userId}`}
-                  className="mt-1 flex items-center gap-2 rounded px-3 py-2 hover:bg-slate-100 focus-visible:bg-slate-100"
+                  className={menuItem}
                   onClick={() => {
                     setMenu(null);
                     onNavigate?.();
                   }}
                 >
-                  {NAV_ICONS["/photos"]}My Photos
+                  <span className="text-[var(--color-muted)]">{NAV_ICONS["/photos"]}</span>
+                  My Photos
                 </Link>
-                <SignOutButton className="w-full justify-start rounded px-3 py-2 text-slate-800 hover:bg-slate-100" />
+                <SignOutButton className="w-full justify-start px-2 text-[13px] text-[var(--color-text)]" />
               </>
             )}
           </div>
@@ -302,12 +407,12 @@ export function MobileNav({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 md:hidden">
-        <Link href="/" className="flex min-w-0 items-center gap-2.5">
-          <span className="font-display inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brand)] text-sm font-bold text-[var(--color-brand-ink)]">
+      <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 md:hidden print:hidden">
+        <Link href="/" className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary)] text-[10px] font-bold text-[var(--color-primary-ink)]">
             {SITE_INITIALS}
           </span>
-          <span className="truncate text-sm font-semibold text-[var(--color-heading)]">
+          <span className="truncate text-[13px] font-semibold text-[var(--color-heading)]">
             {SITE_NAME}
           </span>
         </Link>
@@ -318,9 +423,19 @@ export function MobileNav({
           aria-expanded={open}
           aria-controls="mobile-navigation-drawer"
           onClick={() => setOpen(true)}
-          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-xl text-[var(--color-heading)]"
+          className="-mr-1 inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-[var(--color-heading)] hover:bg-[var(--color-hover)]"
         >
-          <span aria-hidden="true">☰</span>
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            className="h-5 w-5"
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
         </button>
       </header>
 
@@ -331,15 +446,14 @@ export function MobileNav({
             tabIndex={-1}
             aria-label="Close navigation"
             onClick={() => setOpen(false)}
-            className="absolute inset-0 cursor-default bg-black/45"
+            className="absolute inset-0 cursor-default bg-black/30"
           />
           <section
-            data-sidebar
             id="mobile-navigation-drawer"
             role="dialog"
             aria-modal="true"
             aria-label="Main navigation"
-            className="absolute inset-y-0 right-0 flex w-[min(88vw,22rem)] flex-col bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] shadow-2xl"
+            className="absolute inset-y-0 right-0 flex w-[min(88vw,20rem)] flex-col border-l border-[var(--color-border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] shadow-[var(--shadow-pop)]"
           >
             <div className="flex min-h-0 flex-1 flex-col pb-2">
               <SidebarHeader
@@ -356,9 +470,19 @@ export function MobileNav({
                       setOpen(false);
                       menuButtonRef.current?.focus();
                     }}
-                    className="flex h-8 w-8 items-center justify-center rounded text-2xl text-slate-300 hover:text-white"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)]"
                   >
-                    ×
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 6l12 12M18 6 6 18" />
+                    </svg>
                   </button>
                 }
               />

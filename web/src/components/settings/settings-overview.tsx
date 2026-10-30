@@ -2,25 +2,23 @@ import Link from "next/link";
 import type { CompanySettings } from "@/lib/actions/settings";
 import type { EmployeeProfile } from "@/lib/types";
 import { fmtDate, fmtRelativeTime, initials } from "@/lib/format";
-import { Avatar, StatusText } from "@/components/ui";
+import { Avatar, StatusText, Tag } from "@/components/ui";
 import { SignOutButton } from "@/components/sign-out";
-import { Detail, ROLE_LABELS, SettingsSection } from "./settings-section";
+import { Detail, SettingsSection } from "./settings-section";
 
-const ROLE_DESCRIPTIONS: Array<{ role: string; text: string }> = [
-  { role: "Owner", text: "Full access, including company settings. Can't be demoted or deactivated." },
-  { role: "Admin", text: "Company and labour settings and team accounts, plus everything a manager can do." },
-  { role: "Manager", text: "Job amounts, budgets, timesheets and the team map. Can't change settings or accounts." },
-  { role: "Crew", text: "Clock in and out, view projects, and take and upload photos." },
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  manager: "Manager",
+  crew: "Crew",
+};
+
+const ROLE_DESCRIPTIONS: Array<{ role: string; count: "owners" | "admins" | "managers" | "crew"; text: string }> = [
+  { role: "Owner", count: "owners", text: "Full access, including company settings. Can't be demoted or deactivated." },
+  { role: "Admin", count: "admins", text: "Company and labour settings and team accounts, plus everything a manager can do." },
+  { role: "Manager", count: "managers", text: "Job amounts, budgets, timesheets and the team map. Can't change settings or accounts." },
+  { role: "Crew", count: "crew", text: "Clock in and out, view projects, and take and upload photos." },
 ];
-
-function Figure({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="bg-[var(--color-surface)] px-4 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--color-muted)]">{label}</div>
-      <div className="mt-1 font-display text-lg font-semibold tabular-nums text-[var(--color-heading)]">{value}</div>
-    </div>
-  );
-}
 
 export function TeamSection({ team }: { team: CompanySettings["team"] }) {
   return (
@@ -31,9 +29,8 @@ export function TeamSection({ team }: { team: CompanySettings["team"] }) {
       footer={
         <>
           <span>
-            {team.inactive
-              ? `${team.inactive} deactivated ${team.inactive === 1 ? "account" : "accounts"} can't sign in.`
-              : "No deactivated accounts."}
+            {team.active} active {team.active === 1 ? "member" : "members"}
+            {team.inactive ? ` · ${team.inactive} deactivated` : ""}
           </span>
           <Link href="/employees" className="ml-auto font-medium text-[var(--color-brand-strong)] hover:underline">
             Manage team →
@@ -41,16 +38,13 @@ export function TeamSection({ team }: { team: CompanySettings["team"] }) {
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-4">
-        <Figure label="Active members" value={team.active} />
-        <Figure label="Owners & admins" value={team.owners + team.admins} />
-        <Figure label="Managers" value={team.managers} />
-        <Figure label="Crew" value={team.crew} />
-      </div>
-      <dl className="mt-5 divide-y divide-[var(--color-border)] text-sm">
-        {ROLE_DESCRIPTIONS.map(({ role, text }) => (
-          <div key={role} className="grid gap-1 py-2.5 sm:grid-cols-[110px_1fr]">
-            <dt className="font-medium text-[var(--color-heading)]">{role}</dt>
+      <dl className="-my-2 divide-y divide-[var(--color-border)] text-[13px]">
+        {ROLE_DESCRIPTIONS.map(({ role, count, text }) => (
+          <div key={role} className="grid gap-1 py-2.5 sm:grid-cols-[120px_1fr]">
+            <dt className="flex items-center gap-2 font-medium text-[var(--color-heading)]">
+              {role}
+              <Tag className="tabular-nums">{team[count]}</Tag>
+            </dt>
             <dd className="text-[var(--color-muted)]">{text}</dd>
           </div>
         ))}
@@ -75,17 +69,17 @@ function IntegrationRow({
   detail: string;
 }) {
   return (
-    <li className="flex flex-wrap items-start gap-4 py-4 first:pt-0 last:pb-0">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-sm font-semibold text-[var(--color-heading)]">
+    <li className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs font-semibold text-[var(--color-heading)]">
         {initial}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="font-medium text-[var(--color-heading)]">{name}</span>
+          <span className="text-[13px] font-medium text-[var(--color-heading)]">{name}</span>
           <StatusText tone={tone}>{status}</StatusText>
         </div>
-        <p className="mt-0.5 text-sm text-[var(--color-muted)]">{description}</p>
-        <p className="mt-1 text-xs tabular-nums text-[var(--color-muted)]">{detail}</p>
+        <p className="mt-0.5 text-[13px] text-[var(--color-muted)]">{description}</p>
+        <p className="mt-0.5 text-xs tabular-nums text-[var(--color-faint)]">{detail}</p>
       </div>
     </li>
   );
@@ -103,7 +97,7 @@ export function IntegrationsSection({
         title="Integrations"
         description="Services connected to your company."
       >
-        <p className="text-sm text-[var(--color-muted)]">Only managers can see integration details.</p>
+        <p className="text-[13px] text-[var(--color-muted)]">Only managers can see integration details.</p>
       </SettingsSection>
     );
   }
@@ -191,14 +185,14 @@ export function AccountSection({
         </>
       }
     >
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <Avatar label={initials(name)} />
         <div className="min-w-0">
-          <div className="font-medium text-[var(--color-heading)]">{name}</div>
-          <div className="text-sm text-[var(--color-muted)]">{profile.email}</div>
+          <div className="text-[13px] font-medium text-[var(--color-heading)]">{name}</div>
+          <div className="text-[13px] text-[var(--color-muted)]">{profile.email}</div>
         </div>
       </div>
-      <div className="mt-5 grid gap-4 border-t border-[var(--color-border)] pt-5 sm:grid-cols-2">
+      <div className="mt-4 grid gap-4 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
         <Detail label="Role">{role ? ROLE_LABELS[role] ?? role : "—"}</Detail>
         <Detail label="Company on ServiceFlow since">{fmtDate(companySince || null)}</Detail>
       </div>

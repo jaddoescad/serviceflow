@@ -2,7 +2,6 @@ import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { rollupProjects, type JobWorkSummary } from "@/lib/metrics";
 import type { Project, ProjectBudget } from "@/lib/types";
-import { PageHeader } from "@/components/kpi";
 import { ProjectsTable } from "@/components/projects-table";
 export const dynamic = "force-dynamic";
 export default async function LabourPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
@@ -20,5 +19,5 @@ export default async function LabourPage({ searchParams }: { searchParams: Promi
   const rollups = new Map(rollupProjects([], projects, budgets, [], [], Date.parse(data.calculatedAt), data.rows).map(row => [row.projectId, row]));
   const rows = data.rows.map(row => rollups.get(row.projectId)!);
   const page = Math.min(requestedPage, Math.max(1, Math.ceil(data.total / 50)));
-  return <><PageHeader title="Labour budgets" subtitle="Track labour budgets, clocked hours, and painter costs for each job" /><ProjectsTable rows={rows} totals={data.totals} total={data.total} currentPage={page} query={query} canManage={["admin", "manager"].includes(profile.role)} /></>;
+  return <div className="page-fill"><ProjectsTable rows={rows} totals={data.totals} total={data.total} currentPage={page} query={query} canManage={["admin", "manager"].includes(profile.role)} /></div>;
 }

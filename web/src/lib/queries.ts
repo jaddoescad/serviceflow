@@ -4,7 +4,6 @@ import type {
   Assignment,
   EmployeePayRate,
   EmployeeProfile,
-  MarketingLead,
   Project,
   ProjectBudget,
   ProjectLabourExpense,
@@ -69,15 +68,6 @@ function project(row: any): Project {
   };
 }
 
-export async function getTimeEntries(sinceIso?: string): Promise<TimeEntry[]> {
-  const supabase = await createClient();
-  let query = supabase.from("time_entries").select("*").order("started_at", { ascending: false }).limit(5000);
-  if (sinceIso) query = query.or(`started_at.gte.${sinceIso},status.eq.active`);
-  const { data, error } = await query;
-  if (error) throw new Error(`time entries: ${error.message}`);
-  return (data ?? []).map(timeEntry);
-}
-
 export type TimesheetFilters = { search: string; employee: string; project: string; status: string };
 export async function getTimesheetsPage(filters: TimesheetFilters, page: number) {
   const supabase = await createClient();
@@ -89,12 +79,13 @@ export async function getTimesheetsPage(filters: TimesheetFilters, page: number)
   return { rows: (data.rows ?? []).map(timeEntry), total: Number(data.total), totalHours: Number(data.totalHours), activeCount: Number(data.activeCount), calculatedAt: String(data.calculatedAt) };
 }
 
-/** Shifts still open, plus every shift started since `sinceIso`. */
-export async function getTodayEntries(sinceIso: string): Promise<TimeEntry[]> {
+/** One company's shifts still open, plus every shift started since `sinceIso`. */
+export async function getTodayEntries(orgId: string, sinceIso: string): Promise<TimeEntry[]> {
   const supabase = await createClient();
   // Only what the Today board reads; full rows carry segment and edit history.
   const { data, error } = await supabase.from("time_entries")
     .select("id,employee_id,employee_email,employee_name,job_id,job_name,job_address,started_at,ended_at,status,clock_in_latitude,clock_in_longitude,last_distance_meters")
+    .eq("org_id", orgId)
     .in("status", ["active", "completed"]).or(`status.eq.active,started_at.gte.${sinceIso}`)
     .order("started_at");
   if (error) throw new Error(`today's entries: ${error.message}`);
@@ -143,59 +134,6 @@ export async function getProjects(projectIds?: string[]): Promise<Project[]> {
     .map(project);
 }
 
-export async function getDealsPage(search: string, page: number): Promise<{ rows: MarketingLead[]; total: number }> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_deals_page", { search_text: search, page_number: page });
-  if (error) throw new Error(`deals: ${error.message}`);
-  return data;
-}
-
-export type DripJobsLeadCoverage = {
-  total: number;
-  confirmed: number;
-  needsReview: number;
-  missingSource: number;
-};
-
-export type DripJobsSyncHealth = {
-  totalEvents: number;
-  processedEvents: number;
-  failedEvents: number;
-  ignoredTestEvents: number;
-  duplicateDeliveries: number;
-  liveLeadEvents: number;
-  acceptedProposalEvents: number;
-  lastReceivedAt: string | null;
-  lastProcessedAt: string | null;
-};
-
-export async function getDripJobsSyncHealth(): Promise<DripJobsSyncHealth> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_integration_health");
-  if (error) throw new Error(`DripJobs sync health: ${error.message}`);
-  const row = (data ?? {}) as any;
-  return {
-    totalEvents: Number(row.total_events ?? 0),
-    processedEvents: Number(row.processed_events ?? 0),
-    failedEvents: Number(row.failed_events ?? 0),
-    ignoredTestEvents: Number(row.ignored_test_events ?? 0),
-    duplicateDeliveries: Number(row.duplicate_deliveries ?? 0),
-    liveLeadEvents: Number(row.live_lead_events ?? 0),
-    acceptedProposalEvents: Number(row.accepted_proposal_events ?? 0),
-    lastReceivedAt: row.last_received_at ?? null,
-    lastProcessedAt: row.last_processed_at ?? null,
-  };
-}
-
-export async function getDripJobsLeadCoverage(): Promise<DripJobsLeadCoverage> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("jobs").select("id,lead_id").eq("source", "dripjobs");
-  if (error) throw new Error(`job coverage: ${error.message}`);
-  const rows = data ?? [];
-  const confirmed = rows.filter((row) => row.lead_id).length;
-  return { total: rows.length, confirmed, needsReview: 0, missingSource: rows.length - confirmed };
-}
-
 function recordedPercent(value: unknown): number | null {
   const percent = Number(value);
   return value != null && value !== "" && Number.isFinite(percent) && percent > 0 ? percent : null;
@@ -239,23 +177,6 @@ export async function getBudgets(projectId?: string): Promise<ProjectBudget[]> {
 
 // Task rows carry a large `versions` history; the task lists only need these.
 const LABOUR_TASK_COLUMNS = "id,job_id,title,notes,budget_minutes,status,sort_order,completed_at,completed_by";
-
-export async function getProjectLabourTasks(): Promise<ProjectLabourTask[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("job_tasks").select(LABOUR_TASK_COLUMNS).order("sort_order");
-  if (error) throw new Error(`job tasks: ${error.message}`);
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    companycam_project_id: row.job_id,
-    title: row.title,
-    notes: row.notes,
-    budgeted_hours: row.budget_minutes == null ? null : Number(row.budget_minutes) / 60,
-    status: row.status,
-    sort_order: row.sort_order,
-    completed_at: row.completed_at,
-    completed_by: row.completed_by,
-  }));
-}
 
 export async function getAssignments(projectId?: string): Promise<Assignment[]> {
   const supabase = await createClient();

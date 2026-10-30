@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { getProjectMediaData, getProjectPresentation } from "@/lib/project-data";
@@ -9,6 +8,9 @@ import { PhotosSlot } from "@/components/project-photos-slot";
 import { PhotosPanelSkeleton } from "@/components/skeletons";
 import { WorkspaceProjectActions } from "@/components/workspace-project-actions";
 import { ProjectTabs } from "@/components/project-tabs";
+import { ProjectCrumb } from "@/components/job-shell";
+import { PageHeader } from "@/components/kpi";
+import { EmptyState } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 export default async function ProjectPage({
@@ -34,60 +36,46 @@ export default async function ProjectPage({
   )
     notFound();
   return (
-    <div
-      data-project-workspace
-      className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_320px]"
-    >
-      <div className="min-w-0">
-        <header className="mb-7 pt-2">
-          <Link
-            href="/projects"
-            className="text-sm font-semibold text-slate-600 hover:text-blue-600"
-          >
-            ‹ Projects
-          </Link>
-          <h1 className="mt-7 text-3xl font-bold tracking-tight sm:text-4xl">
-            {project.name}
-          </h1>
-          {project.address ? (
-            <p className="mt-2 text-sm text-slate-500">{project.address}</p>
-          ) : null}
-          <div className="mt-4">
-            <WorkspaceProjectActions
-              project={project}
+    <div>
+      <PageHeader
+        title={<ProjectCrumb name={project.name} />}
+        subtitle={project.address}
+        actions={
+          <WorkspaceProjectActions
+            project={project}
+            contact={presentation.contact}
+            description={presentation.description}
+            labels={labels}
+            canManage={["admin", "manager"].includes(profile.role)}
+          />
+        }
+      />
+      {project.trashed_at ? (
+        <EmptyState>
+          This project is in trash. Restore it to access its photos and details.
+        </EmptyState>
+      ) : (
+        <>
+          <ProjectTabs
+            projectId={id}
+            projectName={project.name}
+            activeOverride="photos"
+          />
+          <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="min-w-0">
+              <Suspense fallback={<PhotosPanelSkeleton />}>
+                <PhotosSlot projectId={id} showProfile={false} />
+              </Suspense>
+            </div>
+            <ProjectProfilePanel
+              projectId={id}
               contact={presentation.contact}
               description={presentation.description}
-              labels={labels}
-              canManage={["admin", "manager"].includes(profile.role)}
+              canEdit={["admin", "manager"].includes(profile.role)}
             />
           </div>
-        </header>
-        {project.trashed_at ? (
-          <p className="border-t border-slate-200 py-12 text-sm text-slate-600">
-            This project is in trash. Restore it to access its photos and
-            details.
-          </p>
-        ) : (
-          <>
-            <ProjectTabs
-              projectId={id}
-              projectName={project.name}
-              activeOverride="photos"
-            />
-            <Suspense fallback={<PhotosPanelSkeleton />}>
-              <PhotosSlot projectId={id} showProfile={false} />
-            </Suspense>
-          </>
-        )}
-      </div>
-      {!project.trashed_at ? (
-        <ProjectProfilePanel
-          projectId={id}
-          contact={presentation.contact}
-          description={presentation.description}
-          canEdit={["admin", "manager"].includes(profile.role)}
-        />
-      ) : null}
+        </>
+      )}
     </div>
   );
 }

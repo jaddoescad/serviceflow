@@ -2,7 +2,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { editTeamProfile } from "@/lib/actions/employees";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { Button, Field, Input } from "./ui";
 export type EditableTeamProfile = {
   id: string;
@@ -32,7 +32,6 @@ export function EditTeamMember({
       }}
     >
       <form
-        className="space-y-5 p-6"
         onSubmit={(event) => {
           event.preventDefault();
           if (pending) return;
@@ -57,42 +56,44 @@ export function EditTeamMember({
           });
         }}
       >
-        <Field label="Full name">
-          <Input
-            autoFocus
-            required
-            maxLength={120}
-            value={name}
-            disabled={pending}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </Field>
-        <Field label="Phone number">
-          <Input
-            type="tel"
-            maxLength={60}
-            value={phone}
-            disabled={pending}
-            onChange={(event) => setPhone(event.target.value)}
-          />
-        </Field>
-        <Field label="Job title">
-          <Input
-            maxLength={120}
-            value={title}
-            disabled={pending}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-        {error ? (
-          <p role="alert" className="text-sm text-red-700">
-            {error}
-          </p>
-        ) : null}
-        <footer className="flex justify-end gap-3 border-t border-slate-200 pt-5">
+        <div className="space-y-4 p-5">
+          <Field label="Full name">
+            <Input
+              autoFocus
+              required
+              maxLength={120}
+              value={name}
+              disabled={pending}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Field label="Phone number">
+            <Input
+              type="tel"
+              maxLength={60}
+              value={phone}
+              disabled={pending}
+              onChange={(event) => setPhone(event.target.value)}
+            />
+          </Field>
+          <Field label="Job title">
+            <Input
+              maxLength={120}
+              value={title}
+              disabled={pending}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </Field>
+          {error ? (
+            <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <ModalFooter>
           <Button
             type="button"
-            variant="subtle"
+            variant="secondary"
             disabled={pending}
             onClick={onClose}
           >
@@ -101,7 +102,7 @@ export function EditTeamMember({
           <Button type="submit" disabled={pending || !name.trim()}>
             {pending ? "Saving…" : "Save Changes"}
           </Button>
-        </footer>
+        </ModalFooter>
       </form>
     </ProjectModal>
   );

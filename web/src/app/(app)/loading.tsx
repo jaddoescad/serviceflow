@@ -1,5 +1,5 @@
-import { RoutePageLoader } from "@/components/route-loading";
+import { ListPageSkeleton } from "@/components/page-skeleton";
 
 export default function Loading() {
-  return <RoutePageLoader />;
+  return <ListPageSkeleton />;
 }

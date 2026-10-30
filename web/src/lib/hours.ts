@@ -95,10 +95,6 @@ export function computeDurations(entry: TimeEntry, now = Date.now()): EntryDurat
   return result;
 }
 
-export function entryHours(entry: TimeEntry, now = Date.now()): number {
-  return computeDurations(entry, now).totalHours;
-}
-
 export function isStaleActive(entry: TimeEntry, now = Date.now()): boolean {
   if (entry.status !== "active") return false;
   const start = new Date(entry.started_at).getTime();

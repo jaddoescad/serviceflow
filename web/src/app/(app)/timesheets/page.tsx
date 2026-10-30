@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireStaff } from "@/lib/auth";
 import { PageHeader } from "@/components/kpi";
 import { TimesheetsTable } from "@/components/timesheets-table";
+import { fmtHours } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,11 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   if (options.error) throw new Error(`timesheet filters: ${options.error.message}`);
 
   return (
-    <>
+    <div className="page-fill">
       <span hidden data-perf-fetch-ms={Math.round(performance.now() - fetchStarted)} />
       <PageHeader
         title="Timesheets"
-        subtitle="Review and edit crew hours · last 90 days"
+        subtitle={`Last 90 days · ${fmtHours(result.totalHours)}`}
       />
       <TimesheetsTable
         entries={result.rows}
@@ -37,6 +38,6 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         projects={options.data.projects}
         canDelete={profile.role === "admin"}
       />
-    </>
+    </div>
   );
 }

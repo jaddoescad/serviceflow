@@ -178,14 +178,6 @@ export function IconButton({
   );
 }
 
-export function fmtMoneyExact(value: number): string {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    maximumFractionDigits: 0,
-  }).format(Math.round(value));
-}
-
 export function fmtHoursShort(hours: number): string {
   return `${hours.toFixed(1)} h`;
 }

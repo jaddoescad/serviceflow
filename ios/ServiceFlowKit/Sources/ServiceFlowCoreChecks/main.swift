@@ -405,7 +405,51 @@ func runMediaChecks() async {
     }
 }
 
+@MainActor
+func runDocumentChecks() async {
+    await check("Job documents: rows, sections, labels and page images") {
+        let job = "dee00000-0000-4000-8000-000000000201"
+        let page = "fd6ec6b5-52bc-4124-a54f-700f28e3c839"
+        let rows: [JSONValue] = [
+            ["id": "d1", "project_id": .string(job), "name": "Paint schedule.pdf", "kind": "file", "folder_id": "f1",
+             "storage_path": .string("\(job)/d1/paint-schedule.pdf"), "mime_type": "application/pdf", "byte_size": 19351,
+             "updated_at": "2026-10-27T12:00:00.000Z"],
+            ["id": .string(page), "project_id": .string(job), "name": "Colour selections", "kind": "page", "folder_id": "f1",
+             "updated_at": "2026-10-28T12:00:00.000Z"],
+            ["id": "d3", "project_id": .string(job), "name": "Site notes", "kind": "page", "updated_at": "2026-10-29T12:00:00.000Z"],
+            ["id": "d4", "project_id": .string(job), "name": "Lost.pdf", "kind": "file"],
+            ["id": "d5", "project_id": .string(job), "name": "Old.docx", "kind": "file", "folder_id": "gone",
+             "storage_path": "x/d5/old.docx", "updated_at": "2026-01-02T12:00:00.000Z"],
+        ]
+        let documents = rows.compactMap(ProjectDocument.init(row:))
+        expectEqual(documents.count, 4, "a file without storage is skipped")
+        let folders = [ProjectDocumentFolder(id: "f2", name: "Empty"), ProjectDocumentFolder(id: "f1", name: "Colours & specs")]
+        let sections = ProjectDocuments.sections(documents: documents, folders: folders)
+        expectEqual(sections.map { $0.folder?.name ?? "-" }, ["-", "Colours & specs"], "loose first, empty folders hidden")
+        expectEqual(sections[0].documents.map(\.id), ["d3", "d5"], "newest first; an unknown folder counts as none")
+        expectEqual(sections[1].documents.map(\.id), [page, "d1"], "folder contents newest first")
+        expectEqual(documents[0].typeLabel, "PDF", "pdf label")
+        expectEqual(documents.first { $0.id == "d5" }?.typeLabel, "Word", "word label from the extension")
+        expectEqual(documents[0].detail, "PDF · 19 KB · Oct 27, 2026", "file detail")
+        expectEqual(documents[2].detail, "Page · Oct 29, 2026", "page detail")
+        expectEqual(ProjectDocuments.sizeLabel(820), "820 B", "bytes")
+        expectEqual(ProjectDocuments.sizeLabel(4_404_019), "4.2 MB", "megabytes")
+        expectEqual(ProjectDocuments.sizeLabel(2_097_152), "2 MB", "whole megabytes")
+
+        let image = "1bc51b0d-ec70-4b9b-a9a0-c3f8d73c5788"
+        let other = "/api/jobs/\(job)/documents/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/images/\(image)"
+        let mine = "/api/jobs/\(job)/documents/\(page)/images/\(image)"
+        let html = "<p>Swatches</p><img src=\"\(mine)\" alt=\"x\"><img src=\"\(other)\">"
+        let images = ProjectDocuments.pageImages(html: html, document: documents[1])
+        expectEqual(images, [mine: "\(job)/pages/\(page)/\(image)"], "only this page's images map to storage keys")
+        let swapped = ProjectDocuments.replacingImageSources(in: html, with: [mine: "https://signed/1"])
+        expect(swapped.contains("src=\"https://signed/1\"") && swapped.contains(other), "image swapped, others kept")
+        expect(ProjectDocuments.pageDocument(body: "<p>Hi</p>").contains("<body><p>Hi</p></body>"), "page wrapped")
+    }
+}
+
 await runChecks()
 await runMediaChecks()
+await runDocumentChecks()
 print("\n\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

@@ -1,11 +1,5 @@
-import { RouteLoadingIndicator } from "@/components/route-loading";
-import { JobsListSkeleton } from "@/components/skeletons";
+import { ListPageSkeleton } from "@/components/page-skeleton";
 
 export default function Loading() {
-  return (
-    <>
-      <RouteLoadingIndicator label="Loading jobs" />
-      <JobsListSkeleton />
-    </>
-  );
+  return <ListPageSkeleton label="Loading jobs" />;
 }

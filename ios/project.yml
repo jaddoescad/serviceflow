@@ -13,8 +13,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "2.0.2"
-    CURRENT_PROJECT_VERSION: "103"
+    MARKETING_VERSION: "2.0.3"
+    CURRENT_PROJECT_VERSION: "104"
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift

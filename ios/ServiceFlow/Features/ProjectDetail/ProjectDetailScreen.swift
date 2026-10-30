@@ -11,9 +11,10 @@ struct ProjectDetailEditRoute: Hashable {
     let entryId: String
 }
 
-/// A job or lead: its clock-ins, hours, tasks, photos and videos.
+/// A job or lead: its clock-ins, hours, tasks, photos and videos, and a
+/// job's documents.
 struct ProjectDetailScreen: View {
-    enum Tab: Hashable { case clock, media }
+    enum Tab: Hashable { case clock, media, documents }
 
     let route: ProjectRoute
 
@@ -60,6 +61,8 @@ struct ProjectDetailScreen: View {
                                          onOpenMedia: { tab = .media }, onOverBudget: { overBudget = $0 })
             case .media:
                 mediaTab
+            case .documents:
+                ProjectDocumentsTab(project: project)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -75,6 +78,9 @@ struct ProjectDetailScreen: View {
             } else {
                 ContentUnavailableView("No clock-ins", systemImage: "clock")
             }
+        }
+        .navigationDestination(for: ProjectDocumentRoute.self) { documentRoute in
+            ProjectDocumentPageScreen(document: documentRoute.document)
         }
         .navigationDestination(for: ProjectDetailEditRoute.self) { editRoute in
             if let entry = entries.first(where: { $0.localId == editRoute.entryId }) {
@@ -135,6 +141,7 @@ struct ProjectDetailScreen: View {
         Picker("Section", selection: $tab) {
             Label("Clock Ins", systemImage: "clock").tag(Tab.clock)
             Label("Media", systemImage: "photo.on.rectangle").tag(Tab.media)
+            Label("Documents", systemImage: "doc.text").tag(Tab.documents)
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)

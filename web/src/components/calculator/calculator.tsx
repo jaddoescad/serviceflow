@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
+import { ProjectCrumb } from "@/components/job-shell";
 import { ProjectTabs } from "@/components/project-tabs";
 import { Badge, Select } from "@/components/ui";
 import { fmtMoney } from "@/lib/format";
@@ -79,27 +79,18 @@ export function CalculatorPage({
       data-app-content="full-bleed"
       className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col md:h-screen xl:flex-row"
     >
-      <div className="min-w-0 flex-1 overflow-y-auto px-6 py-6">
+      {/* The pane carries the page gutter so the top bar and tabs span it. */}
+      <div className="min-w-0 flex-1 overflow-y-auto px-[var(--gutter)] pb-6 pt-[var(--page-pad-y)]">
+        <PageHeader
+          title={<ProjectCrumb name={displayName || "Job calculator"} />}
+          actions={isLead ? <Badge tone="brand">Deal</Badge> : null}
+        />
+        <ProjectTabs
+          projectId={projectId}
+          projectName={displayName || ""}
+          isLead={isLead}
+        />
         <div className="mx-auto max-w-[1040px]">
-          <div className="mb-2 text-xs text-[var(--color-muted)]">
-            <Link href={isLead ? "/deals" : "/jobs"} className="hover:text-[var(--color-text)]">
-              {isLead ? "Deals" : "Jobs & Budgets"}
-            </Link>
-            <span className="mx-1.5">/</span>
-            <span>{displayName || "Job"}</span>
-          </div>
-          <PageHeader
-            title={displayName || "Job calculator"}
-            subtitle="Prices and the labour budget update as you type"
-            actions={isLead ? <Badge tone="brand">Deal</Badge> : null}
-          />
-
-          <ProjectTabs
-            projectId={projectId}
-            projectName={displayName || ""}
-            isLead={isLead}
-          />
-
           <QuoteBar
             doc={doc}
             onSwitch={calc.switchQuote}

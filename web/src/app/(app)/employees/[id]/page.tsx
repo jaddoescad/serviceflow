@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PhotoFeed } from "@/components/photo-feed";
+import { Tag } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { initials } from "@/lib/format";
 import { getPhotoFeed } from "@/lib/photo-feed";
@@ -45,36 +46,42 @@ export default async function TeamMemberPage({
       initialBatch={batch}
       summary={summary!}
       header={
-        <header key={id} className="pb-5">
-          <Link
-            href="/employees"
-            className="mb-5 inline-block text-sm text-slate-500 hover:text-blue-600"
-          >
-            ‹ Team
-          </Link>
-          <div className="flex items-center gap-7">
+        <header key={id} className="pb-2">
+          <p className="mb-4 text-[13px]">
+            <Link
+              href="/employees"
+              className="font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+            >
+              Team
+            </Link>
+            <span className="mx-1.5 text-[var(--color-faint)]">/</span>
+            <span className="text-[var(--color-heading)]">{name}</span>
+          </p>
+          <div className="flex items-center gap-3">
             <span
               aria-hidden="true"
-              className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-slate-100 text-4xl font-semibold text-slate-600 sm:h-28 sm:w-28"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--tag-gray-bg)] text-sm font-semibold text-[var(--tag-gray-text)]"
             >
               {initials(name)}
             </span>
             <div className="min-w-0">
-              <h1 className="break-words text-4xl font-extrabold tracking-tight">
+              <h1 className="break-words text-lg font-semibold text-[var(--color-heading)]">
                 {name}
               </h1>
-              {member.email && (
-                <a
-                  href={`mailto:${member.email}`}
-                  className="mt-2 block break-all text-sm text-slate-600 hover:text-blue-600"
-                >
-                  {member.email}
-                </a>
-              )}
-              <p className="mt-2 text-sm capitalize text-slate-500">
-                {member.role}
-                {!member.is_active && " · Deactivated"}
-              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[13px] text-[var(--color-muted)]">
+                <Tag>
+                  <span className="capitalize">{member.role}</span>
+                </Tag>
+                {!member.is_active && <Tag tone="red">Deactivated</Tag>}
+                {member.email && (
+                  <a
+                    href={`mailto:${member.email}`}
+                    className="break-all hover:text-[var(--color-heading)] hover:underline"
+                  >
+                    {member.email}
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </header>

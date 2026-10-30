@@ -2,22 +2,28 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { createLead } from "@/lib/actions/pipeline";
 import {
   createWorkspaceProject,
   findProjectContacts,
 } from "@/lib/actions/project-workspace";
+import { AddressInput } from "./address-input";
 import { Button, Field, Input } from "./ui";
 import { CreateContactModal } from "./create-contact-form";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 
+/** Creates a job-side project, or with kind="lead" a deal in the sales pipeline. */
 export function CreateWorkspaceProject({
   initiallyOpen = false,
   onClosed,
-}: { initiallyOpen?: boolean; onClosed?: () => void } = {}) {
+  kind = "project",
+}: { initiallyOpen?: boolean; onClosed?: () => void; kind?: "project" | "lead" } = {}) {
   const router = useRouter();
+  const isLead = kind === "lead";
   const [open, setOpen] = useState(initiallyOpen);
   const [creatingContact, setCreatingContact] = useState(false);
   const [name, setName] = useState("");
+  const [source, setSource] = useState("");
   const [address, setAddress] = useState("");
   const [query, setQuery] = useState("");
   const [contactId, setContactId] = useState("");
@@ -64,13 +70,14 @@ export function CreateWorkspaceProject({
             requestId.current = crypto.randomUUID();
             setError("");
             setName("");
+            setSource("");
             setAddress("");
             setQuery("");
             setContactId("");
             setOpen(true);
           }}
         >
-          + Create Project
+          {isLead ? "+ New Lead" : "+ Create Project"}
         </Button>
       )}
       {creatingContact ? (
@@ -90,118 +97,132 @@ export function CreateWorkspaceProject({
         />
       ) : null}
       {open && !creatingContact ? (
-        <ProjectModal title="Create Project" onClose={close}>
+        <ProjectModal title={isLead ? "New Lead" : "Create Project"} onClose={close}>
           <form
-            className="space-y-5 p-6"
             onSubmit={(event) => {
               event.preventDefault();
               setError("");
               startTransition(async () => {
                 try {
-                  const result = await createWorkspaceProject({
-                    id: requestId.current,
-                    name,
-                    address,
-                    contactId,
-                  });
+                  const result = isLead
+                    ? await createLead({ id: requestId.current, contactId, address, source })
+                    : await createWorkspaceProject({
+                        id: requestId.current,
+                        name,
+                        address,
+                        contactId,
+                      });
                   if (result.error) setError(result.error);
                   else {
                     setOpen(false);
                     onClosed?.();
-                    router.push(`/jobs/${result.id}`);
+                    if (!isLead) router.push(`/jobs/${result.id}`);
                     router.refresh();
                   }
                 } catch {
-                  setError("Could not confirm project creation. Retry safely.");
+                  setError(`Could not confirm ${isLead ? "the lead" : "project creation"}. Retry safely.`);
                 }
               });
             }}
           >
-            <Field label="Project name">
-              <Input
-                autoFocus
-                required
-                maxLength={200}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-            <Field label="Address">
-              <Input
-                maxLength={500}
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-              />
-            </Field>
-            <Field label="Contact">
-              <Input
-                type="search"
-                placeholder="Find a customer…"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setContactId("");
-                }}
-              />
-            </Field>
-            <div
-              className="max-h-48 overflow-y-auto rounded-md border border-slate-200"
-              aria-busy={searching}
-            >
-              {contacts.map((contact) => (
-                <label
-                  key={contact.id}
-                  className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-0 hover:bg-slate-50"
-                >
-                  <input
+            <div className="space-y-4 p-5">
+              {isLead ? null : (
+                <Field label="Project name">
+                  <Input
+                    autoFocus
                     required
-                    type="radio"
-                    name="contact"
-                    checked={contactId === contact.id}
-                    onChange={() => setContactId(contact.id)}
+                    maxLength={200}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
                   />
-                  <span>
-                    <span className="block font-medium">{contact.name}</span>
-                    {contact.email ? (
-                      <span className="text-xs text-slate-500">
-                        {contact.email}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              ))}
-              {!contacts.length ? (
-                <p className="p-3 text-sm text-slate-500">
-                  {searching ? "Searching…" : "No customers found."}
+                </Field>
+              )}
+              <Field label="Address">
+                <AddressInput maxLength={500} value={address} onChange={setAddress} />
+              </Field>
+              {isLead ? (
+                <Field label="Lead source">
+                  <Input
+                    maxLength={120}
+                    placeholder="Phone Call, Organic Search…"
+                    value={source}
+                    onChange={(event) => setSource(event.target.value)}
+                  />
+                </Field>
+              ) : null}
+              <Field label="Contact">
+                <Input
+                  autoFocus={isLead}
+                  type="search"
+                  placeholder="Find a customer…"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setContactId("");
+                  }}
+                />
+              </Field>
+              <div
+                className="max-h-48 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)]"
+                aria-busy={searching}
+              >
+                {contacts.map((contact) => (
+                  <label
+                    key={contact.id}
+                    className="flex cursor-pointer items-center gap-3 border-b border-[var(--color-border)] px-3 py-2 text-[13px] last:border-0 hover:bg-[var(--color-row-hover)] has-[:checked]:bg-[var(--color-brand-soft)]"
+                  >
+                    <input
+                      required
+                      type="radio"
+                      name="contact"
+                      checked={contactId === contact.id}
+                      onChange={() => setContactId(contact.id)}
+                    />
+                    <span>
+                      <span className="block font-medium text-[var(--color-heading)]">{contact.name}</span>
+                      {contact.email ? (
+                        <span className="text-xs text-[var(--color-muted)]">
+                          {contact.email}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+                {!contacts.length ? (
+                  <p className="p-3 text-[13px] text-[var(--color-muted)]">
+                    {searching ? "Searching…" : "No customers found."}
+                  </p>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => setCreatingContact(true)}
+                className="-ml-2 text-[var(--color-brand-strong)]"
+              >
+                + Create a customer
+              </Button>
+              {error ? (
+                <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+                  {error}
                 </p>
               ) : null}
             </div>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => setCreatingContact(true)}
-              className="inline-block text-sm font-semibold text-blue-600"
-            >
-              ＋ Create a customer
-            </button>
-            {error ? (
-              <p role="alert" className="text-sm text-red-700">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-3">
+            <ModalFooter>
               <Button
                 type="button"
-                variant="subtle"
+                variant="secondary"
                 disabled={pending}
                 onClick={close}
               >
                 Cancel
               </Button>
               <Button type="submit" disabled={pending || !contactId}>
-                {pending ? "Creating…" : "Create Project"}
+                {pending ? "Creating…" : isLead ? "Add Lead" : "Create Project"}
               </Button>
-            </div>
+            </ModalFooter>
           </form>
         </ProjectModal>
       ) : null}

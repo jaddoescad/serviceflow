@@ -3,11 +3,20 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/components/ui";
 
-export const SETTINGS_SECTIONS = [
+const SETTINGS_SECTIONS = [
   { id: "company", label: "Company" },
+  { id: "branding", label: "Branding" },
+  { id: "documents", label: "Company documents" },
   { id: "labour", label: "Labour budget" },
   { id: "team", label: "Team & access" },
+  { id: "crews", label: "Crews" },
+  { id: "quo", label: "Quo" },
+  { id: "email", label: "Email" },
+  { id: "reviews", label: "Reviews & aftercare" },
+  { id: "payments", label: "Online payments" },
+  { id: "lead-intake", label: "Lead intake" },
   { id: "integrations", label: "Integrations" },
+  { id: "calendar", label: "Google Calendar" },
   { id: "account", label: "Your account" },
 ];
 
@@ -50,10 +59,10 @@ export function SettingsNav() {
               onClick={() => setActive(id)}
               aria-current={active === id ? "true" : undefined}
               className={cn(
-                "block rounded-md px-3 py-1.5 text-sm transition-colors",
+                "flex h-8 items-center rounded-[var(--radius-control)] px-2 text-[13px] transition-colors",
                 active === id
-                  ? "bg-[var(--color-surface-2)] font-medium text-[var(--color-heading)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-text)]",
+                  ? "bg-[var(--color-selected)] font-medium text-[var(--color-heading)]"
+                  : "text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-text)]",
               )}
             >
               {label}

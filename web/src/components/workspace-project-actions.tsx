@@ -3,9 +3,10 @@
 import { useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ProjectLabelPicker } from "./project-label-picker";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { LabelChip } from "./label-chip";
-import { Button, Field, Input } from "./ui";
+import { AddressInput } from "./address-input";
+import { Button, Field, Input, Tag, Textarea, buttonClassName } from "./ui";
 import {
   changeProjectLifecycle,
   saveWorkspaceProject,
@@ -80,22 +81,17 @@ export function WorkspaceProjectActions({
           <LabelChip key={label.id} label={label} />
         ))}
         {canManage && !project.trashed_at ? (
-          <button
-            onClick={() => setLabelPicker(true)}
-            className="text-sm font-semibold text-blue-600"
-          >
-            {project.labels.length ? "Edit Labels" : "Add Labels"}
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => setLabelPicker(true)}>
+            {project.labels.length ? "Edit labels" : "+ Add labels"}
+          </Button>
         ) : null}
         {project.archived_at ? (
-          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">
-            {project.trashed_at ? "In trash" : "Archived"}
-          </span>
+          <Tag>{project.trashed_at ? "In trash" : "Archived"}</Tag>
         ) : null}
         {canManage ? (
-          <div className="ml-auto flex gap-2">
+          <div className="flex gap-2">
             {!project.trashed_at ? (
-              <Button variant="subtle" onClick={edit}>
+              <Button variant="secondary" onClick={edit}>
                 Edit Project
               </Button>
             ) : null}
@@ -115,7 +111,7 @@ export function WorkspaceProjectActions({
                   });
                 }}
                 aria-label="Project menu"
-                className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full bg-slate-100 text-xl"
+                className={buttonClassName({ variant: "secondary", className: "w-8 px-0" })}
               >
                 ···
               </button>
@@ -130,13 +126,13 @@ export function WorkspaceProjectActions({
                       ?.querySelector<HTMLButtonElement>("button")
                       ?.focus();
                 }}
-                className="fixed m-0 w-52 rounded-md border border-slate-200 bg-white p-1 text-sm shadow-lg"
+                className="fixed m-0 w-52 rounded-[var(--radius)] bg-[var(--color-surface)] p-1 text-[13px] text-[var(--color-text)] shadow-[var(--shadow-pop)]"
               >
                 {project.trashed_at ? (
                   <button
                     disabled={pending}
                     onClick={() => lifecycle("restore")}
-                    className="w-full p-3 text-left hover:bg-slate-50"
+                    className="flex h-8 w-full items-center rounded-md px-2 text-left hover:bg-[var(--color-hover)]"
                   >
                     Restore project
                   </button>
@@ -147,7 +143,7 @@ export function WorkspaceProjectActions({
                       onClick={() =>
                         lifecycle(project.archived_at ? "unarchive" : "archive")
                       }
-                      className="w-full p-3 text-left hover:bg-slate-50"
+                      className="flex h-8 w-full items-center rounded-md px-2 text-left hover:bg-[var(--color-hover)]"
                     >
                       {project.archived_at
                         ? "Unarchive Project"
@@ -161,7 +157,7 @@ export function WorkspaceProjectActions({
                           setError("");
                           setConfirmTrash(true);
                         }}
-                        className="w-full p-3 text-left text-red-700 hover:bg-red-50"
+                        className="flex h-8 w-full items-center rounded-md px-2 text-left text-[var(--color-bad)] hover:bg-[var(--color-bad-soft)]"
                       >
                         Delete Project
                       </button>
@@ -174,7 +170,7 @@ export function WorkspaceProjectActions({
         ) : null}
       </div>
       {error && !editing && !confirmTrash ? (
-        <p role="alert" className="mt-3 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-xs text-[var(--color-bad)]">
           {error}
         </p>
       ) : null}
@@ -194,7 +190,6 @@ export function WorkspaceProjectActions({
           }}
         >
           <form
-            className="space-y-5 p-6"
             onSubmit={(event) => {
               event.preventDefault();
               setError("");
@@ -214,82 +209,82 @@ export function WorkspaceProjectActions({
               });
             }}
           >
-            <Field label="Project name">
-              <Input
-                required
-                maxLength={200}
-                value={draft.name}
-                onChange={(event) =>
-                  setDraft({ ...draft, name: event.target.value })
-                }
-              />
-            </Field>
-            <Field label="Address">
-              <Input
-                value={draft.address}
-                maxLength={500}
-                onChange={(event) =>
-                  setDraft({ ...draft, address: event.target.value })
-                }
-              />
-            </Field>
-            <fieldset className="space-y-4 border-t border-slate-200 pt-4">
-              <legend className="pr-2 text-sm font-semibold">
-                Contact Info
-              </legend>
-              <Field label="Contact name">
+            <div className="space-y-4 p-5">
+              <Field label="Project name">
                 <Input
                   required
-                  maxLength={160}
-                  value={draft.contactName}
+                  maxLength={200}
+                  value={draft.name}
                   onChange={(event) =>
-                    setDraft({ ...draft, contactName: event.target.value })
+                    setDraft({ ...draft, name: event.target.value })
                   }
                 />
               </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Email">
+              <Field label="Address">
+                <AddressInput
+                  value={draft.address}
+                  maxLength={500}
+                  onChange={(address) =>
+                    setDraft((current) => ({ ...current, address }))
+                  }
+                />
+              </Field>
+              <fieldset className="space-y-4 border-t border-[var(--color-border)] pt-4">
+                <legend className="pr-2 text-[13px] font-semibold text-[var(--color-heading)]">
+                  Contact
+                </legend>
+                <Field label="Contact name">
                   <Input
-                    type="email"
-                    maxLength={320}
-                    value={draft.email}
+                    required
+                    maxLength={160}
+                    value={draft.contactName}
                     onChange={(event) =>
-                      setDraft({ ...draft, email: event.target.value })
+                      setDraft({ ...draft, contactName: event.target.value })
                     }
                   />
                 </Field>
-                <Field label="Phone">
-                  <Input
-                    type="tel"
-                    maxLength={60}
-                    value={draft.phone}
-                    onChange={(event) =>
-                      setDraft({ ...draft, phone: event.target.value })
-                    }
-                  />
-                </Field>
-              </div>
-            </fieldset>
-            <Field label="Description">
-              <textarea
-                rows={4}
-                maxLength={10000}
-                value={draft.description}
-                onChange={(event) =>
-                  setDraft({ ...draft, description: event.target.value })
-                }
-                className="w-full rounded-md border border-slate-300 p-3 text-sm"
-              />
-            </Field>
-
-            {error ? (
-              <p role="alert" className="text-sm text-red-700">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Email">
+                    <Input
+                      type="email"
+                      maxLength={320}
+                      value={draft.email}
+                      onChange={(event) =>
+                        setDraft({ ...draft, email: event.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Phone">
+                    <Input
+                      type="tel"
+                      maxLength={60}
+                      value={draft.phone}
+                      onChange={(event) =>
+                        setDraft({ ...draft, phone: event.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+              </fieldset>
+              <Field label="Description">
+                <Textarea
+                  rows={4}
+                  maxLength={10000}
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft({ ...draft, description: event.target.value })
+                  }
+                />
+              </Field>
+              {error ? (
+                <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+            <ModalFooter>
               <Button
-                variant="subtle"
+                variant="secondary"
                 type="button"
                 disabled={pending}
                 onClick={() => setEditing(false)}
@@ -299,7 +294,7 @@ export function WorkspaceProjectActions({
               <Button type="submit" disabled={pending}>
                 {pending ? "Saving…" : "Save Changes"}
               </Button>
-            </div>
+            </ModalFooter>
           </form>
         </ProjectModal>
       ) : null}
@@ -310,28 +305,28 @@ export function WorkspaceProjectActions({
             if (!pending) setConfirmTrash(false);
           }}
         >
-          <div className="space-y-5 p-6">
-            <p className="text-sm">
+          <div className="space-y-3 p-5">
+            <p className="text-[13px] text-[var(--color-text)]">
               Move {project.name} to trash? You can restore it for 90 days.
             </p>
             {error && (
-              <p role="alert" className="text-sm text-red-700">
+              <p role="alert" className="text-[13px] text-[var(--color-bad)]">
                 {error}
               </p>
             )}
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="subtle"
-                disabled={pending}
-                onClick={() => setConfirmTrash(false)}
-              >
-                Cancel
-              </Button>
-              <Button disabled={pending} onClick={() => lifecycle("trash")}>
-                {pending ? "Moving…" : "Move to Trash"}
-              </Button>
-            </div>
           </div>
+          <ModalFooter>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => setConfirmTrash(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={pending} onClick={() => lifecycle("trash")}>
+              {pending ? "Moving…" : "Move to Trash"}
+            </Button>
+          </ModalFooter>
         </ProjectModal>
       ) : null}
     </>
