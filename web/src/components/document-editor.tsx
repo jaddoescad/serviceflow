@@ -6,11 +6,18 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Input } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
+import {
+  deleteDocumentTemplate,
+  getDocumentTemplate,
+  renameDocumentTemplate,
+  saveDocumentTemplate,
+} from "@/lib/actions/document-templates";
 import { deleteDocument, loadPageDocument, renameDocument, savePageDocument } from "@/lib/actions/project-documents";
 import {
   PROJECT_DOCUMENTS_BUCKET,
   pageImagePath,
   pageImageUrl,
+  type DocumentTemplate,
   type ProjectPageDocument,
 } from "@/lib/project-document-types";
 import { richTextToPlain, sanitizeRichText } from "@/lib/rich-text";
@@ -58,16 +65,18 @@ function hasContent(html: string): boolean {
   return richTextToPlain(html).length > 0 || /<(img|table|hr)\b/i.test(html);
 }
 
+/** A job's page, or a company template (no project) every new job gets a copy of. */
 export function DocumentEditor({
   document: page,
   canEdit,
 }: {
-  document: ProjectPageDocument;
+  document: ProjectPageDocument | DocumentTemplate;
   canEdit: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const listHref = `/jobs/${encodeURIComponent(page.projectId)}/documents`;
+  const projectId = "projectId" in page ? page.projectId : null;
+  const listHref = projectId ? `/jobs/${encodeURIComponent(projectId)}/documents` : "/settings#templates";
 
   const editor = useRef<HTMLDivElement>(null);
   const printRoot = useRef<HTMLDivElement>(null);
@@ -86,8 +95,6 @@ export function DocumentEditor({
   const [menu, setMenu] = useState<Menu>(null);
   const [block, setBlock] = useState<Block>("p");
   const [active, setActive] = useState<Record<string, boolean>>({});
-  const [headings, setHeadings] = useState<{ id: number; text: string }[]>([]);
-  const [tocOpen, setTocOpen] = useState(true);
   const [linkDialog, setLinkDialog] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -113,13 +120,16 @@ export function DocumentEditor({
       dirty.current = false;
       setSave({ status: "saving" });
       const html = editor.current.innerHTML;
+      const bodyHtml = hasContent(html) ? html : "";
       try {
-        const result = await savePageDocument({
-          projectId: page.projectId,
-          documentId: page.id,
-          bodyHtml: hasContent(html) ? html : "",
-          expectedUpdatedAt: expectedUpdatedAt.current,
-        });
+        const result = projectId
+          ? await savePageDocument({
+              projectId,
+              documentId: page.id,
+              bodyHtml,
+              expectedUpdatedAt: expectedUpdatedAt.current,
+            })
+          : await saveDocumentTemplate({ templateId: page.id, bodyHtml, expectedUpdatedAt: expectedUpdatedAt.current });
         if (result.ok && result.updatedAt) {
           expectedUpdatedAt.current = result.updatedAt;
           setSave({ status: "saved", at: result.updatedAt });
@@ -138,15 +148,13 @@ export function DocumentEditor({
         return false;
       }
     });
-  }, [enqueue, page.id, page.projectId]);
+  }, [enqueue, page.id, projectId]);
 
   const changed = useCallback(() => {
     if (!editor.current) return;
     dirty.current = true;
     const html = editor.current.innerHTML;
     editor.current.dataset.empty = hasContent(html) ? "false" : "true";
-    const nodes = Array.from(editor.current.querySelectorAll("h1"));
-    setHeadings(nodes.map((node, index) => ({ id: index, text: node.textContent?.trim() || "Untitled heading" })));
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void saveBody(), AUTOSAVE_MS);
   }, [saveBody]);
@@ -163,17 +171,11 @@ export function DocumentEditor({
     const show = (html: string) => {
       node.innerHTML = html || EMPTY_BODY;
       node.dataset.empty = hasContent(html) ? "false" : "true";
-      setHeadings(
-        Array.from(node.querySelectorAll("h1")).map((heading, index) => ({
-          id: index,
-          text: heading.textContent?.trim() || "Untitled heading",
-        })),
-      );
     };
     show(page.bodyHtml);
     // Reopening a page can render Next's cached copy from before the last
     // edits; fetch the saved version unless the person has started typing.
-    void loadPageDocument(page.projectId, page.id).then((latest) => {
+    void (projectId ? loadPageDocument(projectId, page.id) : getDocumentTemplate(page.id)).then((latest) => {
       if (!latest || dirty.current || latest.updatedAt === expectedUpdatedAt.current) return;
       expectedUpdatedAt.current = latest.updatedAt;
       show(latest.bodyHtml);
@@ -187,7 +189,7 @@ export function DocumentEditor({
         /* older browsers keep their defaults */
       }
     }
-  }, [canEdit, page.bodyHtml, page.id, page.projectId]);
+  }, [canEdit, page.bodyHtml, page.id, projectId]);
 
   useEffect(() => {
     function onSelectionChange() {
@@ -269,13 +271,13 @@ export function DocumentEditor({
   // "Export to PDF" from the documents list opens the page with ?export=1.
   const exportRequested = useRef(false);
   useEffect(() => {
-    if (exportRequested.current || searchParams.get("export") !== "1") return;
+    if (!projectId || exportRequested.current || searchParams.get("export") !== "1") return;
     exportRequested.current = true;
     setTimeout(() => {
       exportPdf();
       router.replace(`${listHref}/${encodeURIComponent(page.id)}`);
     }, 300);
-  }, [exportPdf, listHref, page.id, router, searchParams]);
+  }, [exportPdf, listHref, page.id, projectId, router, searchParams]);
 
   // ---- commands -----------------------------------------------------------
 
@@ -324,7 +326,7 @@ export function DocumentEditor({
   }
 
   async function insertImage(file: File | undefined) {
-    if (!file) return;
+    if (!file || !projectId) return;
     if (!file.type.startsWith("image/")) {
       setNotice("Choose an image file.");
       return;
@@ -333,7 +335,7 @@ export function DocumentEditor({
     const imageId = crypto.randomUUID();
     const { error } = await createClient()
       .storage.from(PROJECT_DOCUMENTS_BUCKET)
-      .upload(pageImagePath(page.projectId, page.id, imageId), file, {
+      .upload(pageImagePath(projectId, page.id, imageId), file, {
         contentType: file.type,
         upsert: false,
       });
@@ -343,7 +345,7 @@ export function DocumentEditor({
     }
     setNotice("");
     const alt = file.name.replace(/[<>"&]/g, "");
-    exec("insertHTML", `<img src="${pageImageUrl(page.projectId, page.id, imageId)}" alt="${alt}"><p><br></p>`);
+    exec("insertHTML", `<img src="${pageImageUrl(projectId, page.id, imageId)}" alt="${alt}"><p><br></p>`);
   }
 
   function addLink(url: string) {
@@ -439,7 +441,9 @@ export function DocumentEditor({
     }
     await saveBody();
     const result = await enqueue(() =>
-      renameDocument({ projectId: page.projectId, documentId: page.id, name: next }),
+      projectId
+        ? renameDocument({ projectId, documentId: page.id, name: next })
+        : renameDocumentTemplate({ templateId: page.id, name: next }),
     );
     if (result.ok) {
       setSavedTitle(next);
@@ -463,7 +467,9 @@ export function DocumentEditor({
   async function removeDocument() {
     setDeleting(true);
     stopped.current = true;
-    const result = await deleteDocument({ projectId: page.projectId, documentId: page.id });
+    const result = projectId
+      ? await deleteDocument({ projectId, documentId: page.id })
+      : await deleteDocumentTemplate(page.id);
     if (!result.ok) {
       stopped.current = false;
       setDeleting(false);
@@ -473,10 +479,6 @@ export function DocumentEditor({
     }
     dirty.current = false;
     router.push(listHref);
-  }
-
-  function scrollToHeading(index: number) {
-    editor.current?.querySelectorAll("h1")[index]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // ---- render -------------------------------------------------------------
@@ -562,13 +564,15 @@ export function DocumentEditor({
             )}
             <div className="ml-auto flex items-center gap-4">
               <SaveStatus state={save} />
-              <button
-                type="button"
-                onClick={exportPdf}
-                className="text-sm font-semibold text-[var(--color-heading)] hover:text-[var(--color-brand)]"
-              >
-                Export PDF
-              </button>
+              {projectId ? (
+                <button
+                  type="button"
+                  onClick={exportPdf}
+                  className="text-sm font-semibold text-[var(--color-heading)] hover:text-[var(--color-brand)]"
+                >
+                  Export PDF
+                </button>
+              ) : null}
               {canEdit ? (
                 <div className="relative" data-editor-menu>
                   <button
@@ -682,7 +686,8 @@ export function DocumentEditor({
               </div>
               <Divider />
               {tool("Link", "link", () => setLinkDialog(true))}
-              {tool("Add Image", "image", () => imageInput.current?.click())}
+              {/* Template images would have to be copied into every job. */}
+              {projectId ? tool("Add Image", "image", () => imageInput.current?.click()) : null}
               {tool("Add Table", "table", insertTable)}
               <div className="relative" data-editor-menu>
                 {menuButton("insert", "Insert", "plus")}
@@ -766,51 +771,15 @@ export function DocumentEditor({
         </div>
       </div>
 
-      <aside
-        className={`relative hidden shrink-0 border-l border-[var(--color-border)] bg-[var(--color-bg)] lg:block ${
-          tocOpen ? "w-[320px]" : "w-0"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setTocOpen(!tocOpen)}
-          aria-label={tocOpen ? "Hide table of contents" : "Show table of contents"}
-          className="absolute -left-7 top-[124px] z-10 inline-flex h-8 w-7 items-center justify-center rounded-l-md border border-r-0 border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-heading)]"
-        >
-          {tocOpen ? "»" : "«"}
-        </button>
-        {tocOpen ? (
-          <div className="sticky top-0 p-4">
-            <Card className="p-4">
-              <h2 className="mb-3 text-sm font-semibold text-[var(--color-heading)]">Table of Contents</h2>
-              {headings.length ? (
-                <ol className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] px-4">
-                  {headings.map((heading) => (
-                    <li key={heading.id}>
-                      <button
-                        type="button"
-                        onClick={() => scrollToHeading(heading.id)}
-                        className="w-full truncate py-4 text-left text-sm text-[var(--color-text)] hover:text-[var(--color-brand)]"
-                      >
-                        {heading.text}
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              <p className="mt-3 text-center text-xs text-[var(--color-muted)]">
-                Auto-generated from H1 headings in your document.
-              </p>
-            </Card>
-          </div>
-        ) : null}
-      </aside>
-
       {linkDialog ? <LinkDialog onClose={() => setLinkDialog(false)} onSave={addLink} /> : null}
       {confirmDelete ? (
-        <Overlay title="Delete Document" onClose={() => (deleting ? null : setConfirmDelete(false))}>
+        <Overlay
+          title={projectId ? "Delete Document" : "Delete Template"}
+          onClose={() => (deleting ? null : setConfirmDelete(false))}
+        >
           <p className="text-sm text-[var(--color-text)]">
-            Delete <span className="font-semibold">{savedTitle}</span>? This can’t be undone.
+            Delete <span className="font-semibold">{savedTitle}</span>?{" "}
+            {projectId ? "This can’t be undone." : "Jobs that already have a copy keep it."}
           </p>
           <div className="mt-5 flex justify-end gap-2">
             <Button variant="ghost" disabled={deleting} onClick={() => setConfirmDelete(false)}>

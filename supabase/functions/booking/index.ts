@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { addDays, isDay, wall } from "../_shared/zoned.ts";
-import { addressKey, type Booked, type Context, openTimes, type Preference, rankTimes, type Suggestion } from "./slots.ts";
+import { addressKey, type Booked, type Candidate, type Context, openTimes, openWindows, type Preference } from "./slots.ts";
 
 // Suggested times for the appointment dialog. A manager (Bearer JWT) sends
 //   {"address", "minutes", "userId"?, "appointmentId"?, "days"?: ["2026-11-03"],
@@ -8,16 +8,18 @@ import { addressKey, type Booked, type Context, openTimes, type Preference, rank
 // with the days and part of the day the customer asked for, the person (or
 // anyone who takes appointments) and the visit being moved. Open times are
 // each person's hours minus their appointments, Google busy times, the break
-// between visits and the drive to and from each one; the reply ranks them
-// against the request (see rankTimes). Drive times and distances come from
-// Google's Routes API (GOOGLE_MAPS_API_KEY) and are cached; without it, the
-// company's fallback drive time. Deploy with --no-verify-jwt.
+// between visits and the drive to and from each one. The reply groups them
+// into each person's free stretches, ranked against the request (see
+// openWindows). Drive times and distances come from Google's Routes API
+// (GOOGLE_MAPS_API_KEY) and are cached; without it, the company's fallback
+// drive time. Deploy with --no-verify-jwt.
 
 type BookingContext = Context & { travelMinutes: number; appointments: Booked[] };
 
 type Distances = (from: string | null, to: string | null) => { minutes: number; meters: number | null };
 
 const SEARCH_DAYS = 21;
+const MAX_WINDOWS = 24;
 const MAX_DESTINATIONS = 100;
 const ROUTES = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,6 +79,8 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
   const reply = {
     timezone: zone,
     minutes,
+    windows: [] as Record<string, unknown>[],
+    // Read by the site deployed before free stretches; remove once the new panel is live.
     best: [] as Record<string, unknown>[],
     other: [] as Record<string, unknown>[],
     driveTimes: Boolean(Deno.env.get("GOOGLE_MAPS_API_KEY")),
@@ -90,32 +94,47 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
   for (let day = from; day <= to; day = addDays(day, 1)) {
     open.push({ day, times: openTimes(context, day, minutes, address, Date.now(), travel) });
   }
-  const ranked = rankTimes(open, preference, zone, context.travelMinutes);
+  const windows = openWindows(open, preference, zone, context.travelMinutes).slice(0, MAX_WINDOWS);
   const names = new Map(context.people.map((person) => [person.id, person.name]));
-  const describe = (option: Suggestion) => {
-    // The closer of the visits before and after it that day.
-    const sides = [
-      option.beforeLocation !== null && option.driveBefore !== null
-        ? { address: option.beforeLocation, minutes: option.driveBefore, side: "before" }
-        : null,
-      option.afterLocation !== null && option.driveAfter !== null
-        ? { address: option.afterLocation, minutes: option.driveAfter, side: "after" }
-        : null,
-    ].filter((side) => side !== null);
-    const nearest = sides.sort((a, b) => a.minutes - b.minutes)[0] ?? null;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  // The visit just before the stretch and the one just after it, that day.
+  const visit = (location: string | null, drive: number | null) =>
+    location !== null && drive !== null ? { address: location, minutes: drive, meters: distances(address, location).meters } : null;
+  const described = windows.map((window) => {
+    const first = window.starts[0];
+    const last = window.starts.at(-1)!;
     return {
-      start: new Date(option.start).toISOString(),
-      end: new Date(option.end).toISOString(),
-      date: option.day,
-      userId: option.userId,
-      name: names.get(option.userId) ?? null,
-      matchesDay: option.matchesDay,
-      matchesTime: option.matchesTime,
-      daysAway: option.daysAway,
-      nearby: nearest ? { ...nearest, meters: distances(address, nearest.address).meters } : null,
+      date: window.day,
+      userId: window.userId,
+      name: names.get(window.userId) ?? null,
+      start: iso(first.start),
+      end: iso(last.end),
+      starts: window.starts.map((candidate) => iso(candidate.start)),
+      suggested: iso(window.suggested.start),
+      matchesDay: window.matchesDay,
+      matchesTime: window.matchesTime,
+      daysAway: window.daysAway,
+      before: visit(first.beforeLocation, first.driveBefore),
+      after: visit(last.afterLocation, last.driveAfter),
     };
-  };
-  return { ...reply, best: ranked.best.map(describe), other: ranked.other.map(describe) };
+  });
+  // The old panel's rows: each stretch's suggested start.
+  const legacy = windows.map((window, index) => {
+    const pick: Candidate = window.suggested;
+    const near = described[index].before ?? described[index].after;
+    return {
+      start: iso(pick.start),
+      end: iso(pick.end),
+      date: window.day,
+      userId: window.userId,
+      name: names.get(window.userId) ?? null,
+      matchesDay: window.matchesDay,
+      matchesTime: window.matchesTime,
+      daysAway: window.daysAway,
+      nearby: near ? { ...near, side: described[index].before ? "before" : "after" } : null,
+    };
+  });
+  return { ...reply, windows: described, best: legacy };
 }
 
 /**

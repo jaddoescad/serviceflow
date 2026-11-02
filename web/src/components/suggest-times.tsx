@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
 import { suggestTimes } from "@/lib/actions/booking";
-import type { SuggestedTime, SuggestedTimes, TimeOfDay } from "@/lib/booking-types";
-import { Button, Segmented, Spinner, Tag, cn } from "./ui";
+import type { NearbyVisit, OpenWindow, SuggestedTimes, TimeOfDay } from "@/lib/booking-types";
+import { Button, Segmented, Select, Spinner, Tag, cn } from "./ui";
 
 type Search = { address: string; minutes: number; userId: string | null; appointmentId: string | null };
 
@@ -24,8 +24,11 @@ function addDays(day: string, count: number): string {
 const dayPart = (day: string, options: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "UTC", ...options }).format(new Date(`${day}T00:00:00Z`));
 
+const clock = (iso: string, timeZone: string) =>
+  new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+
 /** "9:00 – 10:00 AM", or "11:30 AM – 12:30 PM" across noon. */
-function timeRange(time: SuggestedTime, timeZone: string): string {
+function timeRange(time: { start: string; end: string }, timeZone: string): string {
   const parts = (iso: string) => {
     const shown = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(new Date(iso));
     const [clock, period] = shown.split(/\s+/);
@@ -38,29 +41,22 @@ function timeRange(time: SuggestedTime, timeZone: string): string {
     : `${start.clock} ${start.period} – ${end.clock} ${end.period}`;
 }
 
-function fit(time: SuggestedTime, asked: boolean): { tone: "green" | "orange" | "gray"; label: string } | null {
-  if (!time.matchesDay) {
-    const days = Math.abs(time.daysAway);
-    return { tone: "gray", label: `${days} day${days === 1 ? "" : "s"} ${time.daysAway > 0 ? "later" : "earlier"}` };
-  }
-  if (!time.matchesTime) return { tone: "orange", label: "Different time of day" };
-  return asked ? { tone: "green", label: "Requested" } : null;
-}
+/** Short drives green, up to half an hour amber, longer red. */
+const driveTone = (minutes: number) => (minutes <= 15 ? "green" : minutes <= 30 ? "yellow" : "red");
 
-function route(time: SuggestedTime): string {
-  if (!time.nearby) return "No other visits that day";
-  const street = time.nearby.address.split(",")[0];
-  if (time.nearby.meters === 0) return `Same address as the visit ${time.nearby.side}`;
-  const distance = time.nearby.meters != null ? ` · ${(time.nearby.meters / 1000).toFixed(1)} km` : "";
-  return `${time.nearby.minutes} min ${time.nearby.side === "before" ? "from" : "to"} ${street}${distance}`;
+/** The closer of the visits just before and just after a stretch. */
+function nearestVisit(stretch: OpenWindow): NearbyVisit | null {
+  const visits = [stretch.before, stretch.after].filter((visit): visit is NearbyVisit => visit !== null);
+  return visits.sort((a, b) => a.minutes - b.minutes)[0] ?? null;
 }
 
 /**
  * The appointment dialog's suggested times. The customer's days and part of
- * the day go in; out come open times for the person it's assigned to (or
- * anyone who takes appointments), the requested ones first and closest to
- * their other visits first, then the nearest other times. Picking one fills
- * in the date, start and person.
+ * the day go in; out come the free stretches of the person it's assigned to
+ * (or anyone who takes appointments): the requested ones first and closest to
+ * their other visits first, then the nearest other days. Picking one fills in
+ * the date, a start next to their other visits and the person; the start can
+ * be moved within the stretch.
  */
 export function SuggestTimes({
   search,
@@ -75,7 +71,7 @@ export function SuggestTimes({
   startOpen: boolean;
   /** The picked time's start and person, to mark it. */
   chosen: { start: string; userId: string } | null;
-  onPick: (time: SuggestedTime) => void;
+  onPick: (pick: { start: string; userId: string }) => void;
 }) {
   const [open, setOpen] = useState(startOpen);
   const [days, setDays] = useState<string[]>([]);
@@ -85,7 +81,6 @@ export function SuggestTimes({
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const shownDays = Array.from({ length: DAYS_SHOWN }, (_, index) => addDays(today, index));
-  const asked = days.length > 0 || window !== "any";
 
   // Times found for another address, length or request no longer apply. (Not
   // the person: picking a time for anyone sets it.)
@@ -116,46 +111,70 @@ export function SuggestTimes({
     );
   }
 
-  const row = (time: SuggestedTime, top: boolean) => {
-    const picked = chosen?.start === time.start && chosen.userId === time.userId;
-    const tag = fit(time, asked);
+  const isPicked = (stretch: OpenWindow) => chosen?.userId === stretch.userId && stretch.starts.includes(chosen.start);
+  // Names only when the stretches are split between people.
+  const named = !result?.forUser && new Set(result?.windows.map((stretch) => stretch.userId)).size > 1;
+
+  const row = (stretch: OpenWindow) => {
+    const picked = isPicked(stretch);
+    const near = nearestVisit(stretch);
+    const street = near?.address.split(",")[0];
+    const details = [
+      named ? stretch.name : "",
+      near ? (near.meters === 0 ? `Same address as ${street}` : `Near ${street}`) : "",
+      near && near.meters ? `${(near.meters / 1000).toFixed(1)} km` : "",
+    ].filter(Boolean);
     return (
-      <li key={`${time.start}-${time.userId}`}>
+      <li
+        key={`${stretch.start}-${stretch.userId}`}
+        className={cn(
+          "rounded-[var(--radius)] border bg-[var(--color-surface)]",
+          picked ? "border-[var(--color-brand)] shadow-[0_0_0_1px_var(--color-brand)]" : "border-[var(--color-border)]",
+        )}
+      >
         <button
           type="button"
           aria-pressed={picked}
-          onClick={() => onPick(time)}
-          className={cn(
-            "flex w-full items-start gap-3 rounded-[var(--radius)] border bg-[var(--color-surface)] px-3 py-2 text-left outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
-            picked
-              ? "border-[var(--color-brand)] shadow-[0_0_0_1px_var(--color-brand)]"
-              : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
-          )}
+          onClick={() => onPick({ start: stretch.suggested, userId: stretch.userId })}
+          className="flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left outline-none focus-visible:shadow-[var(--focus-ring)]"
         >
           <span
             aria-hidden="true"
             className={cn(
-              "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+              "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
               picked ? "border-[var(--color-brand)] bg-[var(--color-brand)]" : "border-[var(--color-border-strong)]",
             )}
           >
             {picked ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-[13px] font-semibold text-[var(--color-heading)]">
-                {dayPart(time.date, { weekday: "short", month: "short", day: "numeric" })}
-                <span className="font-normal text-[var(--color-muted)]"> · </span>
-                <span className="tabular-nums">{timeRange(time, result!.timezone)}</span>
-              </span>
-              {top ? <Tag tone="blue">Top pick</Tag> : null}
-              {tag ? <Tag tone={tag.tone}>{tag.label}</Tag> : null}
+            <span className="block text-[13px] text-[var(--color-heading)]">
+              <span className="font-semibold">{dayPart(stretch.date, { weekday: "short", month: "short", day: "numeric" })}</span>
+              <span className="ml-2 tabular-nums">{timeRange(stretch, result!.timezone)}</span>
             </span>
-            <span className="mt-0.5 block truncate text-xs text-[var(--color-muted)]">
-              {[result!.forUser ? "" : time.name, route(time)].filter(Boolean).join(" · ")}
-            </span>
+            {details.length ? (
+              <span className="mt-0.5 block truncate text-xs text-[var(--color-muted)]">{details.join(" · ")}</span>
+            ) : null}
           </span>
+          {near && near.meters !== 0 ? <Tag tone={driveTone(near.minutes)}>{near.minutes} min</Tag> : null}
         </button>
+        {picked && stretch.starts.length > 1 ? (
+          <label className="flex items-center gap-2 px-3 pb-2.5 pl-10 text-xs text-[var(--color-muted)]">
+            Start at
+            <Select
+              aria-label="Start at"
+              value={chosen!.start}
+              onChange={(event) => onPick({ start: event.target.value, userId: stretch.userId })}
+              className="h-7 text-xs"
+            >
+              {stretch.starts.map((start) => (
+                <option key={start} value={start}>
+                  {clock(start, result!.timezone)}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
       </li>
     );
   };
@@ -213,22 +232,27 @@ export function SuggestTimes({
           .
         </p>
       ) : result ? (
-        <div className="mt-3 space-y-3">
-          {result.best.length ? (
-            <ul className="space-y-1.5">{result.best.map((time, index) => row(time, index === 0))}</ul>
+        <div className="mt-3 space-y-2">
+          {result.windows.length ? (
+            // The list scrolls on its own so the date and notes stay close.
+            <ul className="-mr-1.5 max-h-80 space-y-1.5 overflow-y-auto pr-1.5">
+              {result.windows.map((stretch, index, list) => {
+                // What the customer asked for comes first; the rest go under a label.
+                const fits = (other: OpenWindow) => other.matchesDay && other.matchesTime;
+                const firstOther = !fits(stretch) && (index === 0 || fits(list[index - 1]));
+                return firstOther ? (
+                  <Fragment key={`other-${stretch.start}`}>
+                    <li className="px-1 pt-1.5 text-xs font-medium text-[var(--color-muted)]">Other times</li>
+                    {row(stretch)}
+                  </Fragment>
+                ) : (
+                  row(stretch)
+                );
+              })}
+            </ul>
           ) : (
-            <p className="text-[13px] text-[var(--color-muted)]">
-              {asked ? "Nothing open then." : "Nothing open in the next two weeks."}
-            </p>
+            <p className="text-[13px] text-[var(--color-muted)]">Nothing open in the next three weeks.</p>
           )}
-          {result.other.length ? (
-            <div>
-              <div className="mb-1.5 text-xs font-medium text-[var(--color-muted)]">
-                {result.best.length ? "Other times close to the request" : "Closest open times"}
-              </div>
-              <ul className="space-y-1.5">{result.other.map((time, index) => row(time, !result.best.length && index === 0))}</ul>
-            </div>
-          ) : null}
           {result.driveTimes ? null : (
             <p className="text-xs text-[var(--color-muted)]">
               Drive times are a {result.fallbackDriveMinutes} min estimate until Google Maps is set up.

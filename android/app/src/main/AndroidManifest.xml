@@ -46,5 +46,16 @@
         <receiver
             android:name=".platform.NotificationService$ReminderReceiver"
             android:exported="false" />
+
+        <!-- Shares downloaded job documents with the app that opens them. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/document_paths" />
+        </provider>
     </application>
 </manifest>

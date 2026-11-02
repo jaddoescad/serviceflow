@@ -447,4 +447,55 @@ class CoreChecksTest {
         assertEquals("drawings read", 2, item?.annotations?.shapes?.size)
         assertEquals("revision read", "r1", item?.detailsRevision)
     }
+
+    // MARK: Documents
+
+    @Test
+    fun jobDocumentsRowsSectionsLabelsAndPageImages() {
+        val job = "dee00000-0000-4000-8000-000000000201"
+        val page = "fd6ec6b5-52bc-4124-a54f-700f28e3c839"
+        val rows = listOf(
+            jsonObject(
+                "id" to "d1", "project_id" to job, "name" to "Paint schedule.pdf", "kind" to "file", "folder_id" to "f1",
+                "storage_path" to "$job/d1/paint-schedule.pdf", "mime_type" to "application/pdf", "byte_size" to 19351,
+                "updated_at" to "2026-10-27T12:00:00.000Z",
+            ),
+            jsonObject(
+                "id" to page, "project_id" to job, "name" to "Colour selections", "kind" to "page", "folder_id" to "f1",
+                "updated_at" to "2026-10-28T12:00:00.000Z",
+            ),
+            jsonObject("id" to "d3", "project_id" to job, "name" to "Site notes", "kind" to "page", "updated_at" to "2026-10-29T12:00:00.000Z"),
+            jsonObject("id" to "d4", "project_id" to job, "name" to "Lost.pdf", "kind" to "file"),
+            jsonObject(
+                "id" to "d5", "project_id" to job, "name" to "Old.docx", "kind" to "file", "folder_id" to "gone",
+                "storage_path" to "x/d5/old.docx", "updated_at" to "2026-01-02T12:00:00.000Z",
+            ),
+        )
+        val documents = rows.mapNotNull { ProjectDocument.fromRow(it) }
+        assertEquals("a file without storage is skipped", 4, documents.size)
+        val folders = listOf(ProjectDocumentFolder(id = "f2", name = "Empty"), ProjectDocumentFolder(id = "f1", name = "Colours & specs"))
+        val sections = ProjectDocuments.sections(documents = documents, folders = folders)
+        assertEquals("loose first, empty folders hidden", listOf("-", "Colours & specs"), sections.map { it.folder?.name ?: "-" })
+        assertEquals("newest first; an unknown folder counts as none", listOf("d3", "d5"), sections[0].documents.map { it.id })
+        assertEquals("folder contents newest first", listOf(page, "d1"), sections[1].documents.map { it.id })
+        assertEquals("pdf label", "PDF", documents[0].typeLabel)
+        assertEquals("word label from the extension", "Word", documents.firstOrNull { it.id == "d5" }?.typeLabel)
+        // Phones write "Oct 27, 2026" (as iOS does); JDK 17's older CLDR data writes "Oct. 27, 2026".
+        val shortDate = { iso: String -> DateText.canadianShortDate(ISODate.parse(iso)) }
+        assertEquals("file detail", "PDF · 19 KB · ${shortDate("2026-10-27T12:00:00.000Z")}", documents[0].detail)
+        assertEquals("page detail", "Page · ${shortDate("2026-10-29T12:00:00.000Z")}", documents[2].detail)
+        assertEquals("bytes", "820 B", ProjectDocuments.sizeLabel(820))
+        assertEquals("megabytes", "4.2 MB", ProjectDocuments.sizeLabel(4_404_019))
+        assertEquals("whole megabytes", "2 MB", ProjectDocuments.sizeLabel(2_097_152))
+
+        val image = "1bc51b0d-ec70-4b9b-a9a0-c3f8d73c5788"
+        val other = "/api/jobs/$job/documents/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/images/$image"
+        val mine = "/api/jobs/$job/documents/$page/images/$image"
+        val html = "<p>Swatches</p><img src=\"$mine\" alt=\"x\"><img src=\"$other\">"
+        val images = ProjectDocuments.pageImages(html = html, document = documents[1])
+        assertEquals("only this page's images map to storage keys", mapOf(mine to "$job/pages/$page/$image"), images)
+        val swapped = ProjectDocuments.replacingImageSources(html, mapOf(mine to "https://signed/1"))
+        assertTrue("image swapped, others kept", swapped.contains("src=\"https://signed/1\"") && swapped.contains(other))
+        assertTrue("page wrapped", ProjectDocuments.pageDocument(body = "<p>Hi</p>").contains("<body><p>Hi</p></body>"))
+    }
 }

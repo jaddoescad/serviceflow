@@ -27,6 +27,14 @@ export type ProjectPageDocument = {
   updatedAt: string;
 };
 
+/** A page every new job starts with a copy of (Settings › Document templates). */
+export type DocumentTemplate = {
+  id: string;
+  name: string;
+  bodyHtml: string;
+  updatedAt: string;
+};
+
 /** Storage key for an image placed inside a page. */
 export function pageImagePath(projectId: string, documentId: string, imageId: string): string {
   return `${projectId}/pages/${documentId}/${imageId}`;

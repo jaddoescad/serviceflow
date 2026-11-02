@@ -1,9 +1,12 @@
 package com.serviceflow.app.features.projectdetail
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.TimerOff
@@ -20,10 +24,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LeadingIconTab
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -36,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,6 +61,7 @@ import com.serviceflow.app.features.media.ProjectMediaPanel
 import com.serviceflow.core.DateText
 import com.serviceflow.core.PainterClockInSummary
 import com.serviceflow.core.ProjectClockIns
+import com.serviceflow.core.ProjectDocument
 import com.serviceflow.core.TimeEntry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -85,9 +91,9 @@ fun rememberJobClockIns(model: ProjectDetailModel): JobClockIns {
     return JobClockIns(visible, summaries, now)
 }
 
-private enum class DetailTab { Clock, Media }
+private enum class DetailTab { Clock, Media, Documents }
 
-/** A job or lead: its clock-ins, hours, tasks, photos and videos. */
+/** A job or lead: its clock-ins, hours, tasks, photos and videos, and a job's documents. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
@@ -130,6 +136,10 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
         }
     }
 
+    fun openPage(document: ProjectDocument) {
+        session.navigator.push { onBackFromPage -> ProjectDocumentPageScreen(document = document, onBack = onBackFromPage) }
+    }
+
     fun openPainter(userId: String) {
         session.navigator.push { onBackFromPainter ->
             val painterClockIns = rememberJobClockIns(model)
@@ -144,7 +154,10 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         // Showing Media (including opening straight onto it) always reloads it.
-        snapshotFlow { tab }.collect { if (it == DetailTab.Media) store.load() }
+        snapshotFlow { tab }.collect {
+            if (it == DetailTab.Media) store.load()
+            if (it == DetailTab.Documents) model.documents.load(session.api)
+        }
     }
     LaunchedEffect(Unit) {
         if (route.action == ProjectRoute.Action.Camera && !handledAction) openCamera()
@@ -177,18 +190,9 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
                 )
                 if (!project.isLead) {
                     PrimaryTabRow(selectedTabIndex = tab.ordinal) {
-                        LeadingIconTab(
-                            selected = tab == DetailTab.Clock,
-                            onClick = { tab = DetailTab.Clock },
-                            text = { Text("Clock Ins") },
-                            icon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
-                        )
-                        LeadingIconTab(
-                            selected = tab == DetailTab.Media,
-                            onClick = { tab = DetailTab.Media },
-                            text = { Text("Media") },
-                            icon = { Icon(Icons.Outlined.PhotoLibrary, contentDescription = null) },
-                        )
+                        DetailTabItem(tab == DetailTab.Clock, "Clock Ins", Icons.Outlined.Schedule) { tab = DetailTab.Clock }
+                        DetailTabItem(tab == DetailTab.Media, "Media", Icons.Outlined.PhotoLibrary) { tab = DetailTab.Media }
+                        DetailTabItem(tab == DetailTab.Documents, "Documents", Icons.Outlined.Description) { tab = DetailTab.Documents }
                     }
                 }
             }
@@ -208,7 +212,7 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
                 }
             }
         },
-        containerColor = if (tab == DetailTab.Clock) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.background,
+        containerColor = if (tab == DetailTab.Media) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainer,
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
@@ -233,7 +237,22 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
                         ProjectMediaPanel(store = store, project = project)
                     }
                 }
+                DetailTab.Documents -> ProjectDocumentsTab(store = model.documents, onOpenPage = ::openPage)
             }
+        }
+    }
+}
+
+/**
+ * A tab with its icon before the label, tighter than `LeadingIconTab` so
+ * three labels fit on one line on a phone.
+ */
+@Composable
+private fun DetailTabItem(selected: Boolean, text: String, icon: ImageVector, onClick: () -> Unit) {
+    Tab(selected = selected, onClick = onClick, modifier = Modifier.height(48.dp)) {
+        Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

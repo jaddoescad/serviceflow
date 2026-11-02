@@ -46,6 +46,7 @@ import {
 } from "./pipeline-ui";
 import { PipelineViewMenu } from "./pipeline-view-menu";
 import { ProjectLabelPicker } from "./project-label-picker";
+import { QuoColumn } from "./quo-column";
 import { ShowMore } from "./show-more";
 import { Button, Input, Segmented, cn } from "./ui";
 
@@ -507,6 +508,7 @@ export function PipelineView({
       {mode === "board" ? (
         <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-[var(--gutter)] pb-3 pt-3">
           <div className="flex h-full w-max gap-3">
+            <QuoColumn search={search} />
             {stages.map((stage) => {
               const { open, archived } = byStage.get(stage.id) ?? { open: [], archived: [] };
               const dropTarget = over === stage.id && dragging?.stageId !== stage.id;

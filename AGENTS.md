@@ -31,7 +31,7 @@
 
 This is ServiceFlow. Operational edits belong here. Sync only the approved operational columns to Ottawa Painters; never import Ottawa Painters accounting or login access. Production Supabase project: `bwbckdkouqghdadpkjvn`.
 
-Ottawa Painters' business files, accounting, DripJobs import rules, Quo access and the Hermes assistant live in the `ottawa-painters-admin` repository. Do not add them back here.
+Ottawa Painters' business files, accounting, DripJobs import rules, Ottawa Painters' own Quo tooling and the Hermes assistant live in the `ottawa-painters-admin` repository. Do not add them back here. ServiceFlow drips and customer messages may text through each company's own Quo API key (Settings › Messaging, sent by the `send-messages` function); that key never reaches the browser.
 
 ## Repository layout
 

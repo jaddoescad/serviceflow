@@ -20,28 +20,35 @@ export type BookingSettings = BookingRules & { people: BookingPerson[] };
 
 export type TimeOfDay = "any" | "morning" | "afternoon";
 
-export type SuggestedTime = {
-  start: string;
-  end: string;
-  /** Its day, YYYY-MM-DD in company time. */
+/** A visit next to a free stretch, and the drive between it and the new address. */
+export type NearbyVisit = { address: string; minutes: number; meters: number | null };
+
+/** A stretch of a day one person is free. */
+export type OpenWindow = {
+  /** YYYY-MM-DD in company time. */
   date: string;
   userId: string;
   name: string | null;
+  /** From the first start to the end of a visit at the last one. */
+  start: string;
+  end: string;
+  /** Every start in it, half an hour apart. */
+  starts: string[];
+  /** The start to offer: next to the visit before or after it, in the asked-for part of the day. */
+  suggested: string;
   matchesDay: boolean;
   matchesTime: boolean;
   /** Days after (negative: before) the nearest day the customer asked for. */
   daysAway: number;
-  /** The closer of the person's visits before and after it that day. */
-  nearby: { address: string; minutes: number; meters: number | null; side: "before" | "after" } | null;
+  before: NearbyVisit | null;
+  after: NearbyVisit | null;
 };
 
 export type SuggestedTimes = {
   timezone: string;
   minutes: number;
-  /** On an asked-for day and part of the day, best route first. */
-  best: SuggestedTime[];
-  /** The nearest other times. */
-  other: SuggestedTime[];
+  /** Best first: asked-for stretches closest to other visits, then the nearest other days. */
+  windows: OpenWindow[];
   /** Whether drive times come from Google. */
   driveTimes: boolean;
   fallbackDriveMinutes: number;

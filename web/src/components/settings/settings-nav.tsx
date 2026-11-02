@@ -7,6 +7,7 @@ const SETTINGS_SECTIONS = [
   { id: "company", label: "Company" },
   { id: "branding", label: "Branding" },
   { id: "documents", label: "Company documents" },
+  { id: "templates", label: "Document templates" },
   { id: "labour", label: "Labour budget" },
   { id: "team", label: "Team & access" },
   { id: "crews", label: "Crews" },

@@ -1,11 +1,11 @@
 "use client";
 
-import { SITE_NAME, SITE_INITIALS } from "@/lib/site-brand";
-
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Card, Field, Input } from "@/components/ui";
+import { AuthCard } from "@/components/auth-card";
+import { Button, Field, Input } from "@/components/ui";
 
 function LoginForm() {
   const router = useRouter();
@@ -32,14 +32,7 @@ function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm p-6">
-      <div className="mb-6">
-        <div className="mb-2 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-brand)] text-lg font-bold text-[var(--color-brand-ink)]">
-          {SITE_INITIALS}
-        </div>
-        <h1 className="text-lg font-semibold">{SITE_NAME}</h1>
-        <p className="text-sm text-[var(--color-muted)]">Sign in with your ServiceFlow account.</p>
-      </div>
+    <AuthCard subtitle="Sign in with your ServiceFlow account.">
       <form onSubmit={onSubmit} className="space-y-4">
         <Field label="Email">
           <Input
@@ -65,7 +58,13 @@ function LoginForm() {
           {loading ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-    </Card>
+      <p className="mt-4 text-center text-[13px] text-[var(--color-muted)]">
+        New to ServiceFlow?{" "}
+        <Link href="/signup" className="font-medium text-[var(--color-heading)] hover:underline">
+          Create a company
+        </Link>
+      </p>
+    </AuthCard>
   );
 }
 

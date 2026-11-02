@@ -3,6 +3,7 @@ import { getPaymentSettings } from "@/lib/actions/billing";
 import { getBookingSettings } from "@/lib/actions/booking";
 import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { getCrewSettings } from "@/lib/actions/crews";
+import { getDocumentTemplates } from "@/lib/actions/document-templates";
 import { getLeadIntakeSettings } from "@/lib/actions/lead-intake";
 import { getMessagingSettings, getReviewSettings } from "@/lib/actions/messaging";
 import {
@@ -17,6 +18,7 @@ import { BrandingForm } from "@/components/settings/branding-form";
 import { CompanyDocuments } from "@/components/settings/company-documents";
 import { CompanyProfileForm } from "@/components/settings/company-profile-form";
 import { CrewsSettings } from "@/components/settings/crews-settings";
+import { DocumentTemplates } from "@/components/settings/document-templates";
 import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
@@ -36,9 +38,9 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ calendar?: string }>;
 }) {
-  // Reviews, crews, payments, lead intake and availability are managers-only; others don't see them.
+  // Reviews, crews, payments, lead intake, availability and templates are managers-only; others don't see them.
   const managerOnly = <T,>(load: () => Promise<T>) => load().catch(() => null);
-  const [profile, { company, documents }, labour, messaging, reviews, calendar, crews, payments, intake, booking, params] =
+  const [profile, { company, documents }, labour, messaging, reviews, calendar, crews, payments, intake, booking, templates, params] =
     await Promise.all([
     requireStaff(),
     getCompanySettings().then(async (company) => ({
@@ -53,6 +55,7 @@ export default async function SettingsPage({
     managerOnly(getPaymentSettings),
     managerOnly(getLeadIntakeSettings),
     managerOnly(getBookingSettings),
+    managerOnly(getDocumentTemplates),
     searchParams,
   ]);
   const calendarResult =
@@ -74,6 +77,7 @@ export default async function SettingsPage({
             canManage={company.isManager}
           />
           <CompanyDocuments orgId={company.company.id} documents={documents} canManage={company.isManager} />
+          {templates ? <DocumentTemplates templates={templates} /> : null}
           <LabourBudgetSettingsForm settings={labour} />
           <TeamSection team={company.team} />
           {crews ? <CrewsSettings settings={crews} /> : null}

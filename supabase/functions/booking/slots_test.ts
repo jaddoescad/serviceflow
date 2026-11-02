@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { instant } from "../_shared/zoned.ts";
-import { type Context, openTimes, rankTimes, type Travel } from "./slots.ts";
+import { type Context, openTimes, openWindows, type Travel } from "./slots.ts";
 
 const zone = "America/Toronto";
 // Tuesday, November 3, 2026 (Eastern Standard Time).
@@ -84,7 +84,10 @@ Deno.test("hours ending at midnight and split days both work", () => {
   assert.deepEqual(starts(openTimes(context, day, 60, null, 0, flat(30))), ["8:00 AM", "11:00 PM"]);
 });
 
-Deno.test("asked-for times come first, closest to other visits first", () => {
+const span = (window: { starts: { start: number; end: number }[] }) =>
+  `${clock(window.starts[0].start)}–${clock(window.starts.at(-1)!.end)}`;
+
+Deno.test("free time comes as stretches around visits, asked-for ones first", () => {
   const context = {
     ...base,
     people: [{ ...scott, hours: [{ day: 2, start: "09:00", end: "17:00" }, { day: 3, start: "09:00", end: "17:00" }] }],
@@ -92,23 +95,39 @@ Deno.test("asked-for times come first, closest to other visits first", () => {
   };
   const travel: Travel = (from, to) => (from === "next door" || to === "next door" ? 5 : 30);
   const open = [day, "2026-11-04"].map((date) => ({ day: date, times: openTimes(context, date, 60, "1 Main St", 0, travel) }));
-  const { best, other } = rankTimes(open, { days: [day], window: "afternoon" }, zone, 30);
-  // Tuesday afternoon around the 2–3 PM visit five minutes away (1 PM would run into it).
-  assert.deepEqual(best.map((option) => clock(option.start)), ["12:00 PM", "12:30 PM", "3:30 PM"]);
-  assert.ok(best.every((option) => option.matchesDay && option.matchesTime && (option.driveAfter ?? option.driveBefore) === 5));
-  // Then Tuesday morning (the asked-for day), then Wednesday afternoon.
-  assert.deepEqual(other.map((option) => [option.day, option.daysAway, option.matchesTime]), [
-    [day, 0, false],
-    [day, 0, false],
-    ["2026-11-04", 1, true],
-    ["2026-11-04", 1, true],
+  const windows = openWindows(open, { days: [day], window: "afternoon" }, zone, 30);
+  // Tuesday: free until the drive to the 2 PM visit, and again after it.
+  assert.deepEqual(windows.map((window) => [window.day === day ? "Tue" : "Wed", span(window)]), [
+    ["Tue", "9:00 AM–1:30 PM"],
+    ["Tue", "3:30 PM–5:00 PM"],
+    ["Wed", "9:00 AM–5:00 PM"],
   ]);
+  // Before a visit, the afternoon start closest to it; after one, right after it.
+  assert.equal(clock(windows[0].suggested.start), "12:30 PM");
+  assert.equal(clock(windows[1].suggested.start), "3:30 PM");
+  assert.equal(clock(windows[2].suggested.start), "12:00 PM");
+  assert.deepEqual(windows.map((window) => window.daysAway), [0, 0, 1]);
 });
 
-Deno.test("no asked-for days means any day, earliest first among equals", () => {
-  const open = [{ day, times: openTimes(base, day, 60, "1 Main St", 0, flat(30)) }];
-  const { best, other } = rankTimes(open, { days: [], window: "morning" }, zone, 30);
-  assert.deepEqual(best.map((option) => clock(option.start)), ["9:00 AM", "9:30 AM", "10:00 AM"]);
-  assert.ok(best.every((option) => option.daysAway === 0));
-  assert.deepEqual(other.map((option) => clock(option.start)), ["12:00 PM"]);
+Deno.test("an empty day is one stretch with the first start offered", () => {
+  const context = { ...base, people: [{ ...scott, hours: [{ day: 2, start: "09:00", end: "17:00" }] }] };
+  const open = [{ day, times: openTimes(context, day, 60, "1 Main St", 0, flat(30)) }];
+  const [only, ...rest] = openWindows(open, { days: [], window: "any" }, zone, 30);
+  assert.equal(rest.length, 0);
+  assert.equal(span(only), "9:00 AM–5:00 PM");
+  assert.equal(only.starts.length, 15);
+  assert.equal(clock(only.suggested.start), "9:00 AM");
+});
+
+Deno.test("each person gets their own stretches", () => {
+  const context = {
+    ...base,
+    people: [scott, { ...jad, hours: [{ day: 2, start: "11:00", end: "13:00" }] }],
+  };
+  const open = [{ day, times: openTimes(context, day, 60, "1 Main St", 0, flat(30)) }];
+  const windows = openWindows(open, { days: [day], window: "morning" }, zone, 30);
+  assert.deepEqual(windows.map((window) => [window.userId, span(window)]), [
+    ["scott", "9:00 AM–1:00 PM"],
+    ["jad", "11:00 AM–1:00 PM"],
+  ]);
 });

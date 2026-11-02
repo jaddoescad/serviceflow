@@ -128,9 +128,17 @@ export type Preference = {
   window: "any" | "morning" | "afternoon";
 };
 
-export type Suggestion = Candidate & {
+/** A stretch of a day one person is free: back-to-back start times. */
+export type Window = {
   day: string;
+  userId: string;
+  /** Every start in it, in order. */
+  starts: Candidate[];
+  /** The start to offer: right after the visit before, else right before the
+   * visit after, else the first; in the asked-for part of the day when it can be. */
+  suggested: Candidate;
   matchesDay: boolean;
+  /** Some start in it is in the asked-for part of the day. */
   matchesTime: boolean;
   /** Days after (or, negative, before) the nearest asked-for day; 0 on one. */
   daysAway: number;
@@ -138,58 +146,58 @@ export type Suggestion = Candidate & {
 
 const dayNumber = (day: string) => Date.parse(`${day}T00:00:00Z`) / 86_400_000;
 
-/** Up to `perDay` from each day, `total` in all, in the list's order. */
-function spread(list: Suggestion[], perDay: number, total: number): Suggestion[] {
-  const counts = new Map<string, number>();
-  const picked: Suggestion[] = [];
-  for (const option of list) {
-    if (picked.length >= total) break;
-    const count = counts.get(option.day) ?? 0;
-    if (count >= perDay) continue;
-    counts.set(option.day, count + 1);
-    picked.push(option);
-  }
-  return picked;
-}
-
 /**
- * The best person for each open time, ranked against what the customer asked
- * for. `best`: on an asked-for day and part of the day, closest to the
- * person's other visits first (a day with none counts as `fallbackDrive`).
- * `other`: the nearest days to the request, then the right part of the day.
+ * Each person's free stretches, ranked against what the customer asked for:
+ * on an asked-for day and part of the day first, closest to the person's
+ * other visits first (a stretch next to none counts as `fallbackDrive`),
+ * then the nearest other days, then the earliest.
  */
-export function rankTimes(
+export function openWindows(
   open: { day: string; times: Map<number, Candidate[]> }[],
   preference: Preference,
   timeZone: string,
   fallbackDrive: number,
-): { best: Suggestion[]; other: Suggestion[] } {
-  const options: Suggestion[] = [];
+): Window[] {
+  const inPart = (candidate: Candidate) => {
+    if (preference.window === "any") return true;
+    return (preference.window === "morning") === wall(candidate.start, timeZone).minutes < 12 * 60;
+  };
+  const windows: Window[] = [];
   for (const { day, times } of open) {
-    for (const [start, [candidate]] of times) {
-      const minutes = wall(start, timeZone).minutes;
-      const matchesTime = preference.window === "any" || (preference.window === "morning") === minutes < 12 * 60;
-      const daysAway = preference.days
-        .map((asked) => dayNumber(day) - dayNumber(asked))
-        .reduce((nearest, gap) => (Math.abs(gap) < Math.abs(nearest) ? gap : nearest), preference.days.length ? Infinity : 0);
-      options.push({ ...candidate, day, matchesDay: daysAway === 0, matchesTime, daysAway });
+    const daysAway = preference.days
+      .map((asked) => dayNumber(day) - dayNumber(asked))
+      .reduce((nearest, gap) => (Math.abs(gap) < Math.abs(nearest) ? gap : nearest), preference.days.length ? Infinity : 0);
+    const byPerson = new Map<string, Candidate[]>();
+    for (const candidates of times.values()) {
+      for (const candidate of candidates) byPerson.set(candidate.userId, [...(byPerson.get(candidate.userId) ?? []), candidate]);
+    }
+    for (const [userId, list] of byPerson) {
+      list.sort((a, b) => a.start - b.start);
+      const runs: Candidate[][] = [];
+      for (const candidate of list) {
+        const run = runs.at(-1);
+        if (run && candidate.start - run.at(-1)!.start === STEP_MINUTES * 60_000) run.push(candidate);
+        else runs.push([candidate]);
+      }
+      for (const starts of runs) {
+        const fitting = starts.filter(inPart);
+        const pool = fitting.length ? fitting : starts;
+        const suggested = starts[0].driveBefore !== null || starts.at(-1)!.driveAfter === null ? pool[0] : pool.at(-1)!;
+        windows.push({ day, userId, starts, suggested, matchesDay: daysAway === 0, matchesTime: fitting.length > 0, daysAway });
+      }
     }
   }
-  const near = (option: Suggestion) => {
-    const drives = [option.driveBefore, option.driveAfter].filter((drive): drive is number => drive !== null);
+  const near = (window: Window) => {
+    const drives = [window.starts[0].driveBefore, window.starts.at(-1)!.driveAfter].filter((drive): drive is number => drive !== null);
     return drives.length ? Math.min(...drives) : fallbackDrive;
   };
-  const matching = options
-    .filter((option) => option.matchesDay && option.matchesTime)
-    .sort((a, b) => near(a) - near(b) || a.start - b.start);
-  const rest = options
-    .filter((option) => !(option.matchesDay && option.matchesTime))
-    .sort(
-      (a, b) =>
-        Math.abs(a.daysAway) - Math.abs(b.daysAway) ||
-        Number(b.matchesTime) - Number(a.matchesTime) ||
-        near(a) - near(b) ||
-        a.start - b.start,
-    );
-  return { best: spread(matching, 3, 6), other: spread(rest, 2, 4) };
+  const fits = (window: Window) => window.matchesDay && window.matchesTime;
+  return windows.sort(
+    (a, b) =>
+      Number(fits(b)) - Number(fits(a)) ||
+      Math.abs(a.daysAway) - Math.abs(b.daysAway) ||
+      Number(b.matchesTime) - Number(a.matchesTime) ||
+      near(a) - near(b) ||
+      a.starts[0].start - b.starts[0].start,
+  );
 }

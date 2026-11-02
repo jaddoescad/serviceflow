@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 // Customer document links carry their own private token.
 // Card checkout and Stripe webhooks are called by customers and Stripe, not staff.
-const PUBLIC_PATHS = ["/login", "/auth", "/p/", "/co/", "/i/", "/u/", "/portal/", "/api/pay/", "/api/stripe/"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/p/", "/co/", "/i/", "/u/", "/portal/", "/api/pay/", "/api/stripe/"];
 
 export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;

@@ -32,6 +32,8 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
 
     val mediaStore = MediaStore(project = project, session = session, includeLinkedLead = true)
 
+    val documents = ProjectDocumentsStore(projectId = project.id)
+
     val jobId: String get() = project.id
 
     /** Someone is clocked into the job right now (the live clock needs ticking). */
