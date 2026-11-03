@@ -12,6 +12,8 @@ export type TodayPainter = {
   hours: number;
   /** First clock-in today, when they clocked in today. */
   todayAt: string | null;
+  /** Last clock-out today, once they're off the clock here. */
+  outAt: string | null;
 };
 
 export type TodayProject = {
@@ -78,10 +80,14 @@ function ProjectCard({ project }: { project: TodayProject }) {
           <li key={c.id} className="flex h-7 items-center gap-2 text-[13px]">
             <span
               aria-hidden="true"
-              className={`h-2 w-2 shrink-0 rounded-full ${c.todayAt ? "bg-[var(--tag-green-text)]" : "bg-[var(--color-border-strong)]"}`}
+              className={`h-2 w-2 shrink-0 rounded-full ${c.todayAt && !c.outAt ? "bg-[var(--tag-green-text)]" : "bg-[var(--color-border-strong)]"}`}
             />
             <span className={`truncate ${c.todayAt ? "font-medium text-[var(--color-heading)]" : "text-[var(--color-muted)]"}`}>{c.name}</span>
-            {c.todayAt ? <span className="shrink-0 text-xs text-[var(--color-muted)]">in at {fmtTime(c.todayAt)}</span> : null}
+            {c.todayAt ? (
+              <span className="shrink-0 text-xs text-[var(--color-muted)]">
+                {c.outAt ? `out at ${fmtTime(c.outAt)}` : `in at ${fmtTime(c.todayAt)}`}
+              </span>
+            ) : null}
             <span className="ml-auto shrink-0 tabular-nums text-[var(--color-muted)]">{fmtHours(c.hours)}</span>
           </li>
         ))}

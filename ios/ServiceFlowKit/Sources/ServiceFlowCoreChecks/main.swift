@@ -378,6 +378,7 @@ func runChecks() async {
             entry("e5", "u3", "Camilo", "j2", "2026-11-03T14:10:00Z", nil, lat: 45.5, distance: 400),
             entry("e6", "u4", "Julian", "j3", "2026-11-02T12:00:00Z", "2026-11-02T13:00:00Z"),
             entry("e7", "u5", "Dana", "j4", "2026-11-02T21:00:00Z", nil),
+            entry("e8", "u4", "Julian", "j2", "2026-11-03T13:30:00Z", "2026-11-03T14:18:00Z"),
         ]
         let projects = [
             Project(jobRow: ["id": "j1", "name": "Sorrenti", "status": "active", "latitude": 45.3, "longitude": -75.8,
@@ -396,7 +397,14 @@ func runChecks() async {
         expectEqual(jobs[0].painters[0].inTodayAt, ISODate.parse("2026-11-03T13:32:00Z"), "earliest of several clock-ins")
         expectEqual(jobs[0].coordinate?.latitude, 45.4, "no address: the clock-in nearest the site")
         expectEqual(sorrenti.coordinate?.latitude, 45.3, "the job's own address first")
-        expectEqual(TodayBoard.summary(jobs), "2 painters on 2 jobs", "summary")
+        let julian = jobs[0].painters.first { $0.name == "Julian" }!
+        expectEqual(julian.outTodayAt, ISODate.parse("2026-11-03T14:18:00Z"), "clocked out today")
+        expect(!julian.isOnClock && TodayBoard.timeLabel(julian, startOfDay: startOfDay)?.hasPrefix("out at ") == true, "shows when they left")
+        let camilo = jobs[0].painters.first { $0.name == "Camilo" }!
+        expect(camilo.outTodayAt == nil && camilo.isOnClock, "back on the clock after an earlier clock-out")
+        expect(TodayBoard.timeLabel(camilo, startOfDay: startOfDay)?.hasPrefix("in at ") == true, "on the clock: when they came in")
+        expect(TodayBoard.timeLabel(sorrenti.painters[1], startOfDay: startOfDay) == nil, "no time for crew who didn't work today")
+        expectEqual(TodayBoard.summary(jobs), "3 painters on 2 jobs", "summary")
         expectEqual(TodayBoard.budgetLine(sorrenti.project.budget)?.label, "Labour budget · 2.8 of 10.0 h", "budget label")
         expectEqual(TodayBoard.budgetLine(sorrenti.project.budget)?.percent, 28, "budget percent")
         expect(TodayBoard.budgetLine(jobs[0].project.budget) == nil, "no budget")

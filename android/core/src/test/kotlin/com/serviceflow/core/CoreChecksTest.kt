@@ -413,6 +413,7 @@ class CoreChecksTest {
             entry("e5", "u3", "Camilo", "j2", "2026-11-03T14:10:00Z", null, lat = 45.5, distance = 400.0),
             entry("e6", "u4", "Julian", "j3", "2026-11-02T12:00:00Z", "2026-11-02T13:00:00Z"),
             entry("e7", "u5", "Dana", "j4", "2026-11-02T21:00:00Z", null),
+            entry("e8", "u4", "Julian", "j2", "2026-11-03T13:30:00Z", "2026-11-03T14:18:00Z"),
         )
         val projects = listOf(
             Project.fromJobRow(jsonObject("id" to "j1", "name" to "Sorrenti", "status" to "active", "latitude" to 45.3,
@@ -431,7 +432,14 @@ class CoreChecksTest {
         assertEquals("earliest of several clock-ins", Instant.parse("2026-11-03T13:32:00Z"), jobs[0].painters[0].inTodayAt)
         assertEquals("no address: the clock-in nearest the site", 45.4, jobs[0].coordinate?.latitude)
         assertEquals("the job's own address first", 45.3, sorrenti.coordinate?.latitude)
-        assertEquals("summary", "2 painters on 2 jobs", TodayBoard.summary(jobs))
+        val julian = jobs[0].painters.first { it.name == "Julian" }
+        assertEquals("clocked out today", Instant.parse("2026-11-03T14:18:00Z"), julian.outTodayAt)
+        assertTrue("shows when they left", !julian.isOnClock && TodayBoard.timeLabel(julian, startOfDay)!!.startsWith("out at "))
+        val camilo = jobs[0].painters.first { it.name == "Camilo" }
+        assertTrue("back on the clock after an earlier clock-out", camilo.outTodayAt == null && camilo.isOnClock)
+        assertTrue("on the clock: when they came in", TodayBoard.timeLabel(camilo, startOfDay)!!.startsWith("in at "))
+        assertNull("no time for crew who didn't work today", TodayBoard.timeLabel(sorrenti.painters[1], startOfDay))
+        assertEquals("summary", "3 painters on 2 jobs", TodayBoard.summary(jobs))
         assertEquals("budget label", "Labour budget · 2.8 of 10.0 h", TodayBoard.budgetLine(sorrenti.project.budget)?.first)
         assertEquals("budget percent", 28, TodayBoard.budgetLine(sorrenti.project.budget)?.second)
         assertNull("no budget", TodayBoard.budgetLine(jobs[0].project.budget))

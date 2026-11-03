@@ -281,7 +281,7 @@ private fun TodayJobCard(job: TodayJob, startOfDay: Instant, onClick: () -> Unit
                 job.painters.forEach { painter ->
                     val inAt = painter.inTodayAt
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(8.dp).background(if (inAt != null) Palette.teal else hex(0xc9cfcd), CircleShape))
+                        Box(Modifier.size(8.dp).background(if (painter.isOnClock) Palette.teal else hex(0xc9cfcd), CircleShape))
                         Spacer(Modifier.width(8.dp))
                         Text(
                             painter.name,
@@ -289,9 +289,9 @@ private fun TodayJobCard(job: TodayJob, startOfDay: Instant, onClick: () -> Unit
                                             if (inAt != null) Palette.ink else Palette.muted),
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        if (inAt != null) {
+                        TodayBoard.timeLabel(painter, startOfDay)?.let { time ->
                             Spacer(Modifier.width(8.dp))
-                            Text(TodayBoard.inLabel(inAt, startOfDay), style = appText(12, color = Palette.muted), maxLines = 1)
+                            Text(time, style = appText(12, color = Palette.muted), maxLines = 1)
                         }
                         Spacer(Modifier.weight(1f))
                         Text(

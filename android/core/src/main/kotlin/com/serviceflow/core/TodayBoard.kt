@@ -11,8 +11,12 @@ data class TodayPainter(
     val totalMinutes: Int,
     /** First clock-in today, when they clocked in today. */
     val inTodayAt: Instant?,
+    /** Last clock-out today, once they're off the clock here. */
+    val outTodayAt: Instant? = null,
 ) {
     val id: String get() = userId
+    /** Clocked in here right now. */
+    val isOnClock: Boolean get() = inTodayAt != null && outTodayAt == null
     val initials: String get() = Initials.of(name, fallback = "P")
 }
 
@@ -49,15 +53,20 @@ object TodayBoard {
             if (today.isEmpty()) return@mapNotNull null
 
             val painters = linkedMapOf<String, TodayPainter>()
+            val onClock = mutableSetOf<String>()
             for (entry in list) {
                 val key = entry.userId.ifEmpty { entry.userName }
                 var painter = painters[key] ?: TodayPainter(userId = key, name = entry.userName, totalMinutes = 0, inTodayAt = null)
                 painter = painter.copy(totalMinutes = painter.totalMinutes + (entry.duration(now) / 60).toInt())
-                if (isToday(entry) && painter.inTodayAt?.let { entry.startedAt < it } != false) {
-                    painter = painter.copy(inTodayAt = entry.startedAt)
+                if (isToday(entry)) {
+                    if (painter.inTodayAt?.let { entry.startedAt < it } != false) painter = painter.copy(inTodayAt = entry.startedAt)
+                    val end = entry.endedAt
+                    if (end != null && painter.outTodayAt?.let { end > it } != false) painter = painter.copy(outTodayAt = end)
+                    if (entry.isActive) onClock += key
                 }
                 painters[key] = painter
             }
+            for (key in onClock) painters[key] = painters.getValue(key).copy(outTodayAt = null)
             val nearest = today.filter { it.startedLocation != null }
                 .minByOrNull { it.lastDistanceMeters ?: Double.POSITIVE_INFINITY }
             TodayJob(
@@ -86,6 +95,13 @@ object TodayBoard {
     fun inLabel(date: Instant, startOfDay: Instant): String =
         if (date < startOfDay) "in since ${DateText.format(date, "MMMd", locale = DateText.canada)}"
         else "in at ${DateText.canadianTime(date)}"
+
+    /**
+     * `out at 12:18 p.m.` once they've clocked out here today, else when they
+     * clocked in; null for crew who didn't work it today.
+     */
+    fun timeLabel(painter: TodayPainter, startOfDay: Instant): String? =
+        painter.outTodayAt?.let { "out at ${DateText.canadianTime(it)}" } ?: painter.inTodayAt?.let { inLabel(it, startOfDay) }
 
     /** `Labour budget · 18.3 of 67.3 h` and the percent used; null without a budget. */
     fun budgetLine(progress: BudgetProgress?): Pair<String, Int>? {

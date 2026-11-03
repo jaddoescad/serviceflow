@@ -156,15 +156,14 @@ private struct TodayJobCard: View {
                 ForEach(job.painters) { painter in
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(painter.inTodayAt != nil ? Palette.teal : Color(hex: 0xc9cfcd))
+                            .fill(painter.isOnClock ? Palette.teal : Color(hex: 0xc9cfcd))
                             .frame(width: 8, height: 8)
                         Text(painter.name)
                             .font(.app(14, painter.inTodayAt != nil ? .semibold : .regular))
                             .foregroundStyle(painter.inTodayAt != nil ? .primary : .secondary)
                             .lineLimit(1)
-                        if let inAt = painter.inTodayAt {
-                            Text(TodayBoard.inLabel(inAt, startOfDay: startOfDay))
-                                .font(.app(12)).foregroundStyle(.secondary).lineLimit(1)
+                        if let time = TodayBoard.timeLabel(painter, startOfDay: startOfDay) {
+                            Text(time).font(.app(12)).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 8)
                         Text(DurationFormat.hoursMinutes(minutes: painter.totalMinutes))

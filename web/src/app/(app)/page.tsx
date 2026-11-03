@@ -58,16 +58,22 @@ export default async function HomePage() {
   const crews = new Map<string, Map<string, TodayPainter>>();
   for (const row of history.data ?? []) {
     const crew = crews.get(row.job_id) ?? new Map<string, TodayPainter>();
-    const painter = crew.get(row.employee_id) ?? { id: row.employee_id, name: row.employee_name ?? "Painter", hours: 0, todayAt: null };
+    const painter = crew.get(row.employee_id) ?? { id: row.employee_id, name: row.employee_name ?? "Painter", hours: 0, todayAt: null, outAt: null };
     const end = row.ended_at ? Date.parse(row.ended_at) : now;
     painter.hours += Math.max(0, end - Date.parse(row.started_at)) / 3_600_000;
     crew.set(row.employee_id, painter);
     crews.set(row.job_id, crew);
   }
+  // First clock-in today, and the last clock-out once all of today's shifts here have ended.
+  const onClock = new Set<TodayPainter>();
   for (const entry of today) {
     const painter = crews.get(entry.companycam_project_id!)?.get(entry.user_id ?? "");
-    if (painter && (!painter.todayAt || entry.started_at < painter.todayAt)) painter.todayAt = entry.started_at;
+    if (!painter) continue;
+    if (!painter.todayAt || entry.started_at < painter.todayAt) painter.todayAt = entry.started_at;
+    if (!entry.ended_at) onClock.add(painter);
+    else if (!painter.outAt || entry.ended_at > painter.outAt) painter.outAt = entry.ended_at;
   }
+  for (const painter of onClock) painter.outAt = null;
 
   for (const project of projects.values()) {
     project.painters = [...(crews.get(project.id)?.values() ?? [])].sort(

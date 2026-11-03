@@ -9,7 +9,11 @@ public struct TodayPainter: Identifiable, Hashable, Sendable {
     public var totalMinutes: Int
     /// First clock-in today, when they clocked in today.
     public var inTodayAt: Date?
+    /// Last clock-out today, once they're off the clock here.
+    public var outTodayAt: Date? = nil
 
+    /// Clocked in here right now.
+    public var isOnClock: Bool { inTodayAt != nil && outTodayAt == nil }
     public var initials: String { Initials.of(name, fallback: "P") }
 }
 
@@ -37,13 +41,19 @@ public enum TodayBoard {
             guard !today.isEmpty else { return nil }
 
             var painters: [String: TodayPainter] = [:]
+            var onClock: Set<String> = []
             for entry in list {
                 let key = entry.userId.isEmpty ? entry.userName : entry.userId
                 var painter = painters[key] ?? TodayPainter(userId: key, name: entry.userName, totalMinutes: 0, inTodayAt: nil)
                 painter.totalMinutes += Int(entry.duration(at: now) / 60)
-                if isToday(entry), painter.inTodayAt.map({ entry.startedAt < $0 }) ?? true { painter.inTodayAt = entry.startedAt }
+                if isToday(entry) {
+                    if painter.inTodayAt.map({ entry.startedAt < $0 }) ?? true { painter.inTodayAt = entry.startedAt }
+                    if let end = entry.endedAt, painter.outTodayAt.map({ end > $0 }) ?? true { painter.outTodayAt = end }
+                    if entry.isActive { onClock.insert(key) }
+                }
                 painters[key] = painter
             }
+            for key in onClock { painters[key]?.outTodayAt = nil }
             let nearest = today.filter { $0.startedLocation != nil }
                 .min { ($0.lastDistanceMeters ?? .infinity) < ($1.lastDistanceMeters ?? .infinity) }
             return TodayJob(
@@ -75,6 +85,13 @@ public enum TodayBoard {
         date < startOfDay
             ? "in since \(DateText.format(date, template: "MMMd", locale: DateText.canada))"
             : "in at \(DateText.canadianTime(date))"
+    }
+
+    /// `out at 12:18 p.m.` once they've clocked out here today, else when they
+    /// clocked in; nil for crew who didn't work it today.
+    public static func timeLabel(_ painter: TodayPainter, startOfDay: Date) -> String? {
+        if let out = painter.outTodayAt { return "out at \(DateText.canadianTime(out))" }
+        return painter.inTodayAt.map { inLabel($0, startOfDay: startOfDay) }
     }
 
     /// `Labour budget · 18.3 of 67.3 h` and the percent used; nil without a budget.
