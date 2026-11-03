@@ -5,15 +5,18 @@ import com.serviceflow.core.ISODate
 import com.serviceflow.core.JSONValue
 import com.serviceflow.core.Project
 import com.serviceflow.core.TimeEntry
+import com.serviceflow.core.TimeEntryCommand
 import com.serviceflow.core.TodayBoard
 import com.serviceflow.core.TodayJob
 import com.serviceflow.core.arrayValue
 import com.serviceflow.core.get
 import com.serviceflow.core.nonEmptyString
+import com.serviceflow.core.stringValue
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonPrimitive
 import java.time.Instant
 
 // Jobs, leads, budgets and assignments.
@@ -200,6 +203,25 @@ suspend fun ServiceFlowAPI.todayJobs(startOfDay: Instant, now: Instant = Instant
         startOfDay = startOfDay, now = now,
     )
 }
+
+// MARK: Leads as jobs, descriptions
+
+/** The job for a lead: its open job, else a new one (as clocking into a lead makes). */
+suspend fun ServiceFlowAPI.leadJob(leadId: String): Project =
+    TimeEntryCommand.firstRow(ensureLeadClockInJob(leadId))?.let { Project.fromJobRow(it) }
+        ?: throw IllegalStateException("The lead could not be opened as a job. Try again.")
+
+/** The job's description, or null when it has none. */
+suspend fun ServiceFlowAPI.jobDescription(jobId: String): String? =
+    rows("job_descriptions", "body") {
+        filter { eq("job_id", jobId) }
+        limit(1)
+    }.firstOrNull()?.get("body").nonEmptyString
+
+/** Saves the description (blank removes it); managers only. Returns the saved text. */
+suspend fun ServiceFlowAPI.setJobDescription(jobId: String, body: String): String =
+    rpc("set_job_description", mapOf("requested_job_id" to JsonPrimitive(jobId), "requested_body" to JsonPrimitive(body)))
+        .stringValue.orEmpty()
 
 suspend fun ServiceFlowAPI.assignedJobIds(userId: String): List<String> =
     rows("job_assignments", "job_id") {

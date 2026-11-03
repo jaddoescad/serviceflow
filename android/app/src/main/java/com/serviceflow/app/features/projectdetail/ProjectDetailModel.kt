@@ -7,7 +7,9 @@ import androidx.lifecycle.ViewModel
 import com.serviceflow.app.SessionContext
 import com.serviceflow.app.backend.ServiceFlowAPI
 import com.serviceflow.app.backend.budgets
+import com.serviceflow.app.backend.jobDescription
 import com.serviceflow.app.backend.jobTimeEntries
+import com.serviceflow.app.backend.setJobDescription
 import com.serviceflow.app.features.media.MediaStore
 import com.serviceflow.core.BudgetProgress
 import com.serviceflow.core.Project
@@ -26,6 +28,9 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
     var budgetLoading by mutableStateOf(true)
         private set
     var budgetFailed by mutableStateOf(false)
+        private set
+    /** The job's description ("" when it has none); null until loaded. */
+    var description by mutableStateOf<String?>(null)
         private set
     /** Entries deleted on this device; hidden even if a refresh lands before the delete syncs. */
     private val deletedKeys = mutableSetOf<String>()
@@ -52,10 +57,26 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
         return result.sortedByDescending { it.startedAt }
     }
 
-    /** Reloads team entries and the budget together. */
+    /** Reloads team entries, the budget and the description together. */
     suspend fun refresh(api: ServiceFlowAPI) = coroutineScope {
         launch { refreshBudget(api) }
         launch { refreshEntries(api) }
+        launch { refreshDescription(api) }
+    }
+
+    suspend fun refreshDescription(api: ServiceFlowAPI) {
+        if (project.isLead || jobId.isEmpty()) return
+        try {
+            description = api.jobDescription(jobId).orEmpty()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** Saves the description; throws when the server refuses or is unreachable. */
+    suspend fun saveDescription(api: ServiceFlowAPI, text: String) {
+        description = api.setJobDescription(jobId, text)
     }
 
     suspend fun refreshEntries(api: ServiceFlowAPI) {

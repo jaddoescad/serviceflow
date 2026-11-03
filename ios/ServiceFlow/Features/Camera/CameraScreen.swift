@@ -72,11 +72,14 @@ struct CameraScreen: View {
             camera.onPhoto = handlePhoto
             camera.onVideo = handleVideo
             if scenePhase == .active { camera.activate() }
+            // Auto-Lock would dim and lock the screen mid-recording.
+            UIApplication.shared.isIdleTimerDisabled = true
         }
         .task { await loadJobMedia() }
         .onDisappear {
             dictation.stop()
             camera.deactivate()
+            UIApplication.shared.isIdleTimerDisabled = false
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, !isEditing { camera.activate() } else if phase != .active { camera.deactivate() }

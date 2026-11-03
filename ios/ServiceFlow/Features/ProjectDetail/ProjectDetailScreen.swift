@@ -139,7 +139,7 @@ struct ProjectDetailScreen: View {
 
     private var tabPicker: some View {
         Picker("Section", selection: $tab) {
-            Label("Clock Ins", systemImage: "clock").tag(Tab.clock)
+            Label("Project", systemImage: "briefcase").tag(Tab.clock)
             Label("Media", systemImage: "photo.on.rectangle").tag(Tab.media)
             Label("Documents", systemImage: "doc.text").tag(Tab.documents)
         }

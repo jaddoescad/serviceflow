@@ -12,6 +12,8 @@ final class ProjectDetailModel {
     private(set) var budget: BudgetProgress?
     private(set) var budgetLoading = true
     private(set) var budgetFailed = false
+    /// The job's description ("" when it has none); nil until loaded.
+    private(set) var jobDescription: String?
     /// Entries deleted on this device; hidden even if a refresh lands before the delete syncs.
     @ObservationIgnored private var deletedKeys = Set<String>()
 
@@ -37,11 +39,22 @@ final class ProjectDetailModel {
         return result.sorted { $0.startedAt > $1.startedAt }
     }
 
-    /// Reloads team entries and the budget together.
+    /// Reloads team entries, the budget and the description together.
     func refresh(api: ServiceFlowAPI) async {
         async let budget: Void = refreshBudget(api: api)
         async let team: Void = refreshEntries(api: api)
-        _ = await (budget, team)
+        async let description: Void = refreshDescription(api: api)
+        _ = await (budget, team, description)
+    }
+
+    func refreshDescription(api: ServiceFlowAPI) async {
+        guard !project.isLead, !jobId.isEmpty else { return }
+        if let text = try? await api.jobDescription(jobId: jobId) { jobDescription = text }
+    }
+
+    /// Saves the description; throws when the server refuses or is unreachable.
+    func saveDescription(api: ServiceFlowAPI, text: String) async throws {
+        jobDescription = try await api.setJobDescription(jobId: jobId, body: text)
     }
 
     func refreshEntries(api: ServiceFlowAPI) async {

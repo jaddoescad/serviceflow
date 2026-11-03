@@ -41,6 +41,7 @@ struct ClockedOutView: View {
     @State private var latestError: String?
     @State private var userPoint: LocationPoint?
     @State private var clockingIn = false
+    @State private var opening = false
     @State private var clockInError: String?
 
     /// The pin or result tapped, else the nearest job within 2 km, else the most recent job.
@@ -59,9 +60,7 @@ struct ClockedOutView: View {
             select(project)
         }
         .ignoresSafeArea(edges: .horizontal)
-        .safeAreaInset(edge: .bottom) {
-            if displayProject?.isLead != true || displayProject == nil { clockInPanel }
-        }
+        .safeAreaInset(edge: .bottom) { clockInPanel }
         .overlay { if search.hasQuery { searchResults } }
         .navigationTitle("Clock In")
         .navigationBarTitleDisplayMode(.inline)
@@ -104,9 +103,7 @@ struct ClockedOutView: View {
                 }
             }
 
-            Button {
-                if let project = displayProject { session.open(project) }
-            } label: {
+            Button(action: openSelected) {
                 HStack(spacing: 12) {
                     Image(systemName: "mappin.circle.fill")
                         .font(.title2)
@@ -115,7 +112,10 @@ struct ClockedOutView: View {
                         if loadingLatest, displayProject == nil {
                             ProgressView()
                         } else if let project = displayProject {
-                            Text(project.name).font(.headline).lineLimit(1)
+                            HStack(spacing: 6) {
+                                Text(project.name).font(.headline).lineLimit(1)
+                                if project.isLead { LeadBadge() }
+                            }
                             Text(project.cardAddress ?? "No address on file").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         } else {
                             Text("No active job").font(.headline)
@@ -123,14 +123,16 @@ struct ClockedOutView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if displayProject != nil {
+                    if opening {
+                        ProgressView()
+                    } else if displayProject != nil {
                         Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                     }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(displayProject == nil)
+            .disabled(displayProject == nil || opening)
 
             if let message = tracker.notice?.message ?? clockInError {
                 Label(message, systemImage: "exclamationmark.circle.fill")
@@ -149,13 +151,33 @@ struct ClockedOutView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Palette.navy)
-            .disabled(clockingIn || displayProject == nil || displayProject?.isLead == true)
+            .disabled(clockingIn || opening || displayProject == nil)
             .accessibilityLabel("Start clock in")
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+    }
+
+    /// A lead opens as its job (made now if it has none), so photos and the
+    /// description go on the job the crew will see.
+    private func openSelected() {
+        guard let project = displayProject else { return }
+        guard project.isLead else { return session.open(project) }
+        guard !opening else { return }
+        opening = true
+        clockInError = nil
+        Task {
+            do {
+                let job = try await session.api.leadJob(leadId: project.id)
+                selected = job
+                session.open(job)
+            } catch {
+                clockInError = error.localizedDescription.isEmpty ? "The lead could not be opened. Try again." : error.localizedDescription
+            }
+            opening = false
+        }
     }
 
     private func startClockIn() {

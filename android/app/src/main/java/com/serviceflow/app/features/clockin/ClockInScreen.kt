@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.serviceflow.app.LocalSession
 import com.serviceflow.app.LocalTracker
 import com.serviceflow.app.backend.latestActiveProject
+import com.serviceflow.app.backend.leadJob
 import com.serviceflow.app.design.AppIcon
 import com.serviceflow.app.design.OverBudgetPromptItem
 import com.serviceflow.app.design.Palette
@@ -107,6 +108,7 @@ fun ClockedOutView() {
     var latestError by remember { mutableStateOf<String?>(null) }
     var userPoint by remember { mutableStateOf<LocationPoint?>(null) }
     var clockingIn by remember { mutableStateOf(false) }
+    var opening by remember { mutableStateOf(false) }
     var clockInError by remember { mutableStateOf<String?>(null) }
     var panelHeight by remember { mutableStateOf(0.dp) }
 
@@ -126,6 +128,28 @@ fun ClockedOutView() {
         selected = project
         search.clear()
         clockInError = null
+    }
+
+    // A lead opens as its job (made now if it has none), so photos and the
+    // description go on the job the crew will see.
+    fun openSelected() {
+        val project = displayProject ?: return
+        if (!project.isLead) return session.open(project)
+        if (opening) return
+        opening = true
+        clockInError = null
+        session.scope.launch {
+            try {
+                val job = session.api.leadJob(project.id)
+                selected = job
+                session.open(job)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                clockInError = e.message?.takeIf { it.isNotEmpty() } ?: "The lead could not be opened. Try again."
+            }
+            opening = false
+        }
     }
 
     fun startClockIn() {
@@ -166,29 +190,27 @@ fun ClockedOutView() {
         TopAppBar(title = { Text("Clock In") })
         ProjectSearchField(search, "Search jobs and leads", Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp))
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            val showPanel = displayProject?.isLead != true
             ClockInMap(
                 projects = session.mappedProjects,
                 selected = displayProject,
                 userPoint = userPoint,
                 onUserPoint = { userPoint = it },
                 onSelect = ::select,
-                contentPadding = PaddingValues(bottom = if (showPanel) panelHeight else 0.dp),
+                contentPadding = PaddingValues(bottom = panelHeight),
             )
-            if (showPanel) {
-                ClockInPanel(
-                    project = displayProject,
-                    loadingLatest = loadingLatest,
-                    latestError = latestError,
-                    message = notice?.message ?: clockInError,
-                    clockingIn = clockingIn,
-                    onOpen = { displayProject?.let { session.open(it) } },
-                    onClockIn = ::startClockIn,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .onSizeChanged { panelHeight = with(density) { it.height.toDp() } },
-                )
-            }
+            ClockInPanel(
+                project = displayProject,
+                loadingLatest = loadingLatest,
+                latestError = latestError,
+                message = notice?.message ?: clockInError,
+                clockingIn = clockingIn,
+                opening = opening,
+                onOpen = ::openSelected,
+                onClockIn = ::startClockIn,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { panelHeight = with(density) { it.height.toDp() } },
+            )
             if (search.hasQuery) {
                 Surface(Modifier.fillMaxSize()) {
                     LazyColumn {
@@ -221,6 +243,7 @@ private fun ClockInPanel(
     latestError: String?,
     message: String?,
     clockingIn: Boolean,
+    opening: Boolean,
     onOpen: () -> Unit,
     onClockIn: () -> Unit,
     modifier: Modifier = Modifier,
@@ -255,7 +278,7 @@ private fun ClockInPanel(
             }
 
             Row(
-                Modifier.fillMaxWidth().clickable(enabled = project != null, onClick = onOpen),
+                Modifier.fillMaxWidth().clickable(enabled = project != null && !opening, onClick = onOpen),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -264,8 +287,11 @@ private fun ClockInPanel(
                     when {
                         loadingLatest && project == null -> Spinner(Palette.teal)
                         project != null -> {
-                            Text(project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                if (project.isLead) LeadBadge()
+                            }
                             Text(project.cardAddress ?: "No address on file", style = MaterialTheme.typography.bodyMedium,
                                  color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
@@ -276,7 +302,9 @@ private fun ClockInPanel(
                         }
                     }
                 }
-                if (project != null) {
+                if (opening) {
+                    Spinner(Palette.teal)
+                } else if (project != null) {
                     AppIcon(Icons.AutoMirrored.Filled.KeyboardArrowRight, 20.dp, MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -290,7 +318,7 @@ private fun ClockInPanel(
 
             Button(
                 onClick = onClockIn,
-                enabled = !clockingIn && project != null && !project.isLead,
+                enabled = !clockingIn && !opening && project != null,
                 colors = ButtonDefaults.buttonColors(containerColor = Palette.navy),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics { contentDescription = "Start clock in" },
             ) {

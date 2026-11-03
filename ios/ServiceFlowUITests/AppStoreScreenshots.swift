@@ -52,7 +52,7 @@ final class AppStoreScreenshots: XCTestCase {
         start.tap()
         app.tap() // lets the interruption monitor answer a permission prompt
         XCTAssertTrue(start.waitForNonExistence(timeout: 30))
-        let clockIns = app.buttons["Clock Ins"]
+        let clockIns = app.buttons["Project"]
         XCTAssertTrue(clockIns.waitForExistence(timeout: 20))
         clockIns.tap()
         settle(4)

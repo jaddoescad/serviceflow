@@ -98,6 +98,7 @@ fun ProjectDetailClockInsTab(
         ) {
             GroupCard {
                 InfoRow(project, title)
+                JobDescriptionRow(model)
                 val shift = activeShift
                 if (shift != null && shift.project.id == project.id && !clockingOut) {
                     HorizontalDivider(Modifier.padding(start = 16.dp))

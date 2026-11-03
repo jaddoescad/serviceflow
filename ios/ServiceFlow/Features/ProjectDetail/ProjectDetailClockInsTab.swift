@@ -18,6 +18,7 @@ struct ProjectDetailClockInsTab: View {
         List {
             Section {
                 infoRow
+                JobDescriptionRow(model: model)
                 if let shift = tracker.activeShift, shift.project.id == project.id, !tracker.isClockingOut {
                     currentRow(shift)
                 }

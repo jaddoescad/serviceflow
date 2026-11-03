@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -181,6 +182,7 @@ fun CameraScreen(
     }
 
     LightSystemBarIcons()
+    KeepScreenOn()
 
     /** Done and close both keep the captures: they start uploading now. */
     fun close() {
@@ -349,6 +351,16 @@ private fun EditorCover(onBack: () -> Unit, content: @Composable () -> Unit) {
             .background(Color.Black)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
     ) { content() }
+}
+
+/** The screen stays on while the camera is open; the screen timeout would dim it mid-recording. */
+@Composable
+private fun KeepScreenOn() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
 }
 
 /** White status and navigation bar icons over the black camera, restored on leaving. */

@@ -1,14 +1,23 @@
 package com.serviceflow.app.features.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,7 +26,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
@@ -28,6 +44,9 @@ import androidx.navigation.toRoute
 import com.serviceflow.app.LocalSession
 import com.serviceflow.app.MainTab
 import com.serviceflow.app.ProjectRoute
+import com.serviceflow.app.design.Palette
+import com.serviceflow.app.design.appText
+import com.serviceflow.app.design.hex
 import com.serviceflow.app.features.camera.CameraScreen
 import com.serviceflow.app.features.clockin.ClockInScreen
 import com.serviceflow.app.features.jobs.JobsScreen
@@ -62,18 +81,13 @@ fun MainShell() {
         Box(Modifier.fillMaxSize()) {
             Scaffold(
                 bottomBar = {
-                    NavigationBar {
-                        MainTab.entries.filter { it != MainTab.Today || session.isManager }.forEach { tab ->
-                            NavigationBarItem(
-                                selected = navigator.activeTab == tab,
-                                onClick = {
-                                    if (navigator.activeTab == tab) navigator.popToRoot(tab) else navigator.activeTab = tab
-                                },
-                                icon = { Icon(tab.icon, contentDescription = null) },
-                                label = { Text(tab.title) },
-                            )
-                        }
-                    }
+                    TabBar(
+                        tabs = MainTab.entries.filter { it != MainTab.Today || session.isManager },
+                        active = navigator.activeTab,
+                        onSelect = { tab ->
+                            if (navigator.activeTab == tab) navigator.popToRoot(tab) else navigator.activeTab = tab
+                        },
+                    )
                 },
             ) { padding ->
                 val tab = navigator.activeTab
@@ -103,6 +117,44 @@ fun MainShell() {
                     onClose = close,
                     onCapture = request.onCapture,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The tabs as a floating bar, like the iOS app's: the selected tab sits in a
+ * soft pill with a filled icon in the brand colour.
+ */
+@Composable
+private fun TabBar(tabs: List<MainTab>, active: MainTab, onSelect: (MainTab) -> Unit) {
+    val bar = RoundedCornerShape(30.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp)
+            .shadow(10.dp, bar, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
+            .background(Color.White, bar)
+            .border(0.5.dp, Palette.border, bar)
+            .padding(4.dp)
+            .selectableGroup(),
+    ) {
+        tabs.forEach { tab ->
+            val selected = tab == active
+            val color = if (selected) Palette.green else Palette.ink.copy(alpha = 0.78f)
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(if (selected) hex(0xebefee) else Color.Transparent)
+                    .selectable(selected = selected, role = Role.Tab, onClick = { onSelect(tab) })
+                    .padding(vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Icon(if (selected) tab.selectedIcon else tab.icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+                Text(tab.title, style = appText(11, if (selected) FontWeight.SemiBold else FontWeight.Medium, color), maxLines = 1)
             }
         }
     }

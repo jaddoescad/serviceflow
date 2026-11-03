@@ -17,8 +17,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.TimerOff
+import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -190,7 +190,7 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
                 )
                 if (!project.isLead) {
                     PrimaryTabRow(selectedTabIndex = tab.ordinal) {
-                        DetailTabItem(tab == DetailTab.Clock, "Clock Ins", Icons.Outlined.Schedule) { tab = DetailTab.Clock }
+                        DetailTabItem(tab == DetailTab.Clock, "Project", Icons.Outlined.Work) { tab = DetailTab.Clock }
                         DetailTabItem(tab == DetailTab.Media, "Media", Icons.Outlined.PhotoLibrary) { tab = DetailTab.Media }
                         DetailTabItem(tab == DetailTab.Documents, "Documents", Icons.Outlined.Description) { tab = DetailTab.Documents }
                     }

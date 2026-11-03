@@ -1,9 +1,13 @@
 package com.serviceflow.app
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -11,12 +15,13 @@ import com.serviceflow.core.Project
 import com.serviceflow.core.ProjectKind
 import java.util.UUID
 
-enum class MainTab(val title: String, val icon: ImageVector) {
-    Today("Today", Icons.Outlined.WbSunny),
-    Clock("Clock In", Icons.Outlined.Schedule),
-    Projects("Jobs", Icons.Filled.Folder),
-    Timesheet("Timesheet", Icons.AutoMirrored.Outlined.Article),
-    More("More", Icons.Filled.MoreHoriz),
+/** The bottom tabs; the filled icon marks the selected one. */
+enum class MainTab(val title: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+    Today("Today", Icons.Outlined.WbSunny, Icons.Filled.WbSunny),
+    Clock("Clock In", Icons.Outlined.Schedule, Icons.Filled.Schedule),
+    Projects("Jobs", Icons.Outlined.Folder, Icons.Filled.Folder),
+    Timesheet("Timesheet", Icons.AutoMirrored.Outlined.Article, Icons.AutoMirrored.Filled.Article),
+    More("More", Icons.Filled.MoreHoriz, Icons.Filled.MoreHoriz),
 }
 
 /** A pushed Project Detail. */

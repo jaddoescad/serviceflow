@@ -154,6 +154,28 @@ extension ServiceFlowAPI {
         )
     }
 
+    // MARK: Leads as jobs, descriptions
+
+    /// The job for a lead: its open job, else a new one (as clocking into a lead makes).
+    func leadJob(leadId: String) async throws -> Project {
+        let row = try await ensureLeadClockInJob(leadId: leadId)
+        guard let job = TimeEntryCommand.firstRow(row).flatMap(Project.init(jobRow:)) else {
+            throw BackendError.server(code: nil, message: "The lead could not be opened as a job. Try again.", status: nil)
+        }
+        return job
+    }
+
+    /// The job's description, "" when it has none.
+    func jobDescription(jobId: String) async throws -> String {
+        try await rows(client.from("job_descriptions").select("body").eq("job_id", value: jobId).limit(1))
+            .first?["body"]?.nonEmptyString ?? ""
+    }
+
+    /// Saves the description (blank removes it); managers only. Returns the saved text.
+    func setJobDescription(jobId: String, body: String) async throws -> String {
+        try await rpc("set_job_description", ["requested_job_id": .string(jobId), "requested_body": .string(body)]).stringValue ?? ""
+    }
+
     func assignedJobIds(userId: String) async throws -> [String] {
         try await rows(scoped(client.from("job_assignments").select("job_id")).eq("employee_id", value: userId).eq("status", value: "active"))
             .compactMap { $0["job_id"]?.nonEmptyString }

@@ -42,17 +42,21 @@ fun ProjectListRow(project: Project, modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(project.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                      modifier = Modifier.weight(1f, fill = false))
-                if (project.isLead) {
-                    Text(
-                        "LEAD", style = appText(11, FontWeight.Bold, hex(0x245c9c)),
-                        modifier = Modifier.background(hex(0xe8f1ff), CircleShape).padding(horizontal = 5.dp, vertical = 1.dp),
-                    )
-                }
+                if (project.isLead) LeadBadge()
             }
         },
         supportingContent = {
             Text(project.cardAddress ?: "No address on file", maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
+    )
+}
+
+/** The blue "LEAD" tag after a lead's name. */
+@Composable
+fun LeadBadge() {
+    Text(
+        "LEAD", style = appText(11, FontWeight.Bold, hex(0x245c9c)),
+        modifier = Modifier.background(hex(0xe8f1ff), CircleShape).padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
 
