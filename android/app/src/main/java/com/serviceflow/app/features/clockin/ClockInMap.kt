@@ -192,9 +192,9 @@ private fun MarkerPin(icon: androidx.compose.ui.graphics.vector.ImageVector, col
     }
 }
 
-private val Coordinate.latLng: LatLng get() = LatLng(latitude, longitude)
+internal val Coordinate.latLng: LatLng get() = LatLng(latitude, longitude)
 
-private val noPointsOfInterest = MapStyleOptions("""[{"featureType":"poi","stylers":[{"visibility":"off"}]}]""")
+internal val noPointsOfInterest = MapStyleOptions("""[{"featureType":"poi","stylers":[{"visibility":"off"}]}]""")
 
 private fun bounds(center: LatLng, latitudeDelta: Double, longitudeDelta: Double): LatLngBounds = LatLngBounds(
     LatLng(center.latitude - latitudeDelta / 2, center.longitude - longitudeDelta / 2),
@@ -216,7 +216,7 @@ private fun region(job: Coordinate?, user: Coordinate?, fallback: List<Project>)
     return CameraUpdateFactory.newLatLngBounds(box, 0)
 }
 
-private fun mapsKeyConfigured(context: Context): Boolean = runCatching {
+internal fun mapsKeyConfigured(context: Context): Boolean = runCatching {
     @Suppress("DEPRECATION")
     val info = context.packageManager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
     !info.metaData?.getString("com.google.android.geo.API_KEY").isNullOrBlank()

@@ -1,7 +1,7 @@
 import ServiceFlowCore
 
 enum MainTab: String, CaseIterable, Hashable {
-    case clock, projects, timesheet, more
+    case today, clock, projects, timesheet, more
 }
 
 /// A pushed Project Detail.

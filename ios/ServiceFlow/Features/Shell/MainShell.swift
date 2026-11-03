@@ -9,6 +9,9 @@ struct MainShell: View {
     var body: some View {
         @Bindable var session = session
         TabView(selection: $session.activeTab) {
+            if session.isManager {
+                tab(.today) { TodayScreen(enabled: isEnabled(.today)) }
+            }
             tab(.clock) { ClockInScreen(enabled: isEnabled(.clock)) }
             tab(.projects) { JobsScreen(enabled: isEnabled(.projects)) }
             tab(.timesheet) { TimesheetScreen() }
@@ -45,6 +48,7 @@ struct MainShell: View {
 extension MainTab {
     var title: String {
         switch self {
+        case .today: return "Today"
         case .clock: return "Clock In"
         case .projects: return "Jobs"
         case .timesheet: return "Timesheet"
@@ -54,6 +58,7 @@ extension MainTab {
 
     var icon: String {
         switch self {
+        case .today: return "sun.max"
         case .clock: return "clock"
         case .projects: return "folder.fill"
         case .timesheet: return "doc.text"

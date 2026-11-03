@@ -186,6 +186,9 @@ class SessionContext(
         val remembered = activeCompanyId ?: flag(Flag.ACTIVE_COMPANY)
         activeCompanyId = if (memberships.any { it.orgId == remembered }) remembered else memberships.firstOrNull()?.orgId
         api.activeOrgId = activeCompanyId
+        // Managers open on Today; crew (and a role that changed) on Clock In.
+        if (!started && isManager) navigator.activeTab = MainTab.Today
+        if (!isManager && navigator.activeTab == MainTab.Today) navigator.activeTab = MainTab.Clock
         if (started) return
         started = true
         tracker.projects = mappedProjects
@@ -277,6 +280,7 @@ class SessionContext(
         api.activeOrgId = orgId
         setFlag(Flag.ACTIVE_COMPANY, orgId)
         navigator.reset()
+        if (!isManager && navigator.activeTab == MainTab.Today) navigator.activeTab = MainTab.Clock
         mappedProjects = emptyList()
         assignedJobIds = emptyList()
         companyGeneration += 1

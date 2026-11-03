@@ -35,6 +35,7 @@ import com.serviceflow.app.features.more.MoreScreen
 import com.serviceflow.app.features.projectdetail.OverBudgetPrompt
 import com.serviceflow.app.features.projectdetail.ProjectDetailScreen
 import com.serviceflow.app.features.timesheet.TimesheetScreen
+import com.serviceflow.app.features.today.TodayScreen
 
 /**
  * The signed-in app: the navigation bar with one back stack per tab. Only the
@@ -62,7 +63,7 @@ fun MainShell() {
             Scaffold(
                 bottomBar = {
                     NavigationBar {
-                        MainTab.entries.forEach { tab ->
+                        MainTab.entries.filter { it != MainTab.Today || session.isManager }.forEach { tab ->
                             NavigationBarItem(
                                 selected = navigator.activeTab == tab,
                                 onClick = {
@@ -113,6 +114,7 @@ private fun TabRootScreen(tab: MainTab, controller: NavHostController) {
     val entry by controller.currentBackStackEntryAsState()
     val enabled = entry?.destination?.hasRoute<TabRoot>() ?: true
     when (tab) {
+        MainTab.Today -> TodayScreen(enabled = enabled)
         MainTab.Clock -> ClockInScreen(enabled = enabled)
         MainTab.Projects -> JobsScreen(enabled = enabled)
         MainTab.Timesheet -> TimesheetScreen()
@@ -124,8 +126,9 @@ private fun TabRootScreen(tab: MainTab, controller: NavHostController) {
 private fun TabHost(tab: MainTab, controller: NavHostController, navigator: ShellNavigator) {
     val entry by controller.currentBackStackEntryAsState()
     val atRoot = entry?.destination?.hasRoute<TabRoot>() ?: true
-    // Back from another tab's first screen returns to Clock In.
-    BackHandler(enabled = tab != MainTab.Clock && atRoot) { navigator.activeTab = MainTab.Clock }
+    // Back from another tab's first screen returns to the first tab (Today for managers).
+    val home = if (LocalSession.current.isManager) MainTab.Today else MainTab.Clock
+    BackHandler(enabled = tab != home && atRoot) { navigator.activeTab = home }
 
     NavHost(controller, startDestination = TabRoot) {
         composable<TabRoot> { TabRootScreen(tab, controller) }

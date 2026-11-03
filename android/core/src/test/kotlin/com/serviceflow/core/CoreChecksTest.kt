@@ -388,6 +388,59 @@ class CoreChecksTest {
     }
 
     @Test
+    fun todayBoardJobsClockedInToTodayWholeCrewListed() {
+        val startOfDay = Instant.parse("2026-11-03T05:00:00Z")
+        val now = Instant.parse("2026-11-03T15:00:00Z")
+        fun entry(id: String, user: String, name: String, job: String, start: String, end: String?,
+                  lat: Double? = null, distance: Double? = null): TimeEntry {
+            val pairs = mutableListOf<Pair<String, Any?>>(
+                "id" to id, "employee_id" to user, "employee_name" to name, "job_id" to job, "started_at" to start,
+                "status" to if (end == null) "active" else "completed",
+            )
+            if (end != null) pairs += "ended_at" to end
+            if (lat != null) {
+                pairs += "clock_in_latitude" to lat
+                pairs += "clock_in_longitude" to -75.7
+                pairs += "last_distance_meters" to (distance ?: 0.0)
+            }
+            return TimeEntry.fromServerRow(jsonObject(*pairs.toTypedArray()), now)!!
+        }
+        val entries = listOf(
+            entry("e1", "u1", "Michael", "j1", "2026-11-03T12:43:00Z", null),
+            entry("e2", "u1", "Michael", "j1", "2026-11-02T12:00:00Z", "2026-11-02T20:00:00Z"),
+            entry("e3", "u2", "Burim", "j1", "2026-11-01T12:00:00Z", "2026-11-01T22:00:00Z"),
+            entry("e4", "u3", "Camilo", "j2", "2026-11-03T13:32:00Z", "2026-11-03T14:00:00Z", lat = 45.4, distance = 30.0),
+            entry("e5", "u3", "Camilo", "j2", "2026-11-03T14:10:00Z", null, lat = 45.5, distance = 400.0),
+            entry("e6", "u4", "Julian", "j3", "2026-11-02T12:00:00Z", "2026-11-02T13:00:00Z"),
+            entry("e7", "u5", "Dana", "j4", "2026-11-02T21:00:00Z", null),
+        )
+        val projects = listOf(
+            Project.fromJobRow(jsonObject("id" to "j1", "name" to "Sorrenti", "status" to "active", "latitude" to 45.3,
+                                          "longitude" to -75.8, "budget_minutes" to 600, "used_minutes" to 165))!!,
+            Project.fromJobRow(jsonObject("id" to "j2", "name" to "Bastidas", "status" to "active"))!!,
+            Project.fromJobRow(jsonObject("id" to "j3", "name" to "Not today", "status" to "active"))!!,
+            Project.fromJobRow(jsonObject("id" to "j4", "name" to "Archived", "status" to "archived"))!!,
+        )
+        val jobs = TodayBoard.jobs(entries, projects, startOfDay, now)
+        assertEquals("today's jobs by name; archived and idle left out", listOf("Bastidas", "Sorrenti"), jobs.map { it.project.name })
+        val sorrenti = jobs[1]
+        assertEquals("clocked in today first", listOf("Michael", "Burim"), sorrenti.painters.map { it.name })
+        assertEquals("first clock-in today", Instant.parse("2026-11-03T12:43:00Z"), sorrenti.painters[0].inTodayAt)
+        assertEquals("all-time hours on the job, running shift included", 137 + 480, sorrenti.painters[0].totalMinutes)
+        assertNull("crew who didn't clock in today stay listed", sorrenti.painters[1].inTodayAt)
+        assertEquals("earliest of several clock-ins", Instant.parse("2026-11-03T13:32:00Z"), jobs[0].painters[0].inTodayAt)
+        assertEquals("no address: the clock-in nearest the site", 45.4, jobs[0].coordinate?.latitude)
+        assertEquals("the job's own address first", 45.3, sorrenti.coordinate?.latitude)
+        assertEquals("summary", "2 painters on 2 jobs", TodayBoard.summary(jobs))
+        assertEquals("budget label", "Labour budget · 2.8 of 10.0 h", TodayBoard.budgetLine(sorrenti.project.budget)?.first)
+        assertEquals("budget percent", 28, TodayBoard.budgetLine(sorrenti.project.budget)?.second)
+        assertNull("no budget", TodayBoard.budgetLine(jobs[0].project.budget))
+        val leftRunning = Instant.parse("2026-10-31T02:47:00Z")
+        assertTrue("shift left running since an earlier day", TodayBoard.inLabel(leftRunning, startOfDay).startsWith("in since Oct"))
+        assertTrue("clocked in today", TodayBoard.inLabel(now, startOfDay).startsWith("in at "))
+    }
+
+    @Test
     fun accountRules() {
         assertNull("valid email", AccountValidation.email("pat@example.com"))
         assertNotNull("invalid email", AccountValidation.email("pat@"))

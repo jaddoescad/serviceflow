@@ -158,6 +158,7 @@ object DateText {
         "jmm" -> if (uses24Hour(locale)) "HH:mm" else "h:mm a"
         "MMMdy" -> "MMM d, y"
         "EEEEMMMMdy" -> "EEEE, MMMM d, y"
+        "EEEEMMMMd" -> "EEEE, MMMM d"
         "EEEMMMdd" -> "EEE, MMM dd"
         "MMMdd" -> "MMM dd"
         "MMMd" -> "MMM d"

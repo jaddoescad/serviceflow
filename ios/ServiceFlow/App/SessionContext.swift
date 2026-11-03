@@ -136,6 +136,9 @@ final class SessionContext {
         let remembered = activeCompanyId ?? flag(Flag.activeCompany)
         activeCompanyId = memberships.contains { $0.orgId == remembered } ? remembered : memberships.first?.orgId
         api.activeOrgId = activeCompanyId
+        // Managers open on Today; crew (and a role that changed) on Clock In.
+        if !started, isManager { activeTab = .today }
+        if !isManager, activeTab == .today { activeTab = .clock }
         guard !started else { return }
         started = true
         tracker.projects = mappedProjects
@@ -232,6 +235,7 @@ final class SessionContext {
         api.activeOrgId = orgId
         setFlag(Flag.activeCompany, orgId)
         paths = [:]
+        if !isManager, activeTab == .today { activeTab = .clock }
         mappedProjects = []
         assignedJobIds = []
         companyGeneration += 1

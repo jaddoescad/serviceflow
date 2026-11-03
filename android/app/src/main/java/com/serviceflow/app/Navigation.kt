@@ -5,12 +5,14 @@ import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.serviceflow.core.Project
 import com.serviceflow.core.ProjectKind
 import java.util.UUID
 
 enum class MainTab(val title: String, val icon: ImageVector) {
+    Today("Today", Icons.Outlined.WbSunny),
     Clock("Clock In", Icons.Outlined.Schedule),
     Projects("Jobs", Icons.Filled.Folder),
     Timesheet("Timesheet", Icons.AutoMirrored.Outlined.Article),

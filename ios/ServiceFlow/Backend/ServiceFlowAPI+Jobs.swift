@@ -121,6 +121,39 @@ extension ServiceFlowAPI {
         return result
     }
 
+    // MARK: Today (managers)
+
+    /// The jobs someone clocked in to since `startOfDay` (or is still clocked
+    /// in to), with everyone who has worked them.
+    func todayJobs(startOfDay: Date, now: Date = Date()) async throws -> [TodayJob] {
+        let statuses = ["active", "completed"]
+        let today = try await rows(
+            scoped(client.from("time_entries").select("job_id")).in("status", values: statuses)
+                .or("status.eq.active,started_at.gte.\(ISODate.string(startOfDay))").limit(Self.pageLimit)
+        )
+        let ids = Array(Set(today.compactMap { $0["job_id"]?.nonEmptyString })).sorted()
+        guard !ids.isEmpty else { return [] }
+
+        async let feed = rows(jobFeed().in("id", values: ids))
+        var history: [JSONValue] = []
+        while true {
+            let page = try await rows(
+                client.from("time_entries")
+                    .select("id,employee_id,employee_name,job_id,started_at,ended_at,status,clock_in_latitude,clock_in_longitude,last_distance_meters")
+                    .in("job_id", values: ids).in("status", values: statuses)
+                    .order("started_at", ascending: true).order("id", ascending: true)
+                    .range(from: history.count, to: history.count + Self.pageLimit - 1)
+            )
+            history += page
+            if page.count < Self.pageLimit { break }
+        }
+        return TodayBoard.jobs(
+            entries: history.compactMap { TimeEntry(serverRow: $0, now: now) },
+            projects: try await feed.compactMap(Project.init(jobRow:)),
+            startOfDay: startOfDay, now: now
+        )
+    }
+
     func assignedJobIds(userId: String) async throws -> [String] {
         try await rows(scoped(client.from("job_assignments").select("job_id")).eq("employee_id", value: userId).eq("status", value: "active"))
             .compactMap { $0["job_id"]?.nonEmptyString }

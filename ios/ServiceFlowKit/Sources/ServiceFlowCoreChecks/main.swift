@@ -354,6 +354,57 @@ func runChecks() async {
         expectEqual(summaries.first?.userId, "u2", "you first")
     }
 
+    await check("Today board: jobs clocked in to today, whole crew listed") {
+        let startOfDay = ISODate.parse("2026-11-03T05:00:00Z")!
+        let now = ISODate.parse("2026-11-03T15:00:00Z")!
+        func entry(_ id: String, _ user: String, _ name: String, _ job: String, _ start: String, _ end: String?,
+                   lat: Double? = nil, distance: Double? = nil) -> TimeEntry {
+            var row: [String: JSONValue] = ["id": .string(id), "employee_id": .string(user), "employee_name": .string(name),
+                                            "job_id": .string(job), "started_at": .string(start),
+                                            "status": end == nil ? "active" : "completed"]
+            if let end { row["ended_at"] = .string(end) }
+            if let lat {
+                row["clock_in_latitude"] = .number(lat)
+                row["clock_in_longitude"] = -75.7
+                row["last_distance_meters"] = .number(distance ?? 0)
+            }
+            return TimeEntry(serverRow: .object(row), now: now)!
+        }
+        let entries = [
+            entry("e1", "u1", "Michael", "j1", "2026-11-03T12:43:00Z", nil),
+            entry("e2", "u1", "Michael", "j1", "2026-11-02T12:00:00Z", "2026-11-02T20:00:00Z"),
+            entry("e3", "u2", "Burim", "j1", "2026-11-01T12:00:00Z", "2026-11-01T22:00:00Z"),
+            entry("e4", "u3", "Camilo", "j2", "2026-11-03T13:32:00Z", "2026-11-03T14:00:00Z", lat: 45.4, distance: 30),
+            entry("e5", "u3", "Camilo", "j2", "2026-11-03T14:10:00Z", nil, lat: 45.5, distance: 400),
+            entry("e6", "u4", "Julian", "j3", "2026-11-02T12:00:00Z", "2026-11-02T13:00:00Z"),
+            entry("e7", "u5", "Dana", "j4", "2026-11-02T21:00:00Z", nil),
+        ]
+        let projects = [
+            Project(jobRow: ["id": "j1", "name": "Sorrenti", "status": "active", "latitude": 45.3, "longitude": -75.8,
+                             "budget_minutes": 600, "used_minutes": 165])!,
+            Project(jobRow: ["id": "j2", "name": "Bastidas", "status": "active"])!,
+            Project(jobRow: ["id": "j3", "name": "Not today", "status": "active"])!,
+            Project(jobRow: ["id": "j4", "name": "Archived", "status": "archived"])!,
+        ]
+        let jobs = TodayBoard.jobs(entries: entries, projects: projects, startOfDay: startOfDay, now: now)
+        expectEqual(jobs.map(\.project.name), ["Bastidas", "Sorrenti"], "today's jobs by name; archived and idle left out")
+        let sorrenti = jobs[1]
+        expectEqual(sorrenti.painters.map(\.name), ["Michael", "Burim"], "clocked in today first")
+        expectEqual(sorrenti.painters[0].inTodayAt, ISODate.parse("2026-11-03T12:43:00Z"), "first clock-in today")
+        expectEqual(sorrenti.painters[0].totalMinutes, 137 + 480, "all-time hours on the job, running shift included")
+        expect(sorrenti.painters[1].inTodayAt == nil, "crew who didn't clock in today stay listed")
+        expectEqual(jobs[0].painters[0].inTodayAt, ISODate.parse("2026-11-03T13:32:00Z"), "earliest of several clock-ins")
+        expectEqual(jobs[0].coordinate?.latitude, 45.4, "no address: the clock-in nearest the site")
+        expectEqual(sorrenti.coordinate?.latitude, 45.3, "the job's own address first")
+        expectEqual(TodayBoard.summary(jobs), "2 painters on 2 jobs", "summary")
+        expectEqual(TodayBoard.budgetLine(sorrenti.project.budget)?.label, "Labour budget · 2.8 of 10.0 h", "budget label")
+        expectEqual(TodayBoard.budgetLine(sorrenti.project.budget)?.percent, 28, "budget percent")
+        expect(TodayBoard.budgetLine(jobs[0].project.budget) == nil, "no budget")
+        let leftRunning = ISODate.parse("2026-10-31T02:47:00Z")!
+        expect(TodayBoard.inLabel(leftRunning, startOfDay: startOfDay).hasPrefix("in since Oct"), "shift left running since an earlier day")
+        expect(TodayBoard.inLabel(now, startOfDay: startOfDay).hasPrefix("in at "), "clocked in today")
+    }
+
     await check("Account rules") {
         expect(AccountValidation.email("pat@example.com") == nil, "valid email")
         expect(AccountValidation.email("pat@") != nil, "invalid email")

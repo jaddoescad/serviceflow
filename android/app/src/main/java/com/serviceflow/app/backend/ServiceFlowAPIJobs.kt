@@ -1,13 +1,19 @@
 package com.serviceflow.app.backend
 
 import com.serviceflow.core.BudgetProgress
+import com.serviceflow.core.ISODate
 import com.serviceflow.core.JSONValue
 import com.serviceflow.core.Project
+import com.serviceflow.core.TimeEntry
+import com.serviceflow.core.TodayBoard
+import com.serviceflow.core.TodayJob
 import com.serviceflow.core.arrayValue
 import com.serviceflow.core.get
 import com.serviceflow.core.nonEmptyString
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.time.Instant
 
 // Jobs, leads, budgets and assignments.
@@ -139,6 +145,60 @@ suspend fun ServiceFlowAPI.budgets(jobIds: List<String>): Map<String, BudgetProg
         page.mapNotNull { BudgetProgress.fromJobFeedRow(it) }.forEach { result[it.jobId] = it }
     }
     return result
+}
+
+// MARK: Today (managers)
+
+/**
+ * The jobs someone clocked in to since [startOfDay] (or is still clocked in
+ * to), with everyone who has worked them.
+ */
+suspend fun ServiceFlowAPI.todayJobs(startOfDay: Instant, now: Instant = Instant.now()): List<TodayJob> = coroutineScope {
+    val statuses = listOf("active", "completed")
+    val ids = rows("time_entries", "job_id") {
+        filter {
+            scoped()
+            isIn("status", statuses)
+            or {
+                eq("status", "active")
+                gte("started_at", ISODate.string(startOfDay))
+            }
+        }
+        limit(PAGE_LIMIT.toLong())
+    }.mapNotNull { it["job_id"].nonEmptyString }.toSet().sorted()
+    if (ids.isEmpty()) return@coroutineScope emptyList()
+
+    val feed = async {
+        rows("job_feed", "*") {
+            filter {
+                jobFeed(this)
+                isIn("id", ids)
+            }
+        }
+    }
+    val history = mutableListOf<JSONValue>()
+    while (true) {
+        val from = history.size.toLong()
+        val page = rows(
+            "time_entries",
+            "id,employee_id,employee_name,job_id,started_at,ended_at,status,clock_in_latitude,clock_in_longitude,last_distance_meters",
+        ) {
+            filter {
+                isIn("job_id", ids)
+                isIn("status", statuses)
+            }
+            order("started_at", Order.ASCENDING)
+            order("id", Order.ASCENDING)
+            range(from, from + PAGE_LIMIT - 1)
+        }
+        history += page
+        if (page.size < PAGE_LIMIT) break
+    }
+    TodayBoard.jobs(
+        entries = history.mapNotNull { TimeEntry.fromServerRow(it, now) },
+        projects = feed.await().mapNotNull { Project.fromJobRow(it) },
+        startOfDay = startOfDay, now = now,
+    )
 }
 
 suspend fun ServiceFlowAPI.assignedJobIds(userId: String): List<String> =
