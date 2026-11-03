@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -83,7 +84,9 @@ import kotlin.math.roundToInt
 fun MediaLightbox(store: MediaStore, startId: String, onClose: () -> Unit) {
     val session = LocalSession.current
     val scope = rememberCoroutineScope()
-    val items = store.sortedItems
+    // Pager keeps its item-provider callbacks across recompositions. Read the
+    // same current list in its count, keys and content when uploads update it.
+    val items by rememberUpdatedState(store.sortedItems)
     val pager = rememberPagerState(initialPage = items.indexOfFirst { it.id == startId }.coerceAtLeast(0)) { items.size }
     var currentId by remember { mutableStateOf(startId) }
     var zoomed by remember { mutableStateOf(false) }
@@ -143,11 +146,12 @@ fun MediaLightbox(store: MediaStore, startId: String, onClose: () -> Unit) {
             )
             HorizontalPager(
                 state = pager,
-                key = { page -> items[page].id },
+                key = { page -> items.getOrNull(page)?.id ?: "missing-media-$page" },
                 userScrollEnabled = !zoomed,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             ) { page ->
-                val item = items[page]
+                // A cached page can outlive a list refresh or removal.
+                val item = items.getOrNull(page) ?: return@HorizontalPager
                 val isCurrent = item.id == currentId
                 Box(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
                     if (item.kind == MediaKind.Video) {
