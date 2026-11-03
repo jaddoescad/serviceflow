@@ -434,6 +434,20 @@ func runChecks() async {
         expect(entry?.adjustmentHistory.first?.previousStartedAt != nil, "snake_case history")
         expect(entry?.adjustmentHistory.last?.previousEndedAt != nil, "camelCase history")
     }
+
+    await check("Lead rows carry the website's description") {
+        func lead(_ extra: [String: JSONValue]) -> Project? {
+            var row: [String: JSONValue] = ["id": "l1", "status": "new", "contact": ["name": "Katya"]]
+            for (key, value) in extra { row[key] = value }
+            return Project(leadRow: .object(row))
+        }
+        expectEqual(lead(["workspace": ["description": "Two rooms"], "metadata": ["description": "Old"]])?.description,
+                    "Two rooms", "the workspace's first")
+        expect(lead(["workspace": ["description": ""], "metadata": ["description": "Old"]])?.description == nil, "cleared stays cleared")
+        expectEqual(lead(["workspace": .null, "metadata": ["project_description": " ", "description": "Imported"]])?.description,
+                    "Imported", "else what it was imported with")
+        expectEqual(lead(["workspace": [["description": "Listed"]]])?.description, "Listed", "embedded as a list")
+    }
 }
 
 @MainActor

@@ -30,7 +30,7 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
     var budgetFailed by mutableStateOf(false)
         private set
     /** The job's description ("" when it has none); shown with the job straight away, the refresh picks up later edits. */
-    var description by mutableStateOf(if (project.isLead) null else project.description.orEmpty())
+    var description by mutableStateOf(project.description.orEmpty())
         private set
     /** Entries deleted on this device; hidden even if a refresh lands before the delete syncs. */
     private val deletedKeys = mutableSetOf<String>()
@@ -65,7 +65,7 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
     }
 
     suspend fun refreshDescription(api: ServiceFlowAPI) {
-        if (project.isLead || jobId.isEmpty()) return
+        if (jobId.isEmpty()) return
         try {
             description = api.jobDescription(jobId).orEmpty()
         } catch (e: CancellationException) {

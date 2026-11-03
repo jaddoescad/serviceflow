@@ -33,7 +33,7 @@ data class Project(
     val linkedLeadId: String? = null,
     val contactName: String? = null,
     val budget: BudgetProgress? = null,
-    /** The job's description from `job_feed`; null when it has none. */
+    /** The description the website shows; null when it has none. */
     val description: String? = null,
 ) {
     val isArchived: Boolean get() = status == "archived"
@@ -144,7 +144,19 @@ data class Project(
                 isLead = true,
                 leadStage = row["pipeline_stage_raw"].nonEmptyString ?: row["status"].nonEmptyString ?: "new",
                 contactName = contactName,
+                description = leadDescription(row),
             )
+        }
+
+        /**
+         * The website's description for a lead row (with `workspace` embedded):
+         * the workspace's, even when cleared, else what the lead was imported with.
+         */
+        fun leadDescription(row: JSONValue?): String? {
+            val workspace = row["workspace"].let { it.arrayValue?.firstOrNull() ?: it }
+            workspace["description"].stringValue?.let { return it.trim().ifEmpty { null } }
+            return listOf("project_description", "companycam_description", "description", "scope_description")
+                .firstNotNullOfOrNull { row["metadata"][it].nonEmptyString }
         }
     }
 }

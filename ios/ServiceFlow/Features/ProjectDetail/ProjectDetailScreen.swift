@@ -11,8 +11,8 @@ struct ProjectDetailEditRoute: Hashable {
     let entryId: String
 }
 
-/// A job or lead: its clock-ins, hours, tasks, photos and videos, and a
-/// job's documents.
+/// A job or lead: its description, photos and videos and documents, and a
+/// job's clock-ins, hours and tasks.
 struct ProjectDetailScreen: View {
     enum Tab: Hashable { case clock, media, documents }
 
@@ -31,7 +31,7 @@ struct ProjectDetailScreen: View {
     init(route: ProjectRoute) {
         self.route = route
         _model = State(initialValue: ProjectDetailModel(project: route.project))
-        _tab = State(initialValue: route.project.isLead || route.action != nil ? .media : .clock)
+        _tab = State(initialValue: route.action != nil ? .media : .clock)
     }
 
     private var project: Project { route.project }
@@ -65,9 +65,7 @@ struct ProjectDetailScreen: View {
                 ProjectDocumentsTab(project: project)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if !project.isLead { tabPicker }
-        }
+        .safeAreaInset(edge: .top, spacing: 0) { tabPicker }
         .overlay(alignment: .bottomTrailing) { cameraButton }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -105,7 +103,7 @@ struct ProjectDetailScreen: View {
         }
         .task(id: jobId) {
             // Team time and budget, every 45 s while the screen is open.
-            guard !project.isLead else { return }
+            guard !project.isLead else { return await model.refreshDescription(api: session.api) }
             while !Task.isCancelled {
                 await model.refresh(api: session.api)
                 try? await Task.sleep(nanoseconds: 45_000_000_000)

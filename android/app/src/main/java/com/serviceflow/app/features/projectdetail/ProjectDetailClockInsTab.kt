@@ -106,51 +106,62 @@ fun ProjectDetailClockInsTab(
                 }
             }
 
-            GroupCard { HoursPanel(model, clockIns) }
+            // A lead has no clock-ins until it's a job.
+            if (!project.isLead) {
+                GroupCard { HoursPanel(model, clockIns) }
 
-            ProjectDetailClockButton(
-                project = project, title = title, onOverBudget = onOverBudget,
-                onHoursChanged = { model.refreshBudget(session.api) },
-            )
+                ProjectDetailClockButton(
+                    project = project, title = title, onOverBudget = onOverBudget,
+                    onHoursChanged = { model.refreshBudget(session.api) },
+                )
+            }
 
             JobPhotosPanel(project = project, showCamera = false, onOpenAll = onOpenMedia)
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val summaries = clockIns.summaries
-                Row(Modifier.padding(horizontal = 16.dp)) {
-                    val days = ProjectClockIns.dayCount(summaries, userId = session.user.id)
-                    Text(if (session.isManager) "Hours by Crew" else "Your Clock-ins", style = MaterialTheme.typography.titleSmall,
-                         color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
-                    Text(
-                        if (session.isManager) "${summaries.size} crew" else "$days ${if (days == 1) "day" else "days"}",
-                        style = MaterialTheme.typography.titleSmall, color = colors.onSurfaceVariant,
-                    )
-                }
-                GroupCard {
-                    if (summaries.isEmpty()) {
-                        ContentUnavailable(
-                            icon = Icons.Outlined.Schedule,
-                            title = "No clock-ins yet",
-                            description = { Text("Time entries will appear here after the crew clocks into this project.") },
-                        )
-                    } else {
-                        summaries.forEachIndexed { index, summary ->
-                            if (index > 0) HorizontalDivider(Modifier.padding(start = 62.dp))
-                            ProjectDetailPainterRow(
-                                summary,
-                                Modifier.fillMaxWidth().clickable { onOpenPainter(summary.userId) }.padding(horizontal = 16.dp, vertical = 8.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            LabourTasksPanel(project = project, showHoursMeter = false, enabled = true)
+            if (!project.isLead) CrewAndTasks(project, clockIns, onOpenPainter)
 
             // Room above the floating camera button.
             Spacer(Modifier.height(60.dp))
         }
     }
+}
+
+/** Time by crew member, then the task list. */
+@Composable
+private fun CrewAndTasks(project: Project, clockIns: JobClockIns, onOpenPainter: (userId: String) -> Unit) {
+    val session = LocalSession.current
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val summaries = clockIns.summaries
+        Row(Modifier.padding(horizontal = 16.dp)) {
+            val days = ProjectClockIns.dayCount(summaries, userId = session.user.id)
+            Text(if (session.isManager) "Hours by Crew" else "Your Clock-ins", style = MaterialTheme.typography.titleSmall,
+                 color = colors.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(
+                if (session.isManager) "${summaries.size} crew" else "$days ${if (days == 1) "day" else "days"}",
+                style = MaterialTheme.typography.titleSmall, color = colors.onSurfaceVariant,
+            )
+        }
+        GroupCard {
+            if (summaries.isEmpty()) {
+                ContentUnavailable(
+                    icon = Icons.Outlined.Schedule,
+                    title = "No clock-ins yet",
+                    description = { Text("Time entries will appear here after the crew clocks into this project.") },
+                )
+            } else {
+                summaries.forEachIndexed { index, summary ->
+                    if (index > 0) HorizontalDivider(Modifier.padding(start = 62.dp))
+                    ProjectDetailPainterRow(
+                        summary,
+                        Modifier.fillMaxWidth().clickable { onOpenPainter(summary.userId) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    LabourTasksPanel(project = project, showHoursMeter = false, enabled = true)
 }
 
 @Composable

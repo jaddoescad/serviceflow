@@ -10,29 +10,35 @@ struct JobDescriptionRow: View {
     @State private var editing = false
 
     var body: some View {
-        if let text = model.jobDescription, !text.isEmpty || session.isManager {
-            Button { editing = true } label: {
-                if text.isEmpty {
-                    Label("Add description", systemImage: "plus")
-                        .font(.app(14, .semibold))
-                        .foregroundStyle(DetailPalette.brand)
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Description").font(.app(12, .semibold)).foregroundStyle(.secondary)
-                            Spacer()
-                            if session.isManager {
-                                Text("Edit").font(.app(12, .semibold)).foregroundStyle(DetailPalette.brand)
-                            }
-                        }
-                        Text(text).font(.app(14)).foregroundStyle(.primary).multilineTextAlignment(.leading)
-                    }
-                    .padding(.vertical, 2)
-                }
+        if let text = model.jobDescription {
+            if session.isManager {
+                // A list-styled button: the whole row is the tap target.
+                Button { editing = true } label: { content(text) }
+                    .sheet(isPresented: $editing) { JobDescriptionSheet(model: model) }
+            } else if !text.isEmpty {
+                content(text)
             }
-            .buttonStyle(.plain)
-            .disabled(!session.isManager)
-            .sheet(isPresented: $editing) { JobDescriptionSheet(model: model) }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ text: String) -> some View {
+        if text.isEmpty {
+            Label("Add description", systemImage: "plus")
+                .font(.app(14, .semibold))
+                .foregroundStyle(DetailPalette.brand)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Description").font(.app(12, .semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    if session.isManager {
+                        Text("Edit").font(.app(12, .semibold)).foregroundStyle(DetailPalette.brand)
+                    }
+                }
+                Text(text).font(.app(14)).foregroundStyle(.primary).multilineTextAlignment(.leading)
+            }
+            .padding(.vertical, 2)
         }
     }
 }

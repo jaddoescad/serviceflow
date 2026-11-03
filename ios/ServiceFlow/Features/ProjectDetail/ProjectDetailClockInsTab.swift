@@ -1,8 +1,9 @@
 import ServiceFlowCore
 import SwiftUI
 
-/// Project Detail's Clock Ins tab: the job, its hours, the clock button,
-/// photos, time by crew member and the task list.
+/// Project Detail's Project tab: the job, its hours, the clock button,
+/// photos, time by crew member and the task list. A lead has no clock-ins
+/// until it's a job, so it shows only itself, its description and photos.
 struct ProjectDetailClockInsTab: View {
     let project: Project
     let title: String
@@ -24,10 +25,12 @@ struct ProjectDetailClockInsTab: View {
                 }
             }
 
-            Section { hoursPanel }
+            if !project.isLead {
+                Section { hoursPanel }
 
-            ProjectDetailClockButton(project: project, title: title, onOverBudget: onOverBudget) {
-                await model.refreshBudget(api: session.api)
+                ProjectDetailClockButton(project: project, title: title, onOverBudget: onOverBudget) {
+                    await model.refreshBudget(api: session.api)
+                }
             }
 
             Section {
@@ -36,29 +39,7 @@ struct ProjectDetailClockInsTab: View {
                     .listRowBackground(Color.clear)
             }
 
-            Section {
-                if summaries.isEmpty {
-                    ContentUnavailableView {
-                        Label("No clock-ins yet", systemImage: "clock")
-                    } description: {
-                        Text("Time entries will appear here after the crew clocks into this project.")
-                    }
-                } else {
-                    ForEach(summaries) { summary in
-                        NavigationLink(value: ProjectDetailPainterRoute(userId: summary.userId)) {
-                            ProjectDetailPainterRow(summary: summary)
-                        }
-                    }
-                }
-            } header: {
-                crewHeader
-            }
-
-            Section {
-                LabourTasksPanel(project: project, showHoursMeter: false, enabled: true)
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            }
+            if !project.isLead { crewAndTasks }
 
             // Room above the floating camera button.
             Color.clear.frame(height: 60).listRowBackground(Color.clear)
@@ -66,6 +47,33 @@ struct ProjectDetailClockInsTab: View {
         .listStyle(.insetGrouped)
         .listSectionSpacing(16)
         .refreshable { await model.refresh(api: session.api) }
+    }
+
+    @ViewBuilder
+    private var crewAndTasks: some View {
+        Section {
+            if summaries.isEmpty {
+                ContentUnavailableView {
+                    Label("No clock-ins yet", systemImage: "clock")
+                } description: {
+                    Text("Time entries will appear here after the crew clocks into this project.")
+                }
+            } else {
+                ForEach(summaries) { summary in
+                    NavigationLink(value: ProjectDetailPainterRoute(userId: summary.userId)) {
+                        ProjectDetailPainterRow(summary: summary)
+                    }
+                }
+            }
+        } header: {
+            crewHeader
+        }
+
+        Section {
+            LabourTasksPanel(project: project, showHoursMeter: false, enabled: true)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+        }
     }
 
     private var infoRow: some View {

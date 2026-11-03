@@ -93,7 +93,7 @@ fun rememberJobClockIns(model: ProjectDetailModel): JobClockIns {
 
 private enum class DetailTab { Clock, Media, Documents }
 
-/** A job or lead: its clock-ins, hours, tasks, photos and videos, and a job's documents. */
+/** A job or lead: its description, photos and videos and documents, and a job's clock-ins, hours and tasks. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
@@ -103,7 +103,7 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
     val model = viewModel { ProjectDetailModel(project, session) }
     val store = model.mediaStore
     val scope = rememberCoroutineScope()
-    var tab by rememberSaveable { mutableStateOf(if (project.isLead || route.action != null) DetailTab.Media else DetailTab.Clock) }
+    var tab by rememberSaveable { mutableStateOf(if (route.action != null) DetailTab.Media else DetailTab.Clock) }
     var handledAction by rememberSaveable { mutableStateOf(false) }
     var mediaRefreshing by remember { mutableStateOf(false) }
     val clockIns = rememberJobClockIns(model)
@@ -165,7 +165,7 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
     }
     LaunchedEffect(jobId) {
         // Team time and budget, every 45 s while the screen is open.
-        if (project.isLead) return@LaunchedEffect
+        if (project.isLead) return@LaunchedEffect model.refreshDescription(session.api)
         while (true) {
             model.refresh(session.api)
             delay(45_000)
@@ -188,12 +188,10 @@ fun ProjectDetailScreen(route: ProjectRoute, onBack: () -> Unit) {
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                     },
                 )
-                if (!project.isLead) {
-                    PrimaryTabRow(selectedTabIndex = tab.ordinal) {
-                        DetailTabItem(tab == DetailTab.Clock, "Project", Icons.Outlined.Work) { tab = DetailTab.Clock }
-                        DetailTabItem(tab == DetailTab.Media, "Media", Icons.Outlined.PhotoLibrary) { tab = DetailTab.Media }
-                        DetailTabItem(tab == DetailTab.Documents, "Documents", Icons.Outlined.Description) { tab = DetailTab.Documents }
-                    }
+                PrimaryTabRow(selectedTabIndex = tab.ordinal) {
+                    DetailTabItem(tab == DetailTab.Clock, "Project", Icons.Outlined.Work) { tab = DetailTab.Clock }
+                    DetailTabItem(tab == DetailTab.Media, "Media", Icons.Outlined.PhotoLibrary) { tab = DetailTab.Media }
+                    DetailTabItem(tab == DetailTab.Documents, "Documents", Icons.Outlined.Description) { tab = DetailTab.Documents }
                 }
             }
         },

@@ -108,7 +108,7 @@ private suspend fun ServiceFlowAPI.matchingContactIds(pattern: String, digits: S
     }.mapNotNull { it["id"].nonEmptyString }
 
 private suspend fun ServiceFlowAPI.matchingLeadRows(pattern: String, contactIds: List<String>): List<JSONValue> =
-    rows("leads", "*,contact:contacts(id,name,email,phone),jobs(id)") {
+    rows("leads", "*,contact:contacts(id,name,email,phone),jobs(id),workspace:project_workspace(description)") {
         filter {
             scoped()
             or {
@@ -204,14 +204,9 @@ suspend fun ServiceFlowAPI.todayJobs(startOfDay: Instant, now: Instant = Instant
     )
 }
 
-// MARK: Leads as jobs, descriptions
+// MARK: Descriptions
 
-/** The job for a lead: its open job, else a new one (as clocking into a lead makes). */
-suspend fun ServiceFlowAPI.leadJob(leadId: String): Project =
-    TimeEntryCommand.firstRow(ensureLeadClockInJob(leadId))?.let { Project.fromJobRow(it) }
-        ?: throw IllegalStateException("The lead could not be opened as a job. Try again.")
-
-/** The job's description, or null when it has none. */
+/** A job's or lead's description as the website shows it, or null when it has none. */
 suspend fun ServiceFlowAPI.jobDescription(jobId: String): String? =
     rows("job_descriptions", "body") {
         filter { eq("job_id", jobId) }

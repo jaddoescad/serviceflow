@@ -21,7 +21,7 @@ final class ProjectDetailModel {
         self.project = project
         budget = project.budget
         // Shown with the job straight away; the refresh picks up later edits.
-        jobDescription = project.isLead ? nil : (project.description ?? "")
+        jobDescription = project.description ?? ""
     }
 
     var jobId: String { project.id }
@@ -50,7 +50,7 @@ final class ProjectDetailModel {
     }
 
     func refreshDescription(api: ServiceFlowAPI) async {
-        guard !project.isLead, !jobId.isEmpty else { return }
+        guard !jobId.isEmpty else { return }
         if let text = try? await api.jobDescription(jobId: jobId) { jobDescription = text }
     }
 

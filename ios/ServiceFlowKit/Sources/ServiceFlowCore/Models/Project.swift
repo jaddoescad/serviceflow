@@ -22,7 +22,7 @@ public struct Project: Codable, Hashable, Identifiable, Sendable {
     public var linkedLeadId: String?
     public var contactName: String?
     public var budget: BudgetProgress?
-    /// The job's description from `job_feed`; nil when it has none.
+    /// The description the website shows; nil when it has none.
     public var description: String?
 
     public init(
@@ -167,8 +167,18 @@ public extension Project {
             createdAt: row["created_at"]?.dateValue,
             isLead: true,
             leadStage: row["pipeline_stage_raw"]?.nonEmptyString ?? row["status"]?.nonEmptyString ?? "new",
-            contactName: contactName
+            contactName: contactName,
+            description: Self.leadDescription(row)
         )
+    }
+
+    /// The website's description for a lead row (with `workspace` embedded):
+    /// the workspace's, even when cleared, else what the lead was imported with.
+    static func leadDescription(_ row: JSONValue) -> String? {
+        let workspace = row["workspace"].map { $0.arrayValue?.first ?? $0 }
+        if let saved = workspace?["description"]?.stringValue { return saved.nonBlank }
+        return ["project_description", "companycam_description", "description", "scope_description"]
+            .lazy.compactMap { row["metadata"]?[$0]?.nonEmptyString }.first
     }
 
     /// Jobs shown in lists: not cancelled, not archived, not test jobs.

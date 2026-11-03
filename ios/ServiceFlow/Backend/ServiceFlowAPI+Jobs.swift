@@ -91,7 +91,7 @@ extension ServiceFlowAPI {
         var filters = Self.ilike(["address", "city", "province", "postal_code", "source", "pipeline_stage_raw"], pattern)
         if !contactIds.isEmpty { filters.append("contact_id.in.(\(contactIds.joined(separator: ",")))") }
         return try await rows(
-            scoped(client.from("leads").select("*,contact:contacts(id,name,email,phone),jobs(id)"))
+            scoped(client.from("leads").select("*,contact:contacts(id,name,email,phone),jobs(id),workspace:project_workspace(description)"))
                 .or(filters.joined(separator: ",")).order("updated_at", ascending: false).limit(Self.pageLimit)
         )
     }
@@ -154,18 +154,9 @@ extension ServiceFlowAPI {
         )
     }
 
-    // MARK: Leads as jobs, descriptions
+    // MARK: Descriptions
 
-    /// The job for a lead: its open job, else a new one (as clocking into a lead makes).
-    func leadJob(leadId: String) async throws -> Project {
-        let row = try await ensureLeadClockInJob(leadId: leadId)
-        guard let job = TimeEntryCommand.firstRow(row).flatMap(Project.init(jobRow:)) else {
-            throw BackendError.server(code: nil, message: "The lead could not be opened as a job. Try again.", status: nil)
-        }
-        return job
-    }
-
-    /// The job's description, "" when it has none.
+    /// A job's or lead's description as the website shows it, "" when it has none.
     func jobDescription(jobId: String) async throws -> String {
         try await rows(client.from("job_descriptions").select("body").eq("job_id", value: jobId).limit(1))
             .first?["body"]?.nonEmptyString ?? ""

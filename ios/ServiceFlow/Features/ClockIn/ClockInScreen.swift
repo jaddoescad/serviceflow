@@ -41,7 +41,6 @@ struct ClockedOutView: View {
     @State private var latestError: String?
     @State private var userPoint: LocationPoint?
     @State private var clockingIn = false
-    @State private var opening = false
     @State private var clockInError: String?
 
     /// The pin or result tapped, else the nearest job within 2 km, else the most recent job.
@@ -103,7 +102,7 @@ struct ClockedOutView: View {
                 }
             }
 
-            Button(action: openSelected) {
+            Button { if let project = displayProject { session.open(project) } } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "mappin.circle.fill")
                         .font(.title2)
@@ -123,18 +122,16 @@ struct ClockedOutView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    if opening {
-                        ProgressView()
-                    } else if displayProject != nil {
+                    if displayProject != nil {
                         Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                     }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(displayProject == nil || opening)
+            .disabled(displayProject == nil)
 
-            if let message = tracker.notice?.message ?? clockInError {
+            if let message = tracker.notice?.message ?? clockInError ?? leadNotice {
                 Label(message, systemImage: "exclamationmark.circle.fill")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -151,7 +148,7 @@ struct ClockedOutView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Palette.navy)
-            .disabled(clockingIn || opening || displayProject == nil)
+            .disabled(clockingIn || displayProject == nil || displayProject?.isLead == true)
             .accessibilityLabel("Start clock in")
         }
         .padding(16)
@@ -160,24 +157,9 @@ struct ClockedOutView: View {
         .padding(.bottom, 8)
     }
 
-    /// A lead opens as its job (made now if it has none), so photos and the
-    /// description go on the job the crew will see.
-    private func openSelected() {
-        guard let project = displayProject else { return }
-        guard project.isLead else { return session.open(project) }
-        guard !opening else { return }
-        opening = true
-        clockInError = nil
-        Task {
-            do {
-                let job = try await session.api.leadJob(leadId: project.id)
-                selected = job
-                session.open(job)
-            } catch {
-                clockInError = error.localizedDescription.isEmpty ? "The lead could not be opened. Try again." : error.localizedDescription
-            }
-            opening = false
-        }
+    /// Leads get clock-ins once they're jobs.
+    private var leadNotice: String? {
+        displayProject?.isLead == true ? "You can clock in once this lead is a job." : nil
     }
 
     private func startClockIn() {

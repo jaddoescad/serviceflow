@@ -474,6 +474,19 @@ class CoreChecksTest {
         assertNotNull("camelCase history", entry?.adjustmentHistory?.lastOrNull()?.previousEndedAt)
     }
 
+    @Test
+    fun leadRowsCarryTheWebsitesDescription() {
+        fun lead(vararg extra: Pair<String, Any?>) =
+            Project.fromLeadRow(jsonObject("id" to "l1", "status" to "new", "contact" to mapOf("name" to "Katya"), *extra))
+        assertEquals("the workspace's first", "Two rooms",
+                     lead("workspace" to mapOf("description" to "Two rooms"), "metadata" to mapOf("description" to "Old"))?.description)
+        assertNull("cleared stays cleared",
+                   lead("workspace" to mapOf("description" to ""), "metadata" to mapOf("description" to "Old"))?.description)
+        assertEquals("else what it was imported with", "Imported",
+                     lead("workspace" to null, "metadata" to mapOf("project_description" to " ", "description" to "Imported"))?.description)
+        assertEquals("embedded as a list", "Listed", lead("workspace" to listOf(mapOf("description" to "Listed")))?.description)
+    }
+
     // MARK: Media
 
     @Test
