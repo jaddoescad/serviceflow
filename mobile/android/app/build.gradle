@@ -6,6 +6,12 @@ apply plugin: "com.facebook.react"
 // Upload JS source maps when a build-only SENTRY_AUTH_TOKEN is available.
 if (System.getenv("SENTRY_AUTH_TOKEN")) {
     apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute(null, rootDir).text.trim(), "../sentry.gradle")
+    tasks.withType(Exec).configureEach {
+        if (name.contains("_SentryUpload_")) {
+            // Keep the US endpoint instead of the token's embedded global URL.
+            environment "SENTRY_AUTH_TOKEN", " ${System.getenv('SENTRY_AUTH_TOKEN').trim()}"
+        }
+    }
 }
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
