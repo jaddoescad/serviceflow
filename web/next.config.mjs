@@ -23,7 +23,9 @@ export default withSentryConfig(nextConfig, {
   org: "serviceflowapp",
   project: "serviceflow-web",
   sentryUrl: "https://us.sentry.io/",
-  authToken: process.env.SENTRY_AUTH_TOKEN,
+  // Bearer auth permits leading whitespace. Keep the US URL instead of letting
+  // sentry-cli override it with this organization's embedded global token URL.
+  authToken: process.env.SENTRY_AUTH_TOKEN ? ` ${process.env.SENTRY_AUTH_TOKEN.trim()}` : undefined,
   silent: !process.env.CI,
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
 });

@@ -6,6 +6,7 @@ qa-artifacts/
 outputs/
 tmp/
 node_modules/
+android/.kotlin/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

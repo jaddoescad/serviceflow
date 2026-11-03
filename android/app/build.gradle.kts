@@ -77,7 +77,8 @@ sentry {
     org.set("serviceflowapp")
     projectName.set("serviceflow-android")
     url.set("https://us.sentry.io/")
-    authToken.set(local("SENTRY_AUTH_TOKEN"))
+    // Preserve the regional URL; the token embeds the unresponsive global API.
+    authToken.set(local("SENTRY_AUTH_TOKEN")?.let { " ${it.trim()}" })
     autoUploadProguardMapping.set(!local("SENTRY_AUTH_TOKEN").isNullOrBlank())
     // Error/crash reporting only; no bytecode performance instrumentation.
     tracingInstrumentation { enabled.set(false) }

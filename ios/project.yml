@@ -67,6 +67,8 @@ targets:
             export SENTRY_ORG=serviceflowapp
             export SENTRY_PROJECT=serviceflow-ios
             export SENTRY_URL=https://us.sentry.io/
+            # Preserve the regional URL instead of the token's global URL.
+            export SENTRY_AUTH_TOKEN=" $SENTRY_AUTH_TOKEN"
             if command -v sentry-cli >/dev/null 2>&1; then
               sentry-cli debug-files upload "$DWARF_DSYM_FOLDER_PATH"
             else
