@@ -22,6 +22,7 @@ const nextConfig = {
 export default withSentryConfig(nextConfig, {
   org: "serviceflowapp",
   project: "serviceflow-web",
+  sentryUrl: "https://us.sentry.io/",
   authToken: process.env.SENTRY_AUTH_TOKEN,
   silent: !process.env.CI,
   sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },

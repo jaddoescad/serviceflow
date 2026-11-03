@@ -76,6 +76,7 @@ kotlin { jvmToolchain(17) }
 sentry {
     org.set("serviceflowapp")
     projectName.set("serviceflow-android")
+    url.set("https://us.sentry.io/")
     authToken.set(local("SENTRY_AUTH_TOKEN"))
     autoUploadProguardMapping.set(!local("SENTRY_AUTH_TOKEN").isNullOrBlank())
     // Error/crash reporting only; no bytecode performance instrumentation.

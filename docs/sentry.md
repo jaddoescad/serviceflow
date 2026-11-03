@@ -16,7 +16,8 @@ Session replay and tracing are off; default personal-information collection is o
 ## Build uploads
 
 Set `SENTRY_AUTH_TOKEN` to a Sentry organization token with the `org:ci` scope in
-the build environment. The web build uploads source maps to `serviceflow-web`;
+the build environment. Build uploads use `https://us.sentry.io/` for this US-region
+organization. The web build uploads source maps to `serviceflow-web`;
 the native Android release build uploads R8 mappings to `serviceflow-android`.
 Native iOS Release builds upload dSYMs to `serviceflow-ios` using `sentry-cli`
 (install it on the build machine). Without the token, error reporting still

@@ -66,6 +66,7 @@ targets:
           if [ "$CONFIGURATION" = "Release" ] && [ -n "$SENTRY_AUTH_TOKEN" ]; then
             export SENTRY_ORG=serviceflowapp
             export SENTRY_PROJECT=serviceflow-ios
+            export SENTRY_URL=https://us.sentry.io/
             if command -v sentry-cli >/dev/null 2>&1; then
               sentry-cli debug-files upload "$DWARF_DSYM_FOLDER_PATH"
             else

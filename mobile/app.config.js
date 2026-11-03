@@ -85,7 +85,7 @@ module.exports = {
       ["@sentry/react-native/expo", {
         organization: "serviceflowapp",
         project: "serviceflow-android",
-        url: "https://sentry.io/"
+        url: "https://us.sentry.io/"
       }],
       "expo-asset",
       "expo-font",
