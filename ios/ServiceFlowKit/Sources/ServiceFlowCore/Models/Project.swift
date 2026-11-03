@@ -22,6 +22,8 @@ public struct Project: Codable, Hashable, Identifiable, Sendable {
     public var linkedLeadId: String?
     public var contactName: String?
     public var budget: BudgetProgress?
+    /// The job's description from `job_feed`; nil when it has none.
+    public var description: String?
 
     public init(
         id: String, name: String, status: String? = nil, formattedAddress: String? = nil,
@@ -29,7 +31,7 @@ public struct Project: Codable, Hashable, Identifiable, Sendable {
         province: String? = nil, postalCode: String? = nil, latitude: Double? = nil,
         longitude: Double? = nil, updatedAt: Date? = nil, createdAt: Date? = nil,
         isLead: Bool = false, leadStage: String? = nil, linkedLeadId: String? = nil,
-        contactName: String? = nil, budget: BudgetProgress? = nil
+        contactName: String? = nil, budget: BudgetProgress? = nil, description: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -47,6 +49,7 @@ public struct Project: Codable, Hashable, Identifiable, Sendable {
         self.linkedLeadId = linkedLeadId
         self.contactName = contactName
         self.budget = budget
+        self.description = description
         (self.latitude, self.longitude) = Project.validCoordinate(latitude, longitude)
     }
 
@@ -139,7 +142,8 @@ public extension Project {
             createdAt: row["created_at"]?.dateValue,
             isLead: false,
             linkedLeadId: row["lead_id"]?.nonEmptyString,
-            budget: BudgetProgress(jobFeedRow: row, includeBudgetHours: true)
+            budget: BudgetProgress(jobFeedRow: row, includeBudgetHours: true),
+            description: row["description"]?.nonEmptyString
         )
     }
 

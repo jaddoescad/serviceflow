@@ -33,6 +33,8 @@ data class Project(
     val linkedLeadId: String? = null,
     val contactName: String? = null,
     val budget: BudgetProgress? = null,
+    /** The job's description from `job_feed`; null when it has none. */
+    val description: String? = null,
 ) {
     val isArchived: Boolean get() = status == "archived"
     val isCancelled: Boolean get() = status == "cancelled"
@@ -116,6 +118,7 @@ data class Project(
                 isLead = false,
                 linkedLeadId = row["lead_id"].nonEmptyString,
                 budget = BudgetProgress.fromJobFeedRow(row, includeBudgetHours = true),
+                description = row["description"].nonEmptyString,
             )
         }
 

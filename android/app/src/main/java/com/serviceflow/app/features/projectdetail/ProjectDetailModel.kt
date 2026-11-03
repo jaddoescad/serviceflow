@@ -29,8 +29,8 @@ class ProjectDetailModel(val project: Project, session: SessionContext) : ViewMo
         private set
     var budgetFailed by mutableStateOf(false)
         private set
-    /** The job's description ("" when it has none); null until loaded. */
-    var description by mutableStateOf<String?>(null)
+    /** The job's description ("" when it has none); shown with the job straight away, the refresh picks up later edits. */
+    var description by mutableStateOf(if (project.isLead) null else project.description.orEmpty())
         private set
     /** Entries deleted on this device; hidden even if a refresh lands before the delete syncs. */
     private val deletedKeys = mutableSetOf<String>()

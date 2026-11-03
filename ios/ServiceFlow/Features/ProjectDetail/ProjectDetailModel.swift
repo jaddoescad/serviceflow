@@ -20,6 +20,8 @@ final class ProjectDetailModel {
     init(project: Project) {
         self.project = project
         budget = project.budget
+        // Shown with the job straight away; the refresh picks up later edits.
+        jobDescription = project.isLead ? nil : (project.description ?? "")
     }
 
     var jobId: String { project.id }
