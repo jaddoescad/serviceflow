@@ -3,6 +3,11 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.google.gms.google-services"
 apply plugin: "com.facebook.react"
 
+// Upload JS source maps when a build-only SENTRY_AUTH_TOKEN is available.
+if (System.getenv("SENTRY_AUTH_TOKEN")) {
+    apply from: new File(["node", "--print", "require.resolve('@sentry/react-native/package.json')"].execute(null, rootDir).text.trim(), "../sentry.gradle")
+}
+
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
 /**

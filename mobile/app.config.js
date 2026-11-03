@@ -75,13 +75,18 @@ module.exports = {
     },
     // Bare native projects require a literal OTA runtime version. Increment
     // this whenever a release changes native code or native dependencies.
-    runtimeVersion: "1.5.0",
+    runtimeVersion: "1.5.1",
     updates: {
       url: `https://u.expo.dev/${easProjectId}`,
       fallbackToCacheTimeout: 0
     },
     assetBundlePatterns: ["**/*"],
     plugins: [
+      ["@sentry/react-native/expo", {
+        organization: "serviceflowapp",
+        project: "serviceflow-android",
+        url: "https://sentry.io/"
+      }],
       "expo-asset",
       "expo-font",
       [

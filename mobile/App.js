@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as Sentry from "@sentry/react-native";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -31,13 +33,25 @@ import UpdateReadyPrompt from "./src/components/UpdateReadyPrompt";
 
 const Stack = createNativeStackNavigator();
 
+Sentry.init({
+  dsn: Platform.OS === "ios"
+    ? "https://d8e30a2ff1c133266750046bb25cf932@o4511039040061440.ingest.us.sentry.io/4512368335650816"
+    : "https://cd83a3097efb02ff77ebea980aabc16a@o4511039040061440.ingest.us.sentry.io/4512368332832768",
+  enabled: !__DEV__,
+  environment: __DEV__ ? "development" : "production",
+  sendDefaultPii: false,
+  tracesSampleRate: 0,
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
+});
+
 const BASE_TABS = [
   { key: "clock", label: "Clock In", icon: "clock" },
   { key: "projects", label: "Jobs", icon: "projects" },
   { key: "timesheet", label: "Timesheet", icon: "timesheet" },
 ];
 
-export default function App() {
+function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" backgroundColor={COLORS.white} />
@@ -46,6 +60,8 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+export default Sentry.wrap(App);
 
 function AppRoot() {
 

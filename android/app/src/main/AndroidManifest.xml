@@ -27,6 +27,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ServiceFlow">
 
+        <!-- Initialize explicitly before AppModel so debug builds remain quiet. -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
+
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${mapsApiKey}" />

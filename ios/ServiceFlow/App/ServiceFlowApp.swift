@@ -1,8 +1,23 @@
 import ServiceFlowCore
 import SwiftUI
+import Sentry
 
 @main
 struct ServiceFlowApp: App {
+    init() {
+        SentrySDK.start { options in
+            options.dsn = "https://d8e30a2ff1c133266750046bb25cf932@o4511039040061440.ingest.us.sentry.io/4512368335650816"
+            #if DEBUG
+            options.enabled = false
+            options.environment = "development"
+            #else
+            options.environment = "production"
+            #endif
+            options.sendDefaultPii = false
+            options.tracesSampleRate = 0
+        }
+    }
+
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase

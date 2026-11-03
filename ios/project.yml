@@ -16,6 +16,9 @@ settings:
     MARKETING_VERSION: "2.0.4"
     CURRENT_PROJECT_VERSION: "105"
 packages:
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: "9.32.0"
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: "2.30.0"
@@ -28,6 +31,8 @@ targets:
     sources:
       - path: ServiceFlow
     dependencies:
+      - package: Sentry
+        product: Sentry
       - package: ServiceFlowKit
         product: ServiceFlowCore
       - package: Supabase
@@ -47,9 +52,24 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_PREVIEWS: YES
+        DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+    postBuildScripts:
+      - name: Upload Sentry debug symbols
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$CONFIGURATION" = "Release" ] && [ -n "$SENTRY_AUTH_TOKEN" ]; then
+            export SENTRY_ORG=serviceflowapp
+            export SENTRY_PROJECT=serviceflow-ios
+            if command -v sentry-cli >/dev/null 2>&1; then
+              sentry-cli debug-files upload "$DWARF_DSYM_FOLDER_PATH"
+            else
+              echo "error: Install sentry-cli to upload release debug symbols."
+              exit 1
+            fi
+          fi
   ServiceFlowUITests:
     # Captures App Store screenshots; see ServiceFlowUITests/AppStoreScreenshots.swift.
     type: bundle.ui-testing

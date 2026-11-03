@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@openai/agents": "^0.13.5",
+    "@sentry/nextjs": "^10.78.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.107.0",
     "fflate": "^0.8.3",

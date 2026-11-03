@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    id("io.sentry.android.gradle") version "6.25.0"
 }
 
 // Git-ignored machine settings: the Google Maps key and release signing.
@@ -72,7 +73,18 @@ android {
 
 kotlin { jvmToolchain(17) }
 
+sentry {
+    org.set("serviceflowapp")
+    projectName.set("serviceflow-android")
+    authToken.set(System.getenv("SENTRY_AUTH_TOKEN"))
+    autoUploadProguardMapping.set(!System.getenv("SENTRY_AUTH_TOKEN").isNullOrBlank())
+    // Error/crash reporting only; no bytecode performance instrumentation.
+    tracingInstrumentation { enabled.set(false) }
+    autoInstallation { enabled.set(false) }
+}
+
 dependencies {
+    implementation("io.sentry:sentry-android:8.62.0")
     implementation(project(":core"))
     implementation(libs.kotlinx.coroutines.android)
 
