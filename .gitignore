@@ -4,6 +4,7 @@
 # iOS
 /ios/ServiceFlow.xcodeproj/
 /ios/Config/Signing.xcconfig
+/ios/Config/sentry-build-token
 /ios/ServiceFlowKit/.build/
 /ios/ServiceFlowKit/.swiftpm/
 /ios/build/

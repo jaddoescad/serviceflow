@@ -22,6 +22,9 @@ Native iOS Release builds upload dSYMs to `serviceflow-ios` using `sentry-cli`
 (install it on the build machine). Without the token, error reporting still
 works, but minified/obfuscated stack traces may be less readable.
 
+Local native builds can also read the token from git-ignored configuration:
+`SENTRY_AUTH_TOKEN` in `android/local.properties` and `ios/Config/sentry-build-token`.
+
 For the React Native Android build, store `SENTRY_AUTH_TOKEN` as an EAS secret
 or inject it into the local Gradle build environment. Project settings are in
 `mobile/android/sentry.properties`; the Metro config adds source-map debug IDs.
