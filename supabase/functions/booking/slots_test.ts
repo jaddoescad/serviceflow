@@ -76,6 +76,21 @@ Deno.test("the person with the shortest drive comes first", () => {
   assert.deepEqual(times.get(at(10, 30))!.map((candidate) => candidate.userId), ["jad"]);
 });
 
+Deno.test("a visit nobody is assigned to counts for everyone", () => {
+  const context = {
+    ...base,
+    people: [scott, jad],
+    appointments: [{ userId: null, startsAt: iso(10), endsAt: iso(11), location: "1 Main St" }],
+  };
+  const times = openTimes(context, day, 60, "1 Main St", 0, flat(30));
+  // Next door to it, so right after it, for either person.
+  assert.deepEqual(times.get(at(11))!.map((candidate) => [candidate.userId, candidate.driveBefore]), [
+    ["scott", 0],
+    ["jad", 0],
+  ]);
+  assert.equal(times.has(at(10)), false);
+});
+
 Deno.test("hours ending at midnight and split days both work", () => {
   const context = {
     ...base,

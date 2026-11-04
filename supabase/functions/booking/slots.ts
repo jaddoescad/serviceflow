@@ -6,7 +6,8 @@ import { instant, wall, weekday } from "../_shared/zoned.ts";
 
 export type Hours = { day: number; start: string; end: string };
 export type Person = { id: string; name: string; hours: Hours[]; maxPerDay: number | null };
-export type Booked = { userId: string; startsAt: string; endsAt: string; location: string | null };
+/** A visit nobody is assigned to (`userId` null) is on everyone's day: whoever takes it drives there. */
+export type Booked = { userId: string | null; startsAt: string; endsAt: string; location: string | null };
 export type Busy = { userId: string; startsAt: string; endsAt: string };
 
 export type Context = {
@@ -65,7 +66,7 @@ export function openTimes(
     const windows = person.hours.filter((hours) => hours.day === weekday(day));
     if (!windows.length) continue;
     const booked = context.appointments
-      .filter((item) => item.userId === person.id)
+      .filter((item) => item.userId === person.id || item.userId === null)
       .map((item) => ({ start: Date.parse(item.startsAt), end: Date.parse(item.endsAt), location: item.location }));
     const dayCount = booked.filter((item) => wall(item.start, zone).day === day).length;
     if (person.maxPerDay && dayCount >= person.maxPerDay) continue;
