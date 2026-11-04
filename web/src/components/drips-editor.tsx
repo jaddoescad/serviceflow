@@ -535,17 +535,20 @@ const TEMPLATES: { key: DripTemplate; label: string }[] = [
 export function DripsEditor({
   pipeline,
   stages,
+  initialStageId,
   quoConnected,
   reviewLinkSet = false,
 }: {
   pipeline: "sales" | "jobs";
   stages: DripStage[];
+  /** The stage to open on (the pipeline board's gear links here). */
+  initialStageId?: string;
   quoConnected: boolean;
   /** Whether the company has a review link, which the review request template needs. */
   reviewLinkSet?: boolean;
 }) {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState(stages[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(initialStageId ?? stages[0]?.id ?? "");
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [records, setRecords] = useState<PreviewRecord[] | null>(null);
   const [previewRecordId, setPreviewRecordId] = useState("");

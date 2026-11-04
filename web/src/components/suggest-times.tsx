@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { suggestTimes } from "@/lib/actions/booking";
 import type { NearbyVisit, OpenWindow, SuggestedTimes, TimeOfDay } from "@/lib/booking-types";
 import { Button, Segmented, Select, Spinner, Tag, cn } from "./ui";
@@ -55,8 +55,8 @@ function nearestVisit(stretch: OpenWindow): NearbyVisit | null {
  * the day go in; out come the free stretches of the person it's assigned to
  * (or anyone who takes appointments): the requested ones first and closest to
  * their other visits first, then the nearest other days. Picking one fills in
- * the date, a start next to their other visits and the person; the start can
- * be moved within the stretch.
+ * the date and a start next to their other visits, and the person when the
+ * times are split between several; the start can be moved within the stretch.
  */
 export function SuggestTimes({
   search,
@@ -69,9 +69,10 @@ export function SuggestTimes({
   /** Today in company time, YYYY-MM-DD. */
   today: string;
   startOpen: boolean;
-  /** The picked time's start and person, to mark it. */
-  chosen: { start: string; userId: string } | null;
-  onPick: (pick: { start: string; userId: string }) => void;
+  /** The picked time's start and person (null when nobody is assigned), to mark it. */
+  chosen: { start: string; userId: string | null } | null;
+  /** `userId` null leaves the assignee as it is. */
+  onPick: (pick: { start: string; userId: string | null }) => void;
 }) {
   const [open, setOpen] = useState(startOpen);
   const [days, setDays] = useState<string[]>([]);
@@ -80,20 +81,33 @@ export function SuggestTimes({
   const [result, setResult] = useState<(SuggestedTimes & { forUser: string | null }) | null>(null);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
+  // Only the latest search's times are shown.
+  const latest = useRef(0);
   const shownDays = Array.from({ length: DAYS_SHOWN }, (_, index) => addDays(today, index));
 
   // Times found for another address, length or request no longer apply. (Not
   // the person: picking a time for anyone sets it.)
   const searchKey = JSON.stringify([search.address.trim(), search.minutes, days, window]);
   useEffect(() => {
+    latest.current += 1;
     setResult(null);
     setError("");
   }, [searchKey]);
 
+  // Opening the panel, or picking days or a part of the day, looks right away;
+  // a new address waits for Find times so typing doesn't search.
+  const requestKey = JSON.stringify([days, window]);
+  useEffect(() => {
+    if (open && search.address.trim()) find();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, requestKey]);
+
   function find() {
+    const ticket = ++latest.current;
     startTransition(async () => {
       setError("");
       const found = await suggestTimes({ ...search, days, window });
+      if (ticket !== latest.current) return;
       if ("error" in found) setError(found.error);
       else setResult({ ...found, forUser: search.userId });
     });
@@ -111,9 +125,12 @@ export function SuggestTimes({
     );
   }
 
-  const isPicked = (stretch: OpenWindow) => chosen?.userId === stretch.userId && stretch.starts.includes(chosen.start);
-  // Names only when the stretches are split between people.
+  // Names only when the stretches are split between people; only then does
+  // picking one set who goes.
   const named = !result?.forUser && new Set(result?.windows.map((stretch) => stretch.userId)).size > 1;
+  const pickedBy = (stretch: OpenWindow) => (named ? stretch.userId : null);
+  const isPicked = (stretch: OpenWindow) =>
+    chosen !== null && (!chosen.userId || chosen.userId === stretch.userId) && stretch.starts.includes(chosen.start);
 
   const row = (stretch: OpenWindow) => {
     const picked = isPicked(stretch);
@@ -135,7 +152,7 @@ export function SuggestTimes({
         <button
           type="button"
           aria-pressed={picked}
-          onClick={() => onPick({ start: stretch.suggested, userId: stretch.userId })}
+          onClick={() => onPick({ start: stretch.suggested, userId: pickedBy(stretch) })}
           className="flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-left outline-none focus-visible:shadow-[var(--focus-ring)]"
         >
           <span
@@ -164,7 +181,7 @@ export function SuggestTimes({
             <Select
               aria-label="Start at"
               value={chosen!.start}
-              onChange={(event) => onPick({ start: event.target.value, userId: stretch.userId })}
+              onChange={(event) => onPick({ start: event.target.value, userId: pickedBy(stretch) })}
               className="h-7 text-xs"
             >
               {stretch.starts.map((start) => (

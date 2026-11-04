@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import { PipelineView } from "@/components/pipeline-board";
+import { getReminderRules } from "@/lib/actions/reminders";
+import { APPOINTMENT_KINDS } from "@/lib/appointment-types";
 import { requireStaff } from "@/lib/auth";
 import { getCustomerListOptions } from "@/lib/contacts";
 import { getPipelineBoard, getPipelineViews } from "@/lib/pipeline";
 import { isPipelineKey } from "@/lib/pipeline-types";
 import { getProjectLabels } from "@/lib/project-workspace";
+import { sendsConfirmation } from "@/lib/reminder-types";
 
 export const dynamic = "force-dynamic";
 
@@ -17,12 +20,14 @@ export default async function PipelinePage({
 }) {
   const [{ pipeline }, query] = await Promise.all([params, searchParams]);
   if (!isPipelineKey(pipeline)) notFound();
-  const [profile, board, labels, savedViews, options] = await Promise.all([
+  const [profile, board, labels, savedViews, options, rules] = await Promise.all([
     requireStaff(),
     getPipelineBoard(pipeline),
     getProjectLabels(),
     getPipelineViews(pipeline),
     getCustomerListOptions(),
+    // Deals book estimates from their cards.
+    pipeline === "sales" ? getReminderRules() : [],
   ]);
   return (
     <PipelineView
@@ -32,6 +37,7 @@ export default async function PipelinePage({
       savedViews={savedViews}
       userId={profile.user_id}
       team={options.team}
+      confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
       viewId={query.v ?? null}
       view={query.view === "list" ? "list" : "board"}
     />

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import type { AppointmentKind } from "@/lib/appointment-types";
 import type { TeamOption } from "@/lib/crm-types";
 import { setDealDripsPaused } from "@/lib/actions/messaging";
 import { getArchivedCards, setDealArchived } from "@/lib/actions/pipeline";
@@ -24,6 +25,7 @@ import {
   type SavedPipelineView,
 } from "@/lib/pipeline-views";
 import type { ProjectLabel } from "@/lib/project-workspace";
+import { BookAppointmentDialog } from "./appointments-calendar";
 import { BulkActions } from "./bulk-actions";
 import { CreateWorkspaceProject } from "./create-workspace-project";
 import { MessageCustomerDialog } from "./inbox/message-customer-dialog";
@@ -37,6 +39,7 @@ import {
   ArchivedToggle,
   CalendarIcon,
   Dot,
+  GearIcon,
   Initials,
   LabelTags,
   MoreIcon,
@@ -65,6 +68,7 @@ function BoardCard({
   onDragEnd,
   onEditLabels,
   onMenu,
+  onSchedule,
   followUp,
 }: {
   card: PipelineCard;
@@ -77,6 +81,8 @@ function BoardCard({
   onDragEnd: () => void;
   onEditLabels: () => void;
   onMenu: (anchor: DOMRect) => void;
+  /** Deals without an estimate or proposal yet book one from the card. */
+  onSchedule?: () => void;
 }) {
   // Sales cards leave the amount to the deal page and list view.
   const value = !isSales && card.valueCents ? fmtMoney(card.valueCents / 100) : null;
@@ -126,13 +132,22 @@ function BoardCard({
         </button>
       </div>
 
-      {card.dateOn || value ? (
+      {card.dateOn || value || onSchedule ? (
         <div className="mt-2.5 flex items-center gap-3 text-xs text-[var(--color-muted)]">
           {card.dateOn ? (
             <span className={cn("flex items-center gap-1.5", !card.archived && card.dateOn < today && "text-[var(--tag-red-text)]")}>
               <CalendarIcon className="h-3.5 w-3.5" />
               {fmtDay(card.dateOn)}
             </span>
+          ) : onSchedule ? (
+            <button
+              type="button"
+              onClick={onSchedule}
+              className="relative z-10 flex items-center gap-1.5 rounded-md font-medium text-[var(--color-brand-strong)] outline-none hover:underline focus-visible:shadow-[var(--focus-ring)]"
+            >
+              <CalendarIcon className="h-3.5 w-3.5" />
+              Schedule
+            </button>
           ) : null}
           {value ? <span className="ml-auto tabular-nums">{value}</span> : null}
         </div>
@@ -183,6 +198,7 @@ export function PipelineView({
   savedViews,
   userId,
   team,
+  confirmationKinds,
   viewId: initialViewId,
   view: initialMode,
 }: {
@@ -191,6 +207,8 @@ export function PipelineView({
   savedViews: SavedPipelineView[];
   userId: string;
   team: TeamOption[];
+  /** Appointment types booking can confirm to the customer. */
+  confirmationKinds: AppointmentKind[];
   viewId: string | null;
   view: PipelineViewMode;
 }) {
@@ -213,6 +231,7 @@ export function PipelineView({
   const [moving, setMoving] = useState<{ card: PipelineCard; stageId: string } | null>(null);
   const [labelCard, setLabelCard] = useState<PipelineCard | null>(null);
   const [messageCard, setMessageCard] = useState<PipelineCard | null>(null);
+  const [bookingCard, setBookingCard] = useState<PipelineCard | null>(null);
   const [editingStages, setEditingStages] = useState(false);
   const [menu, setMenu] = useState<CardMenuState | null>(null);
   // Archived deals stay hidden until their column's (or the list's) "Archived"
@@ -527,6 +546,14 @@ export function PipelineView({
                   onDragEnd={endDrag}
                   onEditLabels={() => setLabelCard(card)}
                   onMenu={(anchor) => setMenu((current) => (current?.card.id === card.id ? null : { card, anchor }))}
+                  onSchedule={
+                    isSales && !stage.isClosed && !card.archived && !card.dateOn && !card.quoteId
+                      ? () => {
+                          closeMenu();
+                          setBookingCard(card);
+                        }
+                      : undefined
+                  }
                   followUp={followUps?.get(card.id)}
                 />
               );
@@ -541,6 +568,17 @@ export function PipelineView({
                         {fmtMoney(stageValue(open) / 100)}
                       </span>
                     ) : null}
+                    <Link
+                      href={`/drips?${isSales ? "" : "view=jobs&"}stage=${stage.id}`}
+                      title={`${stage.name} automations`}
+                      aria-label={`${stage.name} automations`}
+                      className={cn(
+                        "grid h-6 w-6 shrink-0 place-items-center rounded-[var(--radius-control)] text-[var(--color-faint)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)]",
+                        !isSales && stageValue(open) ? "" : "ml-auto",
+                      )}
+                    >
+                      <GearIcon />
+                    </Link>
                   </header>
                   <div
                     className={cn(
@@ -665,6 +703,16 @@ export function PipelineView({
         />
       ) : null}
       {messageCard ? <MessageCustomerDialog card={messageCard} onClose={() => setMessageCard(null)} /> : null}
+      {bookingCard ? (
+        <BookAppointmentDialog
+          project={{ id: bookingCard.id, name: bookingCard.name, address: bookingCard.address ?? "" }}
+          assignedTo={bookingCard.salespersonId ?? ""}
+          today={today}
+          team={team}
+          confirmationKinds={confirmationKinds}
+          onClose={() => setBookingCard(null)}
+        />
+      ) : null}
       {editingStages ? (
         <PipelineStagesEditor pipeline={board.pipeline} stages={stages} onClose={() => setEditingStages(false)} />
       ) : null}

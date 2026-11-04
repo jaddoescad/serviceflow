@@ -405,8 +405,8 @@ function AppointmentDialog({
   const canConfirm = confirmable && confirmationKinds.includes(draft.kind);
   const [startHour, startMinute] = draft.start.split(":").map(Number);
   const chosen =
-    draft.date && draft.assignedTo && Number.isFinite(startHour)
-      ? { start: instant(draft.date, startHour * 60 + startMinute).toISOString(), userId: draft.assignedTo }
+    draft.date && Number.isFinite(startHour)
+      ? { start: instant(draft.date, startHour * 60 + startMinute).toISOString(), userId: draft.assignedTo || null }
       : null;
 
   useEffect(() => {
@@ -574,7 +574,7 @@ function AppointmentDialog({
               chosen={chosen}
               onPick={(time) => {
                 const starts = wall(time.start);
-                patch({ date: starts.day, start: inputTime(starts.minutes), assignedTo: time.userId });
+                patch({ date: starts.day, start: inputTime(starts.minutes), ...(time.userId ? { assignedTo: time.userId } : {}) });
               }}
             />
           )}
@@ -636,6 +636,47 @@ function AppointmentDialog({
   );
 }
 
+type BookingProject = { id: string; name: string; address: string };
+
+const newDraft = (day: string, minutes: number, kind: AppointmentKind, assignedTo: string, project?: BookingProject): Draft => ({
+  isNew: true,
+  id: crypto.randomUUID(),
+  projectId: project?.id ?? "",
+  projectName: project?.name ?? "",
+  title: KIND_TITLES[kind],
+  kind,
+  date: day,
+  start: inputTime(minutes),
+  minutes: 60,
+  assignedTo,
+  location: project?.address ?? "",
+  notes: "",
+  status: "scheduled",
+  notify: true,
+});
+
+/** Booking a deal's estimate from outside the calendar (the sales pipeline), on the same form. */
+export function BookAppointmentDialog({
+  project,
+  assignedTo,
+  today,
+  team,
+  confirmationKinds,
+  onClose,
+}: {
+  project: BookingProject;
+  assignedTo: string;
+  /** Today in Ottawa, YYYY-MM-DD. */
+  today: string;
+  team: TeamMember[];
+  /** Types an enabled confirmation is set up for. */
+  confirmationKinds: AppointmentKind[];
+  onClose: () => void;
+}) {
+  const [draft] = useState(() => newDraft(addDays(today, 1), 9 * 60, "estimate", assignedTo, project));
+  return <AppointmentDialog draft={draft} today={today} team={team} confirmationKinds={confirmationKinds} onClose={onClose} />;
+}
+
 /**
  * Full-page appointments calendar: a Sunday-first month grid or three days
  * hour by hour. The URL holds the view, the date and the type and person filters.
@@ -667,27 +708,12 @@ export function AppointmentsCalendar({
   team: TeamMember[];
   /** Types an enabled confirmation is set up for. */
   confirmationKinds: AppointmentKind[];
-  newFor: { id: string; name: string; address: string } | null;
+  newFor: BookingProject | null;
 }) {
   const router = useRouter();
   const [kind, setKind] = useState(initialKind);
   const [user, setUser] = useState(initialUser);
-  const blank = (day: string, minutes = 9 * 60, project?: { id: string; name: string; address: string }): Draft => ({
-    isNew: true,
-    id: crypto.randomUUID(),
-    projectId: project?.id ?? "",
-    projectName: project?.name ?? "",
-    title: KIND_TITLES[kind || "estimate"],
-    kind: kind || "estimate",
-    date: day,
-    start: inputTime(minutes),
-    minutes: 60,
-    assignedTo: user,
-    location: project?.address ?? "",
-    notes: "",
-    status: "scheduled",
-    notify: true,
-  });
+  const blank = (day: string, minutes = 9 * 60, project?: BookingProject) => newDraft(day, minutes, kind || "estimate", user, project);
   const [draft, setDraft] = useState<Draft | null>(() => (newFor ? blank(addDays(today, 1), 9 * 60, newFor) : null));
 
   type Filters = { kind: string; user: string };

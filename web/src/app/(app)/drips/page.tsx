@@ -14,8 +14,8 @@ const VIEWS = [
   ["reminders", "Reminders"],
 ] as const;
 
-export default async function DripsPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const { view: requested } = await searchParams;
+export default async function DripsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string }> }) {
+  const { view: requested, stage } = await searchParams;
   const view = VIEWS.find(([key]) => key === requested)?.[0] ?? "sales";
   await requireStaff();
   const [settings, stages, rules, reviews] = await Promise.all([
@@ -42,6 +42,7 @@ export default async function DripsPage({ searchParams }: { searchParams: Promis
           key={view}
           pipeline={view}
           stages={stages}
+          initialStageId={stage}
           quoConnected={settings.quoConnected}
           reviewLinkSet={Boolean(reviews?.reviewLink)}
         />
