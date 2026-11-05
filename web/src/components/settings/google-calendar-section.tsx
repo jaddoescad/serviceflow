@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import {
   disconnectMyCalendar,
@@ -17,6 +18,23 @@ const STATUS: Record<"connected" | "error" | "disconnecting", { tone: "good" | "
   error: { tone: "bad", text: "Not syncing" },
   disconnecting: { tone: "neutral", text: "Disconnecting…" },
 };
+
+/** The connection's state, linking to this section in Settings. */
+export function GoogleCalendarStatusLink({ connection }: { connection: CalendarConnection }) {
+  const { tone, text } = connection.connected
+    ? STATUS[connection.status]
+    : ({ tone: "neutral", text: "Not connected" } as const);
+  return (
+    <Link href="/settings#calendar" className={buttonClassName({ variant: "ghost", className: "max-sm:-ml-3" })}>
+      <StatusText tone={tone}>
+        {/* Phones drop "Google" so this fits beside the page's action. */}
+        <span>
+          <span className="max-sm:hidden">Google </span>Calendar · {text}
+        </span>
+      </StatusText>
+    </Link>
+  );
+}
 
 export function GoogleCalendarSection({
   connection,

@@ -117,7 +117,7 @@ export function IntegrationsSection({
         <IntegrationRow
           initial="DJ"
           name="DripJobs"
-          description="New leads, quotes and won jobs arrive automatically."
+          description="New deals, quotes and won jobs arrive automatically."
           tone={dripjobs.events === 0 ? "neutral" : dripjobs.failed30d ? "warn" : dripjobsRecent ? "good" : "warn"}
           status={
             dripjobs.events === 0

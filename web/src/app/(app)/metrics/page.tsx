@@ -44,8 +44,8 @@ export default async function MetricsPage({
       <SectionLabel>Conversions &amp; volume</SectionLabel>
       <StatGrid columns={4} className="mb-6">
         <Stat label="Closing ratio" value={percent(metrics.jobsWon, metrics.proposalsSent)} hint={`${metrics.jobsWon} won of ${metrics.proposalsSent} proposals sent`} />
-        <Stat label="Set rate" value={percent(metrics.booked, metrics.leads)} hint={`${metrics.booked} of ${metrics.leads} new leads reached an estimate`} />
-        <Stat label="New leads" value={metrics.leads} />
+        <Stat label="Set rate" value={percent(metrics.booked, metrics.leads)} hint={`${metrics.booked} of ${metrics.leads} new deals reached an estimate`} />
+        <Stat label="New deals" value={metrics.leads} />
         <Stat label="Appointments" value={metrics.appointments} hint="Booked in this period" />
       </StatGrid>
       <SectionLabel>By lead source</SectionLabel>
@@ -54,7 +54,7 @@ export default async function MetricsPage({
           <thead>
             <tr>
               <Th>Source</Th>
-              <Th numeric>Leads</Th>
+              <Th numeric>Deals</Th>
               <Th numeric>Set rate</Th>
               <Th numeric>Jobs won</Th>
               <Th numeric>Sales</Th>
@@ -72,7 +72,7 @@ export default async function MetricsPage({
             ))}
           </tbody>
         </DataTable>
-        {metrics.bySource.length ? null : <EmptyState>No leads or wins in this period.</EmptyState>}
+        {metrics.bySource.length ? null : <EmptyState>No deals or wins in this period.</EmptyState>}
       </TablePanel>
     </>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { saveAppointment } from "@/lib/actions/appointments";
+import type { CalendarConnection } from "@/lib/actions/calendar";
 import { searchProjects } from "@/lib/actions/project-search";
 import {
   APPOINTMENT_KINDS,
@@ -30,6 +31,7 @@ import {
 } from "./calendar-month-grid";
 import { ProjectModal } from "./project-profile-panel";
 import { AddressInput } from "./address-input";
+import { GoogleCalendarStatusLink } from "./settings/google-calendar-section";
 import { SuggestTimes } from "./suggest-times";
 import { Button, Field, Input, Select, StatusText, Textarea, cn, type TagTone } from "./ui";
 
@@ -691,6 +693,7 @@ export function AppointmentsCalendar({
   appointments,
   team,
   confirmationKinds,
+  calendar,
   newFor,
 }: {
   view: AppointmentsView;
@@ -708,6 +711,7 @@ export function AppointmentsCalendar({
   team: TeamMember[];
   /** Types an enabled confirmation is set up for. */
   confirmationKinds: AppointmentKind[];
+  calendar: CalendarConnection;
   newFor: BookingProject | null;
 }) {
   const router = useRouter();
@@ -757,7 +761,12 @@ export function AppointmentsCalendar({
     <div className="page-fill">
       <CalendarHeader
         title="Appointments"
-        action={<Button onClick={() => setDraft(blank(view === "3day" ? start : addDays(today, 1)))}>+ New Appointment</Button>}
+        action={
+          <>
+            <GoogleCalendarStatusLink connection={calendar} />
+            <Button onClick={() => setDraft(blank(view === "3day" ? start : addDays(today, 1)))}>+ New Appointment</Button>
+          </>
+        }
         view={view}
         views={[
           { value: "month", label: "Month", href: href({ view: "month", month: view === "3day" ? start.slice(0, 7) : month }) },

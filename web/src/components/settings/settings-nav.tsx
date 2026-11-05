@@ -42,6 +42,9 @@ export function SettingsNav() {
           sections[0];
       setActive(current.id);
     }
+    // Arriving from another page, the route's loading screen uses up Next's own
+    // scroll to the hash.
+    if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
     update();
     window.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);

@@ -458,6 +458,40 @@ func runChecks() async {
                     "https://www.google.com/maps/dir/?api=1&destination=5%20Elm%20St%2C%20Ottawa", "else the parts")
         expect(Project(id: "j3", name: "Job", latitude: 45.4, longitude: -75.7).directionsURL == nil, "none without an address")
     }
+
+    await check("Descriptions keep bold, italic, links and lists") {
+        let plain = "Two coats in the kitchen\n- walls\n- trim\n\nGate code 1234"
+        expectEqual(RichText.markdown(RichText.lines(plain)), plain, "plain text reads as it was written")
+        expectEqual(RichText.lines(plain).map(\.kind), [.text, .bullet, .bullet, .text, .text], "dash lines are bullets")
+
+        let lines = [
+            RichText.Line(.text, [RichText.Run("Paint "), RichText.Run("all", bold: true), RichText.Run(" rooms "),
+                                  RichText.Run("except", bold: true, italic: true), RichText.Run(" the den", bold: true)]),
+            RichText.Line(.numbered(1), [RichText.Run("See "), RichText.Run("colours", link: "https://example.com/a(1)")]),
+            RichText.Line(.numbered(2), [RichText.Run("Call ", italic: true), RichText.Run("Kim", italic: true, link: "tel:6135550101")]),
+            RichText.Line(.bullet, [RichText.Run("2*3 = 6_ [maybe] \\ ok")]),
+            RichText.Line(.text, [RichText.Run("- not a list")]),
+            RichText.Line(.text, [RichText.Run("1. not numbered either")]),
+        ]
+        let markdown = RichText.markdown(lines)
+        expectEqual(markdown, """
+            Paint **all** rooms **_except_ the den**
+            1. See [colours](https://example.com/a(1%29)
+            2. _Call [Kim](tel:6135550101)_
+            - 2\\*3 = 6\\_ \\[maybe\\] \\\\ ok
+            \\- not a list
+            \\1. not numbered either
+            """, "written as Markdown with markers that never touch")
+        expectEqual(RichText.lines(markdown)[0], lines[0], "bold and italic read back")
+        expectEqual(RichText.lines(markdown)[2], lines[2], "an italic link reads back")
+        expectEqual(Array(RichText.lines(markdown)[3...]), Array(lines[3...]), "literal markers and list-like text read back")
+
+        expectEqual(RichText.lines("**bold ** and [x](javascript:alert(1))")[0].runs, [RichText.Run("**bold ** and [x](javascript:alert(1))")],
+                    "unclosed markers and unsafe links stay text")
+        expectEqual(RichText.linkAddress("example.com/colours"), "https://example.com/colours", "a bare site opens over https")
+        expectEqual(RichText.linkAddress("kim@example.com"), "mailto:kim@example.com", "an email address opens mail")
+        expect(RichText.linkAddress("not a link") == nil, "words aren't a link")
+    }
 }
 
 @MainActor

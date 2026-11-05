@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/kpi";
-import { ProjectCrumb } from "@/components/job-shell";
 import { ProjectTabs } from "@/components/project-tabs";
 import { Badge, Select } from "@/components/ui";
 import { fmtMoney } from "@/lib/format";
@@ -82,7 +81,7 @@ export function CalculatorPage({
       {/* The pane carries the page gutter so the top bar and tabs span it. */}
       <div className="min-w-0 flex-1 overflow-y-auto px-[var(--gutter)] pb-6 pt-[var(--page-pad-y)]">
         <PageHeader
-          title={<ProjectCrumb name={displayName || "Job calculator"} />}
+          title={displayName || "Job calculator"}
           actions={isLead ? <Badge tone="brand">Deal</Badge> : null}
         />
         <ProjectTabs

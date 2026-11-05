@@ -1,5 +1,6 @@
 import { AppointmentsCalendar } from "@/components/appointments-calendar";
 import { addDays, isDay, isMonth, monthWeeks } from "@/components/calendar-month-grid";
+import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { getReminderRules } from "@/lib/actions/reminders";
 import { APPOINTMENT_KINDS, isAppointmentKind } from "@/lib/appointment-types";
 import { requireStaff } from "@/lib/auth";
@@ -30,11 +31,12 @@ export default async function AppointmentsPage({
   const rangeStart = new Date(`${addDays(first, -1)}T00:00:00Z`);
   const rangeEnd = new Date(`${addDays(first, days + 1)}T00:00:00Z`);
   const supabase = await createClient();
-  const [, appointments, team, rules, project] = await Promise.all([
+  const [, appointments, team, rules, calendar, project] = await Promise.all([
     requireStaff(),
     getAppointments(rangeStart, rangeEnd),
     getActiveTeam(),
     getReminderRules(),
+    getMyCalendarConnection(),
     query.new
       ? supabase.from("project_directory").select("id,name,address").eq("id", query.new).maybeSingle()
       : null,
@@ -51,6 +53,7 @@ export default async function AppointmentsPage({
       appointments={appointments}
       team={team}
       confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
+      calendar={calendar}
       newFor={target ? { id: target.id, name: target.name, address: target.address ?? "" } : null}
     />
   );

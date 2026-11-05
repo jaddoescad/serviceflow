@@ -1,5 +1,5 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { parseQuoCall, parseQuoEvent, verifyQuoSignature } from "./quo.ts";
+import { callCustomer, eventShape, parseQuoCall, parseQuoEvent, sameNumber, verifyQuoSignature } from "./quo.ts";
 
 const received = {
   id: "EV1",
@@ -118,6 +118,39 @@ Deno.test("newer webhooks carry the message at data.resource and the numbers in 
     receivedAt: "2026-10-24T12:00:00.000Z",
     attachments: [],
   });
+});
+
+Deno.test("a call that only lists its participants files under the customer, not the company's line", () => {
+  const line = "+16138018262";
+  const missed = parseQuoCall(
+    {
+      type: "call.completed",
+      data: {
+        resource: { id: "AC3", direction: "incoming", status: "no-answer", participants: ["+16137479908"], createdAt: "2026-11-03T18:21:00.000Z" },
+        context: { phoneNumberId: "PN1" },
+      },
+    },
+    line,
+  );
+  assertEquals(missed && { from: missed.from, to: missed.to, customer: callCustomer(missed) }, {
+    from: "+16137479908",
+    to: line,
+    customer: "+16137479908",
+  });
+
+  const outgoing = parseQuoCall(
+    { type: "call.completed", data: { resource: { id: "AC4", direction: "outgoing", participants: ["(613) 801-8262", { phoneNumber: "+16137479908" }] } } },
+    line,
+  );
+  assertEquals(outgoing && callCustomer(outgoing), "+16137479908");
+});
+
+Deno.test("an unreadable call's log names its fields, never its numbers", () => {
+  const shape = eventShape({ type: "call.completed", data: { resource: { id: "AC5", participants: ["+16137479908"] }, context: { userId: "US1" } } });
+  assertEquals(shape, { type: "call.completed", data: ["context", "resource"], call: ["id", "participants"], context: ["userId"] });
+  assert(!JSON.stringify(shape).includes("7479908"));
+  assert(sameNumber("+1 (613) 747-9908", "6137479908"));
+  assert(!sameNumber(null, null));
 });
 
 async function hmac(content: string): Promise<string> {

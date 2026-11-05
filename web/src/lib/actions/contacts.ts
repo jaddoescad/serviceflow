@@ -29,6 +29,22 @@ export async function createContact(input: {
   return { id: data };
 }
 
+/** The customers list's search, for picking an existing customer. The list
+ * matches phones as stored, which is 6135550100 or (613) 555-0100. */
+export async function searchCustomers(query: string): Promise<CustomerRow[]> {
+  await requireStaff();
+  const term = query.trim().slice(0, 200);
+  if (term.length < 2) return [];
+  const digits = /^[\d\s()+.-]+$/.test(term) ? term.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "") : "";
+  const searches = digits
+    ? [digits, `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}${digits.length > 5 ? "-" : ""}${digits.slice(6)}`]
+    : [term];
+  const params = parseCustomerListParams({});
+  const results = await Promise.all(searches.map((search) => getCustomerList({ ...params, search }, 8)));
+  const customers = new Map(results.flatMap(({ rows }) => rows).map((row) => [row.id, row]));
+  return [...customers.values()].slice(0, 8);
+}
+
 export async function updateCustomer(input: {
   id: string;
   name: string;

@@ -8,7 +8,6 @@ import { PhotosSlot } from "@/components/project-photos-slot";
 import { PhotosPanelSkeleton } from "@/components/skeletons";
 import { WorkspaceProjectActions } from "@/components/workspace-project-actions";
 import { ProjectTabs } from "@/components/project-tabs";
-import { ProjectCrumb } from "@/components/job-shell";
 import { PageHeader } from "@/components/kpi";
 import { EmptyState } from "@/components/ui";
 
@@ -38,7 +37,7 @@ export default async function ProjectPage({
   return (
     <div>
       <PageHeader
-        title={<ProjectCrumb name={project.name} />}
+        title={project.name}
         subtitle={project.address}
         actions={
           <WorkspaceProjectActions

@@ -52,7 +52,7 @@ export default async function JobCalculatorPage({
       key={jobId}
       initialData={initialData}
       projectId={jobId}
-      projectName={contact?.name || name || "Lead"}
+      projectName={contact?.name || name || "Deal"}
       isLead
     />
   );

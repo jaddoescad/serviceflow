@@ -103,7 +103,7 @@ function emptyLeadRollup(
 ): ProjectRollup {
   return {
     projectId,
-    name: presentation?.name ?? "Unnamed lead",
+    name: presentation?.name ?? "Unnamed deal",
     address: presentation?.address ?? null,
     jobStartedOn: null,
     productionMonth: null,
@@ -208,7 +208,7 @@ export const getProjectPresentation = cache(async (projectId: string) => {
     });
 
     return {
-      name: workspace?.name ?? contact.name ?? "Unnamed lead",
+      name: workspace?.name ?? contact.name ?? "Unnamed deal",
       status: firstText(lead.status),
       address: contact.address,
       description:

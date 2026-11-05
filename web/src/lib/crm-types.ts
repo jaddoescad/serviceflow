@@ -82,7 +82,7 @@ export type SalesMetrics = {
 export type ReportKind = "leads" | "closed_deals" | "sales" | "production" | "proposals_sent";
 
 export const REPORT_LABELS: Record<ReportKind, string> = {
-  leads: "Leads",
+  leads: "New Deals",
   closed_deals: "Closed Deals",
   sales: "Sales",
   production: "Production",

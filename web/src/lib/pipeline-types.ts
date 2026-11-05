@@ -10,7 +10,7 @@ export const PIPELINE_TITLES: Record<PipelineKey, string> = {
 /** What a column means for the deal or job in it: the status it is given. */
 export const RECORD_STATUS_OPTIONS: Record<PipelineKey, [string, string][]> = {
   sales: [
-    ["new", "New lead"],
+    ["new", "New deal"],
     ["contacted", "Contacted"],
     ["estimate_scheduled", "Estimate scheduled"],
     ["estimated", "Proposal in draft"],

@@ -47,7 +47,6 @@ const GROUPS: { title?: string; links: NavLink[] }[] = [
     links: [
       { href: "/pipeline/jobs", label: "Jobs Pipeline" },
       { href: "/schedule", label: "Job Schedule" },
-      { href: "/projects", label: "Projects" },
       { href: "/change-orders", label: "Change Orders" },
       { href: "/work-orders", label: "Work Orders" },
       { href: "/jobs", label: "Labour" },
@@ -84,17 +83,16 @@ const within = (pathname: string, base: string) =>
   pathname === base || pathname.startsWith(`${base}/`);
 
 /** Which link owns the current page. A job's pages (/jobs/[id]/…) belong to
- * Projects; /jobs alone is the Labour list. */
+ * the Jobs Pipeline; /jobs alone is the Labour list. */
 function isActive(href: string, pathname: string, trash: boolean): boolean {
   switch (href) {
     case TRASH_HREF:
       return pathname === "/projects" && trash;
-    case "/projects":
+    case "/pipeline/jobs":
       return (
-        !trash &&
-        (within(pathname, "/projects") ||
-          (pathname.startsWith("/jobs/") &&
-            !/^\/jobs\/[^/]+\/(proposals|invoices|change-orders)(\/|$)/.test(pathname)))
+        within(pathname, href) ||
+        (pathname.startsWith("/jobs/") &&
+          !/^\/jobs\/[^/]+\/(proposals|invoices|change-orders)(\/|$)/.test(pathname))
       );
     case "/invoices":
       return within(pathname, href) || /^\/jobs\/[^/]+\/invoices(\/|$)/.test(pathname);
@@ -246,7 +244,7 @@ export function SidebarHeader({
         className="relative z-40 flex h-14 shrink-0 items-center gap-1 px-3"
       >
         <Link
-          href="/projects"
+          href="/"
           onClick={onNavigate}
           className="mr-auto flex min-w-0 items-center gap-2 rounded-md px-1 py-1 outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]"
         >

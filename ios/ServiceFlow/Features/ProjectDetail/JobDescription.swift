@@ -14,7 +14,7 @@ struct JobDescriptionRow: View {
             if session.isManager {
                 // A list-styled button: the whole row is the tap target.
                 Button { editing = true } label: { content(text) }
-                    .sheet(isPresented: $editing) { JobDescriptionSheet(model: model) }
+                    .fullScreenCover(isPresented: $editing) { JobDescriptionEditor(model: model) }
             } else if !text.isEmpty {
                 content(text)
             }
@@ -36,60 +36,94 @@ struct JobDescriptionRow: View {
                         Text("Edit").font(.app(12, .semibold)).foregroundStyle(DetailPalette.brand)
                     }
                 }
-                Text(text).font(.app(14)).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                RichTextView(markdown: text)
             }
             .padding(.vertical, 2)
         }
     }
 }
 
-/// Writing the description; Save keeps it on the job for everyone.
-private struct JobDescriptionSheet: View {
+/// Writing the description on its own screen, with bold, italic, links and
+/// lists; Save keeps it on the job for everyone.
+private struct JobDescriptionEditor: View {
     let model: ProjectDetailModel
 
     @Environment(SessionContext.self) private var session
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = ""
+    @State private var editor = RichTextEditorModel()
+    @State private var original = ""
     @State private var saving = false
     @State private var error: String?
-    @FocusState private var focused: Bool
+    @State private var linking = false
+    @State private var linkAddress = ""
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Rooms, surfaces, colours, access…", text: $draft, axis: .vertical)
-                    .lineLimit(5...14)
-                    .focused($focused)
-                    .padding(12)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .onChange(of: draft) { _, value in if value.count > 5000 { draft = String(value.prefix(5000)) } }
-                if let error {
-                    Text(error).font(.footnote).foregroundStyle(Color(hex: 0xb42318))
-                }
-                Spacer()
-            }
-            .padding(16)
-            .navigationTitle("Description")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.disabled(saving)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    if saving {
-                        ProgressView()
-                    } else {
-                        Button("Save", action: save)
-                            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines) == (model.jobDescription ?? ""))
+            RichTextEditorView(editor: editor, initial: model.jobDescription ?? "")
+                .padding(.horizontal, 12)
+                .overlay(alignment: .topLeading) {
+                    if editor.markdown.isEmpty {
+                        Text("Rooms, surfaces, colours, access…")
+                            .font(.system(size: RichTextEditorModel.size))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 17)
+                            .padding(.top, 12)
+                            .allowsHitTesting(false)
                     }
                 }
-            }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        if let error {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(Color(hex: 0xb42318))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                        RichTextFormatBar(editor: editor) {
+                            editor.rememberSelection()
+                            linkAddress = editor.link ?? ""
+                            linking = true
+                        }
+                    }
+                }
+                .navigationTitle("Description")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }.disabled(saving)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        if saving {
+                            ProgressView()
+                        } else {
+                            Button("Save", action: save).disabled(editor.markdown == original)
+                        }
+                    }
+                }
+                .alert("Link", isPresented: $linking) {
+                    TextField("example.com", text: $linkAddress)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button(editor.link == nil ? "Add" : "Save") {
+                        if let address = RichText.linkAddress(linkAddress) {
+                            editor.setLink(address, label: linkAddress.trimmingCharacters(in: .whitespaces))
+                        }
+                    }
+                    if editor.link != nil {
+                        Button("Remove link", role: .destructive) { editor.setLink(nil, label: "") }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Links the selected text, or adds the address where the cursor is.")
+                }
         }
-        .presentationDetents([.medium, .large])
         .interactiveDismissDisabled(saving)
         .onAppear {
-            draft = model.jobDescription ?? ""
-            focused = true
+            // Plain descriptions can read back slightly differently ("1)" as "1."); that alone isn't a change.
+            original = RichTextEditorModel.markdown(from: RichTextEditorModel.attributed(model.jobDescription ?? ""))
         }
     }
 
@@ -98,7 +132,7 @@ private struct JobDescriptionSheet: View {
         error = nil
         Task {
             do {
-                try await model.saveDescription(api: session.api, text: draft)
+                try await model.saveDescription(api: session.api, text: editor.markdown)
                 dismiss()
             } catch {
                 self.error = error.localizedDescription.isEmpty ? "The description could not be saved. Try again." : error.localizedDescription

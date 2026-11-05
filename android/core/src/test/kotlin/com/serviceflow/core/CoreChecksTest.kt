@@ -498,6 +498,48 @@ class CoreChecksTest {
         assertNull("none without an address", Project(id = "j3", name = "Job", latitude = 45.4, longitude = -75.7).directionsUrl)
     }
 
+    @Test
+    fun descriptionsKeepBoldItalicLinksAndLists() {
+        val plain = "Two coats in the kitchen\n- walls\n- trim\n\nGate code 1234"
+        assertEquals("plain text reads as it was written", plain, RichText.markdown(RichText.lines(plain)))
+        assertEquals("dash lines are bullets",
+                     listOf(RichText.Kind.Text, RichText.Kind.Bullet, RichText.Kind.Bullet, RichText.Kind.Text, RichText.Kind.Text),
+                     RichText.lines(plain).map { it.kind })
+
+        val lines = listOf(
+            RichText.Line(RichText.Kind.Text, listOf(RichText.Run("Paint "), RichText.Run("all", bold = true), RichText.Run(" rooms "),
+                                                     RichText.Run("except", bold = true, italic = true), RichText.Run(" the den", bold = true))),
+            RichText.Line(RichText.Kind.Numbered(1), listOf(RichText.Run("See "), RichText.Run("colours", link = "https://example.com/a(1)"))),
+            RichText.Line(RichText.Kind.Numbered(2), listOf(RichText.Run("Call ", italic = true), RichText.Run("Kim", italic = true, link = "tel:6135550101"))),
+            RichText.Line(RichText.Kind.Bullet, listOf(RichText.Run("2*3 = 6_ [maybe] \\ ok"))),
+            RichText.Line(RichText.Kind.Text, listOf(RichText.Run("- not a list"))),
+            RichText.Line(RichText.Kind.Text, listOf(RichText.Run("1. not numbered either"))),
+        )
+        val markdown = RichText.markdown(lines)
+        assertEquals(
+            "written as Markdown with markers that never touch",
+            """
+            Paint **all** rooms **_except_ the den**
+            1. See [colours](https://example.com/a(1%29)
+            2. _Call [Kim](tel:6135550101)_
+            - 2\*3 = 6\_ \[maybe\] \\ ok
+            \- not a list
+            \1. not numbered either
+            """.trimIndent(),
+            markdown,
+        )
+        val read = RichText.lines(markdown)
+        assertEquals("bold and italic read back", lines[0], read[0])
+        assertEquals("an italic link reads back", lines[2], read[2])
+        assertEquals("literal markers and list-like text read back", lines.drop(3), read.drop(3))
+
+        assertEquals("unclosed markers and unsafe links stay text", listOf(RichText.Run("**bold ** and [x](javascript:alert(1))")),
+                     RichText.lines("**bold ** and [x](javascript:alert(1))")[0].runs)
+        assertEquals("a bare site opens over https", "https://example.com/colours", RichText.linkAddress("example.com/colours"))
+        assertEquals("an email address opens mail", "mailto:kim@example.com", RichText.linkAddress("kim@example.com"))
+        assertNull("words aren't a link", RichText.linkAddress("not a link"))
+    }
+
     // MARK: Media
 
     @Test

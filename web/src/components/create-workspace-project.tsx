@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createLead } from "@/lib/actions/pipeline";
 import {
   createWorkspaceProject,
   findProjectContacts,
@@ -12,18 +11,15 @@ import { Button, Field, Input } from "./ui";
 import { CreateContactModal } from "./create-contact-form";
 import { ModalFooter, ProjectModal } from "./project-profile-panel";
 
-/** Creates a job-side project, or with kind="lead" a deal in the sales pipeline. */
+/** Creates a job-side project. */
 export function CreateWorkspaceProject({
   initiallyOpen = false,
   onClosed,
-  kind = "project",
-}: { initiallyOpen?: boolean; onClosed?: () => void; kind?: "project" | "lead" } = {}) {
+}: { initiallyOpen?: boolean; onClosed?: () => void } = {}) {
   const router = useRouter();
-  const isLead = kind === "lead";
   const [open, setOpen] = useState(initiallyOpen);
   const [creatingContact, setCreatingContact] = useState(false);
   const [name, setName] = useState("");
-  const [source, setSource] = useState("");
   const [address, setAddress] = useState("");
   const [query, setQuery] = useState("");
   const [contactId, setContactId] = useState("");
@@ -70,14 +66,13 @@ export function CreateWorkspaceProject({
             requestId.current = crypto.randomUUID();
             setError("");
             setName("");
-            setSource("");
             setAddress("");
             setQuery("");
             setContactId("");
             setOpen(true);
           }}
         >
-          {isLead ? "+ New Lead" : "+ Create Project"}
+          + Create Project
         </Button>
       )}
       {creatingContact ? (
@@ -97,62 +92,47 @@ export function CreateWorkspaceProject({
         />
       ) : null}
       {open && !creatingContact ? (
-        <ProjectModal title={isLead ? "New Lead" : "Create Project"} onClose={close}>
+        <ProjectModal title="Create Project" onClose={close}>
           <form
             onSubmit={(event) => {
               event.preventDefault();
               setError("");
               startTransition(async () => {
                 try {
-                  const result = isLead
-                    ? await createLead({ id: requestId.current, contactId, address, source })
-                    : await createWorkspaceProject({
-                        id: requestId.current,
-                        name,
-                        address,
-                        contactId,
-                      });
+                  const result = await createWorkspaceProject({
+                    id: requestId.current,
+                    name,
+                    address,
+                    contactId,
+                  });
                   if (result.error) setError(result.error);
                   else {
                     setOpen(false);
                     onClosed?.();
-                    if (!isLead) router.push(`/jobs/${result.id}`);
+                    router.push(`/jobs/${result.id}`);
                     router.refresh();
                   }
                 } catch {
-                  setError(`Could not confirm ${isLead ? "the lead" : "project creation"}. Retry safely.`);
+                  setError("Could not confirm project creation. Retry safely.");
                 }
               });
             }}
           >
             <div className="space-y-4 p-5">
-              {isLead ? null : (
-                <Field label="Project name">
-                  <Input
-                    autoFocus
-                    required
-                    maxLength={200}
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </Field>
-              )}
+              <Field label="Project name">
+                <Input
+                  autoFocus
+                  required
+                  maxLength={200}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </Field>
               <Field label="Address">
                 <AddressInput maxLength={500} value={address} onChange={setAddress} />
               </Field>
-              {isLead ? (
-                <Field label="Lead source">
-                  <Input
-                    maxLength={120}
-                    placeholder="Phone Call, Organic Search…"
-                    value={source}
-                    onChange={(event) => setSource(event.target.value)}
-                  />
-                </Field>
-              ) : null}
               <Field label="Contact">
                 <Input
-                  autoFocus={isLead}
                   type="search"
                   placeholder="Find a customer…"
                   value={query}
@@ -220,7 +200,7 @@ export function CreateWorkspaceProject({
                 Cancel
               </Button>
               <Button type="submit" disabled={pending || !contactId}>
-                {pending ? "Creating…" : isLead ? "Add Lead" : "Create Project"}
+                {pending ? "Creating…" : "Create Project"}
               </Button>
             </ModalFooter>
           </form>

@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import { parseQuoCall, parseQuoEvent, verifyQuoSignature } from "./quo.ts";
+import { callCustomer, eventShape, parseQuoCall, parseQuoEvent, sameNumber, verifyQuoSignature } from "./quo.ts";
 
 // Receives a company's Quo (OpenPhone) webhooks: texts customers send
 // (message.received) land in the inbox, and delivery reports
@@ -40,7 +40,13 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: "Invalid JSON" }, 400);
   }
-  const call = parseQuoCall(payload);
+  const call = parseQuoCall(payload, hook.number ?? null);
+  // Temporary, until calls are seen arriving: a call without the customer's
+  // number can't be filed, so log its field names (never the numbers).
+  const customer = call ? callCustomer(call) : null;
+  if (call ? !customer || sameNumber(customer, hook.number ?? null) : eventShape(payload).type?.startsWith("call.")) {
+    console.log(JSON.stringify({ message: "quo call without a customer number", org: hook.orgId, ...eventShape(payload) }));
+  }
   if (call) {
     const { data, error } = await supabase.rpc("receive_quo_call", { requested_org: hook.orgId, requested_call: call });
     if (error) {

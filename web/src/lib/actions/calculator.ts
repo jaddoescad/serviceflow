@@ -91,7 +91,7 @@ export async function loadCalculator(entityId: string): Promise<LoadCalculatorRe
   await requireStaff();
   try {
     const [resolved, settings] = await reads;
-    if (!resolved) return { ok: false, error: "Lead or job not found." };
+    if (!resolved) return { ok: false, error: "Deal or job not found." };
     const doc = resolved.quote?.calculator_doc
       ? reviveProjectCalculator(resolved.quote.calculator_doc)
       : null;
@@ -119,7 +119,7 @@ export async function saveCalculator(
   const supabase = await createClient();
   try {
     const resolved = await context(supabase, entityId);
-    if (!resolved) return { ok: false, error: "Lead or job not found." };
+    if (!resolved) return { ok: false, error: "Deal or job not found." };
     const totals = computeTotals(quote);
     const status = quote.status === "won" ? "accepted" : quote.status === "lost" ? "declined" : quote.status;
     const { error } = await supabase.rpc("publish_quote", {

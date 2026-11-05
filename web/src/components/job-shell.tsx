@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { ProjectTabs, type ProjectTabKey } from "@/components/project-tabs";
 import { PageHeader } from "@/components/kpi";
 import { Badge } from "@/components/ui";
 
 function statusLabel(status: string | null, isLead: boolean): string {
-  if (!status) return isLead ? "Lead" : "Job";
+  if (!status) return isLead ? "Deal" : "Job";
   return status
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -16,19 +15,6 @@ function statusTone(status: string | null, isLead: boolean): "brand" | "good" | 
   if (["scheduled", "in_progress", "active"].includes(value)) return "brand";
   if (["pending", "on_hold"].includes(value)) return "warn";
   return isLead ? "brand" : "neutral";
-}
-
-/** "Projects / Name" breadcrumb for a project's top bar. */
-export function ProjectCrumb({ name }: { name: string }) {
-  return (
-    <>
-      <Link href="/projects" className="font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]">
-        Projects
-      </Link>
-      <span className="mx-1.5 font-normal text-[var(--color-faint)]">/</span>
-      {name}
-    </>
-  );
 }
 
 /** Shared project chrome. Route-level tabs keep hidden financial queries from running on Photos. */
@@ -59,7 +45,7 @@ export function JobShell({
   return (
     <>
       <PageHeader
-        title={<ProjectCrumb name={name} />}
+        title={name}
         subtitle={address}
         actions={
           <>

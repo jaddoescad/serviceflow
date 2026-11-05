@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AddressInput } from "@/components/address-input";
 import { Button, Field, Input, Textarea } from "@/components/ui";
+import { DescriptionText } from "@/components/description-text";
 import {
   updateProjectContact,
   updateProjectDescription,
@@ -25,12 +26,14 @@ function Modal({
   onClose,
   children,
   wide = false,
+  narrow = false,
 }: {
   title: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  narrow?: boolean;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
@@ -87,7 +90,7 @@ function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-dialog-title"
-        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-[var(--radius-lg)] bg-[var(--color-surface)] text-[13px] shadow-[var(--shadow-pop)] outline-none ${wide ? "max-w-3xl" : "max-w-xl"}`}
+        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-[var(--radius-lg)] bg-[var(--color-surface)] text-[13px] shadow-[var(--shadow-pop)] outline-none ${wide ? "max-w-3xl" : narrow ? "max-w-md" : "max-w-xl"}`}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
           <div className="min-w-0">
@@ -447,8 +450,10 @@ export function ProjectProfilePanel({
               ) : null
             }
           />
-          <div className="whitespace-pre-wrap text-[13px] leading-5 text-[var(--color-text)]">
-            {description || (
+          <div className="text-[13px] leading-5 text-[var(--color-text)]">
+            {description ? (
+              <DescriptionText text={description} />
+            ) : (
               <span className="text-[var(--color-faint)]">
                 No project description yet.
               </span>

@@ -77,7 +77,7 @@ export function builtInViews(pipeline: PipelineKey): PipelineViewOption[] {
     ? [
         view("all", "All deals"),
         view("mine", "My deals", { salesperson: "me" }),
-        view("recent", "My recent leads", { salesperson: "me", created: { preset: "14d" } }),
+        view("recent", "My recent deals", { salesperson: "me", created: { preset: "14d" } }),
         view("changed", "Recently changed", { updated: { preset: "7d" } }),
         followUp,
       ]

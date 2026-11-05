@@ -64,8 +64,10 @@ export type QuoCall = {
 };
 
 /** call.completed is a finished, missed or voicemail call; call.recording.completed
- * adds its recording. Either payload shape; anything else returns null. */
-export function parseQuoCall(payload: unknown): QuoCall | null {
+ * adds its recording. Either payload shape; anything else returns null. A call
+ * that only lists its participants takes the customer as the one that isn't
+ * `line`, the company's own Quo number. */
+export function parseQuoCall(payload: unknown, line: string | null = null): QuoCall | null {
   const event = asObject(payload);
   const type = asString(event?.type);
   if (type !== "call.completed" && type !== "call.recording.completed") return null;
@@ -73,13 +75,18 @@ export function parseQuoCall(payload: unknown): QuoCall | null {
   const call = asObject(data?.object) ?? asObject(data?.resource);
   const context = asObject(data?.context);
   const id = asString(call?.id);
-  if (!call || !id || (call.object && call.object !== "call")) return null;
+  if (!call || !id || (typeof call.object === "string" && !call.object.startsWith("call"))) return null;
 
+  const incoming = call.direction === "incoming";
+  const others = [...new Set(phoneNumbers([call.participants, context?.participants]))].filter(
+    (number) => !sameNumber(number, line),
+  );
+  const customer = others.length === 1 ? others[0] : null;
   const result: QuoCall = {
     id,
-    direction: call.direction === "incoming" ? "incoming" : "outgoing",
-    from: firstString(call.from) ?? asString(context?.senderIdentifier),
-    to: firstString(call.to) ?? firstString(context?.recipientIdentifiers),
+    direction: incoming ? "incoming" : "outgoing",
+    from: phoneNumbers(call.from)[0] ?? asString(context?.senderIdentifier) ?? (incoming ? customer : line),
+    to: phoneNumbers(call.to)[0] ?? firstString(context?.recipientIdentifiers) ?? (incoming ? line : customer),
     status: asString(call.status),
     createdAt: asString(call.createdAt) ?? asString(event?.createdAt),
   };
@@ -98,6 +105,36 @@ export function parseQuoCall(payload: unknown): QuoCall | null {
   const voicemail = asObject(call.voicemail);
   if (voicemail) result.voicemail = { duration: typeof voicemail.duration === "number" ? voicemail.duration : null };
   return result;
+}
+
+/** The customer's number on a call: who called in, or who was called. */
+export const callCustomer = (call: QuoCall): string | null => (call.direction === "incoming" ? call.from : call.to);
+
+/** Phone numbers given as text, lists, or objects naming one. */
+function phoneNumbers(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(phoneNumbers);
+  const entry = asObject(value);
+  const number = entry ? asString(entry.phoneNumber) ?? asString(entry.number) ?? asString(entry.identifier) : asString(value);
+  return number ? [number] : [];
+}
+
+/** The same number however it's written (+1 613…, 613-…). */
+export function sameNumber(a: string | null, b: string | null): boolean {
+  const key = (value: string | null) => (value ?? "").replace(/\D/g, "").slice(-10);
+  return key(a).length === 10 && key(a) === key(b);
+}
+
+/** An event's field names, never their values: what a call we couldn't read carried. */
+export function eventShape(payload: unknown) {
+  const event = asObject(payload);
+  const data = asObject(event?.data);
+  const keys = (value: unknown) => Object.keys(asObject(value) ?? {}).sort();
+  return {
+    type: asString(event?.type),
+    data: keys(data),
+    call: keys(data?.object ?? data?.resource),
+    context: keys(data?.context),
+  };
 }
 
 /** Quo signs webhooks one of two ways. Legacy webhooks send

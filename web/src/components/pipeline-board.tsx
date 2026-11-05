@@ -27,7 +27,7 @@ import {
 import type { ProjectLabel } from "@/lib/project-workspace";
 import { BookAppointmentDialog } from "./appointments-calendar";
 import { BulkActions } from "./bulk-actions";
-import { CreateWorkspaceProject } from "./create-workspace-project";
+import { NewDealButton } from "./new-deal-dialog";
 import { MessageCustomerDialog } from "./inbox/message-customer-dialog";
 import { MoveDealDialog } from "./move-deal-dialog";
 import { ReportPending } from "./navigation-pending";
@@ -231,7 +231,7 @@ export function PipelineView({
   const [moving, setMoving] = useState<{ card: PipelineCard; stageId: string } | null>(null);
   const [labelCard, setLabelCard] = useState<PipelineCard | null>(null);
   const [messageCard, setMessageCard] = useState<PipelineCard | null>(null);
-  const [bookingCard, setBookingCard] = useState<PipelineCard | null>(null);
+  const [bookingCard, setBookingCard] = useState<Pick<PipelineCard, "id" | "name" | "address" | "salespersonId"> | null>(null);
   const [editingStages, setEditingStages] = useState(false);
   const [menu, setMenu] = useState<CardMenuState | null>(null);
   // Archived deals stay hidden until their column's (or the list's) "Archived"
@@ -521,7 +521,7 @@ export function PipelineView({
         <Button variant="secondary" onClick={() => setEditingStages(true)}>
           Edit columns
         </Button>
-        {isSales ? <CreateWorkspaceProject kind="lead" /> : null}
+        {isSales ? <NewDealButton onBook={(deal) => setBookingCard({ ...deal, salespersonId: null })} /> : null}
       </header>
 
       {mode === "board" ? (
