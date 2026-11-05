@@ -1,11 +1,11 @@
 # project-media-worker
 
 Cloudflare Worker that serves as the only door to the private R2 bucket holding
-job photos and videos. The Expo app never talks to R2 directly and there are no
+job photos and videos. The crew apps never talk to R2 directly and there are no
 public object URLs.
 
 ```
-Expo app ──JWT──▶ Worker ──R2 binding──▶ ottawa-painters-project-media (private)
+Crew app ──JWT──▶ Worker ──R2 binding──▶ ottawa-painters-project-media (private)
                     │
                     └──same JWT──▶ Supabase Data API (public.job_media, RLS)
 ```

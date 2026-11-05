@@ -1,9 +1,9 @@
 # ServiceFlow for Android (native)
 
 The Kotlin / Jetpack Compose crew app, a feature-for-feature port of the native
-iOS app in `ios/` with Material 3 components. It will replace the React Native
-build (`mobile/`) on Google Play under the same listing (application id
-`com.ottawapainters.app`); until it is released, `mobile/` is still what ships.
+iOS app in `ios/` with Material 3 components. It is the Google Play build
+(application id `com.ottawapainters.app`); it replaced the earlier React Native
+app under the same listing.
 
 ## Layout
 
@@ -34,8 +34,22 @@ cd android
    (`SERVICEFLOW_UPLOAD_STORE_FILE`, `SERVICEFLOW_UPLOAD_STORE_PASSWORD`,
    `SERVICEFLOW_UPLOAD_KEY_ALIAS`, `SERVICEFLOW_UPLOAD_KEY_PASSWORD`), bump
    `versionCode`/`versionName` in `app/build.gradle.kts` above what Play has,
-   then `./gradlew :app:bundleRelease`. Follow `mobile/AGENTS.md` release
-   verification: launch the minified release build before submitting.
+   then `./gradlew :app:bundleRelease`. Verify it before submitting (below).
+
+## Release verification
+
+Before submitting any build to Google Play, verify the release artifact can launch.
+
+- Install the exact release build on a connected device or emulator and open it.
+  For an AAB, generate and install APKs from that AAB (or another path that runs
+  the same signed, minified artifact).
+- Confirm it reaches the first screen without crashing and that production
+  configuration is present, especially Supabase and the Google Maps key.
+- With no device or emulator available, say so before submitting, list the checks
+  that were done instead, and don't claim the build was launch-tested.
+- A successful Gradle build or Play submission is not a launch test.
+- Upload bundles through the Play API or another uploader, not the Play Console
+  web page: its browser upload bridge caps at 10 MB.
 
 ## How it works
 

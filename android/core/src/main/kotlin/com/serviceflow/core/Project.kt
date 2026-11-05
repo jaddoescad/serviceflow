@@ -2,6 +2,7 @@ package com.serviceflow.core
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.net.URLEncoder
 import java.time.Instant
 
 /**
@@ -53,6 +54,16 @@ data class Project(
             formattedAddress.nonBlank?.let { return it }
             val parts = listOf(addressLine1, addressLine2, city, province, postalCode).mapNotNull { it.nonBlank }
             return if (parts.isEmpty()) null else parts.joinToString(", ")
+        }
+
+    /**
+     * Google Maps directions to the full address: the Maps app opens it when
+     * installed, the browser otherwise.
+     */
+    val directionsUrl: String?
+        get() {
+            val address = fullAddress ?: return null
+            return "https://www.google.com/maps/dir/?api=1&destination=" + URLEncoder.encode(address, "UTF-8").replace("+", "%20")
         }
 
     /**

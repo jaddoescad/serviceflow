@@ -448,6 +448,16 @@ func runChecks() async {
                     "Imported", "else what it was imported with")
         expectEqual(lead(["workspace": [["description": "Listed"]]])?.description, "Listed", "embedded as a list")
     }
+
+    await check("Addresses open Google Maps directions") {
+        let job = Project(id: "j1", name: "Job", formattedAddress: "12 O'Connor St #3, Gatineau, Québec")
+        expectEqual(job.directionsURL?.absoluteString,
+                    "https://www.google.com/maps/dir/?api=1&destination=12%20O%27Connor%20St%20%233%2C%20Gatineau%2C%20Qu%C3%A9bec",
+                    "the formatted address, encoded")
+        expectEqual(Project(id: "j2", name: "Job", addressLine1: "5 Elm St", city: "Ottawa").directionsURL?.absoluteString,
+                    "https://www.google.com/maps/dir/?api=1&destination=5%20Elm%20St%2C%20Ottawa", "else the parts")
+        expect(Project(id: "j3", name: "Job", latitude: 45.4, longitude: -75.7).directionsURL == nil, "none without an address")
+    }
 }
 
 @MainActor

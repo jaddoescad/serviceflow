@@ -7,7 +7,6 @@ Organization: [ServiceFlow](https://serviceflowapp.sentry.io/). Team: `servicefl
 | Admin website | `serviceflow-web` | Next.js browser, Node server, Edge, React error boundary |
 | Native Android | `serviceflow-android` | Android crashes, unhandled exceptions, ANRs |
 | Native iOS | `serviceflow-ios` | Apple crashes and unhandled exceptions |
-| React Native crew app | Android / iOS project by platform | JS errors, React boundary, native crashes |
 
 DSNs in source are public ingestion addresses. API tokens must never be committed
 or included in client configuration. Development builds disable reporting.
@@ -26,19 +25,11 @@ works, but minified/obfuscated stack traces may be less readable.
 Local native builds can also read the token from git-ignored configuration:
 `SENTRY_AUTH_TOKEN` in `android/local.properties` and `ios/Config/sentry-build-token`.
 
-For the React Native Android build, store `SENTRY_AUTH_TOKEN` as an EAS secret
-or inject it into the local Gradle build environment. Project settings are in
-`mobile/android/sentry.properties`; the Metro config adds source-map debug IDs.
-For OTA updates to a Sentry-enabled binary, export with source maps and upload
-the matching maps using `sentry-cli` to the platform's Sentry project.
-
 ## Delivery
 
 Push the intended changes to `main`; the existing GitHub integration deploys
 the website to https://serviceflow-admin.vercel.app. Native iOS and Android need
-new binaries through their existing release paths. Adding the React Native SDK
-also requires a new binary: its OTA runtime is now `1.5.1`, including the checked-in
-native runtime values. Do not publish this JS update to older binaries.
+new binaries through their existing release paths.
 
 ## Verification
 

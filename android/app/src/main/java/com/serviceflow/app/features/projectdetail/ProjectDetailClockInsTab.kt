@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -167,6 +168,8 @@ private fun CrewAndTasks(project: Project, clockIns: JobClockIns, onOpenPainter:
 @Composable
 private fun InfoRow(project: Project, title: String) {
     val colors = MaterialTheme.colorScheme
+    val uriHandler = LocalUriHandler.current
+    val directions = project.directionsUrl
     Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(42.dp).background(DetailPalette.brand.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
@@ -174,9 +177,15 @@ private fun InfoRow(project: Project, title: String) {
         }
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = appText(16, FontWeight.SemiBold, colors.onSurface), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(Icons.Filled.Place, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(15.dp).padding(top = 1.dp))
-                Text(project.fullAddress ?: "No address on file", style = appText(13, color = colors.onSurfaceVariant),
+            // Only the address is the tap target, not the whole row.
+            val addressColor = if (directions != null) DetailPalette.brand else colors.onSurfaceVariant
+            Row(
+                if (directions == null) Modifier
+                else Modifier.clickable(onClickLabel = "Directions in Google Maps") { runCatching { uriHandler.openUri(directions) } },
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Icons.Filled.Place, contentDescription = null, tint = addressColor, modifier = Modifier.size(15.dp).padding(top = 1.dp))
+                Text(project.fullAddress ?: "No address on file", style = appText(13, color = addressColor),
                      maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }

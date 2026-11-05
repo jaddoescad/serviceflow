@@ -14,6 +14,7 @@ struct ProjectDetailClockInsTab: View {
 
     @Environment(SessionContext.self) private var session
     @Environment(TimeTracker.self) private var tracker
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         List {
@@ -85,10 +86,22 @@ struct ProjectDetailClockInsTab: View {
                 .background(DetailPalette.brand.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.app(16, .semibold)).lineLimit(1)
-                Label(project.fullAddress ?? "No address on file", systemImage: "mappin")
-                    .font(.app(13))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if let address = project.fullAddress, let directions = project.directionsURL {
+                    // Only the address is the tap target, not the whole row.
+                    Button { openURL(directions) } label: {
+                        Label(address, systemImage: "mappin")
+                            .font(.app(13))
+                            .foregroundStyle(DetailPalette.brand)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityHint("Directions in Google Maps")
+                } else {
+                    Label("No address on file", systemImage: "mappin")
+                        .font(.app(13))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 2)

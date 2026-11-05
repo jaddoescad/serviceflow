@@ -10,3 +10,8 @@
 /ios/build/
 *.xcuserstate
 xcuserdata/
+
+# Cloudflare media Worker
+/cloudflare/project-media-worker/node_modules/
+/cloudflare/project-media-worker/.dev.vars
+/cloudflare/project-media-worker/.wrangler/

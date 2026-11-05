@@ -45,10 +45,10 @@ the App Store. The native iOS rewrite waits until this is done (see Phase 7).
 - **Outbox sync to the Ottawa Painters Supabase project**
   (`pyzejfhsdewpnvmtqtlw`) uses `claim_serviceflow_sync`. It must only ever
   carry Ottawa Painters rows.
-- **Media**: the Cloudflare R2 worker (`mobile/cloudflare/project-media-worker`)
+- **Media**: the Cloudflare R2 worker (`cloudflare/project-media-worker`)
   authorizes access through `job_media`/`jobs` visibility.
 - **Repository layout:** one repo, `jaddoescad/serviceflow`: the admin
-  website in `web/`, the mobile app in `mobile/`, and the Supabase backend in
+  website in `web/`, the crew apps in `ios/` and `android/`, and the Supabase backend in
   `supabase/` (`migrations`, `functions`).
 - **Login** is email + password. Accounts are created by an admin
   (`scripts/office.cjs create-employee`, `manage_team_account`).
@@ -162,7 +162,7 @@ audit_log            id, org_id, actor_id, action, target, details, at
     Ottawa Painters; switch them to the membership role in Phase 5 / Phase 2.
   - `get_crew_summary` / `get_overview_summary` count `employees` rather than
     company members (per-company admin pages, Phase 5).
-- Next: Phase 1 step 5, the photo worker (`mobile/cloudflare/project-media-worker`),
+- Next: Phase 1 step 5, the photo worker (`cloudflare/project-media-worker`),
   and step 6, a repeatable two-company leak test in
   `mobile/scripts/qa-supabase-rls.cjs`.
 

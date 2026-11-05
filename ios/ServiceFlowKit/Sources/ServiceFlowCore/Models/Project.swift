@@ -69,6 +69,16 @@ public struct Project: Codable, Hashable, Identifiable, Sendable {
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
+    /// Google Maps directions to the full address: the Maps app opens it when
+    /// installed, the browser otherwise.
+    public var directionsURL: URL? {
+        guard let destination = fullAddress?.addingPercentEncoding(withAllowedCharacters: Self.queryValueCharacters) else { return nil }
+        return URL(string: "https://www.google.com/maps/dir/?api=1&destination=\(destination)")
+    }
+
+    private static let queryValueCharacters = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._*")
+
     /// The address line shown on cards: the formatted address, else
     /// "City, Province, Postal code".
     public var cardAddress: String? {

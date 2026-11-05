@@ -487,6 +487,17 @@ class CoreChecksTest {
         assertEquals("embedded as a list", "Listed", lead("workspace" to listOf(mapOf("description" to "Listed")))?.description)
     }
 
+    @Test
+    fun addressesOpenGoogleMapsDirections() {
+        val job = Project(id = "j1", name = "Job", formattedAddress = "12 O'Connor St #3, Gatineau, Québec")
+        assertEquals("the formatted address, encoded",
+                     "https://www.google.com/maps/dir/?api=1&destination=12%20O%27Connor%20St%20%233%2C%20Gatineau%2C%20Qu%C3%A9bec",
+                     job.directionsUrl)
+        assertEquals("else the parts", "https://www.google.com/maps/dir/?api=1&destination=5%20Elm%20St%2C%20Ottawa",
+                     Project(id = "j2", name = "Job", addressLine1 = "5 Elm St", city = "Ottawa").directionsUrl)
+        assertNull("none without an address", Project(id = "j3", name = "Job", latitude = 45.4, longitude = -75.7).directionsUrl)
+    }
+
     // MARK: Media
 
     @Test
