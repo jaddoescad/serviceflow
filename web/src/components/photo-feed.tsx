@@ -36,27 +36,17 @@ function initials(name: string): string {
   return letters || SITE_INITIALS;
 }
 
-/** The date with each job's day, counted from that job's first photo. */
-function DayHeading({ items }: { items: PhotoFeedItem[] }) {
+/** The date with the job's day, counted from that job's first photo. */
+function dayHeading(items: PhotoFeedItem[]): string {
   const date = dateHeading(items[0].capturedAt);
-  const jobs = new Map<string, { day: number; name: string }>();
+  const days = new Set<number>();
   for (const photo of items) {
-    if (!photo.projectFirstAt || jobs.has(photo.ownerProjectId)) continue;
+    if (!photo.projectFirstAt) continue;
     const day = photoDay(photo.capturedAt, photo.projectFirstAt);
-    if (day > 0) jobs.set(photo.ownerProjectId, { day, name: photo.projectName });
+    if (day > 0) days.add(day);
   }
-  const days = [...jobs.values()];
-  if (days.length === 1) return <>{`Day ${days[0].day} · ${date}`}</>;
-  return (
-    <>
-      {date}{" "}
-      {days.length ? (
-        <span className="ml-2 font-normal text-[var(--color-muted)]">
-          {days.map((job) => `Day ${job.day} ${job.name}`).join(" · ")}
-        </span>
-      ) : null}
-    </>
-  );
+  if (!days.size) return date;
+  return `Day ${[...days].sort((a, b) => a - b).join(", ")} · ${date}`;
 }
 
 function mediaUrl(photo: PhotoFeedItem): string {
@@ -310,7 +300,7 @@ export function PhotoFeed({
                     className="h-4 w-4 accent-[var(--color-brand)]"
                   />
                   <h2 className="text-sm font-semibold text-[var(--color-heading)]">
-                    <DayHeading items={items} />
+                    {dayHeading(items)}
                   </h2>
                 </div>
 
