@@ -5,7 +5,6 @@ import kotlinx.serialization.Serializable
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 
 @Serializable
 enum class MediaKind(val rawValue: String) {
@@ -122,7 +121,6 @@ object MediaRules {
     fun <Item> sections(items: List<Item>, timestamp: (Item) -> Instant?, zone: ZoneId = ZoneId.systemDefault()): List<MediaSection<Item>> {
         // A stable sort keeps the original order for equal timestamps.
         val sorted = items.sortedByDescending { timestamp(it)?.timeIntervalSince1970 ?: 0.0 }
-        val firstDay = sorted.mapNotNull(timestamp).lastOrNull()?.atZone(zone)?.toLocalDate()
         val order = mutableListOf<String>()
         val groups = mutableMapOf<String, MutableList<Item>>()
         val titles = mutableMapOf<String, String>()
@@ -131,10 +129,7 @@ object MediaRules {
             val key = date?.let { DayKey.of(it, zone) } ?: "recent"
             if (key !in groups) {
                 order.add(key)
-                if (date != null && firstDay != null) {
-                    val day = ChronoUnit.DAYS.between(firstDay, date.atZone(zone).toLocalDate()) + 1
-                    titles[key] = "Day $day · ${DateText.format(date, "EEEMMMdy", locale = DateText.canada, zone = zone)}"
-                }
+                titles[key] = DateText.canadianLongDate(date)
             }
             groups.getOrPut(key) { mutableListOf() }.add(item)
         }

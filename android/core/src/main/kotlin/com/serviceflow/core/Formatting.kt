@@ -159,7 +159,6 @@ object DateText {
         "MMMdy" -> "MMM d, y"
         "EEEEMMMMdy" -> "EEEE, MMMM d, y"
         "EEEEMMMMd" -> "EEEE, MMMM d"
-        "EEEMMMdy" -> "EEE, MMM d, y"
         "EEEMMMdd" -> "EEE, MMM dd"
         "MMMdd" -> "MMM dd"
         "MMMd" -> "MMM d"

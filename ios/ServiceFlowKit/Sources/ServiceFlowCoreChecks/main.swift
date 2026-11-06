@@ -459,19 +459,6 @@ func runChecks() async {
         expect(Project(id: "j3", name: "Job", latitude: 45.4, longitude: -75.7).directionsURL == nil, "none without an address")
     }
 
-    await check("Photo days count from the first day with photos") {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "America/Toronto")!
-        let taken = ["after": "2026-11-06T14:00:00.000Z", "before": "2026-10-28T14:00:00.000Z",
-                     "evening": "2026-10-28T03:30:00.000Z"]
-        let sections = MediaRules.sections(["undated", "before", "after", "evening"],
-                                           timestamp: { taken[$0].flatMap(ISODate.parse) }, calendar: calendar)
-        expectEqual(sections.map(\.title),
-                    ["Day 11 · Fri, Nov 6, 2026", "Day 2 · Wed, Oct 28, 2026", "Day 1 · Tue, Oct 27, 2026", "Recently"],
-                    "local days, across the clock change; undated last")
-        expectEqual(sections.map(\.items), [["after"], ["before"], ["evening"], ["undated"]], "one day each")
-    }
-
     await check("Descriptions keep bold, italic, links and lists") {
         let plain = "Two coats in the kitchen\n- walls\n- trim\n\nGate code 1234"
         expectEqual(RichText.markdown(RichText.lines(plain)), plain, "plain text reads as it was written")
