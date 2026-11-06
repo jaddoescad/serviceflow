@@ -22,6 +22,7 @@ import type { PhotoFeedItem, PhotoBatch, PhotoSummary } from "@/lib/photo-feed";
 import {
   localDateKey,
   dateHeading,
+  photoDay,
   captureTime,
   durationLabel,
 } from "@/lib/media-format";
@@ -33,6 +34,29 @@ function initials(name: string): string {
     .map((part) => part[0]?.toUpperCase())
     .join("");
   return letters || SITE_INITIALS;
+}
+
+/** The date with each job's day, counted from that job's first photo. */
+function DayHeading({ items }: { items: PhotoFeedItem[] }) {
+  const date = dateHeading(items[0].capturedAt);
+  const jobs = new Map<string, { day: number; name: string }>();
+  for (const photo of items) {
+    if (!photo.projectFirstAt || jobs.has(photo.ownerProjectId)) continue;
+    const day = photoDay(photo.capturedAt, photo.projectFirstAt);
+    if (day > 0) jobs.set(photo.ownerProjectId, { day, name: photo.projectName });
+  }
+  const days = [...jobs.values()];
+  if (days.length === 1) return <>{`Day ${days[0].day} · ${date}`}</>;
+  return (
+    <>
+      {date}{" "}
+      {days.length ? (
+        <span className="ml-2 font-normal text-[var(--color-muted)]">
+          {days.map((job) => `Day ${job.day} ${job.name}`).join(" · ")}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 function mediaUrl(photo: PhotoFeedItem): string {
@@ -76,6 +100,7 @@ export function PhotoFeed({
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [creators, setCreators] = useState<string[]>([]);
+  const [hideCreators, setHideCreators] = useState(false);
   const [view, setView] = useState<MediaView>({
     type: "all",
     size: "compact",
@@ -96,6 +121,7 @@ export function PhotoFeed({
     if (uploaderId) params.set("uploader", uploaderId);
     projectIds.forEach((id) => params.append("project", id));
     creators.forEach((name) => params.append("creator", name));
+    if (hideCreators && creators.length) params.set("hide_creators", "1");
     tags.forEach((tag) => params.append("tag", tag));
     if (view.type !== "all") params.set("media", view.type);
     if (view.oldestFirst) params.set("order", "oldest");
@@ -105,6 +131,7 @@ export function PhotoFeed({
   }, [
     projectIds,
     creators,
+    hideCreators,
     tags,
     view.type,
     view.oldestFirst,
@@ -216,6 +243,7 @@ export function PhotoFeed({
             }}
             onProjects={setProjectIds}
             onUsers={setCreators}
+            excludeUsers={{ value: hideCreators, onChange: setHideCreators }}
             from={from}
             to={to}
             onDates={(start, end) => {
@@ -282,7 +310,7 @@ export function PhotoFeed({
                     className="h-4 w-4 accent-[var(--color-brand)]"
                   />
                   <h2 className="text-sm font-semibold text-[var(--color-heading)]">
-                    {dateHeading(items[0].capturedAt)}
+                    <DayHeading items={items} />
                   </h2>
                 </div>
 

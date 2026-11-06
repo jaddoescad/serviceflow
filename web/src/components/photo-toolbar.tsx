@@ -114,22 +114,46 @@ function ChoiceFilter({
   options,
   selected,
   onChange,
+  exclude,
 }: {
   label: string;
   options: [string, string][];
   selected: string[];
   onChange: (values: string[]) => void;
+  /** Lets the choices be hidden instead of shown only. */
+  exclude?: { value: boolean; onChange: (value: boolean) => void };
 }) {
+  const hiding = Boolean(exclude?.value && selected.length);
   const [query, setQuery] = useState("");
   const matches = options.filter(([, name]) =>
     name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
   return (
     <Popover
-      label={`${label}${selected.length ? ` (${selected.length})` : ""}`}
+      label={`${label}${selected.length ? ` (${hiding ? "hiding " : ""}${selected.length})` : ""}`}
       active={selected.length > 0}
     >
       <div className="w-80 max-w-full p-4">
+        {exclude ? (
+          <div className="mb-3 grid grid-cols-2 rounded-[var(--radius-control)] border border-[var(--color-border-strong)] p-0.5 text-[13px]">
+            {(
+              [
+                [false, "Show only"],
+                [true, "Hide"],
+              ] as const
+            ).map(([value, text]) => (
+              <button
+                key={text}
+                type="button"
+                aria-pressed={exclude.value === value}
+                onClick={() => exclude.onChange(value)}
+                className={`h-7 rounded-[calc(var(--radius-control)-2px)] font-medium ${exclude.value === value ? "bg-[var(--color-surface-2)] text-[var(--color-heading)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"}`}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <input
           type="search"
           aria-label={`Search ${label.toLowerCase()}`}
@@ -289,6 +313,7 @@ export function PhotoToolbar({
   projects,
   users,
   hideUsers = false,
+  excludeUsers,
   selectedProjects = [],
   selectedUsers,
   onProjects,
@@ -304,6 +329,8 @@ export function PhotoToolbar({
   projects?: [string, string][];
   users: [string, string][];
   hideUsers?: boolean;
+  /** Offers hiding the selected users instead of showing only them. */
+  excludeUsers?: { value: boolean; onChange: (value: boolean) => void };
   selectedProjects?: string[];
   selectedUsers: string[];
   onProjects?: (values: string[]) => void;
@@ -343,6 +370,7 @@ export function PhotoToolbar({
           options={users}
           selected={selectedUsers}
           onChange={onUsers}
+          exclude={excludeUsers}
         />
       )}
       {tags ? (
@@ -361,6 +389,7 @@ export function PhotoToolbar({
             onProjects?.([]);
             tags?.onChange([]);
             onUsers([]);
+            excludeUsers?.onChange(false);
           }}
           className="h-8 rounded-md px-2 text-[13px] font-medium text-[var(--color-brand-strong)] hover:bg-[var(--color-hover)]"
         >

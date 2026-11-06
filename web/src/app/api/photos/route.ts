@@ -33,6 +33,7 @@ export async function GET(request: Request) {
     }
     if (
       (params.has("options") && params.get("options") !== "1") ||
+      (params.has("hide_creators") && params.get("hide_creators") !== "1") ||
       projects.length > 100 ||
       projects.some((project) => !uuid.test(project)) ||
       (uploader !== null && !uuid.test(uploader)) ||
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
         uploader_filter: uploader,
         tag_filters: tags.length ? tags : null,
         creator_filters: creators.length ? creators : null,
+        exclude_creators: params.get("hide_creators") === "1",
         oldest_first: params.get("order") === "oldest",
         media_filter: media,
         since_filter:

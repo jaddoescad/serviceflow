@@ -13,6 +13,8 @@ export type PhotoFeedItem = {
   capturedAt: string;
   creatorName: string;
   description: string | null;
+  /** The job's first photo, which the Photos page counts days from. */
+  projectFirstAt: string | null;
 };
 
 export type PhotoCursor = {
@@ -35,6 +37,8 @@ export type PhotoFilters = {
   uploader_filter?: string | null;
   project_filters: string[] | null;
   creator_filters: string[] | null;
+  /** Hide `creator_filters` instead of showing only them. */
+  exclude_creators?: boolean;
   media_filter: string | null;
   since_filter: string | null;
   until_filter?: string | null;
