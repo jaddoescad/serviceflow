@@ -14,7 +14,8 @@ export type GalleryPage = {
   total: number;
   hasMore: boolean;
   cursor: GalleryCursor | null;
-  options: { creators: string[]; tags: string[] } | null;
+  /** First page only. `firstTakenAt` is the project's first photo, whatever the filters. */
+  options: { creators: string[]; tags: string[]; firstTakenAt?: string | null } | null;
 };
 export const DEFAULT_GALLERY_FILTERS: GalleryFilters = {
   type: "all",

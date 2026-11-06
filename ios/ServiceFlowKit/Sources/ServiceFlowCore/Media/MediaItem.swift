@@ -117,7 +117,9 @@ public enum MediaRules {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Photos and videos grouped by local day, newest first.
+    /// Photos and videos grouped by local day, newest first. Days count from
+    /// the first day with photos ("Day 10 · Fri, Nov 6, 2026"), so before and
+    /// after shots are easy to tell apart.
     public static func sections<Item>(_ items: [Item], timestamp: (Item) -> Date?, calendar: Calendar = .current)
         -> [(key: String, title: String, items: [Item])] {
         let sorted = items.enumerated().sorted { lhs, rhs in
@@ -125,6 +127,7 @@ public enum MediaRules {
             let r = timestamp(rhs.element)?.timeIntervalSince1970 ?? 0
             return l == r ? lhs.offset < rhs.offset : l > r
         }.map(\.element)
+        let firstDay = sorted.compactMap(timestamp).last.map { calendar.startOfDay(for: $0) }
         var order: [String] = []
         var groups: [String: [Item]] = [:]
         var titles: [String: String] = [:]
@@ -133,7 +136,11 @@ public enum MediaRules {
             let key = date.map { DayKey.of($0, calendar: calendar) } ?? "recent"
             if groups[key] == nil {
                 order.append(key)
-                titles[key] = DateText.canadianLongDate(date)
+                if let date, let firstDay {
+                    let day = (calendar.dateComponents([.day], from: firstDay, to: calendar.startOfDay(for: date)).day ?? 0) + 1
+                    let label = DateText.format(date, template: "EEEMMMdy", locale: DateText.canada, timeZone: calendar.timeZone)
+                    titles[key] = "Day \(day) · \(label)"
+                }
             }
             groups[key, default: []].append(item)
         }

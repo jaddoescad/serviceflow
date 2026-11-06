@@ -13,6 +13,12 @@ export function localDateKey(iso: string): string {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+/** Ottawa calendar days since the project's first photo; that day is Day 1. */
+export function photoDay(iso: string, firstIso: string): number {
+  const days = (key: string) => Date.parse(`${key}T00:00:00Z`) / 86_400_000;
+  return days(localDateKey(iso)) - days(localDateKey(firstIso)) + 1;
+}
+
 function ordinal(day: number): string {
   const remainder = day % 100;
   if (remainder >= 11 && remainder <= 13) return `${day}th`;

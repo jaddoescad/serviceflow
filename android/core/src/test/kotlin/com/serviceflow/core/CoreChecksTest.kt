@@ -499,6 +499,25 @@ class CoreChecksTest {
     }
 
     @Test
+    fun photoDaysCountFromTheFirstDayWithPhotos() {
+        val zone = ZoneId.of("America/Toronto")
+        val taken = mapOf(
+            "after" to "2026-11-06T14:00:00.000Z", "before" to "2026-10-28T14:00:00.000Z",
+            "evening" to "2026-10-28T03:30:00.000Z",
+        )
+        val sections = MediaRules.sections(listOf("undated", "before", "after", "evening"),
+                                           timestamp = { taken[it]?.let(ISODate::parse) }, zone = zone)
+        // Phones write "Fri, Nov 6, 2026" (as iOS does); JDK 17's older CLDR data writes "Fri., Nov. 6, 2026".
+        val date = { iso: String -> DateText.format(ISODate.parse(iso), "EEEMMMdy", locale = DateText.canada, zone = zone) }
+        assertEquals("local days, across the clock change; undated last",
+                     listOf("Day 11 · ${date(taken.getValue("after"))}", "Day 2 · ${date(taken.getValue("before"))}",
+                            "Day 1 · ${date(taken.getValue("evening"))}", "Recently"),
+                     sections.map { it.title })
+        assertEquals("one day each", listOf(listOf("after"), listOf("before"), listOf("evening"), listOf("undated")),
+                     sections.map { it.items })
+    }
+
+    @Test
     fun descriptionsKeepBoldItalicLinksAndLists() {
         val plain = "Two coats in the kitchen\n- walls\n- trim\n\nGate code 1234"
         assertEquals("plain text reads as it was written", plain, RichText.markdown(RichText.lines(plain)))

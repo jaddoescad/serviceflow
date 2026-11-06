@@ -25,6 +25,7 @@ import type { ProjectContact, ProjectMediaItem } from "@/lib/project-data";
 import {
   localDateKey,
   dateHeading,
+  photoDay,
   captureTime,
   durationLabel,
 } from "@/lib/media-format";
@@ -224,6 +225,7 @@ export function ProjectPhotosPanel({
     };
   }, [galleryOpen, closeGallery, mayLeave, setActiveImageId]);
 
+  const firstTakenAt = gallery.page.options?.firstTakenAt;
   const groups = new Map<string, ProjectMediaItem[]>();
   for (const item of visibleMedia) {
     const capturedAt = item.capturedAt ?? item.createdAt;
@@ -326,6 +328,9 @@ export function ProjectPhotosPanel({
           <div className="space-y-7">
             {[...groups.values()].map((items) => {
               const firstCapturedAt = items[0].capturedAt ?? items[0].createdAt;
+              const day = firstTakenAt
+                ? photoDay(firstCapturedAt, firstTakenAt)
+                : 0;
               return (
                 <section
                   key={localDateKey(firstCapturedAt)}
@@ -357,6 +362,7 @@ export function ProjectPhotosPanel({
                       }}
                       className="h-5 w-5 accent-blue-600"
                     />
+                    {day > 0 ? `Day ${day} · ` : ""}
                     {dateHeading(firstCapturedAt)}
                   </h2>
                   <div
