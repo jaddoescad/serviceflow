@@ -170,19 +170,22 @@ struct ProjectDocumentRow: View {
     }
 }
 
-/// A written page. Managers edit it; everyone else reads it.
+/// A written page. Managers edit it right here, and it saves as they type
+/// like the web's editor; everyone else reads it.
 struct ProjectDocumentPageScreen: View {
     let document: ProjectDocument
 
     @Environment(SessionContext.self) private var session
     @State private var page: ProjectDocumentPage?
+    @State private var editing: PageEditing?
     @State private var failed = false
-    @State private var editing = false
 
     var body: some View {
         Group {
             if let page {
-                ProjectDocumentWebView(html: ProjectDocuments.pageDocument(body: page.body)).ignoresSafeArea(edges: .bottom)
+                ProjectDocumentWebView(html: ProjectDocuments.pageDocument(body: page.body, editable: editing != nil), editing: editing)
+                    .id(page.updatedAt)
+                    .ignoresSafeArea(edges: .bottom)
             } else if failed {
                 ContentUnavailableView {
                     Label("Couldn't load this page", systemImage: "wifi.exclamationmark")
@@ -198,155 +201,344 @@ struct ProjectDocumentPageScreen: View {
         .navigationTitle(document.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if session.isManager, page != nil {
+            if let status = editing?.statusText {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Edit") { editing = true }
+                    Text(status)
+                        .font(.footnote)
+                        .foregroundStyle(editing?.status == .failed ? Color(hex: 0xb42318) : .secondary)
                 }
             }
         }
-        .fullScreenCover(isPresented: $editing) {
-            if let page {
-                ProjectDocumentPageEditor(document: document, page: page) { self.page = $0 }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if editing?.status == .conflict {
+                HStack {
+                    Text("Someone else changed this page.").font(.footnote)
+                    Spacer()
+                    Button("Reload") { Task { await load() } }.font(.footnote.weight(.semibold))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(hex: 0xfef3f2))
             }
         }
-        .task { await load() }
+        .task { if page == nil { await load() } }
+        // Leaving keeps the last few keystrokes too.
+        .onDisappear { if let editing { Task { await editing.flush() } } }
     }
 
     private func load() async {
         failed = false
         do {
-            page = try await session.api.pageDocument(document)
+            let loaded = try await session.api.pageDocument(document)
+            editing = session.isManager ? PageEditing(api: session.api, document: document, page: loaded) : nil
+            page = loaded
         } catch {
             failed = true
         }
     }
 }
 
-/// Editing a page on its own screen; Save keeps it on the job for everyone.
-private struct ProjectDocumentPageEditor: View {
-    let document: ProjectDocument
-    let page: ProjectDocumentPage
-    let onSave: (ProjectDocumentPage) -> Void
+/// A manager editing a page: what the format bar shows, and saving each
+/// change a second after typing stops, over the version they have open.
+@MainActor
+@Observable
+final class PageEditing {
+    enum Status { case idle, saving, saved, failed, conflict }
 
-    @Environment(SessionContext.self) private var session
-    @Environment(\.dismiss) private var dismiss
-    @State private var editor = PageEditor()
-    @State private var saving = false
-    @State private var error: String?
+    /// The selection's formatting, as the page editor script reports it.
+    struct Format: Equatable {
+        var block = "p"
+        var bold = false, italic = false, underline = false
+        var bullets = false, numbers = false, checklist = false
+    }
+
+    private(set) var status = Status.idle
+    private(set) var format = Format()
+    @ObservationIgnored weak var view: WKWebView?
+    @ObservationIgnored private let api: ServiceFlowAPI
+    @ObservationIgnored private let document: ProjectDocument
+    @ObservationIgnored private var page: ProjectDocumentPage
+    @ObservationIgnored private var pending: String?
+    @ObservationIgnored private var saving = false
+    @ObservationIgnored private var timer: Task<Void, Never>?
+
+    init(api: ServiceFlowAPI, document: ProjectDocument, page: ProjectDocumentPage) {
+        self.api = api
+        self.document = document
+        self.page = page
+    }
+
+    var statusText: String? {
+        switch status {
+        case .idle, .conflict: nil
+        case .saving: "Saving…"
+        case .saved: "Saved"
+        case .failed: "Not saved"
+        }
+    }
+
+    /// Runs a formatting command in the page (see page-editor.js).
+    func run(_ command: String, _ value: String? = nil) {
+        let arguments = [command, value].compactMap { $0 }
+        guard let data = try? JSONSerialization.data(withJSONObject: arguments), let list = String(data: data, encoding: .utf8) else { return }
+        view?.evaluateJavaScript("serviceFlowPage.run(...\(list))", in: nil, in: .defaultClient)
+    }
+
+    func hideKeyboard() {
+        view?.endEditing(true)
+    }
+
+    /// A message from page-editor.js.
+    func received(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        switch message["kind"] as? String {
+        case "changed":
+            if let html = message["html"] as? String { changed(html) }
+        case "state":
+            format = Format(
+                block: message["block"] as? String ?? "p",
+                bold: message["bold"] as? Bool ?? false,
+                italic: message["italic"] as? Bool ?? false,
+                underline: message["underline"] as? Bool ?? false,
+                bullets: message["bullets"] as? Bool ?? false,
+                numbers: message["numbers"] as? Bool ?? false,
+                checklist: message["checklist"] as? Bool ?? false
+            )
+        default:
+            break
+        }
+    }
+
+    /// Saves whatever hasn't been saved yet, now.
+    func flush() async {
+        timer?.cancel()
+        await save()
+    }
+
+    private func changed(_ html: String) {
+        guard status != .conflict, html != (pending ?? page.body) else { return }
+        pending = html
+        later(seconds: 1)
+    }
+
+    private func later(seconds: Double) {
+        timer?.cancel()
+        timer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            await self?.save()
+        }
+    }
+
+    private func save() async {
+        guard !saving, status != .conflict, let body = pending else { return }
+        saving = true
+        pending = nil
+        status = .saving
+        do {
+            if let version = try await api.savePageDocument(document, page: page, body: body) {
+                page.body = body
+                page.updatedAt = version
+                status = .saved
+            } else {
+                status = .conflict
+            }
+        } catch {
+            if pending == nil { pending = body }
+            status = .failed
+            later(seconds: 4)
+        }
+        saving = false
+        if status == .saved, pending != nil { await save() }
+    }
+}
+
+/// The bar above the keyboard while a manager edits a page: the web editor's
+/// text styles, colours and lists.
+private struct PageFormatBar: View {
+    let editing: PageEditing
+
+    private static let blocks = [("h1", "Heading 1"), ("h2", "Heading 2"), ("h3", "Heading 3"), ("p", "Paragraph")]
+    private static let colors: [(String, UInt32)] = [
+        ("Default", 0x101725), ("Gray", 0x6b7688), ("Red", 0xd3453e), ("Orange", 0xd9730d),
+        ("Yellow", 0xb7770f), ("Green", 0x17935a), ("Blue", 0x2f6bff), ("Purple", 0x7c3aed),
+    ]
 
     var body: some View {
-        NavigationStack {
-            ProjectDocumentWebView(html: ProjectDocuments.pageDocument(body: page.body, editable: true), editor: editor)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if let error {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(Color(hex: 0xb42318))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(.bar)
-                    }
-                }
-                .navigationTitle(document.name)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }.disabled(saving)
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        if saving {
-                            ProgressView()
-                        } else {
-                            Button("Save", action: save)
+        let format = editing.format
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    Menu {
+                        ForEach(Self.blocks, id: \.0) { tag, label in
+                            Button(label) { editing.run("formatBlock", "<\(tag)>") }
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(Self.blocks.first { $0.0 == format.block }?.1 ?? "Paragraph")
+                            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                        }
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 36)
                     }
+                    .accessibilityLabel("Text style")
+                    button("bold", "Bold", active: format.bold) { editing.run("bold") }
+                    button("italic", "Italic", active: format.italic) { editing.run("italic") }
+                    button("underline", "Underline", active: format.underline) { editing.run("underline") }
+                    Menu {
+                        ForEach(Self.colors, id: \.0) { name, hex in
+                            Button {
+                                editing.run("foreColor", String(format: "#%06x", hex))
+                            } label: {
+                                Label {
+                                    Text(name)
+                                } icon: {
+                                    Image(uiImage: UIImage(systemName: "circle.fill")!
+                                        .withTintColor(UIColor(Color(hex: hex)), renderingMode: .alwaysOriginal))
+                                }
+                            }
+                        }
+                    } label: {
+                        icon("paintpalette", active: false)
+                    }
+                    .accessibilityLabel("Text colour")
+                    Divider().frame(height: 20).padding(.horizontal, 6)
+                    button("list.bullet", "Bulleted list", active: format.bullets) { editing.run("bullets") }
+                    button("list.number", "Numbered list", active: format.numbers) { editing.run("numbers") }
+                    button("checklist", "Checklist", active: format.checklist) { editing.run("checklist") }
+                    Divider().frame(height: 20).padding(.horizontal, 6)
+                    button("arrow.uturn.backward", "Undo", active: false) { editing.run("undo") }
+                    button("arrow.uturn.forward", "Redo", active: false) { editing.run("redo") }
                 }
-        }
-    }
-
-    private func save() {
-        saving = true
-        error = nil
-        Task {
-            defer { saving = false }
-            do {
-                let body = try await editor.body()
-                if body == editor.original { return dismiss() }
-                guard let saved = try await session.api.savePageDocument(document, page: page, body: body) else {
-                    error = "Someone else changed this page. Cancel, then open it again to see their changes."
-                    return
-                }
-                onSave(ProjectDocumentPage(body: body, links: page.links, updatedAt: saved))
-                dismiss()
-            } catch {
-                self.error = "The page could not be saved. Check your connection and try again."
+                .padding(.horizontal, 8)
             }
+            Divider().frame(height: 20)
+            button("keyboard.chevron.compact.down", "Hide keyboard", active: false) { editing.hideKeyboard() }
+                .padding(.horizontal, 4)
         }
+        .padding(.vertical, 6)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func button(_ symbol: String, _ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { icon(symbol, active: active) }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(active ? .isSelected : [])
+    }
+
+    private func icon(_ symbol: String, active: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .medium))
+            .frame(width: 40, height: 36)
+            .foregroundStyle(active ? DetailPalette.brand : Color.primary)
+            .background(active ? DetailPalette.brand.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-/// The editable page's web view, read back when saving.
-@MainActor
-private final class PageEditor {
-    weak var view: WKWebView?
-    /// The body as it opened, to tell whether anything changed.
-    var original: String?
-
-    func body() async throws -> String {
-        guard let html = try await view?.evaluateJavaScript("document.body.innerHTML") as? String else {
-            throw BackendError.offline("The page isn't ready yet.")
-        }
-        return html
-    }
-}
-
-/// Shows a page's HTML with its scripts off; links open in Safari. With an
-/// editor, the page is editable and new paragraphs are `<p>` like the web's.
+/// Shows a page's HTML with its scripts off; links open in Safari. With
+/// `editing`, the page editor script (in the app's own script world) edits it
+/// and the keyboard carries the format bar.
 private struct ProjectDocumentWebView: UIViewRepresentable {
     let html: String
-    var editor: PageEditor?
+    var editing: PageEditing?
 
-    func makeCoordinator() -> Coordinator { Coordinator(editor: editor) }
+    private static let editorScript = Bundle.main.url(forResource: "page-editor", withExtension: "js")
+        .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> PageWebView {
         let configuration = WKWebViewConfiguration()
-        // The app's own evaluateJavaScript still runs.
+        // Only the page's own scripts; the app's still run.
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        let view = WKWebView(frame: .zero, configuration: configuration)
+        if let editing {
+            let scripts = WKUserContentController()
+            scripts.addUserScript(WKUserScript(source: Self.editorScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .defaultClient))
+            scripts.add(PageMessages(editing), contentWorld: .defaultClient, name: "page")
+            configuration.userContentController = scripts
+        }
+        let view = PageWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.isOpaque = false
-        view.backgroundColor = .systemBackground
-        editor?.view = view
+        view.backgroundColor = .white
+        if let editing {
+            editing.view = view
+            let bar = UIHostingController(rootView: PageFormatBar(editing: editing))
+            bar.view.backgroundColor = .clear
+            let accessory = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 49))
+            accessory.autoresizingMask = .flexibleWidth
+            bar.view.frame = accessory.bounds
+            bar.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            accessory.addSubview(bar.view)
+            context.coordinator.bar = bar
+            view.useAccessory(accessory)
+        }
         context.coordinator.html = html
         view.loadHTMLString(html, baseURL: nil)
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
-        // A saved edit comes back as new HTML.
+    func updateUIView(_ view: PageWebView, context: Context) {
         guard context.coordinator.html != html else { return }
         context.coordinator.html = html
         view.loadHTMLString(html, baseURL: nil)
     }
 
+    static func dismantleUIView(_ view: PageWebView, coordinator: Coordinator) {
+        view.configuration.userContentController.removeAllScriptMessageHandlers()
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate {
-        let editor: PageEditor?
         var html = ""
-
-        init(editor: PageEditor?) { self.editor = editor }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard let editor else { return }
-            webView.evaluateJavaScript("document.execCommand('defaultParagraphSeparator', false, 'p'); document.body.innerHTML") { result, _ in
-                MainActor.assumeIsolated { editor.original = result as? String }
-            }
-        }
+        var bar: UIHostingController<PageFormatBar>?
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url else { return .allow }
             await UIApplication.shared.open(url)
             return .cancel
         }
+    }
+}
+
+/// Hands page-editor.js messages to the editing without WebKit keeping it alive.
+private final class PageMessages: NSObject, WKScriptMessageHandler {
+    weak var editing: PageEditing?
+
+    init(_ editing: PageEditing) { self.editing = editing }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let text = message.body as? String else { return }
+        MainActor.assumeIsolated { editing?.received(text) }
+    }
+}
+
+/// A web view whose keyboard carries our bar instead of WebKit's (arrows and
+/// Done). WebKit's text input view is a private class, so it is given a
+/// subclass that asks the web view for the bar.
+final class PageWebView: WKWebView {
+    private var accessory: UIView?
+
+    func useAccessory(_ accessory: UIView) {
+        self.accessory = accessory
+        guard let content = scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") }),
+              let base: AnyClass = object_getClass(content) else { return }
+        let name = "\(NSStringFromClass(base))_PageAccessory"
+        var subclass: AnyClass? = NSClassFromString(name)
+        if subclass == nil, let made = objc_allocateClassPair(base, name, 0) {
+            let accessoryView: @convention(block) (UIView) -> UIView? = { content in
+                var parent = content.superview
+                while let view = parent, !(view is PageWebView) { parent = view.superview }
+                return (parent as? PageWebView)?.accessory
+            }
+            class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(accessoryView), "@@:")
+            objc_registerClassPair(made)
+            subclass = made
+        }
+        if let subclass { object_setClass(content, subclass) }
     }
 }

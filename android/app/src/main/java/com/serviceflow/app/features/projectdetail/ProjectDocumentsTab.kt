@@ -4,20 +4,29 @@ import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.view.inputmethod.InputMethodManager
+import android.webkit.JavascriptInterface
 import android.webkit.MimeTypeMap
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -25,9 +34,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatColorText
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatListNumbered
+import androidx.compose.material.icons.filled.FormatUnderlined
+import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -37,6 +56,8 @@ import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,10 +67,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,9 +81,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,12 +109,16 @@ import com.serviceflow.app.features.jobs.ContentUnavailable
 import com.serviceflow.core.ProjectDocument
 import com.serviceflow.core.ProjectDocumentKind
 import com.serviceflow.core.ProjectDocuments
+import com.serviceflow.core.boolValue
+import com.serviceflow.core.get
 import com.serviceflow.core.stringValue
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 
 /** The Documents tab's list; kept with the job's screen so switching tabs doesn't blank it. */
@@ -288,23 +320,34 @@ private fun view(context: Context, file: File, document: ProjectDocument): Strin
     }
 }
 
-/** A written page (pushed from the Documents tab). Managers edit it; everyone else reads it. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * A written page (pushed from the Documents tab). Managers edit it right
+ * here, and it saves as they type like the web's editor; everyone else reads it.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
     val session = LocalSession.current
     var page by remember { mutableStateOf<ProjectDocumentPage?>(null) }
+    var editing by remember { mutableStateOf<PageEditing?>(null) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(attempt) {
         failed = false
         try {
-            page = session.api.pageDocument(document)
+            val loaded = session.api.pageDocument(document)
+            editing = if (session.isManager) PageEditing(session.api, document, loaded, session.scope) else null
+            page = loaded
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
             failed = true
         }
+    }
+    // Leaving keeps the last few keystrokes too.
+    DisposableEffect(editing) {
+        val current = editing
+        onDispose { current?.let { session.scope.launch { it.flush() } } }
     }
 
     Scaffold(
@@ -315,130 +358,275 @@ fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    val loaded = page
-                    if (session.isManager && loaded != null) {
-                        TextButton(onClick = {
-                            session.navigator.push { onBackFromEditor ->
-                                ProjectDocumentPageEditor(document, loaded, onSaved = { page = it }, onBack = onBackFromEditor)
-                            }
-                        }) { Text("Edit") }
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            val loaded = page
-            when {
-                loaded != null -> PageWebView(ProjectDocuments.pageDocument(body = loaded.body), Modifier.fillMaxSize())
-                failed -> ContentUnavailable(
-                    icon = Icons.Outlined.CloudOff,
-                    title = "Couldn't load this page",
-                    description = { Text("Check your connection and try again.") },
-                    actions = {
-                        TextButton(onClick = { attempt++ }, colors = ButtonDefaults.textButtonColors(contentColor = DetailPalette.brand)) {
-                            Text("Try Again")
-                        }
-                    },
-                )
-                else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = DetailPalette.brand)
-            }
-        }
-    }
-}
-
-/** Editing a page on its own screen; Save keeps it on the job for everyone. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ProjectDocumentPageEditor(
-    document: ProjectDocument,
-    page: ProjectDocumentPage,
-    onSaved: (ProjectDocumentPage) -> Unit,
-    onBack: () -> Unit,
-) {
-    val session = LocalSession.current
-    val scope = rememberCoroutineScope()
-    val editor = remember { PageEditor() }
-    var saving by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    fun save() {
-        if (saving) return
-        saving = true
-        error = null
-        scope.launch {
-            try {
-                val body = editor.body()
-                if (body == editor.original) return@launch onBack()
-                val saved = session.api.savePageDocument(document, page, body)
-                if (saved == null) {
-                    error = "Someone else changed this page. Close it, then open it again to see their changes."
-                } else {
-                    onSaved(ProjectDocumentPage(body, page.links, saved))
-                    onBack()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Throwable) {
-                error = "The page could not be saved. Check your connection and try again."
-            } finally {
-                saving = false
-            }
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(document.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    IconButton(onClick = onBack, enabled = !saving) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
-                },
-                actions = {
-                    if (saving) {
-                        CircularProgressIndicator(Modifier.padding(horizontal = 20.dp).size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        TextButton(onClick = ::save) { Text("Save") }
+                    editing?.statusText?.let { status ->
+                        val color = if (editing?.status == PageEditing.Status.Failed) hex(0xb42318) else MaterialTheme.colorScheme.onSurfaceVariant
+                        Text(status, style = appText(13, color = color), modifier = Modifier.padding(end = 16.dp))
                     }
                 },
             )
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            PageWebView(ProjectDocuments.pageDocument(body = page.body, editable = true), Modifier.weight(1f).fillMaxWidth(), editor)
-            error?.let { Text(it, style = appText(13, color = hex(0xb42318)), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
-        }
-    }
-}
-
-/** The editable page's web view, read back when saving. */
-private class PageEditor {
-    var view: WebView? = null
-    /** The body as it opened, to tell whether anything changed. */
-    var original: String? = null
-
-    suspend fun body(): String = suspendCancellableCoroutine { continuation ->
-        val view = view ?: return@suspendCancellableCoroutine continuation.resumeWithException(IllegalStateException("The page isn't ready yet."))
-        view.evaluateJavascript("document.body.innerHTML") { result ->
-            val html = ServiceFlowAPI.parse(result.orEmpty()).stringValue
-            if (html != null) continuation.resume(html) else continuation.resumeWithException(IllegalStateException("The page isn't ready yet."))
+            val current = editing
+            if (current?.status == PageEditing.Status.Conflict) {
+                Row(
+                    Modifier.fillMaxWidth().background(hex(0xfef3f2)).padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Someone else changed this page.", style = appText(13, color = hex(0x101725)), modifier = Modifier.weight(1f))
+                    TextButton(onClick = { attempt++ }) { Text("Reload") }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                val loaded = page
+                when {
+                    loaded != null -> key(loaded.updatedAt) {
+                        PageWebView(ProjectDocuments.pageDocument(body = loaded.body, editable = current != null), Modifier.fillMaxSize(), current)
+                    }
+                    failed -> ContentUnavailable(
+                        icon = Icons.Outlined.CloudOff,
+                        title = "Couldn't load this page",
+                        description = { Text("Check your connection and try again.") },
+                        actions = {
+                            TextButton(onClick = { attempt++ }, colors = ButtonDefaults.textButtonColors(contentColor = DetailPalette.brand)) {
+                                Text("Try Again")
+                            }
+                        },
+                    )
+                    else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = DetailPalette.brand)
+                }
+            }
+            if (current != null && WindowInsets.isImeVisible) PageFormatBar(current)
         }
     }
 }
 
 /**
- * Shows a page's HTML with its scripts off; links open in the browser. With an
- * [editor], the page is editable and new paragraphs are `<p>` like the web's;
- * JavaScript is on only so the app can read it back, and the editable page's
- * policy still blocks scripts of its own.
+ * A manager editing a page: what the format bar shows, and saving each change
+ * a second after typing stops, over the version they have open. Saves run in
+ * the session's scope so leaving the page doesn't drop them.
  */
-@SuppressLint("SetJavaScriptEnabled")
+class PageEditing(
+    private val api: ServiceFlowAPI,
+    private val document: ProjectDocument,
+    private var page: ProjectDocumentPage,
+    private val scope: CoroutineScope,
+) {
+    enum class Status { Idle, Saving, Saved, Failed, Conflict }
+
+    /** The selection's formatting, as the page editor script reports it. */
+    data class Format(
+        val block: String = "p",
+        val bold: Boolean = false,
+        val italic: Boolean = false,
+        val underline: Boolean = false,
+        val bullets: Boolean = false,
+        val numbers: Boolean = false,
+        val checklist: Boolean = false,
+    )
+
+    var status by mutableStateOf(Status.Idle)
+        private set
+    var format by mutableStateOf(Format())
+        private set
+    var view: WebView? = null
+    private var pending: String? = null
+    private var saving = false
+    private var timer: Job? = null
+
+    val statusText: String?
+        get() = when (status) {
+            Status.Idle, Status.Conflict -> null
+            Status.Saving -> "Saving…"
+            Status.Saved -> "Saved"
+            Status.Failed -> "Not saved"
+        }
+
+    /** Runs a formatting command in the page (see page-editor.js). */
+    fun run(command: String, value: String? = null) {
+        val arguments = JsonArray(listOfNotNull(command, value).map(::JsonPrimitive))
+        view?.evaluateJavascript("serviceFlowPage.run(...$arguments)", null)
+    }
+
+    fun hideKeyboard() {
+        val view = view ?: return
+        view.context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(view.windowToken, 0)
+        view.clearFocus()
+    }
+
+    /** A message from page-editor.js. */
+    fun received(text: String) {
+        val message = ServiceFlowAPI.parse(text)
+        when (message["kind"].stringValue) {
+            "changed" -> message["html"].stringValue?.let(::changed)
+            "state" -> format = Format(
+                block = message["block"].stringValue ?: "p",
+                bold = message["bold"].boolValue == true,
+                italic = message["italic"].boolValue == true,
+                underline = message["underline"].boolValue == true,
+                bullets = message["bullets"].boolValue == true,
+                numbers = message["numbers"].boolValue == true,
+                checklist = message["checklist"].boolValue == true,
+            )
+        }
+    }
+
+    /** Saves whatever hasn't been saved yet, now. */
+    suspend fun flush() {
+        timer?.cancel()
+        save()
+    }
+
+    private fun changed(html: String) {
+        if (status == Status.Conflict || html == (pending ?: page.body)) return
+        pending = html
+        later(1_000)
+    }
+
+    private fun later(millis: Long) {
+        timer?.cancel()
+        timer = scope.launch {
+            delay(millis)
+            save()
+        }
+    }
+
+    private suspend fun save() {
+        if (saving || status == Status.Conflict) return
+        val body = pending ?: return
+        saving = true
+        pending = null
+        status = Status.Saving
+        try {
+            val version = api.savePageDocument(document, page, body)
+            if (version != null) {
+                page = page.copy(body = body, updatedAt = version)
+                status = Status.Saved
+            } else {
+                status = Status.Conflict
+            }
+        } catch (e: CancellationException) {
+            if (pending == null) pending = body
+            throw e
+        } catch (_: Throwable) {
+            if (pending == null) pending = body
+            status = Status.Failed
+            later(4_000)
+        } finally {
+            saving = false
+        }
+        if (status == Status.Saved && pending != null) save()
+    }
+}
+
+/** Hands page-editor.js messages to the editing on the main thread. */
+private class PageMessages(private val editing: PageEditing) {
+    private val main = Handler(Looper.getMainLooper())
+
+    @JavascriptInterface
+    fun post(text: String) {
+        main.post { editing.received(text) }
+    }
+}
+
+private val pageBlocks = listOf("h1" to "Heading 1", "h2" to "Heading 2", "h3" to "Heading 3", "p" to "Paragraph")
+private val pageColors = listOf(
+    "Default" to 0x101725L, "Gray" to 0x6b7688L, "Red" to 0xd3453eL, "Orange" to 0xd9730dL,
+    "Yellow" to 0xb7770fL, "Green" to 0x17935aL, "Blue" to 0x2f6bffL, "Purple" to 0x7c3aedL,
+)
+
+/** The bar above the keyboard while a manager edits a page: the web editor's text styles, colours and lists. */
 @Composable
-private fun PageWebView(html: String, modifier: Modifier = Modifier, editor: PageEditor? = null) {
+private fun PageFormatBar(editing: PageEditing) {
+    val format = editing.format
+    var menu by remember { mutableStateOf<String?>(null) }
+    HorizontalDivider()
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f).horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                TextButton(
+                    onClick = { menu = "block" },
+                    modifier = Modifier.focusProperties { canFocus = false },
+                ) {
+                    Text(pageBlocks.firstOrNull { it.first == format.block }?.second ?: "Paragraph", color = MaterialTheme.colorScheme.onSurface)
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                }
+                DropdownMenu(expanded = menu == "block", onDismissRequest = { menu = null }) {
+                    pageBlocks.forEach { (tag, label) ->
+                        DropdownMenuItem(text = { Text(label) }, onClick = {
+                            menu = null
+                            editing.run("formatBlock", "<$tag>")
+                        })
+                    }
+                }
+            }
+            PageFormatButton(Icons.Filled.FormatBold, "Bold", format.bold) { editing.run("bold") }
+            PageFormatButton(Icons.Filled.FormatItalic, "Italic", format.italic) { editing.run("italic") }
+            PageFormatButton(Icons.Filled.FormatUnderlined, "Underline", format.underline) { editing.run("underline") }
+            Box {
+                PageFormatButton(Icons.Filled.FormatColorText, "Text colour", false) { menu = "color" }
+                DropdownMenu(expanded = menu == "color", onDismissRequest = { menu = null }) {
+                    pageColors.forEach { (name, color) ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            leadingIcon = { Box(Modifier.size(16.dp).background(hex(color), RoundedCornerShape(8.dp))) },
+                            onClick = {
+                                menu = null
+                                editing.run("foreColor", "#%06x".format(color))
+                            },
+                        )
+                    }
+                }
+            }
+            VerticalDivider(Modifier.height(20.dp).padding(horizontal = 6.dp))
+            PageFormatButton(Icons.AutoMirrored.Filled.FormatListBulleted, "Bulleted list", format.bullets) { editing.run("bullets") }
+            PageFormatButton(Icons.Filled.FormatListNumbered, "Numbered list", format.numbers) { editing.run("numbers") }
+            PageFormatButton(Icons.Filled.Checklist, "Checklist", format.checklist) { editing.run("checklist") }
+            VerticalDivider(Modifier.height(20.dp).padding(horizontal = 6.dp))
+            PageFormatButton(Icons.AutoMirrored.Filled.Undo, "Undo", false) { editing.run("undo") }
+            PageFormatButton(Icons.AutoMirrored.Filled.Redo, "Redo", false) { editing.run("redo") }
+        }
+        VerticalDivider(Modifier.height(20.dp))
+        PageFormatButton(Icons.Filled.KeyboardHide, "Hide keyboard", false, editing::hideKeyboard)
+    }
+}
+
+@Composable
+private fun PageFormatButton(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            // The page keeps the cursor and keyboard while formatting.
+            .focusProperties { canFocus = false }
+            .size(44.dp)
+            .background(if (active) DetailPalette.brand.copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(8.dp))
+            .semantics {
+                contentDescription = label
+                selected = active
+            },
+    ) {
+        Icon(icon, contentDescription = null, tint = if (active) DetailPalette.brand else MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/**
+ * Shows a page's HTML with its scripts off; links open in the browser. With
+ * [editing], the page editor script edits it: JavaScript is on for that
+ * script, and the editable page's policy still blocks scripts of its own.
+ */
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+@Composable
+private fun PageWebView(html: String, modifier: Modifier = Modifier, editing: PageEditing? = null) {
     AndroidView(
         factory = { context ->
             WebView(context).apply {
-                settings.javaScriptEnabled = editor != null
+                settings.javaScriptEnabled = editing != null
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 setBackgroundColor(android.graphics.Color.WHITE)
@@ -452,18 +640,19 @@ private fun PageWebView(html: String, modifier: Modifier = Modifier, editor: Pag
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
-                        editor ?: return
-                        view.evaluateJavascript("document.execCommand('defaultParagraphSeparator', false, 'p'); document.body.innerHTML") {
-                            editor.original = ServiceFlowAPI.parse(it.orEmpty()).stringValue
-                        }
+                        if (editing == null) return
+                        val script = view.context.assets.open("page-editor.js").bufferedReader().use { it.readText() }
+                        view.evaluateJavascript(script, null)
                     }
                 }
-                editor?.view = this
+                if (editing != null) {
+                    addJavascriptInterface(PageMessages(editing), "ServiceFlowPage")
+                    editing.view = this
+                }
                 tag = html
                 loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
             }
         },
-        // A saved edit comes back as new HTML.
         update = { view ->
             if (view.tag != html) {
                 view.tag = html
@@ -471,7 +660,7 @@ private fun PageWebView(html: String, modifier: Modifier = Modifier, editor: Pag
             }
         },
         onRelease = {
-            editor?.view = null
+            if (editing?.view == it) editing.view = null
             it.destroy()
         },
         modifier = modifier,

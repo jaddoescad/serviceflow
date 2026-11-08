@@ -23,8 +23,8 @@ android {
         applicationId = "com.ottawapainters.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 113
-        versionName = "2.0.11"
+        versionCode = 114
+        versionName = "2.0.12"
 
         // Public by design: the publishable key only allows what row-level security permits.
         buildConfigField("String", "SUPABASE_URL", "\"https://bwbckdkouqghdadpkjvn.supabase.co\"")
