@@ -624,5 +624,13 @@ class CoreChecksTest {
         val swapped = ProjectDocuments.replacingImageSources(html, mapOf(mine to "https://signed/1"))
         assertTrue("image swapped, others kept", swapped.contains("src=\"https://signed/1\"") && swapped.contains(other))
         assertTrue("page wrapped", ProjectDocuments.pageDocument(body = "<p>Hi</p>").contains("<body><p>Hi</p></body>"))
+        val editable = ProjectDocuments.pageDocument(body = "<p>Hi</p>", editable = true)
+        assertTrue("editable page runs no page scripts",
+            editable.contains("<body contenteditable=\"true\"><p>Hi</p></body>") && editable.contains("default-src 'none'"))
+        assertTrue("read-only page isn't editable", !ProjectDocuments.pageDocument(body = "<p>Hi</p>").contains("<body contenteditable"))
+        val edited = "<p>Swatches, edited</p><img src=\"https://signed/1?a=1&amp;b=2\" alt=\"x\"><img src=\"$other\">"
+        assertEquals("edited page saves the web image addresses",
+            "<p>Swatches, edited</p><img src=\"$mine\" alt=\"x\"><img src=\"$other\">",
+            ProjectDocuments.restoringImageSources(edited, mapOf(mine to "https://signed/1?a=1&b=2")))
     }
 }

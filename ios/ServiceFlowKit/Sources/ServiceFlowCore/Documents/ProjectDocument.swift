@@ -164,16 +164,31 @@ public enum ProjectDocuments {
         links.reduce(html) { result, link in result.replacingOccurrences(of: link.key, with: link.value) }
     }
 
+    /// An edited page's HTML with each link put back to the image address it
+    /// stood for, so the saved page points at the web admin again.
+    public static func restoringImageSources(in html: String, from links: [String: String]) -> String {
+        links.reduce(html) { result, link in
+            result.replacingOccurrences(of: link.value.replacingOccurrences(of: "&", with: "&amp;"), with: link.key)
+                .replacingOccurrences(of: link.value, with: link.key)
+        }
+    }
+
     /// The page as a document for a web view: system font, images and tables
-    /// fit the screen, and dark mode follows the phone.
-    public static func pageDocument(body: String) -> String {
-        """
+    /// fit the screen, and dark mode follows the phone. An editable page runs
+    /// none of its own scripts; the app reads the edited body back itself.
+    public static func pageDocument(body: String, editable: Bool = false) -> String {
+        let policy = editable
+            ? "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src https: data:; style-src 'unsafe-inline'\">\n"
+            : ""
+        return """
         <!doctype html>
         <html><head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
+        \(policy)<style>
         :root { color-scheme: light dark; }
+        html { touch-action: manipulation; }
+        body[contenteditable] { min-height: 100vh; box-sizing: border-box; outline: none; }
         body { margin: 0; padding: 16px 20px 40px; font: 17px/1.5 -apple-system, system-ui, Roboto, sans-serif;
           color: #1c1c1e; background: #ffffff; overflow-wrap: anywhere; }
         @media (prefers-color-scheme: dark) { body { color: #f2f2f7; background: #000000; } a { color: #64a8ff; } }
@@ -184,7 +199,7 @@ public enum ProjectDocuments {
         th, td { border: 1px solid rgba(128, 128, 128, 0.35); padding: 6px 8px; text-align: left; }
         blockquote { margin: 0; padding-left: 12px; border-left: 3px solid rgba(128, 128, 128, 0.5); }
         </style>
-        </head><body>\(body)</body></html>
+        </head><body\(editable ? " contenteditable=\"true\"" : "")>\(body)</body></html>
         """
     }
 }

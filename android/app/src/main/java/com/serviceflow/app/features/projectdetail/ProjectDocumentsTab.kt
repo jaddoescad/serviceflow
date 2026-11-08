@@ -1,5 +1,6 @@
 package com.serviceflow.app.features.projectdetail
 
+import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -13,8 +14,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -62,10 +66,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.serviceflow.app.LocalSession
+import com.serviceflow.app.backend.ProjectDocumentPage
 import com.serviceflow.app.backend.ServiceFlowAPI
 import com.serviceflow.app.backend.downloadDocument
 import com.serviceflow.app.backend.pageDocument
 import com.serviceflow.app.backend.projectDocuments
+import com.serviceflow.app.backend.savePageDocument
 import com.serviceflow.app.design.AppIcon
 import com.serviceflow.app.design.DetailPalette
 import com.serviceflow.app.design.Palette
@@ -75,8 +81,12 @@ import com.serviceflow.app.features.jobs.ContentUnavailable
 import com.serviceflow.core.ProjectDocument
 import com.serviceflow.core.ProjectDocumentKind
 import com.serviceflow.core.ProjectDocuments
+import com.serviceflow.core.stringValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.io.File
 
 /** The Documents tab's list; kept with the job's screen so switching tabs doesn't blank it. */
@@ -278,18 +288,18 @@ private fun view(context: Context, file: File, document: ProjectDocument): Strin
     }
 }
 
-/** A written page, read-only (pushed from the Documents tab). */
+/** A written page (pushed from the Documents tab). Managers edit it; everyone else reads it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
     val session = LocalSession.current
-    var html by remember { mutableStateOf<String?>(null) }
+    var page by remember { mutableStateOf<ProjectDocumentPage?>(null) }
     var failed by remember { mutableStateOf(false) }
     var attempt by remember { mutableIntStateOf(0) }
     LaunchedEffect(attempt) {
         failed = false
         try {
-            html = session.api.pageDocument(document)
+            page = session.api.pageDocument(document)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Throwable) {
@@ -304,13 +314,23 @@ fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
+                actions = {
+                    val loaded = page
+                    if (session.isManager && loaded != null) {
+                        TextButton(onClick = {
+                            session.navigator.push { onBackFromEditor ->
+                                ProjectDocumentPageEditor(document, loaded, onSaved = { page = it }, onBack = onBackFromEditor)
+                            }
+                        }) { Text("Edit") }
+                    }
+                },
             )
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            val page = html
+            val loaded = page
             when {
-                page != null -> PageWebView(page, Modifier.fillMaxSize())
+                loaded != null -> PageWebView(ProjectDocuments.pageDocument(body = loaded.body), Modifier.fillMaxSize())
                 failed -> ContentUnavailable(
                     icon = Icons.Outlined.CloudOff,
                     title = "Couldn't load this page",
@@ -327,13 +347,98 @@ fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
     }
 }
 
-/** Shows a page's HTML with scripts off; links open in the browser. */
+/** Editing a page on its own screen; Save keeps it on the job for everyone. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PageWebView(html: String, modifier: Modifier = Modifier) {
+private fun ProjectDocumentPageEditor(
+    document: ProjectDocument,
+    page: ProjectDocumentPage,
+    onSaved: (ProjectDocumentPage) -> Unit,
+    onBack: () -> Unit,
+) {
+    val session = LocalSession.current
+    val scope = rememberCoroutineScope()
+    val editor = remember { PageEditor() }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun save() {
+        if (saving) return
+        saving = true
+        error = null
+        scope.launch {
+            try {
+                val body = editor.body()
+                if (body == editor.original) return@launch onBack()
+                val saved = session.api.savePageDocument(document, page, body)
+                if (saved == null) {
+                    error = "Someone else changed this page. Close it, then open it again to see their changes."
+                } else {
+                    onSaved(ProjectDocumentPage(body, page.links, saved))
+                    onBack()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                error = "The page could not be saved. Check your connection and try again."
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(document.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = {
+                    IconButton(onClick = onBack, enabled = !saving) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
+                },
+                actions = {
+                    if (saving) {
+                        CircularProgressIndicator(Modifier.padding(horizontal = 20.dp).size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        TextButton(onClick = ::save) { Text("Save") }
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            PageWebView(ProjectDocuments.pageDocument(body = page.body, editable = true), Modifier.weight(1f).fillMaxWidth(), editor)
+            error?.let { Text(it, style = appText(13, color = hex(0xb42318)), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+        }
+    }
+}
+
+/** The editable page's web view, read back when saving. */
+private class PageEditor {
+    var view: WebView? = null
+    /** The body as it opened, to tell whether anything changed. */
+    var original: String? = null
+
+    suspend fun body(): String = suspendCancellableCoroutine { continuation ->
+        val view = view ?: return@suspendCancellableCoroutine continuation.resumeWithException(IllegalStateException("The page isn't ready yet."))
+        view.evaluateJavascript("document.body.innerHTML") { result ->
+            val html = ServiceFlowAPI.parse(result.orEmpty()).stringValue
+            if (html != null) continuation.resume(html) else continuation.resumeWithException(IllegalStateException("The page isn't ready yet."))
+        }
+    }
+}
+
+/**
+ * Shows a page's HTML with its scripts off; links open in the browser. With an
+ * [editor], the page is editable and new paragraphs are `<p>` like the web's;
+ * JavaScript is on only so the app can read it back, and the editable page's
+ * policy still blocks scripts of its own.
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun PageWebView(html: String, modifier: Modifier = Modifier, editor: PageEditor? = null) {
     AndroidView(
         factory = { context ->
             WebView(context).apply {
-                settings.javaScriptEnabled = false
+                settings.javaScriptEnabled = editor != null
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 setBackgroundColor(android.graphics.Color.WHITE)
@@ -345,11 +450,30 @@ private fun PageWebView(html: String, modifier: Modifier = Modifier) {
                         }
                         return true
                     }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        editor ?: return
+                        view.evaluateJavascript("document.execCommand('defaultParagraphSeparator', false, 'p'); document.body.innerHTML") {
+                            editor.original = ServiceFlowAPI.parse(it.orEmpty()).stringValue
+                        }
+                    }
                 }
+                editor?.view = this
+                tag = html
                 loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
             }
         },
-        onRelease = { it.destroy() },
+        // A saved edit comes back as new HTML.
+        update = { view ->
+            if (view.tag != html) {
+                view.tag = html
+                view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            }
+        },
+        onRelease = {
+            editor?.view = null
+            it.destroy()
+        },
         modifier = modifier,
     )
 }

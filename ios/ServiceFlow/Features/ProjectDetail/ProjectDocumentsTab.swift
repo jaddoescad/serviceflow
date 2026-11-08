@@ -170,18 +170,19 @@ struct ProjectDocumentRow: View {
     }
 }
 
-/// A written page, read-only.
+/// A written page. Managers edit it; everyone else reads it.
 struct ProjectDocumentPageScreen: View {
     let document: ProjectDocument
 
     @Environment(SessionContext.self) private var session
-    @State private var html: String?
+    @State private var page: ProjectDocumentPage?
     @State private var failed = false
+    @State private var editing = false
 
     var body: some View {
         Group {
-            if let html {
-                ProjectDocumentWebView(html: html).ignoresSafeArea(edges: .bottom)
+            if let page {
+                ProjectDocumentWebView(html: ProjectDocuments.pageDocument(body: page.body)).ignoresSafeArea(edges: .bottom)
             } else if failed {
                 ContentUnavailableView {
                     Label("Couldn't load this page", systemImage: "wifi.exclamationmark")
@@ -196,39 +197,152 @@ struct ProjectDocumentPageScreen: View {
         }
         .navigationTitle(document.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if session.isManager, page != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") { editing = true }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $editing) {
+            if let page {
+                ProjectDocumentPageEditor(document: document, page: page) { self.page = $0 }
+            }
+        }
         .task { await load() }
     }
 
     private func load() async {
         failed = false
         do {
-            html = try await session.api.pageDocument(document)
+            page = try await session.api.pageDocument(document)
         } catch {
             failed = true
         }
     }
 }
 
-/// Shows a page's HTML with scripts off; links open in Safari.
+/// Editing a page on its own screen; Save keeps it on the job for everyone.
+private struct ProjectDocumentPageEditor: View {
+    let document: ProjectDocument
+    let page: ProjectDocumentPage
+    let onSave: (ProjectDocumentPage) -> Void
+
+    @Environment(SessionContext.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var editor = PageEditor()
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            ProjectDocumentWebView(html: ProjectDocuments.pageDocument(body: page.body, editable: true), editor: editor)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if let error {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(Color(hex: 0xb42318))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(.bar)
+                    }
+                }
+                .navigationTitle(document.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }.disabled(saving)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        if saving {
+                            ProgressView()
+                        } else {
+                            Button("Save", action: save)
+                        }
+                    }
+                }
+        }
+    }
+
+    private func save() {
+        saving = true
+        error = nil
+        Task {
+            defer { saving = false }
+            do {
+                let body = try await editor.body()
+                if body == editor.original { return dismiss() }
+                guard let saved = try await session.api.savePageDocument(document, page: page, body: body) else {
+                    error = "Someone else changed this page. Cancel, then open it again to see their changes."
+                    return
+                }
+                onSave(ProjectDocumentPage(body: body, links: page.links, updatedAt: saved))
+                dismiss()
+            } catch {
+                self.error = "The page could not be saved. Check your connection and try again."
+            }
+        }
+    }
+}
+
+/// The editable page's web view, read back when saving.
+@MainActor
+private final class PageEditor {
+    weak var view: WKWebView?
+    /// The body as it opened, to tell whether anything changed.
+    var original: String?
+
+    func body() async throws -> String {
+        guard let html = try await view?.evaluateJavaScript("document.body.innerHTML") as? String else {
+            throw BackendError.offline("The page isn't ready yet.")
+        }
+        return html
+    }
+}
+
+/// Shows a page's HTML with its scripts off; links open in Safari. With an
+/// editor, the page is editable and new paragraphs are `<p>` like the web's.
 private struct ProjectDocumentWebView: UIViewRepresentable {
     let html: String
+    var editor: PageEditor?
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(editor: editor) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        // The app's own evaluateJavaScript still runs.
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.isOpaque = false
         view.backgroundColor = .systemBackground
+        editor?.view = view
+        context.coordinator.html = html
         view.loadHTMLString(html, baseURL: nil)
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        // A saved edit comes back as new HTML.
+        guard context.coordinator.html != html else { return }
+        context.coordinator.html = html
+        view.loadHTMLString(html, baseURL: nil)
+    }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
+        let editor: PageEditor?
+        var html = ""
+
+        init(editor: PageEditor?) { self.editor = editor }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let editor else { return }
+            webView.evaluateJavaScript("document.execCommand('defaultParagraphSeparator', false, 'p'); document.body.innerHTML") { result, _ in
+                MainActor.assumeIsolated { editor.original = result as? String }
+            }
+        }
+
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url else { return .allow }
             await UIApplication.shared.open(url)

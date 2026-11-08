@@ -153,13 +153,23 @@ object ProjectDocuments {
     fun replacingImageSources(html: String, links: Map<String, String>): String =
         links.entries.fold(html) { result, link -> result.replace(link.key, link.value) }
 
-    private val pageHead = """
-        <!doctype html>
-        <html><head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+    /**
+     * An edited page's HTML with each link put back to the image address it
+     * stood for, so the saved page points at the web admin again.
+     */
+    fun restoringImageSources(html: String, links: Map<String, String>): String =
+        links.entries.fold(html) { result, link ->
+            result.replace(link.value.replace("&", "&amp;"), link.key).replace(link.value, link.key)
+        }
+
+    private const val editPolicy =
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src https: data:; style-src 'unsafe-inline'\">\n"
+
+    private val pageStyle = """
         <style>
         :root { color-scheme: light dark; }
+        html { touch-action: manipulation; }
+        body[contenteditable] { min-height: 100vh; box-sizing: border-box; outline: none; }
         body { margin: 0; padding: 16px 20px 40px; font: 17px/1.5 -apple-system, system-ui, Roboto, sans-serif;
           color: #1c1c1e; background: #ffffff; overflow-wrap: anywhere; }
         @media (prefers-color-scheme: dark) { body { color: #f2f2f7; background: #000000; } a { color: #64a8ff; } }
@@ -175,7 +185,12 @@ object ProjectDocuments {
 
     /**
      * The page as a document for a web view: system font, images and tables
-     * fit the screen, and dark mode follows the phone.
+     * fit the screen, and dark mode follows the phone. An editable page runs
+     * none of its own scripts; the app reads the edited body back itself.
      */
-    fun pageDocument(body: String): String = "$pageHead<body>$body</body></html>"
+    fun pageDocument(body: String, editable: Boolean = false): String =
+        "<!doctype html>\n<html><head>\n<meta charset=\"utf-8\">\n" +
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
+            (if (editable) editPolicy else "") + pageStyle +
+            (if (editable) "<body contenteditable=\"true\">" else "<body>") + body + "</body></html>"
 }

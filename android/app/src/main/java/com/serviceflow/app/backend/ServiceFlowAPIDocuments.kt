@@ -12,13 +12,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
 // A job's Documents tab: files and pages managers add on the web. Every
-// company member can read them; their bytes are in the private
+// company member can read them and managers can edit pages; their bytes are in the private
 // `project-documents` bucket, reached through short-lived signed links.
 
 /** A project's documents (without page bodies) and folders. */
@@ -33,9 +34,12 @@ suspend fun ServiceFlowAPI.projectDocuments(projectId: String): Pair<List<Projec
         documentRows.await().mapNotNull { ProjectDocument.fromRow(it) } to folderRows.await().mapNotNull { ProjectDocumentFolder.fromRow(it) }
     }
 
-/** A page ready for a web view, its images swapped for signed links. */
-suspend fun ServiceFlowAPI.pageDocument(document: ProjectDocument): String {
-    val row = rows("project_documents", "body_html") {
+/** A page as the app shows it: its body (images on signed links), those links, and the version it was loaded at. */
+data class ProjectDocumentPage(val body: String, val links: Map<String, String>, val updatedAt: String)
+
+/** A page's body ready for a web view, its images swapped for signed links. */
+suspend fun ServiceFlowAPI.pageDocument(document: ProjectDocument): ProjectDocumentPage {
+    val row = rows("project_documents", "body_html,updated_at") {
         filter { eq("id", document.id) }
         limit(1)
     }.firstOrNull()
@@ -45,8 +49,19 @@ suspend fun ServiceFlowAPI.pageDocument(document: ProjectDocument): String {
         // An image that can't be signed shows as missing; the text still reads.
         runCatching { signedDocumentURL(path) }.getOrNull()?.let { links[source] = it }
     }
-    return ProjectDocuments.pageDocument(body = ProjectDocuments.replacingImageSources(html, links))
+    return ProjectDocumentPage(ProjectDocuments.replacingImageSources(html, links), links, row["updated_at"].stringValue.orEmpty())
 }
+
+/** Saves a manager's edit over the version they opened. Returns the new version, or null when someone else saved first. */
+suspend fun ServiceFlowAPI.savePageDocument(document: ProjectDocument, page: ProjectDocumentPage, body: String): String? =
+    rpc(
+        "save_page_document",
+        mapOf(
+            "requested_document_id" to JsonPrimitive(document.id),
+            "requested_body" to JsonPrimitive(ProjectDocuments.restoringImageSources(body, page.links)),
+            "expected_updated_at" to JsonPrimitive(page.updatedAt),
+        ),
+    ).nonEmptyString
 
 /**
  * Downloads an uploaded file into [destination], reporting progress from 0
