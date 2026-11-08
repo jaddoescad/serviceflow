@@ -546,9 +546,11 @@ private final class PageMessages: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// A web view whose keyboard carries our bar instead of WebKit's (arrows and
-/// Done). WebKit's text input view is a private class, so it is given a
-/// subclass that asks the web view for the bar.
+/// A web view for editing a page. Its keyboard carries our bar instead of
+/// WebKit's (arrows and Done), and the keyboard comes up when Edit focuses the
+/// page: WebKit only raises it for focus from a tap in the page, and Edit is a
+/// tap too. WebKit's text input view is a private class, so it is given a
+/// subclass that does both.
 final class PageWebView: WKWebView {
     private var accessory: UIView?
 
@@ -565,9 +567,24 @@ final class PageWebView: WKWebView {
                 return (parent as? PageWebView)?.accessory
             }
             class_addMethod(made, #selector(getter: UIResponder.inputAccessoryView), imp_implementationWithBlock(accessoryView), "@@:")
+            Self.focusAsTapped(made, base: base)
             objc_registerClassPair(made)
             subclass = made
         }
         if let subclass { object_setClass(content, subclass) }
+    }
+
+    /// Passes WebKit's focus handling on with "the user is interacting" set.
+    /// If a WebKit version renames it, Edit still works and the first tap in
+    /// the page brings the keyboard up.
+    private static func focusAsTapped(_ subclass: AnyClass, base: AnyClass) {
+        let selector = NSSelectorFromString("_elementDidFocus:userIsInteracting:blurPreviousNode:activityStateChanges:userObject:")
+        guard let method = class_getInstanceMethod(base, selector) else { return }
+        typealias Focus = @convention(c) (AnyObject, Selector, UnsafeRawPointer?, Bool, Bool, UInt, AnyObject?) -> Void
+        let original = unsafeBitCast(method_getImplementation(method), to: Focus.self)
+        let focus: @convention(block) (AnyObject, UnsafeRawPointer?, Bool, Bool, UInt, AnyObject?) -> Void = { view, element, _, blur, changes, object in
+            original(view, selector, element, true, blur, changes, object)
+        }
+        class_addMethod(subclass, selector, imp_implementationWithBlock(focus), method_getTypeEncoding(method))
     }
 }

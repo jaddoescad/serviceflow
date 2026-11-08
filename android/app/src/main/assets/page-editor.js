@@ -236,7 +236,23 @@
   window.serviceFlowPage = {
     edit: function (on) {
       root.contentEditable = on ? "true" : "false";
-      if (!on && window.getSelection()) window.getSelection().removeAllRanges();
+      var selection = window.getSelection();
+      if (!on) {
+        if (selection) selection.removeAllRanges();
+        root.blur();
+        return;
+      }
+      // The cursor starts at the beginning of the first line in view, so the
+      // page doesn't jump (the point is in the page's left margin).
+      var range = document.caretRangeFromPoint ? document.caretRangeFromPoint(2, 28) : null;
+      if (!range || !root.contains(range.startContainer)) {
+        range = document.createRange();
+        range.selectNodeContents(root);
+        range.collapse(false);
+      }
+      root.focus({ preventScroll: true });
+      selection.removeAllRanges();
+      selection.addRange(range);
     },
     run: function (command, value) {
       if (command === "bullets" || command === "numbers" || command === "checklist") {

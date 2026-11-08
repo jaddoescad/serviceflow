@@ -13,8 +13,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "2.0.13"
-    CURRENT_PROJECT_VERSION: "115"
+    MARKETING_VERSION: "2.0.14"
+    CURRENT_PROJECT_VERSION: "116"
 packages:
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa

@@ -451,11 +451,17 @@ class PageEditing(
             Status.Failed -> "Not saved"
         }
 
-    /** Edit makes the page editable where it is; Done stops and saves. */
+    /** Edit makes the page editable where it is, with the keyboard up; Done stops and saves. */
     fun edit(on: Boolean) {
         active = on
-        view?.evaluateJavascript("serviceFlowPage.edit($on)", null)
-        if (!on) {
+        val view = view ?: return
+        if (on) {
+            view.requestFocus()
+            view.evaluateJavascript("serviceFlowPage.edit(true)") {
+                view.context.getSystemService(InputMethodManager::class.java)?.showSoftInput(view, 0)
+            }
+        } else {
+            view.evaluateJavascript("serviceFlowPage.edit(false)", null)
             hideKeyboard()
             scope.launch { flush() }
         }
