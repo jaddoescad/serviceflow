@@ -170,8 +170,8 @@ struct ProjectDocumentRow: View {
     }
 }
 
-/// A written page. Managers edit it right here, and it saves as they type
-/// like the web's editor; everyone else reads it.
+/// A written page. Managers tap Edit to edit it right here, and it saves as
+/// they type like the web's editor; everyone else reads it.
 struct ProjectDocumentPageScreen: View {
     let document: ProjectDocument
 
@@ -201,11 +201,15 @@ struct ProjectDocumentPageScreen: View {
         .navigationTitle(document.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let status = editing?.statusText {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text(status)
-                        .font(.footnote)
-                        .foregroundStyle(editing?.status == .failed ? Color(hex: 0xb42318) : .secondary)
+            if let editing {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if let status = editing.statusText {
+                        Text(status)
+                            .font(.footnote)
+                            .foregroundStyle(editing.status == .failed ? Color(hex: 0xb42318) : .secondary)
+                    }
+                    Button(editing.active ? "Done" : "Edit") { editing.edit(!editing.active) }
+                        .fontWeight(editing.active ? .semibold : .regular)
                 }
             }
         }
@@ -238,8 +242,9 @@ struct ProjectDocumentPageScreen: View {
     }
 }
 
-/// A manager editing a page: what the format bar shows, and saving each
-/// change a second after typing stops, over the version they have open.
+/// A manager's editing of a page: Edit/Done, what the format bar shows, and
+/// saving each change a second after typing stops, over the version they
+/// have open.
 @MainActor
 @Observable
 final class PageEditing {
@@ -252,6 +257,7 @@ final class PageEditing {
         var bullets = false, numbers = false, checklist = false
     }
 
+    private(set) var active = false
     private(set) var status = Status.idle
     private(set) var format = Format()
     @ObservationIgnored weak var view: WKWebView?
@@ -274,6 +280,16 @@ final class PageEditing {
         case .saving: "Saving…"
         case .saved: "Saved"
         case .failed: "Not saved"
+        }
+    }
+
+    /// Edit makes the page editable where it is; Done stops and saves.
+    func edit(_ on: Bool) {
+        active = on
+        view?.evaluateJavaScript("serviceFlowPage.edit(\(on))", in: nil, in: .defaultClient)
+        if !on {
+            hideKeyboard()
+            Task { await flush() }
         }
     }
 
@@ -441,8 +457,8 @@ private struct PageFormatBar: View {
 }
 
 /// Shows a page's HTML with its scripts off; links open in Safari. With
-/// `editing`, the page editor script (in the app's own script world) edits it
-/// and the keyboard carries the format bar.
+/// `editing`, the page editor script (in the app's own script world) edits it,
+/// the keyboard carries the format bar, and dragging the page down hides it.
 private struct ProjectDocumentWebView: UIViewRepresentable {
     let html: String
     var editing: PageEditing?
@@ -477,6 +493,9 @@ private struct ProjectDocumentWebView: UIViewRepresentable {
             accessory.addSubview(bar.view)
             context.coordinator.bar = bar
             view.useAccessory(accessory)
+            let drag = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.dragged))
+            drag.delegate = context.coordinator
+            view.scrollView.addGestureRecognizer(drag)
         }
         context.coordinator.html = html
         view.loadHTMLString(html, baseURL: nil)
@@ -493,9 +512,19 @@ private struct ProjectDocumentWebView: UIViewRepresentable {
         view.configuration.userContentController.removeAllScriptMessageHandlers()
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, UIGestureRecognizerDelegate {
         var html = ""
         var bar: UIHostingController<PageFormatBar>?
+
+        /// Scrolling with the finger moving down puts the keyboard away.
+        @MainActor @objc func dragged(_ drag: UIPanGestureRecognizer) {
+            guard drag.state == .changed, let scrollView = drag.view as? UIScrollView, scrollView.isDragging,
+                  drag.translation(in: scrollView).y > 24 else { return }
+            scrollView.superview?.endEditing(true)
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url else { return .allow }

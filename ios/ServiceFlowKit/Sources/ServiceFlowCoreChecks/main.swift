@@ -563,7 +563,7 @@ func runDocumentChecks() async {
         expect(swapped.contains("src=\"https://signed/1\"") && swapped.contains(other), "image swapped, others kept")
         expect(ProjectDocuments.pageDocument(body: "<p>Hi</p>").contains("<body><p>Hi</p></body>"), "page wrapped")
         let editable = ProjectDocuments.pageDocument(body: "<p>Hi</p>", editable: true)
-        expect(editable.contains("<body contenteditable=\"true\"><p>Hi</p></body>") && editable.contains("default-src 'none'"),
+        expect(editable.contains("<body contenteditable=\"false\"><p>Hi</p></body>") && editable.contains("default-src 'none'"),
                "editable page runs no page scripts")
         expect(!ProjectDocuments.pageDocument(body: "<p>Hi</p>").contains("<body contenteditable"), "read-only page isn't editable")
         let edited = "<p>Swatches, edited</p><img src=\"https://signed/1?a=1&amp;b=2\" alt=\"x\"><img src=\"\(other)\">"

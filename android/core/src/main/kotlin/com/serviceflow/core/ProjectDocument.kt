@@ -169,7 +169,7 @@ object ProjectDocuments {
         <style>
         :root { color-scheme: light; }
         html { touch-action: manipulation; }
-        body[contenteditable] { min-height: 100vh; box-sizing: border-box; outline: none; caret-color: #2f6bff; }
+        body[contenteditable="true"] { min-height: 100vh; box-sizing: border-box; outline: none; caret-color: #2f6bff; }
         body { margin: 0; padding: 16px 20px 40px; font: 17px/1.5 -apple-system, system-ui, Roboto, sans-serif;
           color: #1c1c1e; background: #ffffff; overflow-wrap: anywhere; }
         h1, h2, h3 { line-height: 1.25; margin: 1.2em 0 0.4em; }
@@ -191,11 +191,12 @@ object ProjectDocuments {
      * The page as a document for a web view: system font, images and tables
      * fit the screen, checklists show their boxes, and it stays light like
      * the web's (text colours there are picked on white). An editable page
-     * runs none of its own scripts; the app's page editor script edits it.
+     * runs none of its own scripts; the app's page editor script turns
+     * editing on when the manager taps Edit.
      */
     fun pageDocument(body: String, editable: Boolean = false): String =
         "<!doctype html>\n<html><head>\n<meta charset=\"utf-8\">\n" +
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
             (if (editable) editPolicy else "") + pageStyle +
-            (if (editable) "<body contenteditable=\"true\">" else "<body>") + body + "</body></html>"
+            (if (editable) "<body contenteditable=\"false\">" else "<body>") + body + "</body></html>"
 }

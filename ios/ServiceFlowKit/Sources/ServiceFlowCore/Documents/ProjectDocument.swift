@@ -176,7 +176,8 @@ public enum ProjectDocuments {
     /// The page as a document for a web view: system font, images and tables
     /// fit the screen, checklists show their boxes, and it stays light like
     /// the web's (text colours there are picked on white). An editable page
-    /// runs none of its own scripts; the app's page editor script edits it.
+    /// runs none of its own scripts; the app's page editor script turns
+    /// editing on when the manager taps Edit.
     public static func pageDocument(body: String, editable: Bool = false) -> String {
         let policy = editable
             ? "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src https: data:; style-src 'unsafe-inline'\">\n"
@@ -189,7 +190,7 @@ public enum ProjectDocuments {
         \(policy)<style>
         :root { color-scheme: light; }
         html { touch-action: manipulation; }
-        body[contenteditable] { min-height: 100vh; box-sizing: border-box; outline: none; caret-color: #2f6bff; }
+        body[contenteditable="true"] { min-height: 100vh; box-sizing: border-box; outline: none; caret-color: #2f6bff; }
         body { margin: 0; padding: 16px 20px 40px; font: 17px/1.5 -apple-system, system-ui, Roboto, sans-serif;
           color: #1c1c1e; background: #ffffff; overflow-wrap: anywhere; }
         h1, h2, h3 { line-height: 1.25; margin: 1.2em 0 0.4em; }
@@ -204,7 +205,7 @@ public enum ProjectDocuments {
           border: 1.5px solid #9aa3b2; border-radius: 4px; background: #fff; }
         ul[data-checklist] > li[data-checked="true"]::before { border-color: #2f6bff; background: #2f6bff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 10.5 3.2 3L15 6.5'/%3E%3C/svg%3E") center / 13px no-repeat; }
         </style>
-        </head><body\(editable ? " contenteditable=\"true\"" : "")>\(body)</body></html>
+        </head><body\(editable ? " contenteditable=\"false\"" : "")>\(body)</body></html>
         """
     }
 }

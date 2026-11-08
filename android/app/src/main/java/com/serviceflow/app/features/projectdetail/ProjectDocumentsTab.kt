@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
 import android.webkit.JavascriptInterface
 import android.webkit.MimeTypeMap
@@ -321,8 +322,9 @@ private fun view(context: Context, file: File, document: ProjectDocument): Strin
 }
 
 /**
- * A written page (pushed from the Documents tab). Managers edit it right
- * here, and it saves as they type like the web's editor; everyone else reads it.
+ * A written page (pushed from the Documents tab). Managers tap Edit to edit it
+ * right here, and it saves as they type like the web's editor; everyone else
+ * reads it.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -358,9 +360,14 @@ fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    editing?.statusText?.let { status ->
-                        val color = if (editing?.status == PageEditing.Status.Failed) hex(0xb42318) else MaterialTheme.colorScheme.onSurfaceVariant
-                        Text(status, style = appText(13, color = color), modifier = Modifier.padding(end = 16.dp))
+                    editing?.let { current ->
+                        current.statusText?.let { status ->
+                            val color = if (current.status == PageEditing.Status.Failed) hex(0xb42318) else MaterialTheme.colorScheme.onSurfaceVariant
+                            Text(status, style = appText(13, color = color), modifier = Modifier.padding(end = 4.dp))
+                        }
+                        TextButton(onClick = { current.edit(!current.active) }) {
+                            Text(if (current.active) "Done" else "Edit", fontWeight = if (current.active) FontWeight.SemiBold else FontWeight.Normal)
+                        }
                     }
                 },
             )
@@ -402,9 +409,9 @@ fun ProjectDocumentPageScreen(document: ProjectDocument, onBack: () -> Unit) {
 }
 
 /**
- * A manager editing a page: what the format bar shows, and saving each change
- * a second after typing stops, over the version they have open. Saves run in
- * the session's scope so leaving the page doesn't drop them.
+ * A manager's editing of a page: Edit/Done, what the format bar shows, and
+ * saving each change a second after typing stops, over the version they have
+ * open. Saves run in the session's scope so leaving the page doesn't drop them.
  */
 class PageEditing(
     private val api: ServiceFlowAPI,
@@ -425,6 +432,8 @@ class PageEditing(
         val checklist: Boolean = false,
     )
 
+    var active by mutableStateOf(false)
+        private set
     var status by mutableStateOf(Status.Idle)
         private set
     var format by mutableStateOf(Format())
@@ -441,6 +450,16 @@ class PageEditing(
             Status.Saved -> "Saved"
             Status.Failed -> "Not saved"
         }
+
+    /** Edit makes the page editable where it is; Done stops and saves. */
+    fun edit(on: Boolean) {
+        active = on
+        view?.evaluateJavascript("serviceFlowPage.edit($on)", null)
+        if (!on) {
+            hideKeyboard()
+            scope.launch { flush() }
+        }
+    }
 
     /** Runs a formatting command in the page (see page-editor.js). */
     fun run(command: String, value: String? = null) {
@@ -619,8 +638,9 @@ private fun PageFormatButton(icon: ImageVector, label: String, active: Boolean, 
  * Shows a page's HTML with its scripts off; links open in the browser. With
  * [editing], the page editor script edits it: JavaScript is on for that
  * script, and the editable page's policy still blocks scripts of its own.
+ * Scrolling with the finger moving down puts the keyboard away.
  */
-@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface", "ClickableViewAccessibility")
 @Composable
 private fun PageWebView(html: String, modifier: Modifier = Modifier, editing: PageEditing? = null) {
     AndroidView(
@@ -648,6 +668,20 @@ private fun PageWebView(html: String, modifier: Modifier = Modifier, editing: Pa
                 if (editing != null) {
                     addJavascriptInterface(PageMessages(editing), "ServiceFlowPage")
                     editing.view = this
+                    val reach = 24 * resources.displayMetrics.density
+                    var startY = 0f
+                    var startScroll = 0
+                    setOnTouchListener { view, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                startY = event.y
+                                startScroll = view.scrollY
+                            }
+                            MotionEvent.ACTION_MOVE ->
+                                if (event.y - startY > reach && (view.scrollY < startScroll || view.scrollY == 0)) editing.hideKeyboard()
+                        }
+                        false
+                    }
                 }
                 tag = html
                 loadDataWithBaseURL(null, html, "text/html", "utf-8", null)

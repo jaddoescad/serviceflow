@@ -1,4 +1,5 @@
-// Edits a job's written page in place for managers in the crew app. The iOS
+// Edits a job's written page in place for managers in the crew app (after
+// they tap Edit, see `edit`). The iOS
 // (ServiceFlow/Resources) and Android (app/src/main/assets) apps load the same
 // copy of this file. Lists are rebuilt the way the web admin's editor does it
 // (web/src/lib/editor-lists.ts): execCommand nests lists inside paragraphs.
@@ -224,6 +225,7 @@
   document.addEventListener("selectionchange", reportState);
   // Tapping a checklist item's box ticks it.
   root.addEventListener("click", function (event) {
+    if (!root.isContentEditable) return;
     var item = event.target.closest ? event.target.closest("li") : null;
     if (!item || !item.parentElement.matches("ul[data-checklist]")) return;
     if (event.clientX - item.getBoundingClientRect().left > 28) return;
@@ -232,6 +234,10 @@
   });
 
   window.serviceFlowPage = {
+    edit: function (on) {
+      root.contentEditable = on ? "true" : "false";
+      if (!on && window.getSelection()) window.getSelection().removeAllRanges();
+    },
     run: function (command, value) {
       if (command === "bullets" || command === "numbers" || command === "checklist") {
         toggleList(command);
