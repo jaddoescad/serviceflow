@@ -298,3 +298,52 @@ body {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* A line item's description (proposals, change orders, invoices, customer
+   pages and print): small headings, tidy lists, quiet text. */
+.item-description {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+.item-description > :first-child {
+  margin-top: 0;
+}
+.item-description p {
+  margin-top: 4px;
+}
+.item-description h3 {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.item-description ul,
+.item-description ol {
+  margin-top: 2px;
+  padding-left: 18px;
+}
+.item-description ul {
+  list-style: disc;
+}
+.item-description ol {
+  list-style: decimal;
+}
+.item-description li::marker {
+  color: var(--color-faint);
+}
+.item-description strong {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.item-description a {
+  color: var(--color-brand-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.item-description-field[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--color-faint);
+  pointer-events: none;
+}

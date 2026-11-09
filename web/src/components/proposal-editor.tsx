@@ -32,7 +32,7 @@ import {
 } from "@/lib/proposal-types";
 import type { DealOverview } from "@/lib/crm-types";
 import { NotesPanel } from "./deal-tabs";
-import { ItemDescription } from "./item-description";
+import { ItemDescription, ItemDescriptionEditor } from "./item-description";
 import { DocumentAttachments } from "./document-attachments";
 import { ConfirmDialog, SendDocumentDialog } from "./document-dialogs";
 import { DuplicateProposalDialog } from "./duplicate-proposal";
@@ -301,8 +301,6 @@ function Lines({
   onUpdate: (id: string, patch: Partial<LineItem>) => void;
   onRemove: (id: string) => void;
 }) {
-  /** The line whose description is open as plain text. */
-  const [editing, setEditing] = useState<string | null>(null);
   return (
     <ul>
       {items.map((item) => (
@@ -332,31 +330,10 @@ function Lines({
                   onChange={(event) => onUpdate(item.id, { name: event.target.value })}
                   className={cn(CELL, "h-8 text-[15px] font-semibold text-[var(--color-heading)]")}
                 />
-                {/* A written description reads formatted; click it to edit the text. */}
-                {item.description && editing !== item.id ? (
-                  <button
-                    type="button"
-                    aria-label={`Edit description of ${item.name || "item"}`}
-                    onClick={() => setEditing(item.id)}
-                    className={cn(CELL, "block py-1 text-left")}
-                  >
-                    <ItemDescription text={item.description} />
-                  </button>
-                ) : (
-                  <textarea
-                    aria-label="Description"
-                    placeholder="Add a description"
-                    maxLength={4000}
-                    autoFocus={editing === item.id}
-                    rows={Math.min(12, Math.max(1, item.description.split("\n").length))}
-                    value={item.description}
-                    onFocus={() => setEditing(item.id)}
-                    onBlur={() => setEditing(null)}
-                    onChange={(event) => onUpdate(item.id, { description: event.target.value })}
-                    // Grows with its text where supported; `rows` is the fallback.
-                    className={cn(CELL, "block resize-none py-1 text-[13px] leading-5 text-[var(--color-muted)] [field-sizing:content]")}
-                  />
-                )}
+                <ItemDescriptionEditor
+                  value={item.description}
+                  onChange={(description) => onUpdate(item.id, { description })}
+                />
                 {packages.length && !isAddOn(item) ? (
                   <select
                     aria-label="Package"

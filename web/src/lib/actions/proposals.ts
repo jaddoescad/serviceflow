@@ -1,5 +1,6 @@
 "use server";
 
+import { cleanItemDescriptions } from "@/lib/item-description";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -12,7 +13,7 @@ const PROPOSAL_PATHS = ["/proposals", "/jobs", "/deals", "/pipeline"];
 function bodyArgs(body: ProposalBody) {
   return {
     requested_name: body.name,
-    requested_items: body.items,
+    requested_items: cleanItemDescriptions(body.items),
     requested_tax_rate: body.taxRatePercent,
     requested_deposit_percent: body.depositPercent,
     requested_deposit_cents: body.depositCents,

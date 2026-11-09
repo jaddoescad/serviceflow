@@ -86,6 +86,8 @@ export async function getLeadProposals(leadId: string): Promise<Proposal[]> {
     .from("quotes")
     .select(PROPOSAL_FIELDS)
     .eq("lead_id", leadId)
+    // Calculator quotes are the calculator's working records, not proposals.
+    .not("source", "in", "(app,calculator)")
     .neq("status", "superseded")
     .order("created_at", { ascending: false });
   if (error) throw new Error(`proposals: ${error.message}`);

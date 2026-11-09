@@ -17,6 +17,7 @@ import {
   type ProposalPackage,
 } from "@/lib/line-items";
 import type { DocumentDelivery } from "@/lib/proposal-types";
+import { ItemDescription, ItemDescriptionEditor } from "./item-description";
 import { Badge, Button, Card, Select, buttonClassName, cn } from "./ui";
 
 // Shared by the proposal, change order and invoice editors: a spreadsheet of
@@ -134,11 +135,7 @@ export function LineItemsEditor({
                       <div className={cn(STATIC, "font-medium text-[var(--color-heading)]")}>
                         <span className="truncate">{item.name}</span>
                       </div>
-                      {item.description ? (
-                        <p className="whitespace-pre-line px-[9px] pb-1.5 text-xs leading-5 text-[var(--color-muted)]">
-                          {item.description}
-                        </p>
-                      ) : null}
+                      {item.description ? <ItemDescription text={item.description} className="px-[9px] pb-1.5" /> : null}
                     </>
                   ) : (
                     <>
@@ -150,15 +147,9 @@ export function LineItemsEditor({
                         onChange={(event) => update(item.id, { name: event.target.value })}
                         className={cn(CELL, "h-8 font-medium text-[var(--color-heading)]")}
                       />
-                      <textarea
-                        aria-label="Description"
-                        placeholder="Add a description"
-                        maxLength={4000}
-                        rows={Math.min(6, Math.max(1, item.description.split("\n").length))}
+                      <ItemDescriptionEditor
                         value={item.description}
-                        onChange={(event) => update(item.id, { description: event.target.value })}
-                        // Grows with its text where supported; `rows` is the fallback.
-                        className={cn(CELL, "mt-1 block resize-none py-1 text-xs leading-5 text-[var(--color-muted)] [field-sizing:content] lg:mt-0")}
+                        onChange={(description) => update(item.id, { description })}
                       />
                     </>
                   )}

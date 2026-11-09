@@ -20,6 +20,7 @@
     "test:default-job-budget": "node --test scripts/default-job-budget.test.mjs",
     "test:rich-text": "tsc src/lib/rich-text.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/rich-text --skipLibCheck && node --test scripts/rich-text.test.mjs",
     "test:line-items": "tsc src/lib/line-items.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/line-items --skipLibCheck && node --test scripts/line-items.test.mjs",
+    "test:item-description": "tsc src/lib/item-description.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/item-description --skipLibCheck && node --test scripts/item-description.test.mjs",
     "test:description-markdown": "tsc src/lib/description-markdown.ts --module commonjs --target es2022 --moduleResolution node --outDir .test-dist/description-markdown --skipLibCheck && node --test scripts/description-markdown.test.mjs"
   },
   "dependencies": {

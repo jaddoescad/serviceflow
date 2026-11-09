@@ -1,5 +1,6 @@
 "use server";
 
+import { cleanItemDescriptions } from "@/lib/item-description";
 import { headers } from "next/headers";
 import type { BillingBody, PaymentMethod, PaymentSettings, PublicPaymentOptions } from "@/lib/billing-types";
 import { onlinePaymentsAvailable } from "@/lib/stripe";
@@ -15,7 +16,7 @@ export async function saveChangeOrder(input: { id: string; jobId: string; body: 
       requested_id: input.id,
       requested_job: input.jobId,
       requested_name: input.body.name,
-      requested_items: input.body.items,
+      requested_items: cleanItemDescriptions(input.body.items),
       requested_tax_rate: input.body.taxRatePercent,
       requested_intro: input.body.message,
     },
@@ -35,7 +36,7 @@ export async function saveInvoice(input: { id: string; jobId: string; body: Bill
       requested_job: input.jobId,
       requested_name: input.body.name,
       requested_kind: input.body.invoiceKind,
-      requested_items: input.body.items,
+      requested_items: cleanItemDescriptions(input.body.items),
       requested_tax_rate: input.body.taxRatePercent,
       requested_issued_on: input.body.issuedOn || null,
       requested_due_on: input.body.dueOn || null,

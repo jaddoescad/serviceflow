@@ -1,3 +1,4 @@
+import { ItemDescription } from "@/components/item-description";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card } from "@/components/ui";
@@ -76,7 +77,7 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
                       ) : null}
                     </div>
                     {item.description ? (
-                      <p className="mt-0.5 whitespace-pre-line text-[var(--color-muted)]">{item.description}</p>
+                      <ItemDescription text={item.description} className="mt-0.5" />
                     ) : null}
                   </div>
                 </li>
