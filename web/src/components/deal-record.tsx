@@ -8,13 +8,12 @@ import type { DealOverview } from "@/lib/crm-types";
 import { fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
 import type { DealRecord as DealRecordData } from "@/lib/pipeline";
-import { DEAL_TABS, PIPELINE_TITLES, dealHref, isDealProjectTab, proposalHref, type DealTab } from "@/lib/pipeline-types";
+import { DEAL_TABS, PIPELINE_TITLES, isDealProjectTab, proposalHref, type DealTab } from "@/lib/pipeline-types";
 import type { ProjectLabel } from "@/lib/project-workspace";
 import {
   AppointmentsPanel,
   CommunicationsPanel,
   InvoicesPanel,
-  JOB_STATUS_LABELS,
   NotesPanel,
   ProposalsPanel,
   appointmentStatus,
@@ -375,6 +374,14 @@ export function DealRecord({
             );
           })}
         </ol>
+        {job ? (
+          <Link
+            href={`/jobs/${encodeURIComponent(job.id)}/work-order`}
+            className={buttonClassName({ variant: "ghost", size: "sm", className: "shrink-0" })}
+          >
+            Work order
+          </Link>
+        ) : null}
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
 
@@ -577,30 +584,6 @@ export function DealRecord({
             ) : (
               <None>No proposals yet</None>
             )}
-          </Association>
-
-          <Association title="Job" count={job ? 1 : 0}>
-            {job ? (
-              <AssociationRow
-                href={dealHref(job.id)}
-                title={job.name}
-                meta={
-                  <>
-                    <span>{(job.id === deal.id && stage?.name) || JOB_STATUS_LABELS[job.status] || job.status}</span>
-                    <span className="text-[var(--color-heading)]">{fmtCents(job.valueCents)} before tax</span>
-                  </>
-                }
-              />
-            ) : (
-              <None>No job yet</None>
-            )}
-            {job ? (
-              <div className="mt-1 text-xs">
-                <Link href={`/jobs/${encodeURIComponent(job.id)}/work-order`} className={linkStyle}>
-                  Work order
-                </Link>
-              </div>
-            ) : null}
           </Association>
 
           <Association title="Upcoming appointments" count={upcoming.length} addHref={appointmentHref} addLabel="New appointment">
