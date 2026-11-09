@@ -22,6 +22,7 @@ import {
 } from "@/lib/project-document-types";
 import { richTextToPlain, sanitizeRichText } from "@/lib/rich-text";
 import { toggleList, type ListKind } from "@/lib/editor-lists";
+import { settingsHref } from "@/lib/settings-pages";
 
 type Block = "h1" | "h2" | "h3" | "p";
 type Menu = "block" | "color" | "align" | "insert" | "more" | null;
@@ -76,7 +77,7 @@ export function DocumentEditor({
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = "projectId" in page ? page.projectId : null;
-  const listHref = projectId ? `/jobs/${encodeURIComponent(projectId)}/documents` : "/settings#templates";
+  const listHref = projectId ? `/jobs/${encodeURIComponent(projectId)}/documents` : settingsHref("templates");
 
   const editor = useRef<HTMLDivElement>(null);
   const printRoot = useRef<HTMLDivElement>(null);

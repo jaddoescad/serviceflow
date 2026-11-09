@@ -24,6 +24,7 @@ import {
 } from "./calendar-month-grid";
 import { ProjectModal } from "./project-profile-panel";
 import { Button, EmptyState, Field, Input, Select, Tag, cn, type TagTone } from "./ui";
+import { settingsHref } from "@/lib/settings-pages";
 
 export type JobScheduleViewKind = "month" | "5day";
 type Editing = {
@@ -39,7 +40,7 @@ type Editing = {
 
 const CREW_TINTS: TagTone[] = ["blue", "green", "orange", "purple", "yellow", "red"];
 const DEFAULT_HOURS = { start: "08:00", end: "16:00" };
-const CREWS_HREF = "/settings#crews";
+const CREWS_HREF = settingsHref("crews");
 
 /**
  * A job takes its crew's colour; finished jobs are grey. Without named crews

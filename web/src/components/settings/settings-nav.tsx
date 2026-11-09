@@ -1,69 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { cn } from "@/components/ui";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { Select, cn } from "@/components/ui";
+import { SETTINGS_PAGES } from "@/lib/settings-pages";
 
-const SETTINGS_SECTIONS = [
-  { id: "company", label: "Company" },
-  { id: "branding", label: "Branding" },
-  { id: "proposal-page", label: "Customer proposal page" },
-  { id: "documents", label: "Company documents" },
-  { id: "templates", label: "Document templates" },
-  { id: "labour", label: "Labour budget" },
-  { id: "team", label: "Team & access" },
-  { id: "crews", label: "Crews" },
-  { id: "quo", label: "Quo" },
-  { id: "email", label: "Email" },
-  { id: "reviews", label: "Reviews & aftercare" },
-  { id: "payments", label: "Online payments" },
-  { id: "lead-intake", label: "Lead intake" },
-  { id: "availability", label: "Availability" },
-  { id: "integrations", label: "Integrations" },
-  { id: "calendar", label: "Google Calendar" },
-  { id: "account", label: "Your account" },
-];
-
-/** Section list that highlights the section currently in view. */
+/** The pages of Settings: a list beside the page on wide screens, a menu above it on phones. */
 export function SettingsNav() {
-  const [active, setActive] = useState(SETTINGS_SECTIONS[0].id);
+  const pathname = usePathname();
+  const router = useRouter();
+  const active = SETTINGS_PAGES.find((page) => pathname === `/settings/${page.id}`)?.id;
 
+  // Arriving from another page, the route's loading screen uses up Next's own
+  // scroll to the hash.
   useEffect(() => {
-    // The section whose top has scrolled past the top of the screen; the last
-    // one once the page is scrolled to the bottom.
-    function update() {
-      const sections = SETTINGS_SECTIONS.map(({ id }) => document.getElementById(id)).filter(
-        (section): section is HTMLElement => section != null,
-      );
-      if (!sections.length) return;
-      const atBottom =
-        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4;
-      const current = atBottom
-        ? sections[sections.length - 1]
-        : [...sections].reverse().find((section) => section.getBoundingClientRect().top <= 120) ??
-          sections[0];
-      setActive(current.id);
-    }
-    // Arriving from another page, the route's loading screen uses up Next's own
-    // scroll to the hash.
     if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
-  }, []);
+  }, [pathname]);
 
   return (
-    <nav aria-label="Settings sections" className="sticky top-6">
-      <ul className="space-y-0.5">
-        {SETTINGS_SECTIONS.map(({ id, label }) => (
+    <nav aria-label="Settings">
+      <Select
+        aria-label="Settings page"
+        className="w-full lg:hidden"
+        value={active ?? ""}
+        onChange={(event) => router.push(`/settings/${event.target.value}`)}
+      >
+        {SETTINGS_PAGES.map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </Select>
+      <ul className="sticky top-6 hidden space-y-0.5 lg:block">
+        {SETTINGS_PAGES.map(({ id, label }) => (
           <li key={id}>
-            <a
-              href={`#${id}`}
-              onClick={() => setActive(id)}
-              aria-current={active === id ? "true" : undefined}
+            <Link
+              href={`/settings/${id}`}
+              aria-current={active === id ? "page" : undefined}
               className={cn(
                 "flex h-8 items-center rounded-[var(--radius-control)] px-2 text-[13px] transition-colors",
                 active === id
@@ -72,7 +46,7 @@ export function SettingsNav() {
               )}
             >
               {label}
-            </a>
+            </Link>
           </li>
         ))}
       </ul>

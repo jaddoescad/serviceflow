@@ -1,4 +1,5 @@
 import type { NextRequest, NextResponse } from "next/server";
+import { settingsHref } from "@/lib/settings-pages";
 
 // Shared by the connect and callback routes. Each person connects their own
 // Google Calendar; the refresh token is stored by save_my_calendar_connection
@@ -22,7 +23,8 @@ export function redirectUri(request: NextRequest): string {
 
 /** Back to the Google Calendar section of Settings with the outcome. */
 export function settingsUrl(request: NextRequest, outcome: "connected" | "error"): URL {
-  return new URL(`/settings?calendar=${outcome}#calendar`, request.nextUrl.origin);
+  const [path, hash] = settingsHref("calendar").split("#");
+  return new URL(`${path}?calendar=${outcome}#${hash}`, request.nextUrl.origin);
 }
 
 export function readState(request: NextRequest): string | undefined {

@@ -94,6 +94,20 @@ export async function getLeadProposals(leadId: string): Promise<Proposal[]> {
   return (data ?? []).map(toProposal);
 }
 
+/** The company's most recently changed proposal: what Settings previews the customer page with. */
+export async function getLatestProposalId(orgId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("quotes")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("source", "proposal")
+    .neq("status", "superseded")
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  return data?.[0]?.id ?? null;
+}
+
 export const getProposal = cache(async (id: string): Promise<Proposal | null> => {
   const supabase = await createClient();
   const { data, error } = await supabase.from("quotes").select(PROPOSAL_FIELDS).eq("id", id).maybeSingle();

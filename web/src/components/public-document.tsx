@@ -20,13 +20,16 @@ import {
   type ProposalPackage,
 } from "@/lib/line-items";
 import {
+  blockHasContent,
   companyLinks,
+  isCustomBlock,
+  videoEmbedUrl,
+  type CardIcon,
   type CompanyDocument,
+  type CustomBlock,
   type DocumentAsset,
   type DocumentKind,
-  type HighlightIcon,
-  type PageSection,
-  type ProposalPage,
+  type ProposalPart,
   type PublicDocument,
 } from "@/lib/proposal-types";
 import { CompanyLogo, CustomerShell, SIDEBAR_GROUP_LABEL, type ShellNavItem } from "./customer-shell";
@@ -99,8 +102,8 @@ const ICONS = {
     "M7 10v12M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9Z",
 } as const;
 
-/** The icons a company can pick for its highlights (Settings › Customer proposal page). */
-const HIGHLIGHT_ICON: Record<HighlightIcon, IconName> = {
+/** The icons a company can pick for its cards (Settings › Customer proposal page). */
+const CARD_ICON: Record<CardIcon, IconName> = {
   award: "award",
   shield: "shield",
   star: "star",
@@ -969,9 +972,11 @@ function SignableBody({
         })
       : 0;
   const depositLabel = t.depositToStart(doc.depositPercent != null ? Number(doc.depositPercent) : null);
-  // The company's own sections (Settings › Customer proposal page) frame proposals only.
-  const page = kind === "proposal" ? doc.company.page : null;
-  const terms = doc.terms || page?.terms || "";
+  // The company's page (Settings › Customer proposal page) arranges every
+  // document; its own sections, cover and terms show on proposals only.
+  const page = doc.company.page;
+  const proposal = kind === "proposal";
+  const terms = doc.terms || (proposal ? page.terms : "");
   const banner = doc.expired ? null : t.banner[doc.status];
   const shownItems = items.filter((item) => !item.packageId || item.packageId === activePackageId);
   const scope = shownItems.filter((item) => !isAddOn(item));
@@ -1009,11 +1014,9 @@ function SignableBody({
     setDialog(next);
   }
 
-  /** What each section of the page shows; the company's layout (Settings) decides their order. */
-  const sections: Record<PageSection, React.ReactNode> = {
-    highlights: page ? <Highlights cards={page.highlights} /> : null,
-    about: page ? <WhyChooseUs page={page} company={doc.company.name} t={t} /> : null,
-    note: <IntroNote doc={doc} t={t} />,
+  /** What each part of the proposal shows; the company's page (Settings) decides where each goes. */
+  const parts: Record<ProposalPart, React.ReactNode> = {
+    message: <IntroNote doc={doc} t={t} />,
     packages: packages.length ? (
       <Section
         title={t.choosePackage}
@@ -1152,7 +1155,11 @@ function SignableBody({
         ) : null}
       </Section>
     ),
-    stats: page ? <Stats stats={page.stats} t={t} /> : null,
+    terms: terms ? (
+      <Section title={t.terms}>
+        <p className="whitespace-pre-line text-[13px] leading-6 text-[var(--color-muted)]">{terms}</p>
+      </Section>
+    ) : null,
   };
 
   const approveButton = (className: string) => (
@@ -1237,19 +1244,17 @@ function SignableBody({
               eyebrow={doc.number ? `${t.kind[kind]} #${doc.number}` : t.kind[kind]}
               title={doc.name}
               facts={facts}
-              cover={page?.heroPath}
+              cover={proposal ? page.heroPath : null}
               customerLabel={t.preparedFor}
             />
 
-            {doc.company.page.layout.map(({ section, hidden }) =>
-              hidden ? null : <Fragment key={section}>{sections[section]}</Fragment>,
+            {page.blocks.map((block) =>
+              isCustomBlock(block) ? (
+                proposal && !block.hidden && blockHasContent(block) ? <CustomSection key={block.id} block={block} /> : null
+              ) : (
+                <Fragment key={block.id}>{parts[block.type]}</Fragment>
+              ),
             )}
-
-            {terms ? (
-              <Section title={t.terms}>
-                <p className="whitespace-pre-line text-[13px] leading-6 text-[var(--color-muted)]">{terms}</p>
-              </Section>
-            ) : null}
 
             {doc.status === "accepted" && (doc.signatureImage || doc.signedName) ? (
               <Section title={t.signature} className="public-document-signature">
@@ -1367,85 +1372,128 @@ function SignableBody({
   );
 }
 
-const COLUMNS: Record<number, string> = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3" };
+/** How many columns a row of the given number of cards or numbers takes. */
+const CARD_COLUMNS: Record<number, string> = {
+  2: "sm:grid-cols-2",
+  3: "sm:grid-cols-3",
+  4: "sm:grid-cols-2",
+  5: "sm:grid-cols-3",
+  6: "sm:grid-cols-3",
+};
+const NUMBER_COLUMNS: Record<number, string> = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4" };
 
-/** The company's highlights, side by side under the header. */
-function Highlights({ cards }: { cards: ProposalPage["highlights"] }) {
-  if (!cards.length) return null;
-  return (
-    <ul
-      className={cn(
-        "public-document-keep grid gap-6 px-5 py-6 sm:gap-0 sm:divide-x sm:divide-[var(--color-border)] sm:px-2 sm:py-7",
-        COLUMNS[cards.length],
-      )}
-    >
-      {cards.map((card, index) => (
-        <li key={index} className="sm:px-6">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-tint)] text-[var(--brand-text)]">
-            <Icon name={HIGHLIGHT_ICON[card.icon]} />
-          </span>
-          {card.title ? (
-            <h2 className="mt-3 text-[15px] font-semibold leading-5 text-[var(--color-heading)]">{card.title}</h2>
+/** A section the company wrote for its page (Settings › Customer proposal page). */
+function CustomSection({ block }: { block: CustomBlock }) {
+  const title = block.title ? (
+    <h2 className="text-[20px] font-bold leading-tight tracking-tight text-[var(--color-heading)]">{block.title}</h2>
+  ) : null;
+  switch (block.type) {
+    case "text":
+      return (
+        <section className={cn(PAD, "public-document-keep")}>
+          {title}
+          {block.body ? (
+            <p className={cn("whitespace-pre-line text-[14px] leading-6 text-[var(--color-text)]", title && "mt-3")}>
+              {block.body}
+            </p>
           ) : null}
-          {card.body ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--color-muted)]">{card.body}</p> : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** "Why choose us": the company's reasons, set once for every proposal. */
-function WhyChooseUs({ page, company, t }: { page: ProposalPage; company: string; t: DocumentStrings }) {
-  if (!page.aboutPoints.length) return null;
-  return (
-    <section className={PAD}>
-      <h2 className="text-[20px] font-bold leading-tight tracking-tight text-[var(--color-heading)]">
-        {page.aboutHeading || t.whyChoose(company)}
-      </h2>
-      <ul className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        {page.aboutPoints.map((point, index) => (
-          <li key={index} className="public-document-keep flex gap-3">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-accent)] text-[var(--brand-ink)]">
-              <Icon name="check" className="h-3 w-3" />
-            </span>
-            <div className="min-w-0">
-              {point.title ? (
-                <div className="text-[14px] font-semibold leading-5 text-[var(--color-heading)]">{point.title}</div>
-              ) : null}
-              {point.body ? (
-                <p className="mt-0.5 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{point.body}</p>
-              ) : null}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Projects, years and rating, each shown only when the company filled it in. */
-function Stats({ stats, t }: { stats: ProposalPage["stats"]; t: DocumentStrings }) {
-  const entries = [
-    [stats.projects, t.projectsCompleted],
-    [stats.years, t.yearsInBusiness],
-    [stats.rating && !stats.rating.includes("★") ? `${stats.rating}★` : stats.rating, t.googleRating],
-  ].filter(([value]) => value);
-  if (!entries.length) return null;
-  return (
-    <dl
-      className={cn(
-        "public-document-keep grid gap-5 px-5 py-6 text-center sm:gap-0 sm:divide-x sm:divide-[var(--color-border)] sm:px-2",
-        COLUMNS[entries.length],
-      )}
-    >
-      {entries.map(([value, name]) => (
-        <div key={name} className="flex flex-col-reverse sm:px-6">
-          <dt className="mt-0.5 text-xs text-[var(--color-muted)]">{name}</dt>
-          <dd className="text-[24px] font-bold leading-8 tracking-tight tabular-nums text-[var(--color-heading)]">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
+        </section>
+      );
+    case "checklist":
+      return (
+        <section className={PAD}>
+          {title}
+          <ul className={cn("grid gap-x-8 gap-y-5 sm:grid-cols-2", title && "mt-5")}>
+            {block.points.map((point, index) => (
+              <li key={index} className="public-document-keep flex gap-3">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-accent)] text-[var(--brand-ink)]">
+                  <Icon name="check" className="h-3 w-3" />
+                </span>
+                <div className="min-w-0">
+                  {point.title ? (
+                    <div className="text-[14px] font-semibold leading-5 text-[var(--color-heading)]">{point.title}</div>
+                  ) : null}
+                  {point.body ? (
+                    <p className="mt-0.5 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{point.body}</p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case "cards":
+      return (
+        <section className={cn(PAD, "public-document-keep")}>
+          {title}
+          <ul className={cn("grid gap-x-8 gap-y-7", CARD_COLUMNS[block.cards.length], title && "mt-5")}>
+            {block.cards.map((card, index) => (
+              <li key={index}>
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-tint)] text-[var(--brand-text)]">
+                  <Icon name={CARD_ICON[card.icon]} />
+                </span>
+                {card.title ? (
+                  <h3 className="mt-3 text-[15px] font-semibold leading-5 text-[var(--color-heading)]">{card.title}</h3>
+                ) : null}
+                {card.body ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--color-muted)]">{card.body}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case "numbers":
+      return (
+        <section className={cn(PAD, "public-document-keep")}>
+          {title}
+          <dl
+            className={cn(
+              "grid gap-5 text-center sm:gap-0 sm:divide-x sm:divide-[var(--color-border)]",
+              NUMBER_COLUMNS[block.numbers.length],
+              title && "mt-5",
+            )}
+          >
+            {block.numbers.map((item, index) => (
+              <div key={index} className="flex flex-col-reverse sm:px-4">
+                <dt className="mt-0.5 text-xs text-[var(--color-muted)]">{item.label}</dt>
+                <dd className="text-[24px] font-bold leading-8 tracking-tight tabular-nums text-[var(--color-heading)]">
+                  {item.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      );
+    case "image":
+      return block.path ? (
+        <section className={cn(PAD, "public-document-keep")}>
+          {title}
+          <img
+            src={documentAssetUrl(block.path)}
+            alt={block.title}
+            loading="lazy"
+            className={cn("w-full rounded-xl bg-[var(--color-surface-2)]", title && "mt-4")}
+          />
+        </section>
+      ) : null;
+    case "video": {
+      const embed = videoEmbedUrl(block.url);
+      return embed ? (
+        <section className={cn(PAD, NO_PRINT)}>
+          {title}
+          <div className={cn("aspect-video overflow-hidden rounded-xl bg-black", title && "mt-4")}>
+            <iframe
+              src={embed}
+              title={block.title || "Video"}
+              loading="lazy"
+              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              className="h-full w-full"
+            />
+          </div>
+        </section>
+      ) : null;
+    }
+  }
 }
 
 /** The company's own words to this customer. */

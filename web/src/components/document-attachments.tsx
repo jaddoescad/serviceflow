@@ -22,6 +22,7 @@ import { Switch, linkStyle } from "./pipeline-ui";
 import { ProjectMediaPreview } from "./project-media-preview";
 import { ProjectModal } from "./project-profile-panel";
 import { Button, Card, EmptyState, cn } from "./ui";
+import { settingsHref } from "@/lib/settings-pages";
 
 type NewAsset = { kind: "photo" | "file"; name: string; path: string; mimeType: string; byteSize: number };
 type Prepared = { kind: "photo" | "file"; name: string; blob: Blob };
@@ -220,7 +221,7 @@ function CompanyDocumentsRow({
     return (
       <div className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-2 text-[13px]">
         <span className="text-[var(--color-muted)]">No company documents</span>
-        <Link href="/settings#documents" className={linkStyle}>
+        <Link href={settingsHref("documents")} className={linkStyle}>
           Add in Settings
         </Link>
       </div>

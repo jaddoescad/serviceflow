@@ -22,6 +22,7 @@ import type { MessageChannel } from "@/lib/messaging-types";
 import { AddCustomerDialog } from "./add-customer-dialog";
 import { BackIcon, ChatIcon, DocumentIcon, ImageIcon, MailIcon, PhoneIcon, linkStyle } from "../pipeline-ui";
 import { Badge, Button, Segmented, Spinner, buttonClassName, cn } from "../ui";
+import { settingsHref } from "@/lib/settings-pages";
 
 /** A customer's two-way thread: what they sent on the left, everything sent
  * to them on the right, with the reply composer. Shared by the inbox and the
@@ -396,7 +397,7 @@ export function Composer({
     channel === "email" ? "Opted out of all email." : "Opted out of all texts."
   ) : channel === "sms" && !thread.quoConnected ? (
     <>
-      <Link href="/settings#quo" className={linkStyle}>
+      <Link href={settingsHref("quo")} className={linkStyle}>
         Connect Quo
       </Link>{" "}
       to send texts.

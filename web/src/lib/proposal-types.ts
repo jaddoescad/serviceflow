@@ -116,50 +116,54 @@ export type DocumentAsset = {
 /** Insurance, WSIB and other company files offered with proposals (managed in Settings). */
 export type CompanyDocument = Omit<DocumentAsset, "kind">;
 
-export const HIGHLIGHT_ICONS = ["award", "shield", "star", "heart", "clock", "tools", "thumbsUp", "check"] as const;
-export type HighlightIcon = (typeof HIGHLIGHT_ICONS)[number];
+export const CARD_ICONS = ["award", "shield", "star", "heart", "clock", "tools", "thumbsUp", "check"] as const;
+export type CardIcon = (typeof CARD_ICONS)[number];
 
-/** The company's own parts of every customer proposal page, set once in Settings. */
+/** What each proposal brings to its page: placed once each, never removed. */
+export const PROPOSAL_PARTS = ["message", "packages", "scope", "addOns", "photos", "investment", "terms"] as const;
+export type ProposalPart = (typeof PROPOSAL_PARTS)[number];
+
+/** The kinds of section a company adds to its page, as many of each as it likes. */
+export const CUSTOM_BLOCKS = ["text", "checklist", "cards", "numbers", "image", "video"] as const;
+export type CustomBlockType = (typeof CUSTOM_BLOCKS)[number];
+
+type BlockBase = { id: string; title: string; hidden: boolean };
+
+/** A section the company wrote itself. */
+export type CustomBlock =
+  | (BlockBase & { type: "text"; body: string })
+  | (BlockBase & { type: "checklist"; points: { title: string; body: string }[] })
+  | (BlockBase & { type: "cards"; cards: { icon: CardIcon; title: string; body: string }[] })
+  | (BlockBase & { type: "numbers"; numbers: { value: string; label: string }[] })
+  | (BlockBase & { type: "image"; path: string | null })
+  | (BlockBase & { type: "video"; url: string });
+
+/** One section of the customer's proposal page: the company's own, or a part of the proposal. */
+export type PageBlock = CustomBlock | { id: ProposalPart; type: ProposalPart };
+
+export function isCustomBlock(block: PageBlock): block is CustomBlock {
+  return (CUSTOM_BLOCKS as readonly string[]).includes(block.type);
+}
+
+/**
+ * A company's customer proposal page, built in Settings: the cover and
+ * letterhead details, then its sections in the order it arranged them.
+ */
 export type ProposalPage = {
   heroPath: string | null;
   license: string;
-  /** Up to three cards under the header. */
-  highlights: { icon: HighlightIcon; title: string; body: string }[];
-  /** "Why choose us": a heading and its points. */
-  aboutHeading: string;
-  aboutPoints: { title: string; body: string }[];
-  /** Shown together after the totals, each only when filled in. */
-  stats: { projects: string; years: string; rating: string };
+  /** Every part of the proposal once, with the company's own sections placed among them. */
+  blocks: PageBlock[];
   /** Used when a proposal has no terms of its own. */
   terms: string;
   /** The company's website and social pages, linked from the sidebar of customer pages. */
   links: Record<CompanyLink, string>;
-  /** The order of the page's sections between the header and the terms, and which of the company's own are off. */
-  layout: { section: PageSection; hidden: boolean }[];
 };
-
-/** The parts of a customer's proposal page a company arranges, in their usual order. */
-export const PAGE_SECTIONS = [
-  "highlights",
-  "about",
-  "note",
-  "packages",
-  "scope",
-  "addOns",
-  "photos",
-  "investment",
-  "stats",
-] as const;
-export type PageSection = (typeof PAGE_SECTIONS)[number];
-
-/** The company's own sections can be switched off; the rest show whenever the proposal has them. */
-export const HIDEABLE_SECTIONS: readonly PageSection[] = ["highlights", "about", "stats"];
 
 export const COMPANY_LINKS = ["website", "facebook", "instagram", "linkedin", "x"] as const;
 export type CompanyLink = (typeof COMPANY_LINKS)[number];
 
-export const MAX_HIGHLIGHTS = 3;
-export const MAX_ABOUT_POINTS = 12;
+export const BLOCK_LIMITS = { blocks: 40, points: 20, cards: 6, numbers: 4 };
 
 const clip = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const list = (value: unknown) => (Array.isArray(value) ? value : []);
@@ -174,49 +178,134 @@ function webLink(value: unknown): string {
   return /^https?:\/\/[^/]+\.[^/]+/i.test(url) ? url : "";
 }
 
-/** Every section once, in the saved order; ones the saved layout doesn't know go last. */
-function reviveLayout(value: unknown): ProposalPage["layout"] {
-  const layout: ProposalPage["layout"] = [];
-  for (const entry of list(value)) {
-    const saved = record(entry);
-    const section = PAGE_SECTIONS.find((key) => key === saved.section);
-    if (!section || layout.some((placed) => placed.section === section)) continue;
-    layout.push({ section, hidden: saved.hidden === true && HIDEABLE_SECTIONS.includes(section) });
-  }
-  for (const section of PAGE_SECTIONS) {
-    if (!layout.some((placed) => placed.section === section)) layout.push({ section, hidden: false });
-  }
-  return layout;
+/** The player address for a YouTube or Vimeo link, or null when it is neither. */
+export function videoEmbedUrl(url: string): string | null {
+  const youtube = url.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,20})/i);
+  if (youtube) return `https://www.youtube-nocookie.com/embed/${youtube[1]}`;
+  const vimeo = url.match(/vimeo\.com\/(?:video\/)?(\d{5,12})/i);
+  return vimeo ? `https://player.vimeo.com/video/${vimeo[1]}` : null;
 }
 
-/** Saved or submitted settings, trimmed to their limits; empty points and cards are dropped. */
+/** A new, empty section of the given kind. */
+export function newCustomBlock(type: CustomBlockType, id: string): CustomBlock {
+  const base = { id, title: "", hidden: false };
+  switch (type) {
+    case "text":
+      return { ...base, type, body: "" };
+    case "checklist":
+      return { ...base, type, points: [] };
+    case "cards":
+      return { ...base, type, cards: [] };
+    case "numbers":
+      return { ...base, type, numbers: [] };
+    case "image":
+      return { ...base, type, path: null };
+    case "video":
+      return { ...base, type, url: "" };
+  }
+}
+
+/** A saved section with its text trimmed to its limits; empty points, cards and numbers are dropped. */
+function reviveCustomBlock(type: CustomBlockType, saved: Record<string, unknown>, id: string): CustomBlock {
+  const base = { id, title: clip(saved.title, 120), hidden: saved.hidden === true };
+  switch (type) {
+    case "text":
+      return { ...base, type, body: clip(saved.body, 6000) };
+    case "checklist":
+      return {
+        ...base,
+        type,
+        points: list(saved.points)
+          .map((entry) => ({ title: clip(record(entry).title, 160), body: clip(record(entry).body, 800) }))
+          .filter((point) => point.title || point.body)
+          .slice(0, BLOCK_LIMITS.points),
+      };
+    case "cards":
+      return {
+        ...base,
+        type,
+        cards: list(saved.cards)
+          .map((entry) => {
+            const card = record(entry);
+            const icon = CARD_ICONS.find((name) => name === card.icon) ?? "check";
+            return { icon, title: clip(card.title, 80), body: clip(card.body, 400) };
+          })
+          .filter((card) => card.title || card.body)
+          .slice(0, BLOCK_LIMITS.cards),
+      };
+    case "numbers":
+      return {
+        ...base,
+        type,
+        numbers: list(saved.numbers)
+          .map((entry) => ({ value: clip(record(entry).value, 20), label: clip(record(entry).label, 60) }))
+          .filter((item) => item.value)
+          .slice(0, BLOCK_LIMITS.numbers),
+      };
+    case "image":
+      return { ...base, type, path: clip(saved.path, 500) || null };
+    case "video":
+      return { ...base, type, url: clip(saved.url, 300) };
+  }
+}
+
+/**
+ * The page's sections in their saved order: the company's own as written,
+ * and every part of the proposal exactly once (one the saved page doesn't
+ * place goes last).
+ */
+function reviveBlocks(value: unknown): PageBlock[] {
+  const blocks: PageBlock[] = [];
+  const ids = new Set<string>();
+  for (const entry of list(value).slice(0, BLOCK_LIMITS.blocks)) {
+    const saved = record(entry);
+    const part = PROPOSAL_PARTS.find((key) => key === saved.type);
+    if (part) {
+      if (!ids.has(part)) blocks.push({ id: part, type: part });
+      ids.add(part);
+      continue;
+    }
+    const type = CUSTOM_BLOCKS.find((key) => key === saved.type);
+    if (!type) continue;
+    let id = clip(saved.id, 60) || `${type}-${blocks.length}`;
+    while (ids.has(id) || (PROPOSAL_PARTS as readonly string[]).includes(id)) id = `${id}-${blocks.length}`;
+    ids.add(id);
+    blocks.push(reviveCustomBlock(type, saved, id));
+  }
+  for (const part of PROPOSAL_PARTS) {
+    if (!ids.has(part)) blocks.push({ id: part, type: part });
+  }
+  return blocks;
+}
+
+/** Whether a section has anything to show a customer. */
+export function blockHasContent(block: CustomBlock): boolean {
+  switch (block.type) {
+    case "text":
+      return Boolean(block.title || block.body);
+    case "checklist":
+      return block.points.length > 0;
+    case "cards":
+      return block.cards.length > 0;
+    case "numbers":
+      return block.numbers.length > 0;
+    case "image":
+      return Boolean(block.path);
+    case "video":
+      return videoEmbedUrl(block.url) != null;
+  }
+}
+
+/** Saved or submitted settings, trimmed to their limits. */
 export function reviveProposalPage(value: unknown): ProposalPage {
   const page = record(value);
-  const stats = record(page.stats);
   const links = record(page.links);
   return {
     heroPath: clip(page.heroPath, 500) || null,
     license: clip(page.license, 80),
-    highlights: list(page.highlights)
-      .map((entry) => {
-        const card = record(entry);
-        const icon = HIGHLIGHT_ICONS.find((name) => name === card.icon) ?? "check";
-        return { icon, title: clip(card.title, 80), body: clip(card.body, 400) };
-      })
-      .filter((card) => card.title || card.body)
-      .slice(0, MAX_HIGHLIGHTS),
-    aboutHeading: clip(page.aboutHeading, 120),
-    aboutPoints: list(page.aboutPoints)
-      .map((entry) => {
-        const point = record(entry);
-        return { title: clip(point.title, 120), body: clip(point.body, 600) };
-      })
-      .filter((point) => point.title || point.body)
-      .slice(0, MAX_ABOUT_POINTS),
-    stats: { projects: clip(stats.projects, 20), years: clip(stats.years, 20), rating: clip(stats.rating, 20) },
+    blocks: reviveBlocks(page.blocks),
     terms: clip(page.terms, 20000),
     links: Object.fromEntries(COMPANY_LINKS.map((key) => [key, webLink(links[key])])) as ProposalPage["links"],
-    layout: reviveLayout(page.layout),
   };
 }
 

@@ -44,7 +44,7 @@ export async function createDocumentTemplate(): Promise<ActionResult & { templat
     .select("id")
     .single();
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true, templateId: data.id };
 }
 
@@ -92,7 +92,7 @@ export async function renameDocumentTemplate(input: {
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Template not found." };
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true, updatedAt: data.updated_at };
 }
 
@@ -108,6 +108,6 @@ export async function deleteDocumentTemplate(templateId: string): Promise<Action
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Template not found." };
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true };
 }

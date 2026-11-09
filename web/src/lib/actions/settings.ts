@@ -159,7 +159,7 @@ export async function saveLabourBudgetSettings(input: {
   });
   if (error || !data) return { ok: false, error: error?.message ?? "Could not save settings." };
 
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true, settings: labourFromRpc(row(data)) };
 }
 
@@ -182,7 +182,7 @@ export async function saveCompanyProfile(input: {
   });
   if (error || !data) return { ok: false, error: error?.message ?? "Could not save the company." };
 
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true, settings: companyFromRpc(row(data)) };
 }
 
@@ -236,7 +236,7 @@ export async function addCompanyDocument(input: {
     byte_size: Math.max(0, Math.round(input.byteSize)),
   });
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true };
 }
 
@@ -247,6 +247,6 @@ export async function deleteCompanyDocument(id: string): Promise<{ ok: boolean; 
   const { data, error } = await supabase.from("company_documents").delete().eq("id", id).select("id");
   if (error) return { ok: false, error: error.message };
   if (!data.length) return { ok: false, error: "Could not delete that document. Refresh and try again." };
-  revalidatePath("/settings");
+  revalidatePath("/settings", "layout");
   return { ok: true };
 }

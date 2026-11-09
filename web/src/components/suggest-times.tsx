@@ -7,6 +7,7 @@ import { suggestTimes } from "@/lib/actions/booking";
 import { appointmentKindLabel, type Appointment } from "@/lib/appointment-types";
 import type { NearbyVisit, OpenWindow, SuggestedTimes } from "@/lib/booking-types";
 import { Spinner, Tag, cn } from "./ui";
+import { settingsHref } from "@/lib/settings-pages";
 
 type Search = { address: string; minutes: number; userId: string | null; appointmentId: string | null };
 
@@ -369,7 +370,7 @@ export function SuggestTimes({
       ) : result?.reason === "no_hours" ? (
         <p className="text-[13px] text-[var(--color-muted)]">
           {result.forUser ? "This person doesn't take appointments yet." : "Nobody takes appointments yet."} Set hours in{" "}
-          <Link href="/settings#availability" className="font-medium text-[var(--color-brand-strong)] hover:underline">
+          <Link href={settingsHref("availability")} className="font-medium text-[var(--color-brand-strong)] hover:underline">
             Settings › Availability
           </Link>
           .

@@ -10,6 +10,7 @@ import {
 import { Button, StatusText, buttonClassName } from "@/components/ui";
 import { Switch } from "@/components/pipeline-ui";
 import { SaveStatus, SettingsSection } from "./settings-section";
+import { settingsHref } from "@/lib/settings-pages";
 
 const CONNECT_URL = "/api/google-calendar/connect";
 
@@ -25,7 +26,7 @@ export function GoogleCalendarStatusLink({ connection }: { connection: CalendarC
     ? STATUS[connection.status]
     : ({ tone: "neutral", text: "Not connected" } as const);
   return (
-    <Link href="/settings#calendar" className={buttonClassName({ variant: "ghost", className: "max-sm:-ml-3" })}>
+    <Link href={settingsHref("calendar")} className={buttonClassName({ variant: "ghost", className: "max-sm:-ml-3" })}>
       <StatusText tone={tone}>
         {/* Phones drop "Google" so this fits beside the page's action. */}
         <span>
@@ -62,7 +63,7 @@ export function GoogleCalendarSection({
 
   // Drop the one-time ?calendar= flag so a reload doesn't repeat it.
   useEffect(() => {
-    if (result) window.history.replaceState(null, "", "/settings#calendar");
+    if (result) window.history.replaceState(null, "", settingsHref("calendar"));
   }, [result]);
 
   function toggle(next: { appointments: boolean; jobs: boolean }) {

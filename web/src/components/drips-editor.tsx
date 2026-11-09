@@ -26,6 +26,7 @@ import {
 } from "@/lib/messaging-types";
 import { ChatIcon, MailIcon, Switch, linkStyle } from "./pipeline-ui";
 import { Badge, Button, Card, Field, Input, Select, Textarea, cn } from "./ui";
+import { settingsHref } from "@/lib/settings-pages";
 
 // Pieces shared with the reminder rules editor -----------------------------
 
@@ -206,7 +207,7 @@ export function MessageFields({
       {message.channel === "sms" && !quoConnected ? (
         <p className="text-xs text-[var(--color-warn)]">
           Texts are skipped until you{" "}
-          <Link href="/settings#quo" className="underline">
+          <Link href={settingsHref("quo")} className="underline">
             connect Quo in Settings
           </Link>
           .
@@ -733,7 +734,7 @@ export function DripsEditor({
                     </Button>
                   ))}
                   {!reviewLinkSet ? (
-                    <Link href="/settings#reviews" className={cn("ml-1 text-xs", linkStyle)}>
+                    <Link href={settingsHref("reviews")} className={cn("ml-1 text-xs", linkStyle)}>
                       Add review link
                     </Link>
                   ) : null}
