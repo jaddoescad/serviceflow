@@ -151,7 +151,7 @@ export function ProjectPhotoBatch({
   return (
     <>
       <div
-        className={`${floating ? "fixed left-4 right-4 top-4 z-40 lg:left-[246px]" : "sticky bottom-4 z-30 my-4"} flex items-center gap-5 rounded-lg bg-[#1c2d41] px-4 py-3 text-white shadow-lg`}
+        className={`${floating ? "fixed left-4 right-4 top-4 z-40 lg:left-[calc(var(--sidebar-w)+14px)]" : "sticky bottom-4 z-30 my-4"} flex items-center gap-5 rounded-lg bg-[#1c2d41] px-4 py-3 text-white shadow-lg`}
         style={initialAction ? { display: "none" } : undefined}
         aria-label="Selected photo actions"
       >

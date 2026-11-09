@@ -8,6 +8,7 @@ import { getJobChangeOrders } from "@/lib/billing";
 import { CHANGE_ORDER_STATUS } from "@/lib/billing-types";
 import { fmtDate } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
+import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function JobChangeOrdersPage({ params }: { params: Promise<
   const [shell, orders] = await Promise.all([getProjectShell(jobId), getJobChangeOrders(jobId), requireStaff()]);
   if (!shell) notFound();
   if (shell.canonicalJobId) redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/change-orders`);
-  if (shell.isLead) redirect(`/jobs/${encodeURIComponent(jobId)}/proposals`);
+  if (shell.isLead) redirect(dealHref(jobId, "proposals"));
   const base = `/jobs/${encodeURIComponent(jobId)}/change-orders`;
   return (
     <JobShell

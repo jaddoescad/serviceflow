@@ -116,6 +116,60 @@ export type DocumentAsset = {
 /** Insurance, WSIB and other company files offered with proposals (managed in Settings). */
 export type CompanyDocument = Omit<DocumentAsset, "kind">;
 
+export const HIGHLIGHT_ICONS = ["award", "shield", "star", "heart", "clock", "tools", "thumbsUp", "check"] as const;
+export type HighlightIcon = (typeof HIGHLIGHT_ICONS)[number];
+
+/** The company's own parts of every customer proposal page, set once in Settings. */
+export type ProposalPage = {
+  heroPath: string | null;
+  license: string;
+  /** Up to three cards under the header. */
+  highlights: { icon: HighlightIcon; title: string; body: string }[];
+  /** "Why choose us": a heading and its points. */
+  aboutHeading: string;
+  aboutPoints: { title: string; body: string }[];
+  /** Shown together after the totals, each only when filled in. */
+  stats: { projects: string; years: string; rating: string };
+  /** Used when a proposal has no terms of its own. */
+  terms: string;
+};
+
+export const MAX_HIGHLIGHTS = 3;
+export const MAX_ABOUT_POINTS = 12;
+
+const clip = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+const list = (value: unknown) => (Array.isArray(value) ? value : []);
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+/** Saved or submitted settings, trimmed to their limits; empty points and cards are dropped. */
+export function reviveProposalPage(value: unknown): ProposalPage {
+  const page = record(value);
+  const stats = record(page.stats);
+  return {
+    heroPath: clip(page.heroPath, 500) || null,
+    license: clip(page.license, 80),
+    highlights: list(page.highlights)
+      .map((entry) => {
+        const card = record(entry);
+        const icon = HIGHLIGHT_ICONS.find((name) => name === card.icon) ?? "check";
+        return { icon, title: clip(card.title, 80), body: clip(card.body, 400) };
+      })
+      .filter((card) => card.title || card.body)
+      .slice(0, MAX_HIGHLIGHTS),
+    aboutHeading: clip(page.aboutHeading, 120),
+    aboutPoints: list(page.aboutPoints)
+      .map((entry) => {
+        const point = record(entry);
+        return { title: clip(point.title, 120), body: clip(point.body, 600) };
+      })
+      .filter((point) => point.title || point.body)
+      .slice(0, MAX_ABOUT_POINTS),
+    stats: { projects: clip(stats.projects, 20), years: clip(stats.years, 20), rating: clip(stats.rating, 20) },
+    terms: clip(page.terms, 20000),
+  };
+}
+
 /** The latest email or text that carried a document's link. */
 export type DocumentDelivery = {
   channel: "email" | "sms";
@@ -173,6 +227,7 @@ export type PublicDocument = {
     address: string | null;
     logoPath: string | null;
     brandColor: string | null;
+    page: ProposalPage;
   };
   assets: DocumentAsset[];
   companyDocuments: CompanyDocument[];

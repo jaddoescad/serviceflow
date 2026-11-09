@@ -21,6 +21,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/components/ui";
 import { useUnreadInbox } from "@/components/unread-inbox";
 import { initials } from "@/lib/format";
+import { useSidebar } from "@/components/app-sidebar";
 
 type NavLink = { href: string; label: string };
 
@@ -120,20 +121,40 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = pending?.split("?")[0] ?? currentPath;
   const trash = pending ? pending.includes("view=trash") : currentTrash;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // The desktop sidebar can shrink to a rail of icons; the phone drawer never does.
+  const { collapsed: compact, focusSearch, expandToSearch } = useSidebar();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ProjectSearch onNavigate={onNavigate} />
+      {compact ? (
+        <button
+          type="button"
+          aria-label="Search"
+          title="Search"
+          onClick={expandToSearch}
+          className="mx-2 flex h-8 shrink-0 items-center justify-center rounded-md text-[var(--sidebar-muted)] outline-none hover:bg-[var(--sidebar-surface)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)]"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="h-4 w-4">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4 4" />
+          </svg>
+        </button>
+      ) : (
+        <ProjectSearch onNavigate={onNavigate} autoFocus={focusSearch} />
+      )}
 
       <nav
         aria-label="Main navigation"
-        className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-20 pt-2"
+        className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2"
       >
         {GROUPS.map((group) => {
-          const closed = group.title ? collapsed[group.title] : false;
+          const closed = group.title && !compact ? collapsed[group.title] : false;
           return (
-            <div key={group.title ?? "home"} className={group.title ? "mt-3" : undefined}>
-              {group.title ? (
+            <div
+              key={group.title ?? "home"}
+              className={group.title ? (compact ? "mt-2 border-t border-[var(--color-border)] pt-2" : "mt-3") : undefined}
+            >
+              {group.title && !compact ? (
                 <button
                   type="button"
                   aria-expanded={!closed}
@@ -164,9 +185,11 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
                         key={link.href}
                         href={link.href}
                         aria-current={active ? "page" : undefined}
+                        title={compact ? link.label : undefined}
                         onClick={onNavigate}
                         className={cn(
-                          "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
+                          "relative flex h-8 items-center gap-2 rounded-md px-2 text-[13px] outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
+                          compact && "justify-center px-0",
                           active
                             ? "bg-[var(--sidebar-active)] font-medium text-[var(--color-heading)]"
                             : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-surface)]",
@@ -175,10 +198,17 @@ export function Nav({ onNavigate }: { onNavigate?: () => void } = {}) {
                         <span className={active ? "text-[var(--color-heading)]" : "text-[var(--sidebar-muted)]"}>
                           {NAV_ICONS[link.href]}
                         </span>
-                        <span className="truncate">{link.label}</span>
+                        <span className={compact ? "sr-only" : "truncate"}>{link.label}</span>
                         <ReportPending href={link.href} />
                         {link.href === "/inbox" && unreadInbox > 0 ? (
-                          <span className="ml-auto rounded-full bg-[var(--color-brand)] px-1.5 text-[11px] font-semibold leading-[18px] text-white tabular-nums">
+                          <span
+                            className={cn(
+                              "rounded-full bg-[var(--color-brand)] font-semibold text-white tabular-nums",
+                              compact
+                                ? "absolute right-0.5 top-0.5 px-1 text-[9px] leading-[14px]"
+                                : "ml-auto px-1.5 text-[11px] leading-[18px]",
+                            )}
+                          >
                             {unreadInbox > 99 ? "99+" : unreadInbox}
                           </span>
                         ) : null}
@@ -210,6 +240,7 @@ export function SidebarHeader({
 }) {
   const [menu, setMenu] = useState<"create" | "account" | null>(null);
   const [creating, setCreating] = useState(false);
+  const { collapsed: compact } = useSidebar();
   const root = useRef<HTMLDivElement>(null);
   const createButton = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
@@ -242,19 +273,29 @@ export function SidebarHeader({
     <>
       <div
         ref={root}
-        className="relative z-40 flex h-14 shrink-0 items-center gap-1 px-3"
+        className={cn(
+          "relative z-40 flex shrink-0 items-center gap-1",
+          compact ? "flex-col gap-2 py-3" : "h-14 px-3",
+        )}
       >
         <Link
           href="/"
           onClick={onNavigate}
-          className="mr-auto flex min-w-0 items-center gap-2 rounded-md px-1 py-1 outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]"
+          aria-label={compact ? SITE_NAME : undefined}
+          title={compact ? SITE_NAME : undefined}
+          className={cn(
+            "flex min-w-0 items-center gap-2 rounded-md px-1 py-1 outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]",
+            !compact && "mr-auto",
+          )}
         >
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--color-primary)] text-[9px] font-bold text-[var(--color-primary-ink)]">
             {SITE_INITIALS}
           </span>
-          <span className="truncate text-[13px] font-semibold text-[var(--color-heading)]">
-            {SITE_NAME}
-          </span>
+          {compact ? null : (
+            <span className="truncate text-[13px] font-semibold text-[var(--color-heading)]">
+              {SITE_NAME}
+            </span>
+          )}
         </Link>
         <NotificationBell userId={userId} />
         {["admin", "manager"].includes(role) && (
@@ -295,7 +336,10 @@ export function SidebarHeader({
         {menu && (
           <div
             ref={panel}
-            className="absolute right-3 top-12 w-56 rounded-[var(--radius)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-pop)] md:left-3 md:right-auto"
+            className={cn(
+              "absolute w-56 rounded-[var(--radius)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-pop)]",
+              compact ? "left-full top-2 ml-2" : "right-3 top-12 md:left-3 md:right-auto",
+            )}
           >
             {menu === "create" ? (
               <button

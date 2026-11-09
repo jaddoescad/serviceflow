@@ -1,5 +1,8 @@
+import { cookies } from "next/headers";
 import { SITE_NAME } from "@/lib/site-brand";
 import { requireMember } from "@/lib/auth";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import { MobileNav, Nav, SidebarHeader } from "@/components/nav";
 import { NavigationPendingProvider, PendingPage } from "@/components/navigation-pending";
 import { NewLeadToast } from "@/components/new-lead-toast";
@@ -16,7 +19,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [profile, { data: appConfig }, unreadInbox] = await Promise.all([
+  const [profile, { data: appConfig }, unreadInbox, cookieStore] = await Promise.all([
     requireMember(),
     createClient().then((supabase) =>
       supabase
@@ -26,8 +29,10 @@ export default async function AppLayout({
         .maybeSingle(),
     ),
     getUnreadConversationCount(),
+    cookies(),
   ]);
   const name = profile.full_name ?? profile.email ?? "Staff";
+  const sidebarCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "1";
 
   if (appConfig?.maintenance_mode) {
     return (
@@ -53,16 +58,14 @@ export default async function AppLayout({
       <UnreadInboxProvider initial={unreadInbox}>
         <NavigationPendingProvider>
           <div className="flex min-h-screen">
-            <aside
-              className="sticky top-0 hidden h-svh w-[232px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] md:flex print:hidden"
-            >
+            <AppSidebar initialCollapsed={sidebarCollapsed}>
               <SidebarHeader
                 name={name}
                 role={profile.role}
                 userId={profile.user_id}
               />
               <Nav />
-            </aside>
+            </AppSidebar>
             <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--color-surface)]">
               <MobileNav name={name} role={profile.role} userId={profile.user_id} />
               <div className="app-content relative min-w-0 flex-1">

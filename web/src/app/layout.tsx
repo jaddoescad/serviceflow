@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 // Runs before first paint so the saved theme never flashes. Staff pages default
 // to dark (ThemeToggle saves the choice); customer pages always stay light.
-const THEME_SCRIPT = `(function(){var t="dark";try{t=localStorage.getItem("theme")||t}catch(e){}if(!/^\\/(p|co|i|portal|u)\\//.test(location.pathname))document.documentElement.dataset.theme=t})()`;
+const THEME_SCRIPT = `(function(){var t="dark";try{t=localStorage.getItem("theme")||t}catch(e){}if(!/^\\/(p|co|i|portal|u|preview)\\//.test(location.pathname))document.documentElement.dataset.theme=t})()`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -6,6 +6,7 @@ import { TablePanel } from "@/components/table-ui";
 import { EmptyState, buttonClassName } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
 import { getInvoices } from "@/lib/billing";
+import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function JobInvoicesPage({ params }: { params: Promise<{ id
   const [shell, invoices] = await Promise.all([getProjectShell(jobId), getInvoices(jobId), requireStaff()]);
   if (!shell) notFound();
   if (shell.canonicalJobId) redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/invoices`);
-  if (shell.isLead) redirect(`/jobs/${encodeURIComponent(jobId)}/proposals`);
+  if (shell.isLead) redirect(dealHref(jobId, "proposals"));
   const base = `/jobs/${encodeURIComponent(jobId)}/invoices`;
   return (
     <JobShell

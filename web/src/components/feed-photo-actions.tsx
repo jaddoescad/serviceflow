@@ -85,7 +85,7 @@ export function FeedPhotoActions({
     return <ActionLoading error={error} onCancel={onClear} />;
   if (loaded?.key !== key)
     return (
-      <div className="fixed left-4 right-4 top-4 z-40 flex items-center gap-5 rounded-lg bg-[#1c2d41] px-4 py-3 text-white shadow-lg lg:left-[246px]">
+      <div className="fixed left-4 right-4 top-4 z-40 flex items-center gap-5 rounded-lg bg-[#1c2d41] px-4 py-3 text-white shadow-lg lg:left-[calc(var(--sidebar-w)+14px)]">
         <button
           aria-label="Clear selection"
           onClick={onClear}

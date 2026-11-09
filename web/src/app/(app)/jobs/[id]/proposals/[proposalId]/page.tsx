@@ -4,6 +4,7 @@ import { loadCalculator } from "@/lib/actions/calculator";
 import { requireStaff } from "@/lib/auth";
 import { lineItemsFromCalculator } from "@/lib/calculator/proposal-lines";
 import { getCompanyDocuments, getDocumentExtras } from "@/lib/documents";
+import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
 import { PROPOSAL_VALID_DAYS, isoDaysFromToday, type ProposalBody } from "@/lib/proposal-types";
 import {
@@ -102,7 +103,7 @@ export default async function ProposalPage({
       initialTemplateId={template?.id ?? null}
       customerLanguage={customerLanguage}
       projectName={shell.name}
-      backHref={`/jobs/${encodeURIComponent(projectId)}/proposals`}
+      backHref={dealHref(shell.canonicalJobId ?? projectId, "proposals")}
       backLabel={shell.name}
     />
   );

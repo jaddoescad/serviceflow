@@ -1,12 +1,13 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { reviveLineItems, revivePackages, type CatalogItem } from "@/lib/line-items";
-import type {
-  Proposal,
-  ProposalStatus,
-  ProposalSummary,
-  ProposalTemplate,
-  PublicDocument,
+import {
+  reviveProposalPage,
+  type Proposal,
+  type ProposalStatus,
+  type ProposalSummary,
+  type ProposalTemplate,
+  type PublicDocument,
 } from "@/lib/proposal-types";
 
 type Row = Record<string, any>;
@@ -193,9 +194,28 @@ export const getPublicDocument = cache(async (
   ]);
   if (error) throw new Error(`public ${kind}: ${error.message}`);
   if (!data) return null;
-  const doc = data as Row;
+  // The page still opens if the language lookup fails.
+  return publicDocument(data as Row, language.data === "en" || language.data === "fr" ? language.data : null);
+});
+
+/**
+ * Staff's "Customer view" of any proposal, drafts included: the customer's
+ * page without a link, and without marking it viewed.
+ */
+export async function getProposalPreview(id: string, leadId: string): Promise<PublicDocument | null> {
+  const supabase = await createClient();
+  const [{ data, error }, language] = await Promise.all([
+    supabase.rpc("preview_proposal", { requested_id: id }),
+    getDealCustomerLanguage(leadId).catch(() => null),
+  ]);
+  if (error) throw new Error(`proposal preview: ${error.message}`);
+  return data ? publicDocument(data as Row, language) : null;
+}
+
+function publicDocument(doc: Row, language: "en" | "fr" | null): PublicDocument {
   return {
     ...(doc as PublicDocument),
+    company: { ...(doc.company as PublicDocument["company"]), page: reviveProposalPage(doc.company?.page) },
     items: reviveLineItems(doc.items),
     packages: revivePackages(doc.packages),
     discount: doc.discount
@@ -203,8 +223,7 @@ export const getPublicDocument = cache(async (
       : undefined,
     discountCents: Number(doc.discountCents ?? 0),
     expired: doc.expired === true,
-    // The page still opens if the language lookup fails.
-    language: language.data === "en" || language.data === "fr" ? language.data : null,
+    language,
     portalToken: typeof doc.portalToken === "string" ? doc.portalToken : null,
     depositPaid: doc.depositPaid === true,
     payments: ((doc.payments ?? []) as Row[]).map((payment) => ({
@@ -217,4 +236,4 @@ export const getPublicDocument = cache(async (
     assets: doc.assets ?? [],
     companyDocuments: doc.companyDocuments ?? [],
   };
-});
+}

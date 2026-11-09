@@ -503,7 +503,7 @@ export function ProposalEditor({
         readOnly={readOnly}
         status={status ? { label: PROPOSAL_STATUS_LABELS[status], tone: PROPOSAL_STATUS_TONES[status] } : null}
         delivery={extras?.delivery}
-        customerHref={proposal?.publicToken && proposal.status !== "draft" ? `/p/${proposal.publicToken}` : null}
+        customerHref={proposal ? `/preview/proposals/${proposal.id}` : null}
         actions={
           isProposal ? (
             <HeaderMenu

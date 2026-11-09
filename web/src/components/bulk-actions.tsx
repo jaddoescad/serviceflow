@@ -89,7 +89,7 @@ export function BulkActions({
       <div
         role="region"
         aria-label="Selected rows"
-        className="fixed bottom-5 left-1/2 z-40 flex h-11 -translate-x-1/2 items-center gap-1 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-[13px] shadow-[var(--shadow-pop)] md:ml-[116px]"
+        className="fixed bottom-5 left-1/2 z-40 flex h-11 -translate-x-1/2 items-center gap-1 rounded-[var(--radius-lg)] bg-[var(--color-surface)] px-2 text-[13px] shadow-[var(--shadow-pop)] md:ml-[calc(var(--sidebar-w)/2)]"
       >
         {selected ? (
           <>

@@ -23,6 +23,7 @@ import { GoogleCalendarSection } from "@/components/settings/google-calendar-sec
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
 import { PaymentsSettings } from "@/components/settings/payments-settings";
+import { ProposalPageForm } from "@/components/settings/proposal-page-form";
 import { ReviewsSettings } from "@/components/settings/reviews-settings";
 import { SettingsNav } from "@/components/settings/settings-nav";
 import {
@@ -74,6 +75,12 @@ export default async function SettingsPage({
             orgId={company.company.id}
             logoPath={company.company.logoPath}
             brandColor={company.company.brandColor}
+            canManage={company.isManager}
+          />
+          <ProposalPageForm
+            orgId={company.company.id}
+            companyName={company.company.name}
+            page={company.company.proposalPage}
             canManage={company.isManager}
           />
           <CompanyDocuments orgId={company.company.id} documents={documents} canManage={company.isManager} />

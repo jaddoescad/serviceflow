@@ -7,7 +7,7 @@ import { SearchNavIcon } from "./nav-icons";
 
 type Result = Awaited<ReturnType<typeof searchProjects>>[number];
 
-export function ProjectSearch({ onNavigate }: { onNavigate?: () => void }) {
+export function ProjectSearch({ onNavigate, autoFocus = false }: { onNavigate?: () => void; autoFocus?: boolean }) {
   const router = useRouter();
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -78,6 +78,7 @@ export function ProjectSearch({ onNavigate }: { onNavigate?: () => void }) {
       </kbd>
       <input
         ref={input}
+        autoFocus={autoFocus}
         role="combobox"
         aria-label="Search projects"
         aria-autocomplete="list"

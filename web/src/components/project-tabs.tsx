@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { dealHref } from "@/lib/pipeline-types";
 import { PageTabs } from "./page-tabs";
 
 export type ProjectTabKey =
@@ -55,7 +56,7 @@ export function ProjectTabs({
   }[] = [
     { key: "photos", label: "Photos", href: base, count: photoCount },
     { key: "documents", label: "Documents", href: `${base}/documents`, count: documentCount },
-    { key: "proposals", label: "Proposals", href: `${base}/proposals` },
+    { key: "proposals", label: "Proposals", href: dealHref(projectId, "proposals") },
     ...(isLead
       ? []
       : [

@@ -9,7 +9,7 @@ import { PublicDocumentView } from "./public-document";
 type Props = { params: Promise<{ token: string }> };
 
 /** The customer's pick on this browser, then their contact's language, then the browser's. */
-async function pageLanguage(doc: PublicDocument | null) {
+export async function pageLanguage(doc: PublicDocument | null) {
   const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
   return documentLanguage({
     chosen: cookieStore.get(DOCUMENT_LANGUAGE_COOKIE)?.value,

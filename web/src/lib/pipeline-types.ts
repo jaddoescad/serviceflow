@@ -93,6 +93,10 @@ export const DEAL_TABS = [
 
 export type DealTab = (typeof DEAL_TABS)[number][0];
 
+/** A deal's (or job's) record page, opened on one of its tabs. */
+export const dealHref = (recordId: string, tab?: DealTab) =>
+  `/deals/${encodeURIComponent(recordId)}${tab && tab !== "communications" ? `?tab=${tab}` : ""}`;
+
 export function isDealTab(value: string | undefined): value is DealTab {
   return DEAL_TABS.some(([key]) => key === value);
 }

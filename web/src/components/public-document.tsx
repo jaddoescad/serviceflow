@@ -24,7 +24,14 @@ import {
   type LineItem,
   type ProposalPackage,
 } from "@/lib/line-items";
-import type { CompanyDocument, DocumentAsset, DocumentKind, PublicDocument } from "@/lib/proposal-types";
+import type {
+  CompanyDocument,
+  DocumentAsset,
+  DocumentKind,
+  HighlightIcon,
+  ProposalPage,
+  PublicDocument,
+} from "@/lib/proposal-types";
 import { CompanyLogo, CustomerShell, type ShellNavItem } from "./customer-shell";
 import { PayButton } from "./pay-button";
 import { ProjectModal } from "./project-profile-panel";
@@ -94,7 +101,28 @@ const ICONS = {
   pen: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
   card: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2ZM2 10h20M6 15h4",
   dollar: "M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  award: "M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8.2 13.9 7 22l5-3 5 3-1.2-8.1",
+  star: "m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2 2 9.3l6.9-1Z",
+  heart:
+    "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8Z",
+  clock: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 6v6l4 2",
+  tools:
+    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9Z",
+  thumbsUp:
+    "M7 10v12M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.8a2 2 0 0 0 1.8-1.1L12 2a3.1 3.1 0 0 1 3 3.9Z",
 } as const;
+
+/** The icons a company can pick for its highlights (Settings › Customer proposal page). */
+const HIGHLIGHT_ICON: Record<HighlightIcon, IconName> = {
+  award: "award",
+  shield: "shield",
+  star: "star",
+  heart: "heart",
+  clock: "clock",
+  tools: "tools",
+  thumbsUp: "thumbsUp",
+  check: "checkCircle",
+};
 
 type IconName = keyof typeof ICONS;
 
@@ -225,6 +253,9 @@ function HeaderCard({
             </span>
             <div className="min-w-0 text-[13px] leading-5">
               <div className="truncate text-[15px] font-semibold">{doc.company.name}</div>
+              {doc.company.page.license ? (
+                <div className="truncate text-white/60">{t.license(doc.company.page.license)}</div>
+              ) : null}
               {doc.company.address ? <div className="truncate text-white/60">{doc.company.address}</div> : null}
               {doc.company.phone ? <div className="truncate text-white/60">{doc.company.phone}</div> : null}
             </div>
@@ -884,14 +915,17 @@ function SignableBody({
   doc,
   token,
   t,
+  preview,
 }: {
   doc: PublicDocument;
   token: string;
   t: DocumentStrings;
+  /** Staff's Customer view: the customer's choices work, approving and declining don't. */
+  preview: boolean;
 }) {
   const router = useRouter();
-  const respond = RESPONDERS[doc.kind];
-  const open = doc.status === "sent" && !doc.expired && !!respond;
+  const respond = preview ? undefined : RESPONDERS[doc.kind];
+  const open = doc.status === "sent" && !doc.expired && (preview || !!respond);
   const packages = doc.packages ?? [];
   const [packageId, setPackageId] = useState(() => chosenPackageId(packages, doc.selectedPackageId));
   const [selected, setSelected] = useState(
@@ -936,6 +970,9 @@ function SignableBody({
           cents: doc.depositPercent == null && doc.depositCents ? doc.depositCents : null,
         })
       : 0;
+  // The company's own sections (Settings › Customer proposal page) frame proposals only.
+  const page = kind === "proposal" ? doc.company.page : null;
+  const terms = doc.terms || page?.terms || "";
   const banner = doc.expired ? null : t.banner[doc.status];
   const shownItems = items.filter((item) => !item.packageId || item.packageId === activePackageId);
   const hasSidebarFiles = files.length > 0 || doc.companyDocuments.length > 0;
@@ -1063,8 +1100,19 @@ function SignableBody({
             {doc.company.phone ? <div className="text-[var(--color-muted)]">{doc.company.phone}</div> : null}
           </InfoBlock>
         </div>
+        {page?.heroPath ? (
+          <div className="p-4 sm:p-5">
+            <img
+              src={documentAssetUrl(page.heroPath)}
+              alt=""
+              className="aspect-[3/1] w-full rounded-xl bg-[var(--color-surface-2)] object-cover"
+            />
+          </div>
+        ) : null}
       </HeaderCard>
 
+      {page ? <Highlights cards={page.highlights} /> : null}
+      {page ? <WhyChooseUs page={page} company={doc.company.name} t={t} /> : null}
       <IntroNote doc={doc} t={t} />
 
       {packages.length ? (
@@ -1196,10 +1244,12 @@ function SignableBody({
         </div>
       </Section>
 
-      {doc.terms ? (
+      {page ? <Stats stats={page.stats} t={t} /> : null}
+
+      {terms ? (
         <Section icon="file" title={t.terms}>
           <p className="whitespace-pre-line rounded-xl bg-[#f8fafc] px-4 py-3 text-[13px] leading-5 text-[var(--color-text)]">
-            {doc.terms}
+            {terms}
           </p>
         </Section>
       ) : null}
@@ -1266,6 +1316,82 @@ function SignableBody({
         <PhotoViewer photos={photos} index={viewing} t={t} onIndex={setViewing} onClose={() => setViewing(null)} />
       ) : null}
     </>
+  );
+}
+
+const COLUMNS: Record<number, string> = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3" };
+
+/** The company's highlight cards under the header. */
+function Highlights({ cards }: { cards: ProposalPage["highlights"] }) {
+  if (!cards.length) return null;
+  return (
+    <ul className={cn("public-document-keep grid gap-3", COLUMNS[cards.length])}>
+      {cards.map((card, index) => (
+        <li key={index} className="rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
+            <Icon name={HIGHLIGHT_ICON[card.icon]} />
+          </span>
+          {card.title ? (
+            <h2 className="mt-3 text-[15px] font-semibold leading-5 text-[var(--color-heading)]">{card.title}</h2>
+          ) : null}
+          {card.body ? <p className="mt-1 text-[13px] leading-5 text-[var(--color-muted)]">{card.body}</p> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "Why choose us": the company's reasons, set once for every proposal. */
+function WhyChooseUs({ page, company, t }: { page: ProposalPage; company: string; t: DocumentStrings }) {
+  if (!page.aboutPoints.length) return null;
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-6">
+      <h2 className="text-[20px] font-bold leading-tight text-[var(--color-heading)]">
+        {page.aboutHeading || t.whyChoose(company)}
+      </h2>
+      <ul className="mt-4 space-y-4">
+        {page.aboutPoints.map((point, index) => (
+          <li key={index} className="flex gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
+              <Icon name="check" className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              {point.title ? (
+                <div className="text-[15px] font-semibold leading-6 text-[var(--color-heading)]">{point.title}</div>
+              ) : null}
+              {point.body ? (
+                <p className="whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{point.body}</p>
+              ) : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Projects, years and rating, each shown only when the company filled it in. */
+function Stats({ stats, t }: { stats: ProposalPage["stats"]; t: DocumentStrings }) {
+  const entries = [
+    [stats.projects, t.projectsCompleted],
+    [stats.years, t.yearsInBusiness],
+    [stats.rating && !stats.rating.includes("★") ? `${stats.rating}★` : stats.rating, t.googleRating],
+  ].filter(([value]) => value);
+  if (!entries.length) return null;
+  return (
+    <dl
+      className={cn(
+        "public-document-keep grid gap-4 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-5 text-center sm:divide-x sm:divide-[var(--color-border)]",
+        COLUMNS[entries.length],
+      )}
+    >
+      {entries.map(([value, name]) => (
+        <div key={name} className="flex flex-col-reverse">
+          <dt className="text-xs text-[var(--color-muted)]">{name}</dt>
+          <dd className="text-[22px] font-bold tabular-nums text-[var(--color-heading)]">{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -1521,11 +1647,14 @@ export function PublicDocumentView({
   doc,
   token,
   language: initialLanguage,
+  preview = false,
 }: {
   doc: PublicDocument;
   token: string;
   /** From the customer's earlier pick, their contact, or their browser. */
   language: CustomerLanguage;
+  /** Staff's Customer view of a proposal: nothing is approved, declined or marked viewed. */
+  preview?: boolean;
 }) {
   const [language, setLanguage] = useState(initialLanguage);
   const t = documentStrings(language);
@@ -1563,9 +1692,16 @@ export function PublicDocumentView({
         {doc.kind === "invoice" ? (
           <InvoiceBody doc={doc} token={token} t={t} />
         ) : (
-          <SignableBody doc={doc} token={token} t={t} />
+          <SignableBody doc={doc} token={token} t={t} preview={preview} />
         )}
       </CustomerShell>
+      {preview ? (
+        <div className={cn("pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4", NO_PRINT)}>
+          <p lang="en" className="rounded-full bg-[#111113] px-4 py-2 text-center text-[13px] text-white shadow-lg">
+            Preview of what your customer sees. Approving and declining are off here.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireMember, requireStaff } from "@/lib/auth";
+import { reviveProposalPage, type ProposalPage } from "@/lib/proposal-types";
 import { createClient } from "@/lib/supabase/server";
 import { staffWrite } from "./rpc";
 
@@ -22,6 +23,7 @@ export type CompanyProfile = {
   createdAt: string;
   logoPath: string | null;
   brandColor: string | null;
+  proposalPage: ProposalPage;
 };
 
 export type CompanySettings = {
@@ -77,6 +79,7 @@ function companyFromRpc(data: Row): CompanySettings {
       createdAt: text(company.created_at) ?? "",
       logoPath: text(company.logo_path),
       brandColor: text(company.brand_color),
+      proposalPage: reviveProposalPage(company.proposal_page),
     },
     myRole: text(data.my_role),
     canEdit: Boolean(data.can_edit),
@@ -194,6 +197,11 @@ export async function saveCompanyBranding(input: { logoPath: string; brandColor:
     { requested_logo_path: input.logoPath, requested_brand_color: brandColor },
     ["/settings"],
   );
+}
+
+/** The cover image, highlights, "Why choose us", stats and terms on every customer proposal. */
+export async function saveProposalPage(input: ProposalPage) {
+  return staffWrite("save_proposal_page", { requested_page: reviveProposalPage(input) }, ["/settings"]);
 }
 
 export type CompanyDocument = { id: string; name: string; path: string };

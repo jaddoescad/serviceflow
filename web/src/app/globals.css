@@ -186,6 +186,14 @@ body {
 .app-content:has(> [data-app-content="full-bleed"]) {
   padding: 0;
 }
+
+/* Width of the desktop sidebar, for bars that float over the page. */
+:root {
+  --sidebar-w: 232px;
+}
+:root:has([data-sidebar="collapsed"]) {
+  --sidebar-w: 3.5rem;
+}
 .page-bar,
 .page-subbar {
   margin: 0 calc(-1 * var(--gutter)) var(--page-pad-y);
