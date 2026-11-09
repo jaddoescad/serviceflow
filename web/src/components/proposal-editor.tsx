@@ -315,7 +315,6 @@ function Lines({
             {readOnly ? (
               <>
                 <div className="px-2 text-[15px] font-semibold leading-8 text-[var(--color-heading)]">{item.name}</div>
-                {item.description ? <ItemDescription text={item.description} className="px-2" /> : null}
                 {isAddOn(item) ? (
                   <p className="mt-1 px-2 text-xs text-[var(--color-muted)]">{item.selected ? "Chosen" : "Not chosen"}</p>
                 ) : null}
@@ -329,10 +328,6 @@ function Lines({
                   value={item.name}
                   onChange={(event) => onUpdate(item.id, { name: event.target.value })}
                   className={cn(CELL, "h-8 text-[15px] font-semibold text-[var(--color-heading)]")}
-                />
-                <ItemDescriptionEditor
-                  value={item.description}
-                  onChange={(description) => onUpdate(item.id, { description })}
                 />
                 {packages.length && !isAddOn(item) ? (
                   <select
@@ -397,6 +392,14 @@ function Lines({
             >
               ×
             </button>
+          )}
+          {/* The description runs the full width of the row, under the name and amounts. */}
+          {readOnly ? (
+            item.description ? <ItemDescription text={item.description} className="col-span-full px-2" /> : null
+          ) : (
+            <div className="col-span-full min-w-0">
+              <ItemDescriptionEditor value={item.description} onChange={(description) => onUpdate(item.id, { description })} />
+            </div>
           )}
         </li>
       ))}
