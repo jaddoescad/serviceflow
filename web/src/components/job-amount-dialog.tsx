@@ -60,7 +60,7 @@ export function AmountDialog({
   }, [onClose, pending]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-backdrop)] p-4" onClick={onClose}>
       <div
         ref={dialogRef}
         role="dialog"

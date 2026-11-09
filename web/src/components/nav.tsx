@@ -446,7 +446,7 @@ export function MobileNav({
             tabIndex={-1}
             aria-label="Close navigation"
             onClick={() => setOpen(false)}
-            className="absolute inset-0 cursor-default bg-black/30"
+            className="absolute inset-0 cursor-default bg-[var(--color-backdrop)]"
           />
           <section
             id="mobile-navigation-drawer"

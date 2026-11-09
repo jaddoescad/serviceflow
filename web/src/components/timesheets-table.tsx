@@ -410,7 +410,7 @@ function ClockOutDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-backdrop)] p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]">
         <form onClick={(event) => event.stopPropagation()} onSubmit={submit}>
           <div className="border-b border-[var(--color-border)] px-5 py-3.5">
@@ -521,7 +521,7 @@ function EditDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-backdrop)] p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-[var(--radius-lg)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]">
         <form onClick={(event) => event.stopPropagation()} onSubmit={submit}>
           <div className="border-b border-[var(--color-border)] px-5 py-3.5">

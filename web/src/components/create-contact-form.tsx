@@ -83,7 +83,7 @@ export function CreateContactModal({
             event.preventDefault();
             close();
           }}
-          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[520px] overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-0 text-[13px] text-[var(--color-text)] shadow-[var(--shadow-pop)] backdrop:bg-black/30"
+          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[520px] overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-surface)] p-0 text-[13px] text-[var(--color-text)] shadow-[var(--shadow-pop)] backdrop:bg-[var(--color-backdrop)]"
         >
           <form
             className="flex max-h-[calc(100dvh-2rem)] flex-col"

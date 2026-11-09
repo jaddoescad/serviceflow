@@ -79,7 +79,7 @@ function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--color-backdrop)] p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

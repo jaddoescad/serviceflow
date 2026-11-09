@@ -138,7 +138,7 @@ export function SuggestTimes({
     const street = near?.address.split(",")[0];
     const details = [
       named ? stretch.name : "",
-      near ? (near.meters === 0 ? `Same address as ${street}` : `Near ${street}`) : "",
+      near ? `Near ${street}` : "",
       near && near.meters ? `${(near.meters / 1000).toFixed(1)} km` : "",
     ].filter(Boolean);
     return (
@@ -173,7 +173,7 @@ export function SuggestTimes({
               <span className="mt-0.5 block truncate text-xs text-[var(--color-muted)]">{details.join(" · ")}</span>
             ) : null}
           </span>
-          {near && near.meters !== 0 ? <Tag tone={driveTone(near.minutes)}>{near.minutes} min</Tag> : null}
+          {near ? <Tag tone={driveTone(near.minutes)}>{near.minutes} min</Tag> : null}
         </button>
         {picked && stretch.starts.length > 1 ? (
           <label className="flex items-center gap-2 px-3 pb-2.5 pl-10 text-xs text-[var(--color-muted)]">
