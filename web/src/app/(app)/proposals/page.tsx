@@ -20,7 +20,6 @@ import { fmtCents } from "@/lib/line-items";
 import {
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_TONES,
-  proposalDisplayStatus,
   type ProposalStatus,
 } from "@/lib/proposal-types";
 import { listProposals } from "@/lib/proposals";
@@ -73,10 +72,7 @@ export default async function ProposalsPage({
           </thead>
           <tbody>
             {proposals.map((proposal) => {
-              const shown = proposalDisplayStatus(
-                proposal.status,
-                proposal.validUntil,
-              );
+              const shown = proposal.status;
               return (
                 <Tr key={proposal.id}>
                   <Td>

@@ -81,7 +81,6 @@ const STATUS_TONES: Record<string, Tone> = {
   sent: "yellow",
   accepted: "green",
   declined: "red",
-  expired: "orange",
   cancelled: "gray",
   open: "blue",
   partial: "yellow",

@@ -10,7 +10,6 @@ import {
 } from "@/lib/actions/proposals";
 import type { DocumentExtras } from "@/lib/documents";
 import { proposalHref } from "@/lib/pipeline-types";
-import { fmtDate } from "@/lib/format";
 import {
   chosenPackageId,
   depositCents,
@@ -27,13 +26,13 @@ import {
 import {
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_TONES,
-  proposalDisplayStatus,
   type CompanyDocument,
   type Proposal,
   type ProposalBody,
 } from "@/lib/proposal-types";
 import type { DealOverview } from "@/lib/crm-types";
 import { NotesPanel } from "./deal-tabs";
+import { ItemDescription } from "./item-description";
 import { DocumentAttachments } from "./document-attachments";
 import { ConfirmDialog, SendDocumentDialog } from "./document-dialogs";
 import { DuplicateProposalDialog } from "./duplicate-proposal";
@@ -302,6 +301,8 @@ function Lines({
   onUpdate: (id: string, patch: Partial<LineItem>) => void;
   onRemove: (id: string) => void;
 }) {
+  /** The line whose description is open as plain text. */
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <ul>
       {items.map((item) => (
@@ -316,9 +317,7 @@ function Lines({
             {readOnly ? (
               <>
                 <div className="px-2 text-[15px] font-semibold leading-8 text-[var(--color-heading)]">{item.name}</div>
-                {item.description ? (
-                  <p className="whitespace-pre-line px-2 text-[13px] leading-5 text-[var(--color-muted)]">{item.description}</p>
-                ) : null}
+                {item.description ? <ItemDescription text={item.description} className="px-2" /> : null}
                 {isAddOn(item) ? (
                   <p className="mt-1 px-2 text-xs text-[var(--color-muted)]">{item.selected ? "Chosen" : "Not chosen"}</p>
                 ) : null}
@@ -333,16 +332,31 @@ function Lines({
                   onChange={(event) => onUpdate(item.id, { name: event.target.value })}
                   className={cn(CELL, "h-8 text-[15px] font-semibold text-[var(--color-heading)]")}
                 />
-                <textarea
-                  aria-label="Description"
-                  placeholder="Add a description"
-                  maxLength={4000}
-                  rows={Math.min(8, Math.max(1, item.description.split("\n").length))}
-                  value={item.description}
-                  onChange={(event) => onUpdate(item.id, { description: event.target.value })}
-                  // Grows with its text where supported; `rows` is the fallback.
-                  className={cn(CELL, "block resize-none py-1 text-[13px] leading-5 text-[var(--color-muted)] [field-sizing:content]")}
-                />
+                {/* A written description reads formatted; click it to edit the text. */}
+                {item.description && editing !== item.id ? (
+                  <button
+                    type="button"
+                    aria-label={`Edit description of ${item.name || "item"}`}
+                    onClick={() => setEditing(item.id)}
+                    className={cn(CELL, "block py-1 text-left")}
+                  >
+                    <ItemDescription text={item.description} />
+                  </button>
+                ) : (
+                  <textarea
+                    aria-label="Description"
+                    placeholder="Add a description"
+                    maxLength={4000}
+                    autoFocus={editing === item.id}
+                    rows={Math.min(12, Math.max(1, item.description.split("\n").length))}
+                    value={item.description}
+                    onFocus={() => setEditing(item.id)}
+                    onBlur={() => setEditing(null)}
+                    onChange={(event) => onUpdate(item.id, { description: event.target.value })}
+                    // Grows with its text where supported; `rows` is the fallback.
+                    className={cn(CELL, "block resize-none py-1 text-[13px] leading-5 text-[var(--color-muted)] [field-sizing:content]")}
+                  />
+                )}
                 {packages.length && !isAddOn(item) ? (
                   <select
                     aria-label="Package"
@@ -463,7 +477,7 @@ export function ProposalEditor({
   const [saving, startSave] = useTransition();
   const [pending, startTransition] = useTransition();
   const isProposal = mode === "proposal";
-  const status = proposal ? proposalDisplayStatus(proposal.status, proposal.validUntil) : undefined;
+  const status = proposal?.status;
   // Once the customer has accepted, changes go through a change order.
   const readOnly = isProposal && !!proposal && (proposal.status === "accepted" || proposal.status === "superseded");
   const canSend = isProposal && !!proposal && !readOnly && !isNew;
@@ -523,9 +537,7 @@ export function ProposalEditor({
   const due = depositCents(total, { percent: body.depositPercent, cents: body.depositCents });
   const notice = readOnly
     ? "The customer accepted this proposal, so it can no longer be changed. Add a change order for anything new."
-    : status === "expired"
-      ? `Expired ${fmtDate(proposal!.validUntil)}. Choose a later valid-until date and save to reopen it.`
-      : null;
+    : null;
   const contact = deal?.contact;
 
   return (
@@ -618,27 +630,6 @@ export function ProposalEditor({
               </div>
             </div>
           </div>
-          <dl className="mt-5 flex flex-wrap items-center gap-x-7 gap-y-2 border-t border-[var(--color-border)] pt-3 text-[13px]">
-            {proposal ? (
-              <div className="flex items-baseline gap-1.5">
-                <dt className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--color-faint)]">Updated</dt>
-                <dd>{fmtDate(proposal.updatedAt)}</dd>
-              </div>
-            ) : null}
-            <div className="flex items-center gap-1.5">
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[var(--color-faint)]">Valid until</dt>
-              <dd>
-                <input
-                  type="date"
-                  aria-label="Valid until"
-                  disabled={readOnly}
-                  value={body.validUntil ?? ""}
-                  onChange={(event) => patch({ validUntil: event.target.value || null })}
-                  className={cn(CELL, "h-7 w-auto text-[13px]", !body.validUntil && "text-[var(--color-faint)]")}
-                />
-              </dd>
-            </div>
-          </dl>
         </section>
       ) : null}
 

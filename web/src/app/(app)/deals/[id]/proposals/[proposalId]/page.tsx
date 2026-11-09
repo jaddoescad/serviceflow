@@ -5,7 +5,7 @@ import { getCompanyDocuments, getDocumentExtras } from "@/lib/documents";
 import { getDealOverview } from "@/lib/pipeline";
 import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
-import { PROPOSAL_VALID_DAYS, isoDaysFromToday, type ProposalBody } from "@/lib/proposal-types";
+import type { ProposalBody } from "@/lib/proposal-types";
 import {
   getLeadProposals,
   getProjectDeal,
@@ -55,7 +55,6 @@ export default async function ProposalPage({
         selectedPackageId: proposal.selectedPackageId,
         intro: proposal.intro,
         terms: proposal.terms,
-        validUntil: proposal.validUntil,
       }
     : {
         name: template?.name ?? `Proposal ${count + 1}`,
@@ -69,7 +68,6 @@ export default async function ProposalPage({
         selectedPackageId: template?.selectedPackageId ?? null,
         intro: template?.intro ?? "",
         terms: template?.terms ?? "",
-        validUntil: isoDaysFromToday(PROPOSAL_VALID_DAYS),
       };
 
   return (

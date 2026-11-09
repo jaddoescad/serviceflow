@@ -13,7 +13,7 @@ import {
 type Row = Record<string, any>;
 
 const PROPOSAL_FIELDS =
-  "id,lead_id,name,status,source,amount_cents,line_items,tax_rate_percent,deposit_percent,deposit_cents,discount_percent,discount_cents,packages,selected_package_id,valid_until,intro,terms,public_token,sent_at,viewed_at,signed_name,signed_at,declined_at,decline_reason,updated_at,include_company_documents";
+  "id,lead_id,name,status,source,amount_cents,line_items,tax_rate_percent,deposit_percent,deposit_cents,discount_percent,discount_cents,packages,selected_package_id,intro,terms,public_token,sent_at,viewed_at,signed_name,signed_at,declined_at,decline_reason,updated_at,include_company_documents";
 
 const TEMPLATE_FIELDS =
   "id,name,line_items,tax_rate_percent,deposit_percent,deposit_cents,discount_percent,discount_cents,packages,selected_package_id,intro,terms,updated_at";
@@ -45,7 +45,6 @@ function toProposal(row: Row): Proposal {
     ...pricing(row),
     intro: row.intro ?? "",
     terms: row.terms ?? "",
-    validUntil: row.valid_until ?? null,
     publicToken: row.public_token,
     sentAt: row.sent_at,
     viewedAt: row.viewed_at,
@@ -65,7 +64,6 @@ function toTemplate(row: Row): ProposalTemplate {
     ...pricing(row),
     intro: row.intro ?? "",
     terms: row.terms ?? "",
-    validUntil: null,
     updatedAt: row.updated_at,
   };
 }
@@ -120,7 +118,7 @@ export async function listProposals(status: ProposalStatus | null): Promise<Prop
   let query = supabase
     .from("quotes")
     .select(
-      "id,lead_id,name,status,source,amount_cents,sent_at,viewed_at,valid_until,updated_at,lead:leads(contact:contacts(name)),job:jobs!jobs_accepted_quote_id_fkey(id)",
+      "id,lead_id,name,status,source,amount_cents,sent_at,viewed_at,updated_at,lead:leads(contact:contacts(name)),job:jobs!jobs_accepted_quote_id_fkey(id)",
     )
     .neq("status", "superseded")
     .order("updated_at", { ascending: false })
@@ -140,7 +138,6 @@ export async function listProposals(status: ProposalStatus | null): Promise<Prop
       sentAt: row.sent_at,
       viewedAt: row.viewed_at,
       updatedAt: row.updated_at,
-      validUntil: row.valid_until ?? null,
       customerName: row.lead?.contact?.name ?? "Unnamed customer",
       projectId: job?.id ?? row.lead_id,
     };
@@ -214,7 +211,6 @@ function publicDocument(doc: Row): PublicDocument {
       ? { percent: num(doc.discount.percent), cents: num(doc.discount.cents) }
       : undefined,
     discountCents: Number(doc.discountCents ?? 0),
-    expired: doc.expired === true,
     portalToken: typeof doc.portalToken === "string" ? doc.portalToken : null,
     depositPaid: doc.depositPaid === true,
     payments: ((doc.payments ?? []) as Row[]).map((payment) => ({

@@ -38,7 +38,6 @@ export async function saveProposal(input: {
       requested_lead: input.leadId,
       ...bodyArgs(input.body),
       requested_template: input.templateId ?? null,
-      requested_valid_until: input.body.validUntil || null,
     },
     PROPOSAL_PATHS,
   );

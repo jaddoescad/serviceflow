@@ -33,6 +33,7 @@ import {
   type PublicDocument,
 } from "@/lib/proposal-types";
 import { CompanyLogo, CustomerShell, SIDEBAR_GROUP_LABEL, type ShellNavItem } from "./customer-shell";
+import { ItemDescription } from "./item-description";
 import { PayButton } from "./pay-button";
 import { ProjectModal } from "./project-profile-panel";
 import { Button, Input, Textarea, cn } from "./ui";
@@ -143,7 +144,6 @@ const STATUS_PILL_CLASSES: Record<string, string> = {
   open: "bg-[#dbeafe] text-[#1e40af]",
   accepted: "bg-[#dcfce7] text-[#166534]",
   declined: "bg-[#fee2e2] text-[#991b1b]",
-  expired: "bg-[#ffedd5] text-[#9a3412]",
   paid: "bg-[#dcfce7] text-[#166534]",
   partial: "bg-[#fef3c7] text-[#92400e]",
   late: "bg-[#fee2e2] text-[#991b1b]",
@@ -314,7 +314,7 @@ function LineText({ item, t }: { item: LineItem; t: DocumentStrings }) {
         </div>
       ) : null}
       {item.description ? (
-        <p className="mt-1 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{item.description}</p>
+        <ItemDescription text={item.description} className="mt-1" />
       ) : null}
     </div>
   );
@@ -931,7 +931,7 @@ function SignableBody({
 }) {
   const router = useRouter();
   const respond = RESPONDERS[doc.kind];
-  const open = doc.status === "sent" && !doc.expired && !!respond;
+  const open = doc.status === "sent" && !!respond;
   const packages = doc.packages ?? [];
   const [packageId, setPackageId] = useState(() => chosenPackageId(packages, doc.selectedPackageId));
   const [selected, setSelected] = useState(
@@ -982,14 +982,13 @@ function SignableBody({
   const page = doc.company.page;
   const proposal = kind === "proposal";
   const terms = doc.terms || (proposal ? page.terms : "");
-  const banner = doc.expired ? null : t.banner[doc.status];
+  const banner = t.banner[doc.status];
   const shownItems = items.filter((item) => !item.packageId || item.packageId === activePackageId);
   const scope = shownItems.filter((item) => !isAddOn(item));
   const addOns = shownItems.filter(isAddOn);
   const totalLabel = kind === "proposal" ? t.projectTotal : t.total;
   const facts: Array<[string, string]> = [
     [t.dateLabel, doc.sentAt ? t.date(doc.sentAt) : "—"],
-    ...(doc.validUntil ? [[t.validUntil, t.date(doc.validUntil)] as [string, string]] : []),
     [t.total, t.money(totals.totalCents)],
   ];
 
@@ -1221,17 +1220,6 @@ function SignableBody({
           </div>
 
           {doc.status === "accepted" ? <ApprovedPanel doc={doc} token={token} t={t} depositDue={deposit} /> : null}
-          {doc.expired ? (
-            <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[13px] font-medium text-[#9a3412]">
-              <p>{t.expired(doc.validUntil ? t.date(doc.validUntil) : null)}</p>
-              {doc.company.phone ? (
-                <a href={`tel:${doc.company.phone}`} className={cn(OUTLINE_BUTTON, "h-8 px-3 text-[13px]", NO_PRINT)}>
-                  <Icon name="phone" className="h-3.5 w-3.5" />
-                  {t.callUs}
-                </a>
-              ) : null}
-            </section>
-          ) : null}
           {banner ? (
             <p
               className={cn(
@@ -1249,7 +1237,7 @@ function SignableBody({
             <DocumentHeader
               doc={doc}
               t={t}
-              status={doc.expired ? "expired" : doc.status}
+              status={doc.status}
               eyebrow={doc.number ? `${t.kind[kind]} #${doc.number}` : t.kind[kind]}
               title={doc.name}
               facts={facts}
@@ -1317,11 +1305,6 @@ function SignableBody({
               <Icon name="download" />
               {t.downloadPdf(kind)}
             </button>
-            {open && doc.validUntil ? (
-              <p className="mt-3 text-center text-xs text-[var(--color-muted)]">
-                {t.validUntil} {t.date(doc.validUntil)}
-              </p>
-            ) : null}
           </div>
           {doc.company.phone ? (
             <a

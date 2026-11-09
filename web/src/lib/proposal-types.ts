@@ -1,13 +1,12 @@
 import type { Discount, LineItem, ProposalPackage } from "@/lib/line-items";
 
-export type ProposalStatus = "draft" | "sent" | "accepted" | "declined" | "expired" | "superseded";
+export type ProposalStatus = "draft" | "sent" | "accepted" | "declined" | "superseded";
 
 export const PROPOSAL_STATUS_LABELS: Record<ProposalStatus, string> = {
   draft: "Draft",
   sent: "Sent",
   accepted: "Accepted",
   declined: "Declined",
-  expired: "Expired",
   superseded: "Superseded",
 };
 
@@ -16,28 +15,12 @@ export const PROPOSAL_STATUS_TONES: Record<ProposalStatus, "neutral" | "brand" |
   sent: "brand",
   accepted: "good",
   declined: "bad",
-  expired: "warn",
   superseded: "neutral",
 };
 
 /** Today's date where the companies work, as YYYY-MM-DD. */
 export function todayIso(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
-}
-
-/** `days` after today, as YYYY-MM-DD: the default valid-until date. */
-export function isoDaysFromToday(days: number): string {
-  const date = new Date(`${todayIso()}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-/** New proposals stay open this long unless staff choose another date. */
-export const PROPOSAL_VALID_DAYS = 30;
-
-/** A sent proposal whose valid-until date has passed reads as expired; the customer can no longer approve it. */
-export function proposalDisplayStatus(status: ProposalStatus, validUntil: string | null): ProposalStatus {
-  return status === "sent" && validUntil != null && validUntil < todayIso() ? "expired" : status;
 }
 
 /** The editable body shared by proposals and templates. */
@@ -56,8 +39,6 @@ export type ProposalBody = {
   selectedPackageId: string | null;
   intro: string;
   terms: string;
-  /** Proposals only: the last day the customer can approve. */
-  validUntil: string | null;
 };
 
 export type Proposal = ProposalBody & {
@@ -86,7 +67,6 @@ export type ProposalSummary = {
   sentAt: string | null;
   viewedAt: string | null;
   updatedAt: string;
-  validUntil: string | null;
   customerName: string;
   /** The project page: the accepted job, else the deal. */
   projectId: string;
@@ -354,9 +334,6 @@ export type PublicDocument = {
   discountCents?: number;
   packages?: ProposalPackage[];
   selectedPackageId?: string | null;
-  /** Proposals: the last day to approve, and whether it has passed. */
-  validUntil?: string | null;
-  expired?: boolean;
   /** The customer's portal link token; null when the document has no customer contact. */
   portalToken?: string | null;
   /** Proposals: whether the deposit invoice is paid. */

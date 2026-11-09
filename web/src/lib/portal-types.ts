@@ -32,7 +32,7 @@ export type CustomerPortal = {
   };
   proposals: {
     name: string;
-    status: "sent" | "accepted" | "declined" | "expired";
+    status: "sent" | "accepted" | "declined";
     totalCents: number;
     sentAt: string | null;
     token: string;

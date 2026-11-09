@@ -30,7 +30,6 @@ export default async function ProposalTemplatePage({ params }: { params: Promise
           selectedPackageId: null,
           intro: "",
           terms: "",
-          validUntil: null,
         }
       }
       backHref="/proposals/templates"

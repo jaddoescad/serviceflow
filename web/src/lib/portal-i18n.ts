@@ -41,7 +41,6 @@ const en = {
     sent: "Awaiting approval",
     accepted: "Approved",
     declined: "Declined",
-    expired: "Expired",
   } satisfies Record<ProposalStatus, string>,
   changeOrderStatus: {
     sent: "Awaiting approval",
