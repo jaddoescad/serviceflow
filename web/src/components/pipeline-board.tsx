@@ -70,7 +70,6 @@ function BoardCard({
   onDragEnd,
   onEditLabels,
   onMenu,
-  onSchedule,
   followUp,
 }: {
   card: PipelineCard;
@@ -84,8 +83,6 @@ function BoardCard({
   onDragEnd: () => void;
   onEditLabels: () => void;
   onMenu: (anchor: DOMRect) => void;
-  /** Deals without an estimate or proposal yet book one from the card. */
-  onSchedule?: () => void;
 }) {
   // Sales cards leave the amount to the deal page and list view.
   const value = !isSales && card.valueCents ? fmtMoney(card.valueCents / 100) : null;
@@ -138,22 +135,13 @@ function BoardCard({
         </button>
       </div>
 
-      {card.dateOn || value || onSchedule ? (
+      {card.dateOn || value ? (
         <div className="mt-2.5 flex items-center gap-3 text-xs text-[var(--color-muted)]">
           {card.dateOn ? (
             <span className={cn("flex items-center gap-1.5", !card.archived && card.dateOn < today && "text-[var(--tag-red-text)]")}>
               <CalendarIcon className="h-3.5 w-3.5" />
               {fmtDay(card.dateOn)}
             </span>
-          ) : onSchedule ? (
-            <button
-              type="button"
-              onClick={onSchedule}
-              className="relative z-10 flex items-center gap-1.5 rounded-md font-medium text-[var(--color-brand-strong)] outline-none hover:underline focus-visible:shadow-[var(--focus-ring)]"
-            >
-              <CalendarIcon className="h-3.5 w-3.5" />
-              Schedule
-            </button>
           ) : null}
           {value ? <span className="ml-auto tabular-nums">{value}</span> : null}
         </div>
@@ -557,14 +545,6 @@ export function PipelineView({
                   onDragEnd={endDrag}
                   onEditLabels={() => setLabelCard(card)}
                   onMenu={(anchor) => setMenu((current) => (current?.card.id === card.id ? null : { card, anchor }))}
-                  onSchedule={
-                    isSales && !stage.isClosed && !card.archived && !card.dateOn && !card.quoteId
-                      ? () => {
-                          closeMenu();
-                          setBookingCard(card);
-                        }
-                      : undefined
-                  }
                   followUp={followUps?.get(card.id)}
                 />
               );
@@ -673,6 +653,10 @@ export function PipelineView({
           isSales={isSales}
           onClose={closeMenu}
           onMove={moveFromMenu}
+          onSchedule={(card) => {
+            closeMenu();
+            setBookingCard(card);
+          }}
           onEditLabels={(card) => {
             closeMenu();
             setLabelCard(card);

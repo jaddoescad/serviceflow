@@ -30,6 +30,7 @@ export function PipelineCardMenu({
   isSales,
   onClose,
   onMove,
+  onSchedule,
   onEditLabels,
   onDripsPaused,
   onArchived,
@@ -40,6 +41,8 @@ export function PipelineCardMenu({
   onClose: () => void;
   onMessage: (card: PipelineCard) => void;
   onMove: (card: PipelineCard) => void;
+  /** Books an appointment for a deal. */
+  onSchedule: (card: PipelineCard) => void;
   onEditLabels: (card: PipelineCard) => void;
   onDripsPaused: (card: PipelineCard, paused: boolean) => void;
   onArchived: (card: PipelineCard, archived: boolean) => void;
@@ -96,7 +99,12 @@ export function PipelineCardMenu({
       {card.archived ? null : (
         <>
           <Item onClick={() => onMove(card)}>Move to…</Item>
-          {isSales ? <Item href={`/jobs/${id}/proposals/new`}>New proposal</Item> : null}
+          {isSales ? (
+            <>
+              <Item onClick={() => onSchedule(card)}>Schedule</Item>
+              <Item href={`/jobs/${id}/proposals/new`}>New proposal</Item>
+            </>
+          ) : null}
         </>
       )}
       <Item href={`/deals/${id}?tab=notes`}>Add note</Item>
