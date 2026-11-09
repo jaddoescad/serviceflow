@@ -73,6 +73,8 @@ const LINK_LABELS: Record<CompanyLink, string> = {
 };
 
 const GLYPHS = {
+  undo: "M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11",
+  redo: "m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13",
   up: "m6 15 6-6 6 6",
   down: "m6 9 6 6 6-6",
   hide: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z",
@@ -100,6 +102,27 @@ function Glyph({ name, className }: { name: keyof typeof GLYPHS; className?: str
     </svg>
   );
 }
+
+/** What a page is made of, apart from its wording: typing leaves this alone, so a run of typing undoes as one step. */
+function structure(page: ProposalPage): string {
+  return JSON.stringify([
+    page.heroPath,
+    page.blocks.map((block) =>
+      isCustomBlock(block)
+        ? [
+            block.id,
+            block.hidden,
+            "path" in block ? block.path : null,
+            "points" in block ? block.points.length : "cards" in block ? block.cards.map((card) => card.icon) : null,
+            "numbers" in block ? block.numbers.length : null,
+          ]
+        : block.id,
+    ),
+  ]);
+}
+
+/** Typing within this long of the last keystroke joins the same undo step. */
+const TYPING_PAUSE_MS = 1000;
 
 /** The images a page keeps in storage: its cover and its image sections. */
 function pagePaths(page: ProposalPage): string[] {
@@ -578,6 +601,33 @@ export function ProposalPageBuilder({
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   const full = draft.blocks.length >= BLOCK_LIMITS.blocks;
 
+  const [history, setHistory] = useState<{ past: ProposalPage[]; future: ProposalPage[] }>({ past: [], future: [] });
+  const lastEdit = useRef(0);
+  const travelRef = useRef<(back: boolean) => void>(() => {});
+
+  // Cmd/Ctrl+Z and Shift+Cmd/Ctrl+Z (or Ctrl+Y) step through the page's history, also while typing in it.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      event.preventDefault();
+      travelRef.current(key === "z" && !event.shiftKey);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // A click anywhere off the sections (and off the bar above them) lets go of the selected one.
+  useEffect(() => {
+    if (!selected) return;
+    const release = (event: MouseEvent) => {
+      if (!(event.target as Element).closest("[data-page-section], [data-page-bar]")) setSelected(null);
+    };
+    document.addEventListener("mousedown", release);
+    return () => document.removeEventListener("mousedown", release);
+  }, [selected]);
+
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -586,9 +636,29 @@ export function ProposalPageBuilder({
   }, [dirty]);
 
   function patch(next: Partial<ProposalPage>) {
-    setDraft((current) => ({ ...current, ...next }));
+    const changed = { ...draft, ...next };
+    const typing = structure(changed) === structure(draft) && Date.now() - lastEdit.current < TYPING_PAUSE_MS;
+    lastEdit.current = Date.now();
+    if (!typing) setHistory({ past: [...history.past.slice(-99), draft], future: [] });
+    else if (history.future.length) setHistory({ past: history.past, future: [] });
+    setDraft(changed);
     setStatus({});
   }
+
+  /** Steps the page back (undo) or forward again (redo). */
+  function travel(back: boolean) {
+    const from = back ? history.past : history.future;
+    const to = from.at(-1);
+    if (!to || disabled) return;
+    const rest = from.slice(0, -1);
+    setHistory(back ? { past: rest, future: [...history.future, draft] } : { past: [...history.past, draft], future: rest });
+    lastEdit.current = 0;
+    setDraft(to);
+    setAdding(null);
+    if (!to.blocks.some((block) => block.id === selected)) setSelected(null);
+    setStatus({});
+  }
+  travelRef.current = travel;
 
   /** Saves the page, then deletes the images it no longer uses. */
   async function save(next: ProposalPage, message: string) {
@@ -600,7 +670,10 @@ export function ProposalPageBuilder({
     // As saved: trimmed, and with https:// on a link typed without it.
     const clean = reviveProposalPage(next);
     const kept = new Set(pagePaths(clean));
-    await removeDocumentAssets(pagePaths(saved).filter((path) => !kept.has(path)));
+    const unused = pagePaths(saved).filter((path) => !kept.has(path));
+    await removeDocumentAssets(unused);
+    // Earlier steps may show an image that is now deleted, so they can't be returned to.
+    if (unused.length) setHistory({ past: [], future: [] });
     setDraft(clean);
     setSaved(clean);
     setStatus({ message });
@@ -660,7 +733,7 @@ export function ProposalPageBuilder({
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-30 -mx-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-[var(--color-bg)] px-1 py-2">
+      <div data-page-bar className="sticky top-0 z-30 -mx-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-[var(--color-bg)] px-1 py-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-[var(--color-heading)]">Customer proposal page</h2>
           <div className="text-[13px] text-[var(--color-muted)]">
@@ -672,6 +745,23 @@ export function ProposalPageBuilder({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {canManage ? (
+            <div className="flex">
+              {([true, false] as const).map((back) => (
+                <button
+                  key={String(back)}
+                  type="button"
+                  aria-label={back ? "Undo" : "Redo"}
+                  title={back ? "Undo" : "Redo"}
+                  disabled={disabled || !(back ? history.past : history.future).length}
+                  onClick={() => travel(back)}
+                  className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-muted)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)] disabled:pointer-events-none disabled:opacity-30"
+                >
+                  <Glyph name={back ? "undo" : "redo"} />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div
             role="group"
             aria-label="Preview size"
@@ -811,6 +901,7 @@ export function ProposalPageBuilder({
             return (
               <section
                 key={block.id}
+                data-page-section
                 aria-label={custom?.title ? `${name}: ${custom.title}` : name}
                 onClick={select}
                 onFocusCapture={select}
