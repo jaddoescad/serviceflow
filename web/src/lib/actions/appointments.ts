@@ -2,8 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
+import { getAppointments } from "@/lib/appointments";
 import { createClient } from "@/lib/supabase/server";
-import type { AppointmentKind, AppointmentStatus } from "@/lib/appointment-types";
+import type { Appointment, AppointmentKind, AppointmentStatus } from "@/lib/appointment-types";
+
+/** Every appointment overlapping a range: the booking dialog's day view. */
+export async function listAppointments(input: { from: string; to: string }): Promise<Appointment[]> {
+  await requireStaff();
+  return getAppointments(new Date(input.from), new Date(input.to));
+}
 
 export async function saveAppointment(input: {
   id: string;
