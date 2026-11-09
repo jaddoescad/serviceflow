@@ -7,6 +7,7 @@ import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
 import type { ProposalBody } from "@/lib/proposal-types";
 import {
+  getCatalogItems,
   getLeadProposals,
   getProjectDeal,
   getProposal,
@@ -25,13 +26,14 @@ export default async function ProposalPage({
   const [{ id, proposalId }, query] = await Promise.all([params, searchParams]);
   const projectId = decodeURIComponent(id);
   const isNew = proposalId === "new";
-  const [shell, deal, proposal, templates, extras, overview] = await Promise.all([
+  const [shell, deal, proposal, templates, extras, overview, catalog] = await Promise.all([
     getProjectShell(projectId),
     getProjectDeal(projectId),
     isNew ? null : getProposal(proposalId),
     getProposalTemplates(),
     isNew ? null : getDocumentExtras("proposal", proposalId),
     getDealOverview(projectId),
+    getCatalogItems(),
     requireStaff(),
   ]);
   if (!shell || !deal?.leadId) notFound();
@@ -81,6 +83,7 @@ export default async function ProposalPage({
       initial={initial}
       proposal={proposal}
       deal={overview}
+      catalog={catalog}
       extras={extras}
       companyDocuments={companyDocuments}
       initialTemplateId={template?.id ?? null}

@@ -269,7 +269,7 @@ export function Input(props: React.ComponentProps<"input">) {
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cn(control, "h-8 pl-2 pr-7", props.className)} />;
+  return <select {...props} className={cn(control, "select-chevron h-8 pl-2.5 pr-7", props.className)} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {

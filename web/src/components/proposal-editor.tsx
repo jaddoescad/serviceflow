@@ -20,6 +20,7 @@ import {
   newLineItem,
   packageCents,
   syncPackageItems,
+  type CatalogItem,
   type LineItem,
   type ProposalPackage,
 } from "@/lib/line-items";
@@ -31,6 +32,7 @@ import {
   type ProposalBody,
 } from "@/lib/proposal-types";
 import type { DealOverview } from "@/lib/crm-types";
+import { itemDescriptionPlain } from "@/lib/item-description";
 import { NotesPanel } from "./deal-tabs";
 import { ItemDescription, ItemDescriptionEditor } from "./item-description";
 import { DocumentAttachments } from "./document-attachments";
@@ -384,7 +386,7 @@ function Lines({
                           : { packageId: null, optional: false, selected: true },
                       )
                     }
-                    className="mt-1 h-6 rounded-[var(--radius-control)] border border-transparent bg-transparent px-1.5 text-xs text-[var(--color-muted)] outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)]"
+                    className="select-chevron mt-1 h-6 rounded-[var(--radius-control)] border border-transparent bg-transparent pl-1.5 pr-6 text-xs text-[var(--color-muted)] outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)]"
                   >
                     <option value="">Every package</option>
                     {packages.map((pack) => (
@@ -487,6 +489,113 @@ function Lines({
   );
 }
 
+/**
+ * "+ Add product": the company's saved products and services (Proposals ›
+ * Catalog), searched by name. Picking one adds it as a line.
+ */
+function ProductPicker({
+  catalog,
+  className,
+  onPick,
+}: {
+  catalog: CatalogItem[];
+  className?: string;
+  onPick: (product: CatalogItem) => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !root.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+  const words = search.trim().toLowerCase();
+  const shown = words ? catalog.filter((product) => product.name.toLowerCase().includes(words)) : catalog;
+  return (
+    <div ref={root} className="relative inline-block">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          setSearch("");
+          setOpen(!open);
+        }}
+        className={className}
+      >
+        + Add product
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label="Add a product"
+          className="absolute left-0 top-full z-30 mt-1 w-[min(22rem,calc(100vw-3rem))] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]"
+        >
+          {catalog.length ? (
+            <>
+              <div className="border-b border-[var(--color-border)] p-2">
+                <input
+                  autoFocus
+                  aria-label="Search products"
+                  placeholder="Search products"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="h-8 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] outline-none placeholder:text-[var(--color-faint)] focus:border-[var(--color-brand)] focus:shadow-[var(--focus-ring)]"
+                />
+              </div>
+              <ul className="max-h-72 overflow-y-auto p-1">
+                {shown.map((product) => (
+                  <li key={product.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPick(product);
+                        setOpen(false);
+                      }}
+                      className="flex w-full items-start gap-3 rounded-[var(--radius-control)] px-2.5 py-2 text-left outline-none hover:bg-[var(--color-hover)] focus-visible:bg-[var(--color-hover)]"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-[var(--color-heading)]">{product.name}</span>
+                        {product.description ? (
+                          <span className="block truncate text-xs text-[var(--color-muted)]">
+                            {itemDescriptionPlain(product.description)}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-[13px] tabular-nums text-[var(--color-heading)]">
+                        {fmtCents(product.unitPriceCents)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+                {shown.length ? null : <li className="px-2.5 py-3 text-[13px] text-[var(--color-muted)]">No product by that name.</li>}
+              </ul>
+            </>
+          ) : (
+            <p className="px-3 py-3 text-[13px] text-[var(--color-muted)]">
+              You have no products yet. Save the items you quote often and add them here in one click.
+            </p>
+          )}
+          <div className="border-t border-[var(--color-border)] px-3 py-2 text-xs">
+            <Link href="/proposals/catalog" className="font-medium text-[var(--color-brand-strong)] hover:underline">
+              Manage products
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function depositSummary(body: ProposalBody): string {
   if (body.depositPercent != null) return `${body.depositPercent}% deposit`;
   if (body.depositCents != null) return `${fmtCents(body.depositCents)} deposit`;
@@ -503,6 +612,7 @@ export function ProposalEditor({
   initial,
   proposal,
   deal = null,
+  catalog = [],
   extras = null,
   companyDocuments = [],
   initialTemplateId = null,
@@ -522,6 +632,8 @@ export function ProposalEditor({
   proposal?: Proposal | null;
   /** Proposals: the deal, for the customer header and its notes. */
   deal?: DealOverview | null;
+  /** The company's saved products and services, offered as "+ Add product". */
+  catalog?: CatalogItem[];
   /** A saved proposal's attachments and latest delivery. */
   extras?: DocumentExtras | null;
   companyDocuments?: CompanyDocument[];
@@ -830,6 +942,15 @@ export function ProposalEditor({
                 + Add item
               </button>
             )}
+            {readOnly ? null : (
+              <ProductPicker
+                catalog={catalog}
+                className={cn(ADD_LINK, "text-[var(--color-brand-strong)]")}
+                onPick={({ name, description, unitPriceCents }) =>
+                  setItems([...body.items, newLineItem({ name, description, unitPriceCents })])
+                }
+              />
+            )}
           </div>
 
           {optional.length || !readOnly ? (
@@ -853,6 +974,18 @@ export function ProposalEditor({
                 >
                   + Add optional item
                 </button>
+              )}
+              {readOnly ? null : (
+                <ProductPicker
+                  catalog={catalog}
+                  className={cn(ADD_LINK, "mt-1 text-[var(--color-warn)]")}
+                  onPick={({ name, description, unitPriceCents }) =>
+                    setItems([
+                      ...body.items,
+                      newLineItem({ name, description, unitPriceCents, optional: true, selected: false }),
+                    ])
+                  }
+                />
               )}
             </div>
           ) : null}
