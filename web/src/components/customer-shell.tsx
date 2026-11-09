@@ -98,7 +98,7 @@ const DEFAULT_ACCENT = "#1e3a5f";
  * a readable ink to set on it, a text shade that stays legible on white, and
  * a faint tint for backgrounds.
  */
-function accentStyle(color: string | null): React.CSSProperties {
+export function accentStyle(color: string | null): React.CSSProperties {
   const accent = color && /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_ACCENT;
   const [red, green, blue] = [1, 3, 5].map((at) => parseInt(accent.slice(at, at + 2), 16));
   const light = (red * 299 + green * 587 + blue * 114) / 1000 > 160;

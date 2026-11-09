@@ -10,7 +10,7 @@ import { GoogleCalendarSection } from "@/components/settings/google-calendar-sec
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
 import { PaymentsSettings } from "@/components/settings/payments-settings";
-import { ProposalPageForm } from "@/components/settings/proposal-page-form";
+import { ProposalPageBuilder } from "@/components/settings/proposal-page-builder";
 import { ReviewsSettings } from "@/components/settings/reviews-settings";
 import { AccountSection, IntegrationsSection, TeamSection } from "@/components/settings/settings-overview";
 import { EmptyState } from "@/components/ui";
@@ -68,7 +68,16 @@ async function Branding() {
 async function ProposalPage() {
   const { company, isManager } = await loadCompanySettings();
   const previewId = await getLatestProposalId(company.id);
-  return <ProposalPageForm orgId={company.id} page={company.proposalPage} canManage={isManager} previewId={previewId} />;
+  return (
+    <ProposalPageBuilder
+      orgId={company.id}
+      companyName={company.name}
+      brandColor={company.brandColor}
+      page={company.proposalPage}
+      canManage={isManager}
+      previewId={previewId}
+    />
+  );
 }
 
 async function Templates() {

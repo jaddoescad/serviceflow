@@ -2,7 +2,10 @@
 
 /* Design tokens (Attio-like: white canvas, hairlines, near-black primary,
    colour only for status). Components use these variables, never raw hex. */
-:root {
+/* .light-page: a customer page shown inside a staff page (the proposal page
+   builder) keeps the light colours whatever the staff theme. */
+:root,
+.light-page {
   /* Surfaces */
   --color-bg: #ffffff;
   --color-surface: #ffffff;

@@ -40,6 +40,7 @@ Ottawa Painters' business files, accounting, DripJobs import rules, Ottawa Paint
 - Follow `android/README.md` for Android release requirements and `ios/README.md` for the native iOS app. Its core logic lives in `ios/ServiceFlowKit`; run `swift run ServiceFlowCoreChecks` there after changing it. The native Android app (`android/README.md`) ports that core to `android/core` with the same names; run `./gradlew :core:test` from `android/` after changing it, and mirror core changes on both platforms.
 - Before UI/UX design work, use the imagegen skill for a visual reference.
 - Ottawa Painters admin stays in its separate repository.
+- An agent edits a company's customer proposal page the way a person does: Settings › Customer proposal page (`/settings/proposal-page`). Sections are regions named "<Kind>: <heading>"; click one to get its toolbar (Move section up/down, Hide section from customers, Delete section), type into its labelled fields, use "Add a section after …" to insert one, then Save.
 
 ## UI fidelity and simplicity
 

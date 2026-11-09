@@ -74,10 +74,10 @@ const APPROVE_BUTTON =
   "inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] font-semibold text-[var(--brand-ink)] shadow-sm outline-none transition-opacity hover:opacity-90 focus-visible:shadow-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-50";
 const OUTLINE_BUTTON =
   "inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-white font-medium text-[var(--color-heading)] outline-none transition-colors hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]";
-const LABEL = "text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-muted)]";
+export const LABEL = "text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-muted)]";
 const CARD = "rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.05)]";
 /** A sheet section's padding. */
-const PAD = "px-5 py-6 sm:px-8 sm:py-7";
+export const PAD = "px-5 py-6 sm:px-8 sm:py-7";
 
 const ICONS = {
   check: "M20 6 9 17l-5-5",
@@ -115,6 +115,11 @@ const CARD_ICON: Record<CardIcon, IconName> = {
 };
 
 type IconName = keyof typeof ICONS;
+
+/** A card's icon, as the customer sees it; the page builder in Settings draws the same one. */
+export function CardGlyph({ icon, className }: { icon: CardIcon; className?: string }) {
+  return <Icon name={CARD_ICON[icon]} className={className} />;
+}
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
   return (
@@ -1430,7 +1435,7 @@ function CustomSection({ block }: { block: CustomBlock }) {
             {block.cards.map((card, index) => (
               <li key={index}>
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-tint)] text-[var(--brand-text)]">
-                  <Icon name={CARD_ICON[card.icon]} />
+                  <CardGlyph icon={card.icon} />
                 </span>
                 {card.title ? (
                   <h3 className="mt-3 text-[15px] font-semibold leading-5 text-[var(--color-heading)]">{card.title}</h3>
