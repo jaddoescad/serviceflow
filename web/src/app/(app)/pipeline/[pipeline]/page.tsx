@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
+import { LiveRefresh } from "@/components/live-refresh";
 import { PipelineView } from "@/components/pipeline-board";
 import { getReminderRules } from "@/lib/actions/reminders";
 import { APPOINTMENT_KINDS } from "@/lib/appointment-types";
-import { requireStaff } from "@/lib/auth";
+import { getHomeOrgId, requireStaff } from "@/lib/auth";
 import { getCustomerListOptions } from "@/lib/contacts";
 import { getPipelineBoard, getPipelineViews } from "@/lib/pipeline";
 import { isPipelineKey } from "@/lib/pipeline-types";
@@ -20,7 +21,7 @@ export default async function PipelinePage({
 }) {
   const [{ pipeline }, query] = await Promise.all([params, searchParams]);
   if (!isPipelineKey(pipeline)) notFound();
-  const [profile, board, labels, savedViews, options, rules] = await Promise.all([
+  const [profile, board, labels, savedViews, options, rules, orgId] = await Promise.all([
     requireStaff(),
     getPipelineBoard(pipeline),
     getProjectLabels(),
@@ -28,18 +29,22 @@ export default async function PipelinePage({
     getCustomerListOptions(),
     // Deals book estimates from their cards.
     pipeline === "sales" ? getReminderRules() : [],
+    getHomeOrgId(),
   ]);
   return (
-    <PipelineView
-      key={pipeline}
-      board={board}
-      labels={labels}
-      savedViews={savedViews}
-      userId={profile.user_id}
-      team={options.team}
-      confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
-      viewId={query.v ?? null}
-      view={query.view === "list" ? "list" : "board"}
-    />
+    <>
+      {orgId && <LiveRefresh orgId={orgId} tables={["leads", "contacts"]} />}
+      <PipelineView
+        key={pipeline}
+        board={board}
+        labels={labels}
+        savedViews={savedViews}
+        userId={profile.user_id}
+        team={options.team}
+        confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
+        viewId={query.v ?? null}
+        view={query.view === "list" ? "list" : "board"}
+      />
+    </>
   );
 }
