@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteProposal,
@@ -554,7 +554,42 @@ export function ProposalEditor({
   const removeItem = (itemId: string) => setItems(body.items.filter((item) => item.id !== itemId));
 
   const [dragging, setDragging] = useState<string | null>(null);
+  const root = useRef<HTMLDivElement>(null);
   const [target, setTarget] = useState<DropTarget | null>(null);
+
+  // While a line is dragged, holding it near the top or bottom of the screen
+  // scrolls the page (browsers barely do this on their own), faster nearer the edge.
+  useEffect(() => {
+    if (!dragging) return;
+    const EDGE = 120;
+    let pointerY: number | null = null;
+    let frame = 0;
+    let scroller: Element | Window = window;
+    for (let node = root.current?.parentElement; node; node = node.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight) {
+        scroller = node;
+        break;
+      }
+    }
+    const track = (event: DragEvent) => {
+      pointerY = event.clientY;
+    };
+    const step = () => {
+      if (pointerY != null) {
+        const top = scroller instanceof Window ? 0 : scroller.getBoundingClientRect().top;
+        const bottom = scroller instanceof Window ? window.innerHeight : scroller.getBoundingClientRect().bottom;
+        const pull = pointerY < top + EDGE ? pointerY - (top + EDGE) : pointerY > bottom - EDGE ? pointerY - (bottom - EDGE) : 0;
+        if (pull) scroller.scrollBy(0, Math.max(-28, Math.min(28, pull / 4)));
+      }
+      frame = requestAnimationFrame(step);
+    };
+    document.addEventListener("dragover", track);
+    frame = requestAnimationFrame(step);
+    return () => {
+      document.removeEventListener("dragover", track);
+      cancelAnimationFrame(frame);
+    };
+  }, [dragging]);
 
   /**
    * Puts a line in a group, before or after another line or at the group's
@@ -659,7 +694,7 @@ export function ProposalEditor({
   const contact = deal?.contact;
 
   return (
-    <div className="mx-auto max-w-[920px] pb-16">
+    <div ref={root} className="mx-auto max-w-[920px] pb-16">
       <header className="page-bar flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--color-border)] py-2.5">
         <Link
           href={backHref}
