@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { CustomerPortalView, type PortalView } from "@/components/customer-portal";
-import { portalLanguage, portalStrings } from "@/lib/portal-i18n";
+import { portalStrings } from "@/lib/portal-i18n";
 import type { CustomerPortal } from "@/lib/portal-types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -26,8 +25,7 @@ const loadPortal = cache(async (token: string): Promise<CustomerPortal | null> =
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
   const portal = await loadPortal(token);
-  const lang = portalLanguage(portal?.customer.language, (await headers()).get("accept-language"));
-  const title = portalStrings(lang).pageTitle;
+  const title = portalStrings().pageTitle;
   return {
     title: portal ? `${title} – ${portal.company.name}` : title,
     robots: { index: false, follow: false },
@@ -36,7 +34,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 /** A customer's private portal. `?view=preferences` opens message settings (unsubscribe links). */
 export default async function CustomerPortalPage({ params, searchParams }: Props) {
-  const [{ token }, { view }, requestHeaders] = await Promise.all([params, searchParams, headers()]);
+  const [{ token }, { view }] = await Promise.all([params, searchParams]);
   const portal = await loadPortal(token);
   if (!portal) notFound();
   const initialView = VIEWS.find((candidate) => candidate === view) ?? null;
@@ -44,7 +42,6 @@ export default async function CustomerPortalPage({ params, searchParams }: Props
     <CustomerPortalView
       portal={portal}
       token={token}
-      initialLanguage={portalLanguage(portal.customer.language, requestHeaders.get("accept-language"))}
       initialView={initialView}
     />
   );

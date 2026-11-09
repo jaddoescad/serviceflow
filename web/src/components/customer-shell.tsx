@@ -16,8 +16,6 @@ export type ShellCompany = {
   brandColor: string | null;
 };
 
-export type ShellLanguage = "en" | "fr";
-
 export type ShellNavIcon = keyof typeof NAV_ICONS;
 
 export type ShellNavItem = {
@@ -100,9 +98,6 @@ const COLUMN_GUTTER = "px-4 sm:px-6 lg:pl-[288px]";
 
 export function CustomerShell({
   company,
-  language,
-  languageLabel,
-  onLanguage,
   callLabel,
   menuLabel,
   nav,
@@ -112,9 +107,6 @@ export function CustomerShell({
   children,
 }: {
   company: ShellCompany;
-  language: ShellLanguage;
-  languageLabel: string;
-  onLanguage: (language: ShellLanguage) => void;
   callLabel: string;
   menuLabel: string;
   nav: ShellNavItem[];
@@ -163,25 +155,6 @@ export function CustomerShell({
                 <span className="hidden sm:inline">{company.phone}</span>
               </a>
             ) : null}
-            <div role="group" aria-label={languageLabel} className="flex shrink-0 rounded-lg bg-[#f1f5f9] p-0.5">
-              {(["en", "fr"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  lang={option}
-                  aria-pressed={language === option}
-                  onClick={() => option !== language && onLanguage(option)}
-                  className={cn(
-                    "h-7 rounded-md px-2.5 text-xs font-semibold uppercase outline-none focus-visible:shadow-[var(--focus-ring)]",
-                    language === option
-                      ? "bg-white text-[var(--color-heading)] shadow-[var(--shadow-pop-lite)]"
-                      : "text-[var(--color-muted)] hover:text-[var(--color-heading)]",
-                  )}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </header>

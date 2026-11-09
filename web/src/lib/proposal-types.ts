@@ -197,8 +197,6 @@ export type PublicDocument = {
   /** Proposals: the last day to approve, and whether it has passed. */
   validUntil?: string | null;
   expired?: boolean;
-  /** The customer's preferred language, when staff or the customer set one. */
-  language?: "en" | "fr" | null;
   /** The customer's portal link token; null when the document has no customer contact. */
   portalToken?: string | null;
   /** Proposals: whether the deposit invoice is paid. */

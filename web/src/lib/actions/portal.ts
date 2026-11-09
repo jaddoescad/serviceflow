@@ -1,7 +1,7 @@
 "use server";
 
 import { requireStaff } from "@/lib/auth";
-import type { ChannelMode, PortalLanguage, PreferredTime } from "@/lib/portal-types";
+import type { ChannelMode, PreferredTime } from "@/lib/portal-types";
 import { createClient } from "@/lib/supabase/server";
 import { publicWrite, type ActionResult } from "./rpc";
 
@@ -40,9 +40,3 @@ export async function savePortalPreferences(input: {
   });
 }
 
-export async function setPortalLanguage(input: { token: string; language: PortalLanguage }): Promise<ActionResult> {
-  return publicWrite("set_portal_language", {
-    requested_token: input.token,
-    requested_language: input.language,
-  });
-}

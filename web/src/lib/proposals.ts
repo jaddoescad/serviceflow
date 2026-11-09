@@ -163,20 +163,6 @@ export const getCatalogItems = cache(async (): Promise<CatalogItem[]> => {
   }));
 });
 
-/** The language the deal's customer reads documents in, when set. */
-export async function getDealCustomerLanguage(leadId: string): Promise<"en" | "fr" | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("leads")
-    .select("contact:contacts(preferred_language)")
-    .eq("id", leadId)
-    .maybeSingle();
-  if (error) throw new Error(`customer language: ${error.message}`);
-  const contact = (data as Row | null)?.contact;
-  const language = (Array.isArray(contact) ? contact[0] : contact)?.preferred_language;
-  return language === "en" || language === "fr" ? language : null;
-}
-
 /** Cached per request: the page and its title share one lookup. */
 export const getPublicDocument = cache(async (
   kind: PublicDocument["kind"],
@@ -188,31 +174,23 @@ export const getPublicDocument = cache(async (
     change_order: "view_public_change_order",
     invoice: "view_public_invoice",
   }[kind];
-  const [{ data, error }, language] = await Promise.all([
-    supabase.rpc(fn, { requested_token: token }),
-    supabase.rpc("view_public_document_language", { requested_kind: kind, requested_token: token }),
-  ]);
+  const { data, error } = await supabase.rpc(fn, { requested_token: token });
   if (error) throw new Error(`public ${kind}: ${error.message}`);
-  if (!data) return null;
-  // The page still opens if the language lookup fails.
-  return publicDocument(data as Row, language.data === "en" || language.data === "fr" ? language.data : null);
+  return data ? publicDocument(data as Row) : null;
 });
 
 /**
  * Staff's "Customer view" of any proposal, drafts included: the customer's
  * page without a link, and without marking it viewed.
  */
-export async function getProposalPreview(id: string, leadId: string): Promise<PublicDocument | null> {
+export async function getProposalPreview(id: string): Promise<PublicDocument | null> {
   const supabase = await createClient();
-  const [{ data, error }, language] = await Promise.all([
-    supabase.rpc("preview_proposal", { requested_id: id }),
-    getDealCustomerLanguage(leadId).catch(() => null),
-  ]);
+  const { data, error } = await supabase.rpc("preview_proposal", { requested_id: id });
   if (error) throw new Error(`proposal preview: ${error.message}`);
-  return data ? publicDocument(data as Row, language) : null;
+  return data ? publicDocument(data as Row) : null;
 }
 
-function publicDocument(doc: Row, language: "en" | "fr" | null): PublicDocument {
+function publicDocument(doc: Row): PublicDocument {
   return {
     ...(doc as PublicDocument),
     company: { ...(doc.company as PublicDocument["company"]), page: reviveProposalPage(doc.company?.page) },
@@ -223,7 +201,6 @@ function publicDocument(doc: Row, language: "en" | "fr" | null): PublicDocument 
       : undefined,
     discountCents: Number(doc.discountCents ?? 0),
     expired: doc.expired === true,
-    language,
     portalToken: typeof doc.portalToken === "string" ? doc.portalToken : null,
     depositPaid: doc.depositPaid === true,
     payments: ((doc.payments ?? []) as Row[]).map((payment) => ({

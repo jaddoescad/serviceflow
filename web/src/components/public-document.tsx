@@ -5,12 +5,7 @@ import { useRouter } from "next/navigation";
 import { acceptPublicChangeOrder, declinePublicChangeOrder } from "@/lib/actions/billing";
 import { acceptPublicProposal, declinePublicProposal } from "@/lib/actions/proposals";
 import type { ActionResult } from "@/lib/actions/rpc";
-import {
-  DOCUMENT_LANGUAGE_COOKIE,
-  documentStrings,
-  type CustomerLanguage,
-  type DocumentStrings,
-} from "@/lib/customer-i18n";
+import { documentStrings, type DocumentStrings } from "@/lib/customer-i18n";
 import { documentAssetUrl, fmtFileSize } from "@/lib/document-assets";
 import {
   NO_DISCOUNT,
@@ -1646,33 +1641,20 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
 export function PublicDocumentView({
   doc,
   token,
-  language: initialLanguage,
   preview = false,
 }: {
   doc: PublicDocument;
   token: string;
-  /** From the customer's earlier pick, their contact, or their browser. */
-  language: CustomerLanguage;
   /** Staff's Customer view of a proposal: nothing is approved, declined or marked viewed. */
   preview?: boolean;
 }) {
-  const [language, setLanguage] = useState(initialLanguage);
-  const t = documentStrings(language);
+  const t = documentStrings();
   const files = doc.assets.filter((asset) => asset.kind === "file");
 
-  function changeLanguage(next: CustomerLanguage) {
-    setLanguage(next);
-    // Remembered on this browser for the customer's other documents.
-    document.cookie = `${DOCUMENT_LANGUAGE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
-  }
-
   return (
-    <div lang={language}>
+    <div>
       <CustomerShell
         company={doc.company}
-        language={language}
-        languageLabel={t.language}
-        onLanguage={changeLanguage}
         callLabel={t.callUs}
         menuLabel={t.menu}
         nav={documentNav(doc, t)}
@@ -1697,7 +1679,7 @@ export function PublicDocumentView({
       </CustomerShell>
       {preview ? (
         <div className={cn("pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4", NO_PRINT)}>
-          <p lang="en" className="rounded-full bg-[#111113] px-4 py-2 text-center text-[13px] text-white shadow-lg">
+          <p className="rounded-full bg-[#111113] px-4 py-2 text-center text-[13px] text-white shadow-lg">
             Preview of what your customer sees. Approving and declining are off here.
           </p>
         </div>

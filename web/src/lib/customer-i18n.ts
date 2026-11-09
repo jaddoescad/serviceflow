@@ -1,31 +1,10 @@
-// Wording of the customer's document pages (/p, /co, /i) in English and
-// Canadian French, with money and date formats to match. What staff write
-// (item names, message, terms) is shown as written. The customer portal keeps
-// its own wording in portal-i18n.ts.
+// Wording of the customer's document pages (/p, /co, /i), with their money
+// and date formats. What staff write (item names, message, terms) is shown as
+// written. The customer portal keeps its own wording in portal-i18n.ts.
 
 import type { DocumentKind } from "./proposal-types";
 
-export type CustomerLanguage = "en" | "fr";
-
-/** Remembers the language a customer picked on a document page. */
-export const DOCUMENT_LANGUAGE_COOKIE = "sf_document_language";
-
 const TIME_ZONE = "America/Toronto";
-
-/**
- * The page's first language: the customer's own pick on this browser, then
- * the language staff set for them, then the browser's, else English.
- */
-export function documentLanguage(input: {
-  chosen?: string | null;
-  preferred?: string | null;
-  acceptLanguage?: string | null;
-}): CustomerLanguage {
-  if (input.chosen === "en" || input.chosen === "fr") return input.chosen;
-  if (input.preferred === "en" || input.preferred === "fr") return input.preferred;
-  const first = input.acceptLanguage?.split(",")[0]?.trim().toLowerCase() ?? "";
-  return first.startsWith("fr") ? "fr" : "en";
-}
 
 function formats(locale: string) {
   return {
@@ -59,15 +38,9 @@ function sentence(text: string): string {
   return text.endsWith(".") ? text : `${text}.`;
 }
 
-/** 13.5 → "13,5 %" (a narrow no-break space before the sign, as in French). */
-function frPercent(value: number): string {
-  return `${value.toLocaleString("fr-CA")}\u202f%`;
-}
-
 const en = {
   ...formats("en-CA"),
   locale: "en-CA",
-  languageName: "English",
   kind: { proposal: "Proposal", change_order: "Change Order", invoice: "Invoice" } satisfies Record<DocumentKind, string>,
   /** "proposal" inside a sentence. */
   noun: { proposal: "proposal", change_order: "change order", invoice: "invoice" } satisfies Record<DocumentKind, string>,
@@ -93,7 +66,6 @@ const en = {
   expired: (date: string | null) =>
     date ? `This proposal expired on ${date}. Contact us for an updated one.` : "This proposal expired. Contact us for an updated one.",
   callUs: "Call us",
-  language: "Language",
   menu: "Menu",
   myDocument: (kind: DocumentKind) => `My ${en.noun[kind]}`,
   documents: "Documents",
@@ -220,161 +192,6 @@ const en = {
 
 export type DocumentStrings = typeof en;
 
-const fr: DocumentStrings = {
-  ...formats("fr-CA"),
-  locale: "fr-CA",
-  languageName: "Français",
-  kind: { proposal: "Soumission", change_order: "Ordre de changement", invoice: "Facture" },
-  noun: { proposal: "soumission", change_order: "ordre de changement", invoice: "facture" },
-  status: {
-    sent: "En attente",
-    accepted: "Acceptée",
-    declined: "Refusée",
-    expired: "Expirée",
-    open: "Ouverte",
-    paid: "Payée",
-    partial: "Payée en partie",
-    late: "En retard",
-    void: "Annulée",
-    cancelled: "Annulé",
-  },
-  banner: {
-    declined: "Vous avez refusé ce document. Communiquez avec nous si vous changez d’avis.",
-    late: "Le paiement de cette facture est en retard.",
-    paid: "Payée en totalité. Merci!",
-    void: "Ce document a été annulé. Communiquez avec nous pour toute question.",
-    cancelled: "Ce document a été annulé. Communiquez avec nous pour toute question.",
-  },
-  expired: (date) =>
-    date
-      ? `Cette soumission a expiré le ${date}. Communiquez avec nous pour en obtenir une à jour.`
-      : "Cette soumission a expiré. Communiquez avec nous pour en obtenir une à jour.",
-  callUs: "Appelez-nous",
-  language: "Langue",
-  menu: "Menu",
-  myDocument: (kind) => ({ proposal: "Ma soumission", change_order: "Mon ordre de changement", invoice: "Ma facture" })[kind],
-  documents: "Documents",
-  insurance: "Assurances",
-  onlyDeposit: (amount) => `Dépôt de seulement ${amount}`,
-  approveAndSign: "Approuver et signer",
-  downloadPdf: (kind) => `Télécharger ${kind === "change_order" ? "l’ordre de changement" : `la ${fr.noun[kind]}`} (PDF)`,
-  number: (kind) => `${fr.kind[kind]} n°`,
-  dateLabel: "Date",
-  total: "Total",
-  validUntil: "Valide jusqu’au",
-  preparedFor: "Préparée pour",
-  billTo: "Facturer à",
-  projectLocation: "Adresse des travaux",
-  company: "Entreprise",
-  noteFrom: (company) => `Note de ${company}`,
-  license: (value) => `Licence n° ${value}`,
-  whyChoose: (company) => `Pourquoi choisir ${company}`,
-  projectsCompleted: "Projets réalisés",
-  yearsInBusiness: "Années en affaires",
-  googleRating: "Note Google",
-  choosePackage: "Choisissez votre forfait",
-  choosePackageHint: "Choisissez une option. Votre total se met à jour selon votre choix.",
-  select: "Choisir",
-  selected: "Choisi",
-  packageLabel: (name) => `Forfait ${name}`,
-  lineItems: "Articles",
-  addedTo: (kind) => (kind === "change_order" ? "Ajouté à l’ordre de changement" : `Ajouté à la ${fr.noun[kind]}`),
-  notIncluded: "Non inclus",
-  add: "Ajouter",
-  remove: "Retirer",
-  media: "Photos",
-  viewPhoto: (name) => `Voir ${name}`,
-  close: "Fermer",
-  previousPhoto: "Photo précédente",
-  nextPhoto: "Photo suivante",
-  yourInvestment: "Votre investissement",
-  amountDue: "Montant dû",
-  lineItemsTotal: "Articles",
-  optionalUpgrades: "Options ajoutées",
-  discount: (percent) => (percent != null ? `Rabais (${frPercent(percent)})` : "Rabais"),
-  tax: (rate) => `Taxes (${frPercent(rate)})`,
-  depositToStart: (percent) => `Dépôt pour commencer${percent != null ? ` (${frPercent(percent)})` : ""}`,
-  projectTotal: "Total du projet",
-  balanceAtCompletion: "Solde à la fin des travaux",
-  terms: "Conditions générales",
-  signature: "Signature",
-  signatureOf: (name) => `Signature de ${name ?? "la cliente ou du client"}`,
-  notMovingForward: "Vous n’allez pas de l’avant?",
-  declineThis: (kind) => (kind === "change_order" ? "Refuser cet ordre de changement" : `Refuser cette ${fr.noun[kind]}`),
-  approveTitle: (kind) => (kind === "change_order" ? "Approuver l’ordre de changement" : `Approuver la ${fr.noun[kind]}`),
-  declineTitle: (kind) => (kind === "change_order" ? "Refuser l’ordre de changement" : `Refuser la ${fr.noun[kind]}`),
-  depositRequired: "Dépôt requis",
-  package: "Forfait",
-  termsTitle: "Conditions générales",
-  acceptTerms: "J’ai lu et j’accepte les conditions générales ci-dessus.",
-  yourSignature: "Votre signature",
-  drawSignature: "Dessinez votre signature",
-  signHere: "Signez ici",
-  clear: "Effacer",
-  fullName: "Nom complet",
-  bySigning: (kind, amount, withTerms) =>
-    `En signant, vous approuvez ${kind === "change_order" ? "cet ordre de changement" : `cette ${fr.noun[kind]}`} au montant de ${amount}${withTerms ? " ainsi que ses conditions" : ""}.`,
-  cancel: "Annuler",
-  approve: "Approuver",
-  approving: "Approbation…",
-  declineReason: "Souhaitez-vous nous dire pourquoi? (facultatif)",
-  declining: "Refus en cours…",
-  approveFailed: "Impossible d’approuver. Réessayez.",
-  declineFailed: "Impossible de refuser. Réessayez.",
-  thankYou: (first, kind) =>
-    `${first ? `Merci, ${first}!` : "Merci!"} ${kind === "change_order" ? "Cet ordre de changement est approuvé." : `Cette ${fr.noun[kind]} est approuvée.`}`,
-  signedOn: (name, when) => sentence(`${name ? `Signé par ${name}` : "Approuvé"}${when ? ` le ${when}` : ""}`),
-  nextStep: (kind, company) =>
-    kind === "proposal"
-      ? `${company} communiquera avec vous pour planifier les travaux.`
-      : "Le changement est ajouté à votre projet.",
-  depositDue: (amount) => `Dépôt dû : ${amount}`,
-  depositPaid: (amount) => `Dépôt payé : ${amount}`,
-  nav: {
-    proposals: "Mes soumissions",
-    changeOrders: "Mes ordres de changement",
-    invoices: "Mes factures",
-    appointments: "Rendez-vous",
-    request: "Demander un rendez-vous",
-    preferences: "Préférences de messages",
-  },
-  balanceDueBanner: (amount) => `Solde dû : ${amount}`,
-  paidRemaining: (paid, remaining) => `${paid} payé • ${remaining} restant`,
-  paidInFull: "Payée en totalité",
-  downloadInvoice: "Télécharger la facture",
-  contact: "Contact",
-  jobAddress: "Adresse des travaux",
-  dueDate: "Échéance",
-  balance: "Solde",
-  items: "Articles",
-  invoiceAmount: "Montant de la facture",
-  payments: "Paiements",
-  depositNote: "Dépôt",
-  pay: {
-    now: (amount) => `Payer ${amount} maintenant`,
-    opening: "Ouverture du paiement sécurisé…",
-    fee: (percent, amount) => `Comprend des frais de carte de ${percent}\u202f% (${amount}). Paiement sécurisé par Stripe.`,
-    secure: "Paiement par carte sécurisé par Stripe.",
-    received: "Paiement reçu. Merci! Il peut falloir une minute pour qu’il s’affiche ici.",
-    refused: {
-      off: "Le paiement en ligne est désactivé. Communiquez avec nous pour payer autrement.",
-      void: "Cette facture a été annulée; elle ne peut pas être payée en ligne.",
-      paid: "C’est déjà payé. Merci!",
-      locked: "Le paiement en ligne n’est pas offert pour cette facture. Communiquez avec nous pour payer.",
-      unavailable: "Le paiement en ligne n’est pas offert pour le moment. Communiquez avec nous pour payer.",
-      not_found: "Le paiement en ligne n’est pas offert pour le moment. Communiquez avec nous pour payer.",
-      failed: "Impossible d’ouvrir le paiement sécurisé. Réessayez dans un moment.",
-    },
-  },
-  method: {
-    "e-transfer": "Virement Interac",
-    cheque: "Chèque",
-    cash: "Comptant",
-    card: "Carte de crédit",
-    other: "Autre",
-  },
-};
-
-export function documentStrings(language: CustomerLanguage): DocumentStrings {
-  return language === "fr" ? fr : en;
+export function documentStrings(): DocumentStrings {
+  return en;
 }

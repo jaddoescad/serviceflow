@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicDocumentView } from "@/components/public-document";
-import { pageLanguage } from "@/components/public-document-page";
 import { requireStaff } from "@/lib/auth";
 import { getProposal, getProposalPreview } from "@/lib/proposals";
 
@@ -14,10 +13,10 @@ export default async function ProposalPreviewPage({ params }: { params: Promise<
   const [{ proposalId }] = await Promise.all([params, requireStaff()]);
   const proposal = await getProposal(proposalId);
   if (!proposal) notFound();
-  const doc = await getProposalPreview(proposal.id, proposal.leadId);
+  const doc = await getProposalPreview(proposal.id);
   if (!doc) notFound();
   // A draft shows as the customer will get it once sent.
   const shown =
     doc.status === "draft" ? { ...doc, status: "sent", sentAt: doc.sentAt ?? new Date().toISOString() } : doc;
-  return <PublicDocumentView doc={shown} token="" language={await pageLanguage(doc)} preview />;
+  return <PublicDocumentView doc={shown} token="" preview />;
 }

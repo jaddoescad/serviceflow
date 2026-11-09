@@ -9,7 +9,6 @@ import { getProjectShell } from "@/lib/project-data";
 import { PROPOSAL_VALID_DAYS, isoDaysFromToday, type ProposalBody } from "@/lib/proposal-types";
 import {
   getCatalogItems,
-  getDealCustomerLanguage,
   getLeadProposals,
   getProjectDeal,
   getProposal,
@@ -48,11 +47,10 @@ export default async function ProposalPage({
   if (!shell || !deal?.leadId) notFound();
   if (!isNew && (!proposal || proposal.leadId !== deal.leadId)) notFound();
 
-  const [imported, count, companyDocuments, customerLanguage] = await Promise.all([
+  const [imported, count, companyDocuments] = await Promise.all([
     !proposal || proposal.status === "draft" ? calculatorLines(projectId) : null,
     isNew ? getLeadProposals(deal.leadId).then((list) => list.length) : 0,
     extras ? getCompanyDocuments(extras.orgId) : [],
-    getDealCustomerLanguage(deal.leadId),
   ]);
   const template = templates.find((item) => item.id === query.template);
   const initial: ProposalBody = proposal
@@ -101,7 +99,6 @@ export default async function ProposalPage({
       companyDocuments={companyDocuments}
       calculatorLines={imported}
       initialTemplateId={template?.id ?? null}
-      customerLanguage={customerLanguage}
       projectName={shell.name}
       backHref={dealHref(shell.canonicalJobId ?? projectId, "proposals")}
       backLabel={shell.name}

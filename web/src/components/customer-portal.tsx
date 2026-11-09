@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { requestPortalAppointment, savePortalPreferences, setPortalLanguage } from "@/lib/actions/portal";
+import { requestPortalAppointment, savePortalPreferences } from "@/lib/actions/portal";
 import {
   fmtPortalDate,
   fmtPortalDay,
@@ -18,7 +18,6 @@ import {
   VISIT_WINDOWS,
   type ChannelMode,
   type CustomerPortal,
-  type PortalLanguage,
   type VisitWindow,
 } from "@/lib/portal-types";
 import { CustomerShell, NavIcon, type ShellNavIcon } from "./customer-shell";
@@ -202,12 +201,10 @@ type TimeRow = { key: number; date: string; window: VisitWindow };
 function RequestForm({
   portal,
   token,
-  lang,
   t,
 }: {
   portal: CustomerPortal;
   token: string;
-  lang: PortalLanguage;
   t: PortalStrings;
 }) {
   const router = useRouter();
@@ -234,7 +231,7 @@ function RequestForm({
       setError("");
       const result = await requestPortalAppointment({ token, times, note });
       if (!result.ok) {
-        setError(portalError(lang, result.error));
+        setError(portalError(result.error));
         return;
       }
       setSent(true);
@@ -336,12 +333,12 @@ function RequestForm({
             {portal.requests.map((request) => (
               <li key={request.createdAt} className="rounded-xl bg-[#f8fafc] px-4 py-3 text-[13px] leading-5">
                 <div className="text-xs text-[var(--color-muted)]">
-                  {t.request.sentOn(fmtPortalDate(lang, request.createdAt, timeZone))}
+                  {t.request.sentOn(fmtPortalDate(request.createdAt, timeZone))}
                 </div>
                 {request.preferredTimes.length ? (
                   <div className="text-[var(--color-heading)]">
                     {request.preferredTimes
-                      .map((time) => `${fmtPortalDay(lang, time.date)} · ${t.windows[time.window]}`)
+                      .map((time) => `${fmtPortalDay(time.date)} · ${t.windows[time.window]}`)
                       .join("; ")}
                   </div>
                 ) : null}
@@ -360,12 +357,10 @@ function RequestForm({
 function Preferences({
   portal,
   token,
-  lang,
   t,
 }: {
   portal: CustomerPortal;
   token: string;
-  lang: PortalLanguage;
   t: PortalStrings;
 }) {
   const router = useRouter();
@@ -388,7 +383,7 @@ function Preferences({
           setStatus({});
           const result = await savePortalPreferences({ token, ...modes });
           if (!result.ok) {
-            setStatus({ error: portalError(lang, result.error) });
+            setStatus({ error: portalError(result.error) });
             return;
           }
           setStatus({ saved: true });
@@ -460,26 +455,19 @@ function firstView(portal: CustomerPortal): PortalView {
 export function CustomerPortalView({
   portal,
   token,
-  initialLanguage,
   initialView,
 }: {
   portal: CustomerPortal;
   token: string;
-  initialLanguage: PortalLanguage;
   initialView: PortalView | null;
 }) {
-  const [lang, setLang] = useState(initialLanguage);
   const [view, setView] = useState<PortalView>(initialView ?? firstView(portal));
-  const t = portalStrings(lang);
+  const t = portalStrings();
   const { company } = portal;
   const timeZone = company.timezone;
   const nav = NAV.filter((item) => item.view !== "changeOrders" || portal.changeOrders.length || view === item.view);
   const current = NAV.find((item) => item.view === view) ?? NAV[0];
   const first = portal.customer.name.split(/\s+/)[0] ?? "";
-
-  useEffect(() => {
-    document.documentElement.lang = lang === "fr" ? "fr-CA" : "en";
-  }, [lang]);
 
   function show(next: PortalView) {
     setView(next);
@@ -489,18 +477,9 @@ export function CustomerPortalView({
     window.scrollTo({ top: 0 });
   }
 
-  function chooseLanguage(next: PortalLanguage) {
-    if (next === lang) return;
-    setLang(next);
-    void setPortalLanguage({ token, language: next });
-  }
-
   return (
     <CustomerShell
       company={company}
-      language={lang}
-      languageLabel={t.language}
-      onLanguage={chooseLanguage}
       callLabel={t.call}
       menuLabel={t.menu}
       nav={nav.map((item) => ({
@@ -523,10 +502,10 @@ export function CustomerPortalView({
                       key={proposal.token}
                       href={`/p/${proposal.token}`}
                       title={proposal.name || t.proposal}
-                      meta={[proposal.address, proposal.sentAt ? t.sent(fmtPortalDate(lang, proposal.sentAt, timeZone)) : null]
+                      meta={[proposal.address, proposal.sentAt ? t.sent(fmtPortalDate(proposal.sentAt, timeZone)) : null]
                         .filter(Boolean)
                         .join(" · ")}
-                      amount={fmtPortalMoney(lang, proposal.totalCents)}
+                      amount={fmtPortalMoney(proposal.totalCents)}
                       status={proposal.status}
                       statusLabel={t.proposalStatus[proposal.status]}
                       viewLabel={t.view}
@@ -546,8 +525,8 @@ export function CustomerPortalView({
                       key={order.token}
                       href={`/co/${order.token}`}
                       title={`${t.changeOrder(order.number)} · ${order.name}`}
-                      meta={order.sentAt ? t.sent(fmtPortalDate(lang, order.sentAt, timeZone)) : ""}
-                      amount={fmtPortalMoney(lang, order.totalCents)}
+                      meta={order.sentAt ? t.sent(fmtPortalDate(order.sentAt, timeZone)) : ""}
+                      amount={fmtPortalMoney(order.totalCents)}
                       status={order.status}
                       statusLabel={t.changeOrderStatus[order.status]}
                       viewLabel={t.view}
@@ -569,15 +548,15 @@ export function CustomerPortalView({
                       title={`${t.invoice(invoice.number)} · ${invoice.name}`}
                       meta={
                         invoice.dueOn && invoice.status !== "paid" && invoice.status !== "void"
-                          ? t.due(fmtPortalDay(lang, invoice.dueOn))
+                          ? t.due(fmtPortalDay(invoice.dueOn))
                           : invoice.sentAt
-                            ? t.sent(fmtPortalDate(lang, invoice.sentAt, timeZone))
+                            ? t.sent(fmtPortalDate(invoice.sentAt, timeZone))
                             : ""
                       }
-                      amount={fmtPortalMoney(lang, invoice.totalCents)}
+                      amount={fmtPortalMoney(invoice.totalCents)}
                       extra={
                         invoice.status === "partial" || invoice.status === "late"
-                          ? `${t.balance} ${fmtPortalMoney(lang, invoice.balanceCents)}`
+                          ? `${t.balance} ${fmtPortalMoney(invoice.balanceCents)}`
                           : undefined
                       }
                       status={invoice.status}
@@ -598,7 +577,7 @@ export function CustomerPortalView({
                     <VisitRow
                       key={appointment.startsAt}
                       title={t.appointmentKind[appointment.kind]}
-                      when={fmtPortalVisit(lang, appointment.startsAt, appointment.endsAt, timeZone)}
+                      when={fmtPortalVisit(appointment.startsAt, appointment.endsAt, timeZone)}
                       place={appointment.location}
                     />
                   ))}
@@ -608,8 +587,8 @@ export function CustomerPortalView({
                       title={t.projectVisit}
                       when={
                         project.endOn && project.endOn !== project.startOn
-                          ? `${fmtPortalDay(lang, project.startOn)} – ${fmtPortalDay(lang, project.endOn)}`
-                          : fmtPortalDay(lang, project.startOn)
+                          ? `${fmtPortalDay(project.startOn)} – ${fmtPortalDay(project.endOn)}`
+                          : fmtPortalDay(project.startOn)
                       }
                       place={project.address}
                     />
@@ -629,8 +608,8 @@ export function CustomerPortalView({
               )
             ) : null}
 
-            {view === "request" ? <RequestForm portal={portal} token={token} lang={lang} t={t} /> : null}
-            {view === "preferences" ? <Preferences portal={portal} token={token} lang={lang} t={t} /> : null}
+            {view === "request" ? <RequestForm portal={portal} token={token} t={t} /> : null}
+            {view === "preferences" ? <Preferences portal={portal} token={token} t={t} /> : null}
           </Section>
     </CustomerShell>
   );

@@ -1,6 +1,5 @@
 // What view_customer_portal returns for a customer's private portal link.
 
-export type PortalLanguage = "en" | "fr";
 
 export type VisitWindow = "morning" | "afternoon" | "evening" | "anytime";
 
@@ -27,7 +26,6 @@ export type CustomerPortal = {
     name: string;
     email: string | null;
     phone: string | null;
-    language: PortalLanguage | null;
   };
   proposals: {
     name: string;

@@ -69,14 +69,6 @@ export async function duplicateProposal(input: {
   return { ok: true, id: data as string };
 }
 
-/** The language the deal's customer reads proposals, change orders and invoices in. */
-export async function setDealCustomerLanguage(leadId: string, language: "en" | "fr" | null): Promise<ActionResult> {
-  return staffWrite(
-    "set_deal_customer_language",
-    { requested_lead: leadId, requested_language: language },
-    PROPOSAL_PATHS,
-  );
-}
 
 export async function deleteProposal(id: string): Promise<ActionResult> {
   return staffWrite("delete_proposal", { requested_id: id }, PROPOSAL_PATHS);

@@ -7,7 +7,6 @@ import {
   deleteProposalTemplate,
   saveProposal,
   saveProposalTemplate,
-  setDealCustomerLanguage,
 } from "@/lib/actions/proposals";
 import type { DocumentExtras } from "@/lib/documents";
 import { fmtDate } from "@/lib/format";
@@ -288,24 +287,16 @@ function HeaderMenu({ items }: { items: { label: string; danger?: boolean; onSel
   );
 }
 
-/** When the customer can no longer approve, and the language their pages open in. */
+/** When the customer can no longer approve. */
 function DetailsPanel({
   body,
   readOnly,
-  leadId,
-  customerLanguage,
   onChange,
 }: {
   body: ProposalBody;
   readOnly: boolean;
-  leadId: string;
-  customerLanguage: "en" | "fr" | null;
   onChange: (patch: Partial<ProposalBody>) => void;
 }) {
-  const router = useRouter();
-  const [language, setLanguage] = useState(customerLanguage);
-  const [error, setError] = useState("");
-  const [saving, startSaving] = useTransition();
   return (
     <RailPanel title="Details">
       <dl>
@@ -319,39 +310,7 @@ function DetailsPanel({
             className={cn(PROPERTY_CONTROL, !body.validUntil && "text-[var(--color-faint)]")}
           />
         </PropertyRow>
-        <PropertyRow label="Customer language">
-          <select
-            aria-label="Customer language"
-            disabled={saving}
-            value={language ?? ""}
-            onChange={(event) => {
-              const next = (event.target.value || null) as "en" | "fr" | null;
-              const previous = language;
-              setLanguage(next);
-              setError("");
-              startSaving(async () => {
-                const result = await setDealCustomerLanguage(leadId, next);
-                if (!result.ok) {
-                  setLanguage(previous);
-                  setError(result.error ?? "Could not change the language.");
-                  return;
-                }
-                router.refresh();
-              });
-            }}
-            className={PROPERTY_CONTROL}
-          >
-            <option value="">Automatic</option>
-            <option value="en">English</option>
-            <option value="fr">Français</option>
-          </select>
-        </PropertyRow>
       </dl>
-      {error ? (
-        <p role="alert" className="pb-1 text-xs text-[var(--color-bad)]">
-          {error}
-        </p>
-      ) : null}
     </RailPanel>
   );
 }
@@ -371,7 +330,6 @@ export function ProposalEditor({
   companyDocuments = [],
   calculatorLines = null,
   initialTemplateId = null,
-  customerLanguage = null,
   backHref,
   backLabel,
 }: {
@@ -393,8 +351,6 @@ export function ProposalEditor({
   companyDocuments?: CompanyDocument[];
   calculatorLines?: { items: LineItem[]; taxRatePercent: number } | null;
   initialTemplateId?: string | null;
-  /** The deal's customer's document language, when set. */
-  customerLanguage?: "en" | "fr" | null;
   backHref: string;
   backLabel: string;
 }) {
@@ -614,13 +570,7 @@ export function ProposalEditor({
               </DocumentTotals>
             </RailPanel>
             {isProposal && leadId ? (
-              <DetailsPanel
-                body={body}
-                readOnly={readOnly}
-                leadId={leadId}
-                customerLanguage={customerLanguage}
-                onChange={patch}
-              />
+              <DetailsPanel body={body} readOnly={readOnly} onChange={patch} />
             ) : null}
             {proposal && proposal.status !== "draft" ? <ActivityPanel record={proposal} /> : null}
           </>
