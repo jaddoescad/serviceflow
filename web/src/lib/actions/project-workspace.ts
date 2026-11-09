@@ -16,7 +16,7 @@ export async function changeProjectLifecycle(
   });
   if (error) return { error: error.message };
   revalidatePath("/projects");
-  revalidatePath(`/jobs/${id}`);
+  revalidatePath("/deals/[id]", "page");
   revalidatePath("/photos");
   return {};
 }
@@ -59,8 +59,9 @@ export async function saveWorkspaceProject(input: ProjectEdit) {
     requested_labels: input.labels,
   });
   if (error) return { error: error.message };
-  for (const path of ["/projects", `/jobs/${input.id}`, "/contacts", "/photos"])
+  for (const path of ["/projects", "/contacts", "/photos"])
     revalidatePath(path);
+  revalidatePath("/deals/[id]", "page");
   return {};
 }
 export async function saveProjectLabel(input: {

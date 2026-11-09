@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { searchProjects } from "@/lib/actions/project-search";
 import { SearchNavIcon } from "./nav-icons";
+import { dealHref } from "@/lib/pipeline-types";
 
 type Result = Awaited<ReturnType<typeof searchProjects>>[number];
 
@@ -117,7 +118,7 @@ export function ProjectSearch({ onNavigate, autoFocus = false }: { onNavigate?: 
             event.preventDefault();
             navigate(
               active >= 0 && results[active]
-                ? `/jobs/${results[active].id}`
+                ? dealHref(results[active].id)
                 : `/projects?q=${encodeURIComponent(query.trim())}`,
             );
           }
@@ -140,7 +141,7 @@ export function ProjectSearch({ onNavigate, autoFocus = false }: { onNavigate?: 
                 role="option"
                 aria-selected={active === index}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => navigate(`/jobs/${result.id}`)}
+                onClick={() => navigate(dealHref(result.id))}
                 className={`block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[var(--color-hover)] ${active === index ? "bg-[var(--color-hover)]" : ""}`}
               >
                 <span className="block truncate font-medium text-[var(--color-heading)]">

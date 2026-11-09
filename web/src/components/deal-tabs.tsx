@@ -17,6 +17,7 @@ import { Composer, ThreadMessages, ThreadScroller, useEarlierMessages } from "./
 import { useContactThread } from "./inbox/use-contact-thread";
 import { DocumentIcon, Initials, fmtDay, linkStyle } from "./pipeline-ui";
 import { Badge, Button, Spinner, Tag, Textarea, buttonClassName, cn } from "./ui";
+import { dealHref } from "@/lib/pipeline-types";
 
 /** The deal page's center panels: communications, notes and the records
  * hanging off the deal. */
@@ -273,7 +274,7 @@ export function ProposalsPanel({
   extras: DealExtras;
   stageName: string | null;
 }) {
-  const base = `/jobs/${encodeURIComponent(deal.id)}`;
+  const base = dealHref(deal.id);
   const job = extras.job;
   if (!job && !deal.proposals.length) {
     return (
@@ -296,7 +297,7 @@ export function ProposalsPanel({
         <li className={row}>
           <Tag tone="green">Job</Tag>
           <Link
-            href={`/jobs/${encodeURIComponent(job.id)}`}
+            href={dealHref(job.id)}
             className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)] hover:underline"
           >
             {job.name}
@@ -409,39 +410,3 @@ export function AppointmentsPanel({ deal }: { deal: DealOverview }) {
 /** Opens a file through the signed-URL route; pages open in the editor. */
 export const documentHref = (document: DealExtras["documents"][number]) =>
   `/api/jobs/${encodeURIComponent(document.projectId)}/documents/${encodeURIComponent(document.id)}`;
-
-export function AttachmentsPanel({ deal, extras }: { deal: DealOverview; extras: DealExtras }) {
-  const base = `/jobs/${encodeURIComponent(deal.id)}`;
-  return (
-    <div>
-      {extras.documents.length ? (
-        <ul className={list}>
-          {extras.documents.map((document) => (
-            <li key={document.id}>
-              <a
-                href={documentHref(document)}
-                target={document.kind === "file" ? "_blank" : undefined}
-                rel="noreferrer"
-                className={row}
-              >
-                <DocumentIcon className="h-3.5 w-3.5 text-[var(--color-faint)]" />
-                <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">{document.name}</span>
-                <span className="shrink-0 text-xs text-[var(--color-muted)]">{fmtDate(document.createdAt)}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <Empty>No attachments yet.</Empty>
-      )}
-      <div className="mt-3 flex gap-4 text-[13px]">
-        <Link href={`${base}/documents`} className={linkStyle}>
-          Project documents
-        </Link>
-        <Link href={base} className={linkStyle}>
-          Project photos
-        </Link>
-      </div>
-    </div>
-  );
-}

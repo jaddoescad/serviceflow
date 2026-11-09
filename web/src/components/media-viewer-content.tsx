@@ -4,6 +4,7 @@ import { useRef, type ReactNode, type Ref } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { PhotoToolIcon } from "./photo-tool-icon";
+import { dealHref } from "@/lib/pipeline-types";
 
 const ProjectPhotoCanvas = dynamic(
   () =>
@@ -132,7 +133,7 @@ export function MediaViewerContent({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <Link
-                href={`/jobs/${projectId}`}
+                href={dealHref(projectId)}
                 onClick={(event) => {
                   if (!beforeNavigate()) event.preventDefault();
                 }}

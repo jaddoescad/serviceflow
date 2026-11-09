@@ -35,6 +35,7 @@ import { AddressInput } from "./address-input";
 import { GoogleCalendarStatusLink } from "./settings/google-calendar-section";
 import { SuggestTimes } from "./suggest-times";
 import { Button, Field, Input, Select, StatusText, Textarea, cn, type TagTone } from "./ui";
+import { dealHref } from "@/lib/pipeline-types";
 
 export type AppointmentsView = "month" | "3day";
 
@@ -511,7 +512,7 @@ function AppointmentDialog({
               <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Deal or job</span>
               <div className="flex h-8 items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5">
                 <Link
-                  href={`/jobs/${encodeURIComponent(draft.projectId)}`}
+                  href={dealHref(draft.projectId)}
                   className="truncate text-[13px] font-medium text-[var(--color-heading)] hover:text-[var(--color-brand-strong)]"
                 >
                   {draft.projectName}

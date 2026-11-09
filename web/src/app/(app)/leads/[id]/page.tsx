@@ -1,6 +1,7 @@
 import { permanentRedirect } from "next/navigation";
+import { dealHref } from "@/lib/pipeline-types";
 
 export default async function LegacyLeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  permanentRedirect(`/jobs/${encodeURIComponent(decodeURIComponent(id))}`);
+  permanentRedirect(dealHref(decodeURIComponent(id)));
 }

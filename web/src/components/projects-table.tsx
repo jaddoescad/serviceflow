@@ -10,6 +10,7 @@ import { setJobAmount } from "@/lib/actions/budgets";
 import { budgetStatus } from "@/lib/metrics";
 import type { BudgetStatus, ProjectRollup } from "@/lib/metrics";
 import { AmountDialog } from "@/components/job-amount-dialog";
+import { dealHref } from "@/lib/pipeline-types";
 
 type ProjectTableRow = ProjectRollup;
 
@@ -171,7 +172,7 @@ export function ProjectsTable({
             {rows.map((r) => (
               <Tr key={r.projectId}>
                 <Td>
-                  <RowLink href={`/jobs/${encodeURIComponent(r.projectId)}`}>{r.name}</RowLink>
+                  <RowLink href={dealHref(r.projectId)}>{r.name}</RowLink>
                   {r.address ? (
                     <div className="truncate text-xs font-normal text-[var(--color-muted)]">{r.address}</div>
                   ) : null}

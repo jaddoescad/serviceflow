@@ -26,6 +26,7 @@ import {
   captureTime,
   durationLabel,
 } from "@/lib/media-format";
+import { dealHref } from "@/lib/pipeline-types";
 function initials(name: string): string {
   const letters = name
     .split(/\s+/)
@@ -381,7 +382,7 @@ export function PhotoFeed({
 
                         <figcaption className="mt-2 min-w-0 leading-tight">
                           <Link
-                            href={`/jobs/${encodeURIComponent(photo.ownerProjectId)}`}
+                            href={dealHref(photo.ownerProjectId)}
                             className="block truncate text-xs font-normal text-[var(--color-text)] hover:text-[var(--color-brand-strong)] hover:underline"
                             title={
                               photo.address

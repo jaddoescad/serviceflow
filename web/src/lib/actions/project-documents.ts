@@ -10,7 +10,7 @@ import { sanitizeRichText } from "@/lib/rich-text";
 export type ActionResult = { ok: boolean; error?: string };
 
 function revalidateDocuments(projectId: string) {
-  revalidatePath(`/jobs/${encodeURIComponent(projectId)}/documents`);
+  revalidatePath("/deals/[id]", "page");
 }
 
 function cleanName(name: string, max: number): string | null {

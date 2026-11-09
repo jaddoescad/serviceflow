@@ -20,6 +20,6 @@ export async function setProjectCover(projectId: string, mediaId: string) {
         "Could not set the cover. Choose an available photo from this project and try again.",
     };
   revalidatePath("/projects");
-  revalidatePath(`/jobs/${projectId}`);
+  revalidatePath("/deals/[id]", "page");
   return { error: null };
 }

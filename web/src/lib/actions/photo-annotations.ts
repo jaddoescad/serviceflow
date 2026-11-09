@@ -35,6 +35,6 @@ export async function savePhotoAnnotations(input:{projectId:string;mediaId:strin
   if(error)return {ok:false,conflict:error.code==='PT409',error:error.code==='PT409'
     ?'This photo’s drawings changed elsewhere. Keep your draft and reload to review them.'
     :'Could not save drawings. Retry to check safely.'};
-  revalidatePath(`/jobs/${input.projectId}`);
+  revalidatePath("/deals/[id]", "page");
   return {ok:true,revision:data.revision,document:data.document};
 }

@@ -5,6 +5,7 @@ import { draftFinalInvoice, getInvoice } from "@/lib/billing";
 import { getDocumentExtras } from "@/lib/documents";
 import { getProjectShell } from "@/lib/project-data";
 import { getCatalogItems } from "@/lib/proposals";
+import { dealHref } from "@/lib/pipeline-types";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,7 @@ export default async function InvoicePage({
         issuedOn: invoice?.issuedOn ?? addDays(0),
         dueOn: invoice ? (invoice.dueOn ?? "") : addDays(14),
       }}
-      backHref={`/jobs/${encodeURIComponent(jobId)}/invoices`}
+      backHref={dealHref(jobId, "invoices")}
       backLabel={shell.name}
     />
   );

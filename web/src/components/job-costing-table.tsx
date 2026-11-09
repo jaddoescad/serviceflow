@@ -5,6 +5,7 @@ import type { JobCost } from "@/lib/crm-types";
 import { fmtCents } from "@/lib/line-items";
 import { DataTable, FilterPills, RowLink, TablePanel, TableToolbar, Td, Th, Tr } from "./table-ui";
 import { EmptyState, Stat, StatGrid, cn } from "./ui";
+import { dealHref } from "@/lib/pipeline-types";
 
 const STATUSES = [
   { value: "", label: "All jobs" },
@@ -61,7 +62,7 @@ export function JobCostingTable({ jobs }: { jobs: JobCost[] }) {
               return (
                 <Tr key={job.id}>
                   <Td>
-                    <RowLink href={`/jobs/${encodeURIComponent(job.id)}/labour`}>{job.name}</RowLink>
+                    <RowLink href={dealHref(job.id, "labour")}>{job.name}</RowLink>
                   </Td>
                   <Td muted>{job.stageName ?? job.status}</Td>
                   <Td numeric>{fmtCents(job.revenueCents)}</Td>

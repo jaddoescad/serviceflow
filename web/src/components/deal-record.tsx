@@ -8,11 +8,10 @@ import type { DealOverview } from "@/lib/crm-types";
 import { fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
 import type { DealRecord as DealRecordData } from "@/lib/pipeline";
-import { DEAL_TABS, PIPELINE_TITLES, type DealTab } from "@/lib/pipeline-types";
+import { DEAL_TABS, PIPELINE_TITLES, dealHref, isDealProjectTab, type DealTab } from "@/lib/pipeline-types";
 import type { ProjectLabel } from "@/lib/project-workspace";
 import {
   AppointmentsPanel,
-  AttachmentsPanel,
   CommunicationsPanel,
   InvoicesPanel,
   JOB_STATUS_LABELS,
@@ -44,7 +43,7 @@ import {
   stageColors,
 } from "./pipeline-ui";
 import { ProjectLabelPicker } from "./project-label-picker";
-import { Badge, Select, Tag, buttonClassName, cn } from "./ui";
+import { Badge, Select, Spinner, Tag, buttonClassName, cn } from "./ui";
 
 /** A deal's (or job's) record page: HubSpot's layout (properties left,
  * activity center, associated records right) in the Attio style. */
@@ -216,7 +215,21 @@ export function DealRecord({
   updatedAt,
   allLabels,
   initialTab,
-}: DealRecordData & { allLabels: ProjectLabel[]; initialTab: DealTab }) {
+  projectId,
+  actions,
+  panel,
+  panelTab,
+}: DealRecordData & {
+  allLabels: ProjectLabel[];
+  initialTab: DealTab;
+  /** The job once there is one, else the deal: where photos, documents and tasks live. */
+  projectId: string;
+  /** Edit, archive and delete for the project, at the end of the top bar. */
+  actions: ReactNode;
+  /** A project tab's content, loaded on the server for `panelTab`. */
+  panel: ReactNode;
+  panelTab: DealTab;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const [tab, setTab] = useState(initialTab);
@@ -263,15 +276,25 @@ export function DealRecord({
     proposals: deal.proposals.length + (job ? 1 : 0),
     invoices: extras.invoices.length,
     appointments: deal.appointments.length,
-    attachments: extras.documents.length,
+    photos: 0,
+    documents: extras.documents.length,
+    "change-orders": 0,
+    labour: 0,
+    tasks: 0,
   };
+  // Change orders only exist on a job.
+  const tabs = DEAL_TABS.filter(([key]) => key !== "change-orders" || job);
+  const calculatorHref = `/jobs/${encodeURIComponent(projectId)}/calculator`;
 
   function changeTab(next: DealTab) {
     setTab(next);
     const params = new URLSearchParams(window.location.search);
     if (next === "communications") params.delete("tab");
     else params.set("tab", next);
-    window.history.replaceState(null, "", `${pathname}${params.size ? `?${params}` : ""}`);
+    const url = `${pathname}${params.size ? `?${params}` : ""}`;
+    // Project tabs load their content on the server; the others already have theirs.
+    if (isDealProjectTab(next) && panelTab !== next) router.replace(url, { scroll: false });
+    else window.history.replaceState(null, "", url);
   }
 
   function saveSettings(patch: Partial<DealOverview["settings"]>) {
@@ -353,6 +376,7 @@ export function DealRecord({
             );
           })}
         </ol>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
 
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:min-h-0 xl:grid-cols-[280px_minmax(0,1fr)_280px] xl:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)_300px]">
@@ -475,7 +499,7 @@ export function DealRecord({
             aria-label={`${noun === "job" ? "Job" : "Deal"} sections`}
             className="no-scrollbar flex h-11 shrink-0 gap-4 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 lg:px-6 xl:sticky xl:top-0 xl:z-10"
           >
-            {DEAL_TABS.map(([key, label]) => {
+            {tabs.map(([key, label]) => {
               const active = tab === key;
               return (
                 <button
@@ -495,10 +519,18 @@ export function DealRecord({
                 </button>
               );
             })}
+            <Link
+              href={calculatorHref}
+              className="-mb-px flex shrink-0 items-center border-b-2 border-transparent text-[13px] font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-heading)]"
+            >
+              Quote / Calculator
+            </Link>
           </nav>
           <div
             className={cn(
-              "mx-auto w-full max-w-[820px] px-4 py-5 lg:px-6",
+              "mx-auto w-full px-4 py-5 lg:px-6",
+              // Photos and the labour budget use the column's full width; lists read better narrower.
+              tab === "photos" || tab === "labour" ? "max-w-none" : "max-w-[820px]",
               // The thread fills the column with the composer at the bottom.
               tab === "communications" && "xl:flex xl:min-h-0 xl:flex-1 xl:flex-col",
             )}
@@ -513,8 +545,12 @@ export function DealRecord({
               <InvoicesPanel extras={extras} />
             ) : tab === "appointments" ? (
               <AppointmentsPanel deal={deal} />
+            ) : panelTab === tab ? (
+              panel
             ) : (
-              <AttachmentsPanel deal={deal} extras={extras} />
+              <div className="flex justify-center py-10">
+                <Spinner />
+              </div>
             )}
           </div>
         </section>
@@ -547,7 +583,7 @@ export function DealRecord({
           <Association title="Job" count={job ? 1 : 0}>
             {job ? (
               <AssociationRow
-                href={`/jobs/${encodeURIComponent(job.id)}`}
+                href={dealHref(job.id)}
                 title={job.name}
                 meta={
                   <>
@@ -605,7 +641,7 @@ export function DealRecord({
             )}
           </Association>
 
-          <Association title="Attachments" count={extras.documents.length}>
+          <Association title="Documents" count={extras.documents.length}>
             {extras.documents.slice(0, 4).map((document) => (
               <AssociationRow
                 key={document.id}
@@ -617,12 +653,12 @@ export function DealRecord({
             ))}
             {!extras.documents.length ? <None>No documents yet</None> : null}
             <div className="mt-1 flex gap-4 text-xs">
-              <Link href={`${base}/documents`} className={linkStyle}>
-                Documents
-              </Link>
-              <Link href={base} className={linkStyle}>
+              <button type="button" onClick={() => changeTab("documents")} className={linkStyle}>
+                All documents
+              </button>
+              <button type="button" onClick={() => changeTab("photos")} className={linkStyle}>
                 Photos
-              </Link>
+              </button>
             </div>
           </Association>
         </aside>

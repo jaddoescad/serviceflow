@@ -21,12 +21,15 @@ export function WorkspaceProjectActions({
   description,
   labels,
   canManage,
+  showLabels = true,
 }: {
   project: WorkspaceProject;
   contact: ProjectContact;
   description: string | null;
   labels: ProjectLabel[];
   canManage: boolean;
+  /** The deal page shows labels in its details panel, so it leaves them out here. */
+  showLabels?: boolean;
 }) {
   const router = useRouter();
   const menuId = useId();
@@ -77,10 +80,10 @@ export function WorkspaceProjectActions({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        {project.labels.map((label) => (
+        {showLabels ? project.labels.map((label) => (
           <LabelChip key={label.id} label={label} />
-        ))}
-        {canManage && !project.trashed_at ? (
+        )) : null}
+        {showLabels && canManage && !project.trashed_at ? (
           <Button variant="ghost" size="sm" onClick={() => setLabelPicker(true)}>
             {project.labels.length ? "Edit labels" : "+ Add labels"}
           </Button>
@@ -91,7 +94,7 @@ export function WorkspaceProjectActions({
         {canManage ? (
           <div className="flex gap-2">
             {!project.trashed_at ? (
-              <Button variant="secondary" onClick={edit}>
+              <Button variant="secondary" size={showLabels ? undefined : "sm"} onClick={edit}>
                 Edit Project
               </Button>
             ) : null}

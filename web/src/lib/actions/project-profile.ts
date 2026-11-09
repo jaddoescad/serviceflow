@@ -18,7 +18,7 @@ function invalidLength(value: string, max: number): boolean {
 }
 
 function revalidateProject(projectId: string) {
-  revalidatePath(`/jobs/${projectId}`);
+  revalidatePath("/deals/[id]", "page");
   revalidatePath("/jobs");
   revalidatePath("/deals");
 }

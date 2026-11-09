@@ -7,8 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 export type ActionResult = { ok: boolean; error?: string };
 
 function revalidateTaskViews(projectId: string) {
-  revalidatePath(`/jobs/${encodeURIComponent(projectId)}`);
-  revalidatePath(`/jobs/${encodeURIComponent(projectId)}/tasks`);
+  revalidatePath("/deals/[id]", "page");
   revalidatePath("/jobs");
   revalidatePath("/");
 }

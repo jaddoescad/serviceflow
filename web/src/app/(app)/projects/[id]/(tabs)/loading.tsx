@@ -1,9 +1,5 @@
-import { JobPageSkeleton, PhotosPanelSkeleton } from "@/components/skeletons";
+import { RoutePageLoader } from "@/components/route-loading";
 
 export default function Loading() {
-  return (
-    <JobPageSkeleton>
-      <PhotosPanelSkeleton />
-    </JobPageSkeleton>
-  );
+  return <RoutePageLoader label="Loading" />;
 }

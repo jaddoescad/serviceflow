@@ -2,23 +2,6 @@ import { SkeletonBlock as Block, SkeletonPageBar, SkeletonRows } from "@/compone
 
 const panel = "rounded-[var(--radius)] border border-[var(--color-border)]";
 
-/** JobShell while a tab loads: top bar, project tabs, then the tab's panel. */
-export function JobPageSkeleton({ children }: { children: React.ReactNode }) {
-  return (
-    <div role="status" aria-busy="true" aria-label="Loading job">
-      <SkeletonPageBar>
-        <Block className="h-5 w-16" />
-      </SkeletonPageBar>
-      <div className="page-subbar flex h-10 items-center gap-5 shadow-[inset_0_-1px_0_var(--color-border)]">
-        {["w-12", "w-20", "w-16", "w-24", "w-16", "w-20"].map((width, index) => (
-          <Block key={index} className={`h-3 ${width}`} />
-        ))}
-      </div>
-      {children}
-    </div>
-  );
-}
-
 /** Labour tab (ProjectOverviewPanel) while its data streams in. */
 export function OverviewPanelSkeleton() {
   return (

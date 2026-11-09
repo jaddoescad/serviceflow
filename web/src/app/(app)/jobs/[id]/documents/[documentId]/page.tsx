@@ -3,6 +3,7 @@ import { requireStaff } from "@/lib/auth";
 import { getProjectShell } from "@/lib/project-data";
 import { getProjectPageDocument } from "@/lib/project-documents";
 import { DocumentEditor } from "@/components/document-editor";
+import { dealHref } from "@/lib/pipeline-types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function JobDocumentPage({
   ]);
   if (!shell) notFound();
   if (shell.canonicalJobId) {
-    redirect(`/jobs/${encodeURIComponent(shell.canonicalJobId)}/documents`);
+    redirect(dealHref(shell.canonicalJobId, "documents"));
   }
   if (!document) notFound();
   return (

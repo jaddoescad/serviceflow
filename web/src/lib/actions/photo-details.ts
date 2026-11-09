@@ -12,7 +12,7 @@ export async function setPhotoTrash(input: {projectId:string;mediaId:string;tras
     requested_trashed:input.trashed,expected_revision:input.expectedRevision,requested_revision:input.revision,
   });
   if(error)return {ok:false,error:['40001','PT409'].includes(error.code)?'This photo changed elsewhere. Reload before continuing.':'Could not update photo trash. Please try again.'};
-  revalidatePath(`/jobs/${input.projectId}`);
+  revalidatePath("/deals/[id]", "page");
   return {ok:true};
 }
 
@@ -39,6 +39,6 @@ export async function savePhotoDetails(input: {
     conflict: ["40001", "PT409"].includes(error.code),
     error: ["40001", "PT409"].includes(error.code) ? "This photo was edited elsewhere. Reload to review the latest details before saving." : "Could not save photo details. Please try again.",
   };
-  revalidatePath(`/jobs/${input.projectId}`);
+  revalidatePath("/deals/[id]", "page");
   return { ok: true, revision: data.photo_revision, description: data.description, tags: data.tags };
 }

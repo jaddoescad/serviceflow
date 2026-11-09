@@ -10,6 +10,7 @@ import { AddressInput } from "./address-input";
 import { Button, Field, Input } from "./ui";
 import { CreateContactModal } from "./create-contact-form";
 import { ModalFooter, ProjectModal } from "./project-profile-panel";
+import { dealHref } from "@/lib/pipeline-types";
 
 /** Creates a job-side project. */
 export function CreateWorkspaceProject({
@@ -109,7 +110,7 @@ export function CreateWorkspaceProject({
                   else {
                     setOpen(false);
                     onClosed?.();
-                    router.push(`/jobs/${result.id}`);
+                    router.push(dealHref(result.id ?? ""));
                     router.refresh();
                   }
                 } catch {

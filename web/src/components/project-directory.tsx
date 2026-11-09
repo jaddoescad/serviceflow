@@ -13,6 +13,7 @@ import { PageHeader } from "./kpi";
 import { LabelChip } from "./label-chip";
 import { DataTable, FilterPills, RowLink, TablePanel, TableToolbar, Td, Th, Tr } from "./table-ui";
 import { Button, EmptyState, Input, Select } from "./ui";
+import { dealHref } from "@/lib/pipeline-types";
 
 export function ProjectDirectory({
   projects,
@@ -217,7 +218,7 @@ export function ProjectDirectory({
           </thead>
           <tbody>
             {projects.map((project) => {
-              const href = `/jobs/${project.id}`;
+              const href = dealHref(project.id);
               return (
                 <Tr key={project.id}>
                   <Td>

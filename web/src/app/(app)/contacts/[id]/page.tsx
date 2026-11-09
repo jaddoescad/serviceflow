@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/kpi";
 import { NAV_ICONS } from "@/components/nav-icons";
 import { EmptyState, Tag, buttonClassName } from "@/components/ui";
 import { requireMember } from "@/lib/auth";
+import { dealHref } from "@/lib/pipeline-types";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,7 @@ export default async function ContactDetailPage({
               className="flex items-center gap-3 border-b border-[var(--color-border)] py-2.5"
             >
               <Link
-                href={`/jobs/${project.id}`}
+                href={dealHref(project.id)}
                 prefetch={false}
                 aria-label={`Open ${project.name}`}
                 className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--color-surface-2)] text-[var(--color-faint)]"
@@ -95,7 +96,7 @@ export default async function ContactDetailPage({
               </Link>
               <div className="min-w-0 flex-1">
                 <Link
-                  href={`/jobs/${project.id}`}
+                  href={dealHref(project.id)}
                   prefetch={false}
                   className="text-[13px] font-semibold text-[var(--color-heading)] hover:underline"
                 >

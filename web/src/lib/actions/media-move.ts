@@ -68,10 +68,9 @@ export async function moveSelectedPhoto(input: {
     for (const path of [
       "/photos",
       "/projects",
-      `/jobs/${input.sourceId}`,
-      `/jobs/${input.destinationId}`,
     ])
       revalidatePath(path);
+    revalidatePath("/deals/[id]", "page");
     return { ok: true };
   } catch {
     return {

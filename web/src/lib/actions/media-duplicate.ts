@@ -53,8 +53,9 @@ export async function duplicatePhoto(input: {
         ok: false,
         error: result.error || "Could not duplicate this photo. Retry safely.",
       };
-    for (const path of ["/photos", "/projects", `/jobs/${input.projectId}`])
+    for (const path of ["/photos", "/projects"])
       revalidatePath(path);
+    revalidatePath("/deals/[id]", "page");
     return { ok: true };
   } catch {
     return {

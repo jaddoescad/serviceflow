@@ -5,6 +5,7 @@ import { requireStaff } from "@/lib/auth";
 import { getWorkOrder } from "@/lib/billing";
 import { fmtDate } from "@/lib/format";
 import { PrintButton } from "./print-button";
+import { dealHref } from "@/lib/pipeline-types";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function WorkOrderPage({ params }: { params: Promise<{ id: 
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex items-center justify-between gap-3 print:hidden">
         <Link
-          href={`/jobs/${encodeURIComponent(jobId)}`}
+          href={dealHref(jobId)}
           className="inline-flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--color-muted)] hover:text-[var(--color-heading)]"
         >
           <span aria-hidden="true">‹</span>

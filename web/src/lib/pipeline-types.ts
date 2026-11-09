@@ -85,13 +85,25 @@ export type DealExtras = {
 export const DEAL_TABS = [
   ["communications", "Communications"],
   ["notes", "Notes"],
-  ["proposals", "Proposals / Jobs"],
-  ["invoices", "Invoices / Payments"],
+  ["photos", "Photos"],
+  ["documents", "Documents"],
+  ["proposals", "Proposals"],
+  ["change-orders", "Change orders"],
+  ["invoices", "Invoices"],
   ["appointments", "Appointments"],
-  ["attachments", "Attachments"],
+  ["labour", "Labour budget"],
+  ["tasks", "Tasks"],
 ] as const;
 
 export type DealTab = (typeof DEAL_TABS)[number][0];
+
+/** Tabs whose content the server loads when they open (the deal page passes it in). */
+export const DEAL_PROJECT_TABS = ["photos", "documents", "change-orders", "labour", "tasks"] as const;
+export type DealProjectTab = (typeof DEAL_PROJECT_TABS)[number];
+
+export function isDealProjectTab(value: string): value is DealProjectTab {
+  return (DEAL_PROJECT_TABS as readonly string[]).includes(value);
+}
 
 /** A deal's (or job's) record page, opened on one of its tabs. */
 export const dealHref = (recordId: string, tab?: DealTab) =>

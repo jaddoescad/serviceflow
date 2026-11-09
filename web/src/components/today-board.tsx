@@ -4,6 +4,7 @@ import { ProjectMediaPreview } from "@/components/project-media-preview";
 import { fmtHours, fmtTime } from "@/lib/format";
 import { PageHeader } from "@/components/kpi";
 import { EmptyState } from "@/components/ui";
+import { dealHref } from "@/lib/pipeline-types";
 
 export type TodayPainter = {
   id: string;
@@ -53,7 +54,7 @@ export function TodayBoard({ date, projects }: { date: string; projects: TodayPr
 }
 
 function ProjectCard({ project }: { project: TodayProject }) {
-  const href = `/jobs/${project.id}`;
+  const href = dealHref(project.id);
   return (
     <article
       id={`project-${project.id}`}

@@ -25,6 +25,7 @@ import {
 import { ProjectModal } from "./project-profile-panel";
 import { Button, EmptyState, Field, Input, Select, Tag, cn, type TagTone } from "./ui";
 import { settingsHref } from "@/lib/settings-pages";
+import { dealHref } from "@/lib/pipeline-types";
 
 export type JobScheduleViewKind = "month" | "5day";
 type Editing = {
@@ -235,7 +236,7 @@ function ScheduleDialog({
           )}
           {confirmable ? <ConfirmationOption available={confirmations} checked={notify} onChange={setNotify} /> : null}
           <Link
-            href={`/jobs/${encodeURIComponent(job.id)}`}
+            href={dealHref(job.id)}
             className="inline-block text-[13px] font-medium text-[var(--color-brand)] hover:text-[var(--color-brand-strong)]"
           >
             Open job
@@ -489,7 +490,7 @@ export function JobScheduleView({
                 <li key={job.id} className="px-4 py-3">
                   <div className="flex items-baseline justify-between gap-2">
                     <Link
-                      href={`/jobs/${encodeURIComponent(job.id)}`}
+                      href={dealHref(job.id)}
                       className="min-w-0 truncate text-[13px] font-semibold text-[var(--color-heading)] hover:text-[var(--color-brand-strong)]"
                     >
                       {job.name}
