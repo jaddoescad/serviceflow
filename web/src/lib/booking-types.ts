@@ -18,10 +18,14 @@ export type BookingRules = {
 
 export type BookingSettings = BookingRules & { people: BookingPerson[] };
 
-export type TimeOfDay = "any" | "morning" | "afternoon";
-
 /** A visit next to a free stretch, and the drive between it and the new address. */
-export type NearbyVisit = { address: string; minutes: number; meters: number | null };
+export type NearbyVisit = {
+  address: string;
+  minutes: number;
+  meters: number | null;
+  /** When the visit before ends, or the visit after starts. */
+  at: string;
+};
 
 /** A stretch of a day one person is free. */
 export type OpenWindow = {
@@ -34,12 +38,8 @@ export type OpenWindow = {
   end: string;
   /** Every start in it, half an hour apart. */
   starts: string[];
-  /** The start to offer: next to the visit before or after it, in the asked-for part of the day. */
+  /** The start to offer: next to the visit before or after it. */
   suggested: string;
-  matchesDay: boolean;
-  matchesTime: boolean;
-  /** Days after (negative: before) the nearest day the customer asked for. */
-  daysAway: number;
   before: NearbyVisit | null;
   after: NearbyVisit | null;
 };
@@ -47,7 +47,7 @@ export type OpenWindow = {
 export type SuggestedTimes = {
   timezone: string;
   minutes: number;
-  /** Best first: asked-for stretches closest to other visits, then the nearest other days. */
+  /** Best first: closest to the person's other visits, then the earliest. */
   windows: OpenWindow[];
   /** Whether drive times come from Google. */
   driveTimes: boolean;

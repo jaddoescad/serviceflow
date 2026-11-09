@@ -36,9 +36,11 @@ Deno.test("an appointment blocks its time plus the drive to and from it", () => 
   assert.deepEqual(starts(times), ["9:00 AM", "11:30 AM", "12:00 PM", "12:30 PM"]);
   const [after] = times.get(at(11, 30))!;
   assert.equal(after.driveBefore, 20);
+  assert.equal(after.beforeEnd, at(11));
   assert.equal(after.driveAfter, null);
   const [before] = times.get(at(9))!;
   assert.equal(before.driveAfter, 20);
+  assert.equal(before.afterStart, at(10));
 });
 
 Deno.test("the break between appointments applies to Google busy times too", () => {

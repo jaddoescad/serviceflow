@@ -31,6 +31,9 @@ export type Candidate = {
   driveAfter: number | null;
   beforeLocation: string | null;
   afterLocation: string | null;
+  /** When the appointment before ends and the one after starts; null when there is none. */
+  beforeEnd: number | null;
+  afterStart: number | null;
   /** Their appointments that day. */
   dayCount: number;
 };
@@ -105,6 +108,8 @@ export function openTimes(
           driveAfter: after ? Math.round(after.from / 60_000) : null,
           beforeLocation: before?.location ?? null,
           afterLocation: after?.location ?? null,
+          beforeEnd: before?.end ?? null,
+          afterStart: after?.start ?? null,
           dayCount,
         };
         byStart.set(start, [...(byStart.get(start) ?? []), candidate]);

@@ -385,14 +385,11 @@ function DaysView({
 
 function AppointmentDialog({
   draft: initial,
-  today,
   team,
   confirmationKinds,
   onClose,
 }: {
   draft: Draft;
-  /** Today in Ottawa, YYYY-MM-DD. */
-  today: string;
   team: TeamMember[];
   /** Types an enabled confirmation is set up for. */
   confirmationKinds: AppointmentKind[];
@@ -635,7 +632,6 @@ function AppointmentDialog({
                 userId: draft.assignedTo || null,
                 appointmentId: isNew ? null : draft.id,
               }}
-              today={today}
               startOpen={isNew}
               chosen={chosen}
               onPick={(time) => {
@@ -740,7 +736,7 @@ export function BookAppointmentDialog({
   onClose: () => void;
 }) {
   const [draft] = useState(() => newDraft(addDays(today, 1), 9 * 60, "estimate", assignedTo, project));
-  return <AppointmentDialog draft={draft} today={today} team={team} confirmationKinds={confirmationKinds} onClose={onClose} />;
+  return <AppointmentDialog draft={draft} team={team} confirmationKinds={confirmationKinds} onClose={onClose} />;
 }
 
 /**
@@ -881,7 +877,6 @@ export function AppointmentsCalendar({
         <AppointmentDialog
           key={draft.id}
           draft={draft}
-          today={today}
           team={team}
           confirmationKinds={confirmationKinds}
           onClose={() => {

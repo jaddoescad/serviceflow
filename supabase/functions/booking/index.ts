@@ -97,9 +97,11 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
   const windows = openWindows(open, preference, zone, context.travelMinutes).slice(0, MAX_WINDOWS);
   const names = new Map(context.people.map((person) => [person.id, person.name]));
   const iso = (ms: number) => new Date(ms).toISOString();
-  // The visit just before the stretch and the one just after it, that day.
-  const visit = (location: string | null, drive: number | null) =>
-    location !== null && drive !== null ? { address: location, minutes: drive, meters: distances(address, location).meters } : null;
+  // The visit just before the stretch (when it ends) and the one just after it (when it starts), that day.
+  const visit = (location: string | null, drive: number | null, at: number | null) =>
+    location !== null && drive !== null && at !== null
+      ? { address: location, minutes: drive, meters: distances(address, location).meters, at: iso(at) }
+      : null;
   const described = windows.map((window) => {
     const first = window.starts[0];
     const last = window.starts.at(-1)!;
@@ -114,8 +116,8 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
       matchesDay: window.matchesDay,
       matchesTime: window.matchesTime,
       daysAway: window.daysAway,
-      before: visit(first.beforeLocation, first.driveBefore),
-      after: visit(last.afterLocation, last.driveAfter),
+      before: visit(first.beforeLocation, first.driveBefore, first.beforeEnd),
+      after: visit(last.afterLocation, last.driveAfter, last.afterStart),
     };
   });
   // The old panel's rows: each stretch's suggested start.

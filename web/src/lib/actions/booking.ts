@@ -1,7 +1,7 @@
 "use server";
 
 import { requireStaff } from "@/lib/auth";
-import type { BookingRules, BookingSettings, SuggestedTimes, TimeOfDay, WeeklyHours } from "@/lib/booking-types";
+import type { BookingRules, BookingSettings, SuggestedTimes, WeeklyHours } from "@/lib/booking-types";
 import { callEdge } from "./edge";
 import { staffRead, staffWrite, type ActionResult } from "./rpc";
 
@@ -36,15 +36,13 @@ export async function saveAvailability(input: {
   );
 }
 
-/** Open times ranked against the days and part of the day the customer asked
- * for, with the drive from the person's other visits. `appointmentId` is the visit being moved. */
+/** Open times for the next two weeks, closest to the person's other visits
+ * first, with the drive to them. `appointmentId` is the visit being moved. */
 export async function suggestTimes(input: {
   address: string;
   minutes: number;
   userId: string | null;
   appointmentId: string | null;
-  days: string[];
-  window: TimeOfDay;
 }): Promise<SuggestedTimes | { error: string }> {
   await requireStaff();
   try {
