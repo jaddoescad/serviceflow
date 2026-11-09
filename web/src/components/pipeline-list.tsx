@@ -6,6 +6,7 @@ import { fmtCents } from "@/lib/line-items";
 import type { PipelineCard, PipelineStage } from "@/lib/pipeline-types";
 import { followUpAge, type FollowUp, type PipelineSort, type PipelineSortKey } from "@/lib/pipeline-views";
 import { SelectBox } from "./bulk-actions";
+import { NewLeadLabel } from "./new-lead-label";
 import { ArchivedToggle, Dot, Initials, LabelTags } from "./pipeline-ui";
 import { ShowMore } from "./show-more";
 import { DataTable, RowLink, SortTh, TablePanel, Td, Th, Tr } from "./table-ui";
@@ -20,6 +21,7 @@ const dash = <span className="text-[var(--color-faint)]">—</span>;
  * Archived rows sit after the rest, hidden until "Archived" is opened. */
 export function PipelineList({
   cards,
+  newIds,
   archived,
   archivedCount,
   archivedLoading,
@@ -38,6 +40,8 @@ export function PipelineList({
   onEditLabels,
 }: {
   cards: PipelineCard[];
+  /** Deals from outside the app that nobody has opened yet. */
+  newIds: Set<string>;
   /** Loaded archived cards; archivedCount is what the toggle shows (0: none). */
   archived: PipelineCard[];
   archivedCount: number | null;
@@ -106,8 +110,13 @@ export function PipelineList({
             }}
           />
         </Td>
-        <Td className="max-w-72 truncate">
-          <RowLink href={`/deals/${encodeURIComponent(card.id)}`}>{card.name}</RowLink>
+        <Td className="max-w-72">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate">
+              <RowLink href={`/deals/${encodeURIComponent(card.id)}`}>{card.name}</RowLink>
+            </span>
+            {newIds.has(card.id) ? <NewLeadLabel /> : null}
+          </span>
         </Td>
         <Td>
           <span className="flex items-center gap-1.5">

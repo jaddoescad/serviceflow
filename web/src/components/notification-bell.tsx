@@ -72,7 +72,10 @@ export function NotificationBell({ userId }: { userId: string }) {
         { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
         (payload) => {
           refresh();
-          if (payload.eventType === "INSERT") window.dispatchEvent(new Event(NOTIFICATIONS_ARRIVED));
+          // The row rides along so the new-lead toast can show it.
+          if (payload.eventType === "INSERT") {
+            window.dispatchEvent(new CustomEvent(NOTIFICATIONS_ARRIVED, { detail: payload.new }));
+          }
         },
       )
       .subscribe((status) => setLive(status === "SUBSCRIBED"));

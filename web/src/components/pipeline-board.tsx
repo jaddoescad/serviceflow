@@ -28,6 +28,7 @@ import type { ProjectLabel } from "@/lib/project-workspace";
 import { BookAppointmentDialog } from "./appointments-calendar";
 import { BulkActions } from "./bulk-actions";
 import { NewDealButton } from "./new-deal-dialog";
+import { NewLeadLabel } from "./new-lead-label";
 import { MessageCustomerDialog } from "./inbox/message-customer-dialog";
 import { MoveDealDialog } from "./move-deal-dialog";
 import { ReportPending } from "./navigation-pending";
@@ -60,6 +61,7 @@ const stageValue = (cards: PipelineCard[]) => cards.reduce((sum, card) => sum + 
 
 function BoardCard({
   card,
+  isNew,
   isSales,
   today,
   dragging,
@@ -72,6 +74,7 @@ function BoardCard({
   followUp,
 }: {
   card: PipelineCard;
+  isNew: boolean;
   isSales: boolean;
   today: string;
   dragging: boolean;
@@ -103,15 +106,18 @@ function BoardCard({
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          {/* The link covers the card, so the whole card opens the deal. */}
-          <Link
-            href={dealHref(card)}
-            draggable={false}
-            className="block truncate text-[13.5px] font-semibold leading-5 text-[var(--color-heading)] outline-none before:absolute before:inset-0 before:rounded-[inherit] focus-visible:before:shadow-[var(--focus-ring)]"
-          >
-            {card.name}
-            <ReportPending href={dealHref(card)} />
-          </Link>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* The link covers the card, so the whole card opens the deal. */}
+            <Link
+              href={dealHref(card)}
+              draggable={false}
+              className="block min-w-0 truncate text-[13.5px] font-semibold leading-5 text-[var(--color-heading)] outline-none before:absolute before:inset-0 before:rounded-[inherit] focus-visible:before:shadow-[var(--focus-ring)]"
+            >
+              {card.name}
+              <ReportPending href={dealHref(card)} />
+            </Link>
+            {isNew ? <NewLeadLabel /> : null}
+          </div>
           {card.source?.trim() ? (
             <p className="truncate text-[11px] leading-[14px] text-[var(--color-faint)]">{card.source.trim()}</p>
           ) : null}
@@ -194,6 +200,7 @@ const viewHref = (pathname: string, viewId: string, mode: PipelineViewMode) => {
 
 export function PipelineView({
   board,
+  newIds,
   labels,
   savedViews,
   userId,
@@ -203,6 +210,8 @@ export function PipelineView({
   view: initialMode,
 }: {
   board: PipelineBoard;
+  /** Deals from outside the app that nobody has opened yet. */
+  newIds: string[];
   labels: ProjectLabel[];
   savedViews: SavedPipelineView[];
   userId: string;
@@ -264,6 +273,7 @@ export function PipelineView({
   const colors = useMemo(() => stageColors(stages), [stages]);
   const isSales = board.pipeline === "sales";
   const noun = isSales ? "deal" : "job";
+  const newSet = useMemo(() => new Set(newIds), [newIds]);
   const today = dayKey(new Date());
   const context = useMemo<FilterContext>(
     () => ({ userId, stages: stageById, today: dayKey(new Date()), now: Date.now() }),
@@ -535,6 +545,7 @@ export function PipelineView({
                 <BoardCard
                   key={card.id}
                   card={card}
+                  isNew={newSet.has(card.id)}
                   isSales={isSales}
                   today={today}
                   dragging={dragging?.id === card.id}
@@ -622,6 +633,7 @@ export function PipelineView({
       ) : (
         <PipelineList
           cards={openCards}
+          newIds={newSet}
           archived={archivedCards}
           archivedCount={archivedCount(
             archivedCards.length,

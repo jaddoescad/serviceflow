@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { DealRecord } from "@/components/deal-record";
 import { requireStaff } from "@/lib/auth";
-import { getDealRecord } from "@/lib/pipeline";
+import { getDealRecord, markLeadOpened } from "@/lib/pipeline";
 import { isDealTab } from "@/lib/pipeline-types";
 import { getProjectLabels } from "@/lib/project-workspace";
 
@@ -17,6 +17,7 @@ export default async function DealPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const [, record, labels] = await Promise.all([requireStaff(), getDealRecord(decodeURIComponent(id)), getProjectLabels()]);
   if (!record) notFound();
+  await markLeadOpened(record.deal.id);
   return (
     <DealRecord
       key={record.deal.id}

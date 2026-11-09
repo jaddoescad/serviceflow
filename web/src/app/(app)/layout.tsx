@@ -2,6 +2,7 @@ import { SITE_NAME } from "@/lib/site-brand";
 import { requireMember } from "@/lib/auth";
 import { MobileNav, Nav, SidebarHeader } from "@/components/nav";
 import { NavigationPendingProvider, PendingPage } from "@/components/navigation-pending";
+import { NewLeadToast } from "@/components/new-lead-toast";
 import { SignOutButton } from "@/components/sign-out";
 import { ProjectUploadProvider } from "@/components/project-upload-provider";
 import { UnreadInboxProvider } from "@/components/unread-inbox";
@@ -70,6 +71,7 @@ export default async function AppLayout({
               </div>
             </main>
           </div>
+          <NewLeadToast />
         </NavigationPendingProvider>
       </UnreadInboxProvider>
     </ProjectUploadProvider>

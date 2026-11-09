@@ -22,6 +22,21 @@ export async function getPipelineBoard(pipeline: PipelineKey): Promise<PipelineB
   return data as PipelineBoard;
 }
 
+/** Deals from outside the app (website, Zapier) that nobody in the company has opened yet. */
+export async function getNewLeadIds(): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_new_lead_ids");
+  if (error) throw new Error(`new leads: ${error.message}`);
+  return (data ?? []) as string[];
+}
+
+/** Clears the deal's "New" label for the whole company. Never blocks the deal page. */
+export async function markLeadOpened(leadId: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("mark_lead_opened", { requested_lead: leadId });
+  if (error) console.error(`mark lead opened: ${error.message}`);
+}
+
 /** The signed-in manager's own saved views of this pipeline, by name. */
 export async function getPipelineViews(pipeline: PipelineKey): Promise<SavedPipelineView[]> {
   const supabase = await createClient();

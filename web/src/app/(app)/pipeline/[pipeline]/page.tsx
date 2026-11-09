@@ -5,7 +5,7 @@ import { getReminderRules } from "@/lib/actions/reminders";
 import { APPOINTMENT_KINDS } from "@/lib/appointment-types";
 import { getHomeOrgId, requireStaff } from "@/lib/auth";
 import { getCustomerListOptions } from "@/lib/contacts";
-import { getPipelineBoard, getPipelineViews } from "@/lib/pipeline";
+import { getNewLeadIds, getPipelineBoard, getPipelineViews } from "@/lib/pipeline";
 import { isPipelineKey } from "@/lib/pipeline-types";
 import { getProjectLabels } from "@/lib/project-workspace";
 import { sendsConfirmation } from "@/lib/reminder-types";
@@ -21,7 +21,7 @@ export default async function PipelinePage({
 }) {
   const [{ pipeline }, query] = await Promise.all([params, searchParams]);
   if (!isPipelineKey(pipeline)) notFound();
-  const [profile, board, labels, savedViews, options, rules, orgId] = await Promise.all([
+  const [profile, board, labels, savedViews, options, rules, orgId, newIds] = await Promise.all([
     requireStaff(),
     getPipelineBoard(pipeline),
     getProjectLabels(),
@@ -30,6 +30,7 @@ export default async function PipelinePage({
     // Deals book estimates from their cards.
     pipeline === "sales" ? getReminderRules() : [],
     getHomeOrgId(),
+    pipeline === "sales" ? getNewLeadIds() : [],
   ]);
   return (
     <>
@@ -37,6 +38,7 @@ export default async function PipelinePage({
       <PipelineView
         key={pipeline}
         board={board}
+        newIds={newIds}
         labels={labels}
         savedViews={savedViews}
         userId={profile.user_id}
