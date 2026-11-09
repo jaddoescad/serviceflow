@@ -123,6 +123,8 @@ export async function listProposals(status: ProposalStatus | null): Promise<Prop
       "id,lead_id,name,status,source,amount_cents,sent_at,viewed_at,updated_at,lead:leads(contact:contacts(name)),job:jobs!jobs_accepted_quote_id_fkey(id)",
     )
     .neq("status", "superseded")
+    // Calculator quotes are the calculator's working records, not proposals.
+    .not("source", "in", "(app,calculator)")
     .order("updated_at", { ascending: false })
     .limit(300);
   if (status) query = query.eq("status", status);

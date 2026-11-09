@@ -138,7 +138,7 @@ export function ItemDescriptionEditor({
         <div
           role="toolbar"
           aria-label="Formatting"
-          className="absolute -top-9 left-0 z-20 flex items-center gap-0.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 shadow-[var(--shadow-pop)]"
+          className="absolute left-0 top-full z-20 mt-1 flex items-center gap-0.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 shadow-[var(--shadow-pop)]"
         >
           {FORMATS.map((format) => (
             <button
