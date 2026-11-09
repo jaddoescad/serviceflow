@@ -282,7 +282,14 @@ function HeaderMenu({ items }: { items: { label: string; danger?: boolean; onSel
 /** Text you type straight into the sheet: plain until hovered or focused. */
 const CELL =
   "w-full min-w-0 rounded-[var(--radius-control)] border border-transparent bg-transparent px-2 outline-none placeholder:text-[var(--color-faint)] hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:bg-[var(--color-surface)] focus:shadow-[var(--focus-ring)]";
-const COLUMNS = "sm:grid-cols-[minmax(0,1fr)_4.5rem_7rem_7rem_1.75rem]";
+const COLUMNS = "sm:grid-cols-[minmax(0,1fr)_4.5rem_7rem_7rem_5.25rem]";
+const ROW_TOOL =
+  "flex h-8 w-7 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-faint)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100";
+
+/** The two groups a line sits in: the work itself, or the optional extras. */
+type Group = "work" | "optional";
+/** Where a dragged line would land: before or after a line, or at the end of a group. */
+type DropTarget = { group: Group; id: string | null; before: boolean };
 const SECTION_TITLE = "text-[15px] font-semibold text-[var(--color-heading)]";
 const ADD_LINK =
   "mt-2 inline-flex h-8 items-center gap-1 rounded-[var(--radius-control)] px-2 text-[13px] font-medium outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]";
@@ -290,25 +297,61 @@ const ADD_LINK =
 /** The lines of one group (the work itself, or the optional extras). */
 function Lines({
   items,
+  group,
   packages,
   readOnly,
+  dragging,
+  target,
   onUpdate,
   onRemove,
+  onMove,
+  onDrag,
+  onTarget,
+  onDrop,
 }: {
   items: LineItem[];
+  group: Group;
   packages: ProposalPackage[];
   readOnly: boolean;
+  /** The line being dragged, and where it would land. */
+  dragging: string | null;
+  target: DropTarget | null;
   onUpdate: (id: string, patch: Partial<LineItem>) => void;
   onRemove: (id: string) => void;
+  /** Moves a line to the other group (the button for it; dragging does the same). */
+  onMove: (id: string, group: Group) => void;
+  onDrag: (id: string | null) => void;
+  onTarget: (target: DropTarget) => void;
+  onDrop: () => void;
 }) {
+  const other: Group = group === "work" ? "optional" : "work";
   return (
     <ul>
       {items.map((item) => (
         <li
           key={item.id}
+          onDragOver={(event) => {
+            if (!dragging) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const before = event.clientY < bounds.top + bounds.height / 2;
+            if (target?.id !== item.id || target.before !== before) onTarget({ group, id: item.id, before });
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDrop();
+          }}
           className={cn(
-            "group grid grid-cols-[1fr_1fr_1fr_1.75rem] items-start gap-x-2 gap-y-1 border-b border-[var(--color-border)] py-3 last:border-0",
+            "group grid grid-cols-[1fr_1fr_1fr_5.25rem] items-start gap-x-2 gap-y-1 border-b border-[var(--color-border)] py-3 last:border-0",
             COLUMNS,
+            dragging === item.id && "opacity-40",
+            dragging && target?.id === item.id && dragging !== item.id
+              ? target.before
+                ? "shadow-[inset_0_2px_0_var(--color-brand)]"
+                : "shadow-[inset_0_-2px_0_var(--color-brand)]"
+              : null,
           )}
         >
           <div className="col-span-full min-w-0 sm:col-span-1">
@@ -383,15 +426,52 @@ function Lines({
           {readOnly ? (
             <span />
           ) : (
-            <button
-              type="button"
-              aria-label={`Remove ${item.name || "item"}`}
-              title="Remove"
-              onClick={() => onRemove(item.id)}
-              className="flex h-8 w-7 items-center justify-center rounded-[var(--radius-control)] text-base text-[var(--color-faint)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-bad)] focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-            >
-              ×
-            </button>
+            <div className="flex justify-end">
+              <span
+                draggable
+                role="img"
+                aria-label="Drag to move"
+                title="Drag to move"
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", item.id);
+                  const row = event.currentTarget.closest("li");
+                  if (row) event.dataTransfer.setDragImage(row, 24, 20);
+                  onDrag(item.id);
+                }}
+                onDragEnd={() => onDrag(null)}
+                className={cn(ROW_TOOL, "cursor-grab active:cursor-grabbing")}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                  <circle cx="9" cy="6" r="1.6" />
+                  <circle cx="15" cy="6" r="1.6" />
+                  <circle cx="9" cy="12" r="1.6" />
+                  <circle cx="15" cy="12" r="1.6" />
+                  <circle cx="9" cy="18" r="1.6" />
+                  <circle cx="15" cy="18" r="1.6" />
+                </svg>
+              </span>
+              <button
+                type="button"
+                aria-label={`${group === "work" ? "Make optional" : "Make part of the proposal"}: ${item.name || "item"}`}
+                title={group === "work" ? "Make optional" : "Make part of the proposal"}
+                onClick={() => onMove(item.id, other)}
+                className={ROW_TOOL}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                  <path d={group === "work" ? "M12 5v14M6 13l6 6 6-6" : "M12 19V5M6 11l6-6 6 6"} />
+                </svg>
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove ${item.name || "item"}`}
+                title="Remove"
+                onClick={() => onRemove(item.id)}
+                className={cn(ROW_TOOL, "text-base hover:text-[var(--color-bad)]")}
+              >
+                ×
+              </button>
+            </div>
           )}
           {/* The description runs the full width of the row, under the name and amounts. */}
           {readOnly ? (
@@ -472,6 +552,64 @@ export function ProposalEditor({
   const updateItem = (itemId: string, next: Partial<LineItem>) =>
     setItems(body.items.map((item) => (item.id === itemId ? { ...item, ...next } : item)));
   const removeItem = (itemId: string) => setItems(body.items.filter((item) => item.id !== itemId));
+
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [target, setTarget] = useState<DropTarget | null>(null);
+
+  /**
+   * Puts a line in a group, before or after another line or at the group's
+   * end. Going optional, it leaves the total until the customer adds it.
+   */
+  function moveItem(itemId: string, group: Group, anchorId: string | null = null, before = false) {
+    const item = body.items.find((other) => other.id === itemId);
+    if (!item || anchorId === itemId) return;
+    const moved: LineItem =
+      group === "optional"
+        ? isAddOn(item)
+          ? item
+          : { ...item, optional: true, selected: false, packageId: null }
+        : isAddOn(item)
+          ? { ...item, optional: false, selected: true }
+          : item;
+    const rest = body.items.filter((other) => other.id !== itemId);
+    const anchor = anchorId ? rest.findIndex((other) => other.id === anchorId) : -1;
+    const groupEnd = rest.reduce((end, other, at) => ((group === "optional") === isAddOn(other) ? at + 1 : end), 0);
+    const index = anchor >= 0 ? anchor + (before ? 0 : 1) : groupEnd || rest.length;
+    setItems([...rest.slice(0, index), moved, ...rest.slice(index)]);
+  }
+
+  function dropItem() {
+    if (dragging && target) moveItem(dragging, target.group, target.id, target.before);
+    setDragging(null);
+    setTarget(null);
+  }
+
+  /** A group's own area takes a dragged line at its end (and when it is empty). */
+  const groupDrop = (group: Group) => ({
+    onDragOver: (event: React.DragEvent) => {
+      if (!dragging) return;
+      event.preventDefault();
+      if (target?.group !== group || target.id !== null) setTarget({ group, id: null, before: false });
+    },
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      dropItem();
+    },
+  });
+  const lineProps = {
+    readOnly,
+    dragging,
+    target,
+    onUpdate: updateItem,
+    onRemove: removeItem,
+    onMove: (itemId: string, group: Group) => moveItem(itemId, group),
+    onDrag: (itemId: string | null) => {
+      setDragging(itemId);
+      if (!itemId) setTarget(null);
+    },
+    onTarget: setTarget,
+    onDrop: dropItem,
+  };
 
   function setPackages(packages: ProposalPackage[], selectedPackageId: string | null) {
     patch({ packages, selectedPackageId, items: syncPackageItems(body.items, packages, selectedPackageId) });
@@ -640,24 +778,38 @@ export function ProposalEditor({
             <span className="px-2 text-right">Price</span>
             <span className="px-2 text-right">Total</span>
           </div>
-          <Lines items={work} packages={body.packages} readOnly={readOnly} onUpdate={updateItem} onRemove={removeItem} />
-          {readOnly ? null : (
-            <button
-              type="button"
-              onClick={() => setItems([...body.items, newLineItem()])}
-              className={cn(ADD_LINK, "text-[var(--color-brand-strong)]")}
-            >
-              + Add item
-            </button>
-          )}
+          <div
+            {...groupDrop("work")}
+            className={cn(
+              "rounded-[var(--radius)]",
+              dragging && target?.group === "work" && target.id === null && "shadow-[inset_0_-2px_0_var(--color-brand)]",
+            )}
+          >
+            <Lines items={work} group="work" packages={body.packages} {...lineProps} />
+            {readOnly ? null : (
+              <button
+                type="button"
+                onClick={() => setItems([...body.items, newLineItem()])}
+                className={cn(ADD_LINK, "text-[var(--color-brand-strong)]")}
+              >
+                + Add item
+              </button>
+            )}
+          </div>
 
           {optional.length || !readOnly ? (
-            <div className="mt-6 rounded-[var(--radius-lg)] bg-[var(--color-warn-soft)] px-3 pb-2 pt-4 sm:px-4">
+            <div
+              {...groupDrop("optional")}
+              className={cn(
+                "mt-6 rounded-[var(--radius-lg)] bg-[var(--color-warn-soft)] px-3 pb-2 pt-4 sm:px-4",
+                dragging && target?.group === "optional" && target.id === null && "shadow-[inset_0_0_0_2px_var(--color-brand)]",
+              )}
+            >
               <div className="flex flex-wrap items-baseline gap-x-2 px-2">
                 <h3 className="text-xs font-bold uppercase tracking-[0.06em] text-[var(--color-warn)]">Optional</h3>
                 <span className="text-[13px] text-[var(--color-muted)]">The customer can add these. Not in the total.</span>
               </div>
-              <Lines items={optional} packages={[]} readOnly={readOnly} onUpdate={updateItem} onRemove={removeItem} />
+              <Lines items={optional} group="optional" packages={[]} {...lineProps} />
               {readOnly ? null : (
                 <button
                   type="button"
