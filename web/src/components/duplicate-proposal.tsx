@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { proposalHref } from "@/lib/pipeline-types";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { searchProjects } from "@/lib/actions/project-search";
@@ -66,7 +67,7 @@ export function DuplicateProposalDialog({
         setError(result.error ?? "Could not copy the proposal.");
         return;
       }
-      router.push(`/jobs/${encodeURIComponent(destination)}/proposals/${result.id}`);
+      router.push(proposalHref(destination, result.id));
       router.refresh();
     });
   }

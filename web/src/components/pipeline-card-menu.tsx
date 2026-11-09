@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { PipelineCard } from "@/lib/pipeline-types";
+import { proposalHref, type PipelineCard } from "@/lib/pipeline-types";
 
 export type CardMenuState = { card: PipelineCard; anchor: DOMRect };
 
@@ -102,7 +102,7 @@ export function PipelineCardMenu({
           {isSales ? (
             <>
               <Item onClick={() => onSchedule(card)}>Schedule</Item>
-              <Item href={`/jobs/${id}/proposals/new`}>New proposal</Item>
+              <Item href={proposalHref(id, "new")}>New proposal</Item>
             </>
           ) : null}
         </>

@@ -600,7 +600,7 @@ function deliveryText(delivery: DocumentDelivery): { text: string; failed: boole
 }
 
 /** One quiet line beside the status: how the last email or text went. Refreshes while it is queued. */
-function DeliveryNote({ delivery }: { delivery: DocumentDelivery }) {
+export function DeliveryNote({ delivery }: { delivery: DocumentDelivery }) {
   const router = useRouter();
   const waiting = delivery.status === "queued" || delivery.status === "sending";
   useEffect(() => {

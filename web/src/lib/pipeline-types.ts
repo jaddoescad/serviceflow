@@ -109,6 +109,10 @@ export function isDealProjectTab(value: string): value is DealProjectTab {
 export const dealHref = (recordId: string, tab?: DealTab) =>
   `/deals/${encodeURIComponent(recordId)}${tab && tab !== "communications" ? `?tab=${tab}` : ""}`;
 
+/** A proposal's editor, under its deal ("new" starts one). */
+export const proposalHref = (recordId: string, proposalId: string) =>
+  `/deals/${encodeURIComponent(recordId)}/proposals/${encodeURIComponent(proposalId)}`;
+
 export function isDealTab(value: string | undefined): value is DealTab {
   return DEAL_TABS.some(([key]) => key === value);
 }

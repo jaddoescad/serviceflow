@@ -1,4 +1,5 @@
 import { DuplicateProposalButton } from "@/components/duplicate-proposal";
+import { proposalHref } from "@/lib/pipeline-types";
 import { PageHeader } from "@/components/kpi";
 import {
   DataTable,
@@ -80,7 +81,7 @@ export default async function ProposalsPage({
                 <Tr key={proposal.id}>
                   <Td>
                     <RowLink
-                      href={`/jobs/${encodeURIComponent(proposal.projectId)}/proposals/${proposal.id}`}
+                      href={proposalHref(proposal.projectId, proposal.id)}
                     >
                       {proposal.customerName}
                     </RowLink>

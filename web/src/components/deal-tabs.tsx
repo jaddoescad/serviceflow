@@ -11,13 +11,13 @@ import type { DealOverview } from "@/lib/crm-types";
 import { fmtDate, fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
 import type { Thread } from "@/lib/inbox-types";
-import { RECORD_STATUS_OPTIONS, type DealExtras } from "@/lib/pipeline-types";
+import { RECORD_STATUS_OPTIONS, dealHref, proposalHref, type DealExtras } from "@/lib/pipeline-types";
 import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_TONES, type ProposalStatus } from "@/lib/proposal-types";
 import { Composer, ThreadMessages, ThreadScroller, useEarlierMessages } from "./inbox/thread";
 import { useContactThread } from "./inbox/use-contact-thread";
 import { DocumentIcon, Initials, fmtDay, linkStyle } from "./pipeline-ui";
 import { Badge, Button, Spinner, Tag, Textarea, buttonClassName, cn } from "./ui";
-import { dealHref } from "@/lib/pipeline-types";
+
 
 /** The deal page's center panels: communications, notes and the records
  * hanging off the deal. */
@@ -274,14 +274,13 @@ export function ProposalsPanel({
   extras: DealExtras;
   stageName: string | null;
 }) {
-  const base = dealHref(deal.id);
   const job = extras.job;
   if (!job && !deal.proposals.length) {
     return (
       <Empty
         action={
           deal.leadId ? (
-            <Link href={`${base}/proposals/new`} className={buttonClassName({ variant: "secondary" })}>
+            <Link href={proposalHref(deal.id, "new")} className={buttonClassName({ variant: "secondary" })}>
               New proposal
             </Link>
           ) : null
@@ -315,7 +314,7 @@ export function ProposalsPanel({
         const status = proposalStatus(proposal.status);
         return (
           <li key={proposal.id}>
-            <Link href={`${base}/proposals/${proposal.id}`} className={row}>
+            <Link href={proposalHref(deal.id, proposal.id)} className={row}>
               <DocumentIcon className="h-3.5 w-3.5 text-[var(--color-faint)]" />
               <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">{proposal.name}</span>
               {proposal.sentAt ? (

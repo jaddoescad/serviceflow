@@ -8,7 +8,7 @@ import type { DealOverview } from "@/lib/crm-types";
 import { fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
 import type { DealRecord as DealRecordData } from "@/lib/pipeline";
-import { DEAL_TABS, PIPELINE_TITLES, dealHref, isDealProjectTab, type DealTab } from "@/lib/pipeline-types";
+import { DEAL_TABS, PIPELINE_TITLES, dealHref, isDealProjectTab, proposalHref, type DealTab } from "@/lib/pipeline-types";
 import type { ProjectLabel } from "@/lib/project-workspace";
 import {
   AppointmentsPanel,
@@ -259,8 +259,7 @@ export function DealRecord({
   const noun = deal.kind === "job" ? "job" : "deal";
   const colors = stageColors(stages);
   const stage = stages.find((item) => item.id === deal.stage?.id) ?? null;
-  const base = `/jobs/${encodeURIComponent(deal.id)}`;
-  const proposalHref = deal.leadId ? `${base}/proposals/new` : null;
+  const newProposalHref = deal.leadId ? proposalHref(deal.id, "new") : null;
   const appointmentHref = `/appointments?new=${encodeURIComponent(deal.id)}`;
   const job = extras.job;
   const now = Date.now();
@@ -405,7 +404,7 @@ export function DealRecord({
           </div>
 
           <div className="mt-4 grid grid-cols-4 gap-1">
-            <QuickAction href={proposalHref} label="Proposal" title="New proposal" icon={<DocumentIcon />} />
+            <QuickAction href={newProposalHref} label="Proposal" title="New proposal" icon={<DocumentIcon />} />
             <QuickAction href={appointmentHref} label="Appt" title="New appointment" icon={<CalendarIcon />} />
             <QuickAction
               href={deal.contact.phone ? `tel:${deal.contact.phone}` : null}
@@ -557,14 +556,14 @@ export function DealRecord({
 
         {/* Associated records */}
         <aside className="border-[var(--color-border)] max-lg:border-t lg:border-r lg:border-t xl:overflow-y-auto xl:border-l xl:border-r-0 xl:border-t-0">
-          <Association title="Proposals" count={deal.proposals.length} addHref={proposalHref} addLabel="New proposal">
+          <Association title="Proposals" count={deal.proposals.length} addHref={newProposalHref} addLabel="New proposal">
             {deal.proposals.length ? (
               deal.proposals.map((proposal) => {
                 const status = proposalStatus(proposal.status);
                 return (
                   <AssociationRow
                     key={proposal.id}
-                    href={`${base}/proposals/${proposal.id}`}
+                    href={proposalHref(deal.id, proposal.id)}
                     title={proposal.name}
                     meta={
                       <>

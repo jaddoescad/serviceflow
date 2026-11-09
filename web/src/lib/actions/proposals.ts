@@ -7,7 +7,7 @@ import { getProjectDeal } from "@/lib/proposals";
 import type { ProposalBody } from "@/lib/proposal-types";
 import { publicWrite, staffWrite, type ActionResult } from "./rpc";
 
-const PROPOSAL_PATHS = ["/proposals", "/jobs", "/pipeline"];
+const PROPOSAL_PATHS = ["/proposals", "/jobs", "/deals", "/pipeline"];
 
 function bodyArgs(body: ProposalBody) {
   return {

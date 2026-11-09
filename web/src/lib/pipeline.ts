@@ -60,6 +60,14 @@ export type DealRecord = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A deal's (or job's) summary: its customer, address and notes. */
+export async function getDealOverview(id: string): Promise<DealOverview | null> {
+  if (!UUID_PATTERN.test(id)) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_deal_overview", { requested_record: id });
+  return error ? null : (data as DealOverview | null);
+}
+
 /** Everything the deal page shows for one deal or job; null when it is not
  * one the signed-in manager can open. Every query starts at once: the page
  * checks the manager alongside, and the database checks each read. */
