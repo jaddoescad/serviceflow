@@ -49,7 +49,7 @@ const PART_LABELS: Record<ProposalPart, string> = {
   scope: "Scope of work",
   addOns: "Optional add-ons",
   photos: "Photos",
-  investment: "Your investment",
+  investment: "Price",
   terms: "Terms and conditions",
 };
 
@@ -196,6 +196,10 @@ const FROM_PROPOSAL = (
   </Tag>
 );
 
+/** A locked detail's tag, linking to the settings page that changes it. */
+const LOCKED_LINK =
+  "inline-flex h-[22px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--color-surface-2)] px-2 text-[11px] font-medium text-[var(--color-muted)] outline-none hover:text-[var(--color-heading)] hover:underline focus-visible:shadow-[var(--focus-ring)]";
+
 const TOOL =
   "flex h-[30px] w-[30px] items-center justify-center rounded-[7px] text-white outline-none hover:bg-[#2a2a30] focus-visible:bg-[#2a2a30] disabled:pointer-events-none disabled:opacity-30";
 const ADD_LINK =
@@ -210,6 +214,7 @@ function Entries<T>({
   noun,
   blank,
   editing,
+  canEdit,
   onChange,
   className,
   children,
@@ -218,7 +223,9 @@ function Entries<T>({
   max: number;
   noun: string;
   blank: T;
+  /** The section is selected: its controls stay out. Otherwise they show while the pointer is over it. */
   editing: boolean;
+  canEdit: boolean;
   onChange: (entries: T[]) => void;
   className: string;
   children: (entry: T, set: (next: Partial<T>) => void, index: number) => React.ReactNode;
@@ -234,13 +241,13 @@ function Entries<T>({
                 (next) => onChange(entries.map((other, at) => (at === index ? { ...other, ...next } : other))),
                 index,
               )}
-              {editing ? (
+              {canEdit ? (
                 <button
                   type="button"
                   aria-label={`Remove ${noun} ${index + 1}`}
                   title="Remove"
                   onClick={() => onChange(entries.filter((_, at) => at !== index))}
-                  className={cn(REMOVE, "absolute -right-1 -top-1 bg-white")}
+                  className={cn(REMOVE, "absolute -right-1 -top-1 bg-white", !editing && "hidden group-hover/section:flex")}
                 >
                   <Glyph name="close" className="h-3.5 w-3.5" />
                 </button>
@@ -249,8 +256,12 @@ function Entries<T>({
           ))}
         </ul>
       ) : null}
-      {editing && entries.length < max ? (
-        <button type="button" onClick={() => onChange([...entries, blank])} className={cn(ADD_LINK, !entries.length && "mt-3")}>
+      {canEdit && entries.length < max ? (
+        <button
+          type="button"
+          onClick={() => onChange([...entries, blank])}
+          className={cn(ADD_LINK, !entries.length && "mt-3", !editing && "invisible group-hover/section:visible")}
+        >
           + Add a {noun}
         </button>
       ) : null}
@@ -315,6 +326,7 @@ function CustomBody({
           noun="point"
           blank={{ title: "", body: "" }}
           editing={editing}
+          canEdit={!disabled}
           onChange={(points) => onChange({ points })}
           className="mt-5 grid gap-x-8 gap-y-5 @xl:grid-cols-2"
         >
@@ -358,6 +370,7 @@ function CustomBody({
           noun="card"
           blank={{ icon: "check" as CardIcon, title: "", body: "" }}
           editing={editing}
+          canEdit={!disabled}
           onChange={(cards) => onChange({ cards })}
           className={cn("mt-5 grid gap-x-8 gap-y-7", block.cards.length % 2 || block.cards.length > 4 ? "@xl:grid-cols-3" : "@xl:grid-cols-2")}
         >
@@ -413,6 +426,7 @@ function CustomBody({
           noun="number"
           blank={{ value: "", label: "" }}
           editing={editing}
+          canEdit={!disabled}
           onChange={(numbers) => onChange({ numbers })}
           className={cn(
             "mt-5 grid gap-5 text-center",
@@ -531,7 +545,10 @@ function Inserter({
   }, [open, onToggle]);
 
   return (
-    <div ref={root} className={cn("absolute inset-x-0 bottom-0 h-0", open ? "z-40" : "z-20")} onClick={(event) => event.stopPropagation()}>
+    <div ref={root} className={cn("absolute inset-x-0 bottom-0 h-0", open ? "z-40" : "z-20")}
+      // The "+" belongs to the gap, not the section above it: using it doesn't select that section.
+      onClick={(event) => event.stopPropagation()}
+      onFocusCapture={(event) => event.stopPropagation()}>
       <button
         type="button"
         aria-label={`Add a section ${place}`}
@@ -701,7 +718,7 @@ export function ProposalPageBuilder({
     });
   }
 
-  function setBlock(id: string, next: Partial<CustomBlock>) {
+  function setBlock(id: string, next: Partial<CustomBlock> | { title: string }) {
     patch({ blocks: draft.blocks.map((block) => (block.id === id ? ({ ...block, ...next } as PageBlock) : block)) });
   }
 
@@ -879,15 +896,11 @@ export function ProposalPageBuilder({
               <div className="min-w-0">
                 <div className={cn(LABEL, "mb-1")}>From</div>
                 <div className="font-semibold text-[var(--color-heading)]">{companyName}</div>
-                <Field
-                  label="Licence or registration number"
-                  value={draft.license}
-                  onChange={(license) => patch({ license })}
-                  placeholder="Licence or registration number"
-                  maxLength={80}
-                  disabled={disabled}
-                  className="text-[13px] leading-5 text-[var(--color-muted)]"
-                />
+                {draft.license ? <div className="text-[var(--color-muted)]">{draft.license}</div> : null}
+                <a href={settingsHref("company")} className={cn(LOCKED_LINK, "mt-1.5 bg-white")}>
+                  <Glyph name="lock" className="h-[11px] w-[11px]" />
+                  Set in Company
+                </a>
               </div>
             </div>
             {inserter(0, "at the top")}
@@ -905,15 +918,24 @@ export function ProposalPageBuilder({
                 aria-label={custom?.title ? `${name}: ${custom.title}` : name}
                 onClick={select}
                 onFocusCapture={select}
-                className={cn("relative", custom ? PAD.replace(/sm:/g, "@xl:") : "px-5 py-5 @xl:px-8")}
+                className={cn("group/section relative", custom ? PAD.replace(/sm:/g, "@xl:") : "px-5 py-5 @xl:px-8")}
               >
-                {active ? (
+                {/* The ring and toolbar show on the selected section, and on whichever one the pointer is over. */}
+                {disabled ? null : (
                   <>
-                    <div className="pointer-events-none absolute inset-1.5 rounded-xl border-2 border-[#2f6bff]" />
+                    <div
+                      className={cn(
+                        "pointer-events-none absolute inset-1.5 rounded-xl border-2",
+                        active ? "border-[#2f6bff]" : "hidden border-[#2f6bff]/35 group-hover/section:block",
+                      )}
+                    />
                     <div
                       role="toolbar"
                       aria-label={`${name} section`}
-                      className="absolute -top-3.5 right-5 z-30 flex items-center gap-0.5 rounded-[10px] bg-[#111113] p-1 shadow-[0_8px_22px_rgba(17,17,19,0.28)]"
+                      className={cn(
+                        "absolute -top-3.5 right-5 z-30 items-center gap-0.5 rounded-[10px] bg-[#111113] p-1 shadow-[0_8px_22px_rgba(17,17,19,0.28)]",
+                        active ? "flex" : "hidden group-hover/section:flex",
+                      )}
                     >
                       <span className="pl-1.5 pr-2 text-xs font-semibold text-white">{name}</span>
                       <button
@@ -964,7 +986,7 @@ export function ProposalPageBuilder({
                       ) : null}
                     </div>
                   </>
-                ) : null}
+                )}
 
                 {custom ? (
                   <div className={cn(custom.hidden && "opacity-45")}>
@@ -992,22 +1014,30 @@ export function ProposalPageBuilder({
                 ) : (
                   <>
                     <div className="flex items-center justify-between gap-3">
-                      <h3 className={LABEL}>{name}</h3>
-                      {block.type === "terms" ? <Tag>Used unless a proposal has its own</Tag> : FROM_PROPOSAL}
-                    </div>
-                    {block.type === "terms" ? (
-                      <div className="mt-3">
+                      <div className="min-w-0 flex-1">
                         <Field
-                          label="Default terms and conditions"
-                          value={draft.terms}
-                          onChange={(terms) => patch({ terms })}
-                          placeholder="Type your default terms"
-                          maxLength={20000}
+                          label={`${name} heading`}
+                          value={block.title}
+                          onChange={(title) => setBlock(block.id, { title })}
+                          placeholder={block.type === "message" ? `Note from ${companyName}` : name}
+                          maxLength={60}
                           disabled={disabled}
-                          multiline
-                          className="text-[13px] leading-6 text-[var(--color-muted)]"
+                          className={cn(LABEL, "placeholder:text-[var(--color-muted)]")}
                         />
                       </div>
+                      {block.type === "terms" ? (
+                        <a href={settingsHref("templates")} className={LOCKED_LINK}>
+                          <Glyph name="lock" className="h-[11px] w-[11px]" />
+                          Set in Document templates
+                        </a>
+                      ) : (
+                        FROM_PROPOSAL
+                      )}
+                    </div>
+                    {block.type === "terms" && draft.terms ? (
+                      <p className="mt-3 line-clamp-4 whitespace-pre-line text-[13px] leading-6 text-[var(--color-muted)]">
+                        {draft.terms}
+                      </p>
                     ) : null}
                   </>
                 )}

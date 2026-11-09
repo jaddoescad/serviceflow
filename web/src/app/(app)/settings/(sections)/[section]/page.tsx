@@ -10,6 +10,7 @@ import { GoogleCalendarSection } from "@/components/settings/google-calendar-sec
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
 import { PaymentsSettings } from "@/components/settings/payments-settings";
+import { ProposalDetailForm } from "@/components/settings/proposal-detail-form";
 import { ProposalPageBuilder } from "@/components/settings/proposal-page-builder";
 import { ReviewsSettings } from "@/components/settings/reviews-settings";
 import { AccountSection, IntegrationsSection, TeamSection } from "@/components/settings/settings-overview";
@@ -35,10 +36,11 @@ const managerOnly = <T,>(load: () => Promise<T>) => load().catch(() => null);
 const ManagersOnly = () => <EmptyState>Only managers can see these settings.</EmptyState>;
 
 async function Company() {
-  const [{ company, canEdit }, labour] = await Promise.all([loadCompanySettings(), getLabourBudgetSettings()]);
+  const [{ company, canEdit, isManager }, labour] = await Promise.all([loadCompanySettings(), getLabourBudgetSettings()]);
   return (
     <>
       <CompanyProfileForm company={company} canEdit={canEdit} />
+      <ProposalDetailForm field="license" page={company.proposalPage} canManage={isManager} />
       <LabourBudgetSettingsForm settings={labour} />
     </>
   );
@@ -81,8 +83,15 @@ async function ProposalPage() {
 }
 
 async function Templates() {
-  const templates = await managerOnly(getDocumentTemplates);
-  return templates ? <DocumentTemplates templates={templates} /> : <ManagersOnly />;
+  const [templates, { company, isManager }] = await Promise.all([managerOnly(getDocumentTemplates), loadCompanySettings()]);
+  return templates ? (
+    <>
+      <DocumentTemplates templates={templates} />
+      <ProposalDetailForm field="terms" page={company.proposalPage} canManage={isManager} />
+    </>
+  ) : (
+    <ManagersOnly />
+  );
 }
 
 async function Messaging() {

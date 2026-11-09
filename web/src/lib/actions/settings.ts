@@ -200,8 +200,19 @@ export async function saveCompanyBranding(input: { logoPath: string; brandColor:
 }
 
 /** The cover image, highlights, "Why choose us", stats and terms on every customer proposal. */
+/**
+ * Saves the page builder's work. The default terms and the licence number are
+ * set on their own settings pages, so the saved ones are kept as they are.
+ */
 export async function saveProposalPage(input: ProposalPage) {
-  return staffWrite("save_proposal_page", { requested_page: reviveProposalPage(input) }, ["/settings"]);
+  const { terms, license } = (await getCompanySettings()).company.proposalPage;
+  return staffWrite("save_proposal_page", { requested_page: reviveProposalPage({ ...input, terms, license }) }, ["/settings"]);
+}
+
+/** Changes one detail customer documents print (the default terms or the licence number), leaving the page alone. */
+export async function saveProposalDetail(field: "terms" | "license", value: string) {
+  const page = (await getCompanySettings()).company.proposalPage;
+  return staffWrite("save_proposal_page", { requested_page: reviveProposalPage({ ...page, [field]: value }) }, ["/settings"]);
 }
 
 export type CompanyDocument = { id: string; name: string; path: string };

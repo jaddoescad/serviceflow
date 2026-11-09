@@ -1019,12 +1019,16 @@ function SignableBody({
     setDialog(next);
   }
 
+  /** A part's heading: the company's own wording when it gave one (Settings › Customer proposal page). */
+  const heading = (part: ProposalPart, usual: string) =>
+    page.blocks.find((block) => block.type === part)?.title || usual;
+
   /** What each part of the proposal shows; the company's page (Settings) decides where each goes. */
   const parts: Record<ProposalPart, React.ReactNode> = {
-    message: <IntroNote doc={doc} t={t} />,
+    message: <IntroNote doc={doc} title={heading("message", t.noteFrom(doc.company.name))} />,
     packages: packages.length ? (
       <Section
-        title={t.choosePackage}
+        title={heading("packages", t.choosePackage)}
         hint={open ? t.choosePackageHint : undefined}
         className="public-document-keep"
       >
@@ -1039,7 +1043,7 @@ function SignableBody({
       </Section>
     ) : null,
     scope: scope.length ? (
-      <Section title={t.scope}>
+      <Section title={heading("scope", t.scope)}>
         <LineRows
           items={scope}
           t={t}
@@ -1056,7 +1060,7 @@ function SignableBody({
       </Section>
     ) : null,
     addOns: addOns.length ? (
-      <Section title={t.addOns} hint={open ? t.addOnsHint : undefined}>
+      <Section title={heading("addOns", t.addOns)} hint={open ? t.addOnsHint : undefined}>
         <ul className="space-y-2.5">
           {addOns.map((item) => {
             const added = isIncluded(item);
@@ -1115,9 +1119,9 @@ function SignableBody({
         </ul>
       </Section>
     ) : null,
-    photos: <Photos photos={photos} t={t} onView={setViewing} />,
+    photos: <Photos photos={photos} title={heading("photos", t.photos)} t={t} onView={setViewing} />,
     investment: (
-      <Section title={t.yourInvestment} className="public-document-keep">
+      <Section title={heading("investment", t.yourInvestment)} className="public-document-keep">
         <dl className="public-document-totals space-y-2.5 text-[14px] text-[var(--color-text)]">
           {baseCents || !activePackage ? <TotalLine label={t.lineItemsTotal} value={t.money(baseCents)} /> : null}
           {activePackage ? (
@@ -1161,7 +1165,7 @@ function SignableBody({
       </Section>
     ),
     terms: terms ? (
-      <Section title={t.terms}>
+      <Section title={heading("terms", t.terms)}>
         <p className="whitespace-pre-line text-[13px] leading-6 text-[var(--color-muted)]">{terms}</p>
       </Section>
     ) : null,
@@ -1502,11 +1506,11 @@ function CustomSection({ block }: { block: CustomBlock }) {
 }
 
 /** The company's own words to this customer. */
-function IntroNote({ doc, t }: { doc: PublicDocument; t: DocumentStrings }) {
+function IntroNote({ doc, title }: { doc: PublicDocument; title: string }) {
   return doc.intro ? (
     <section className={cn(PAD, "public-document-keep")}>
       <div className="rounded-xl bg-[var(--brand-tint)] px-5 py-4">
-        <h2 className="text-[13px] font-semibold text-[var(--brand-text)]">{t.noteFrom(doc.company.name)}</h2>
+        <h2 className="text-[13px] font-semibold text-[var(--brand-text)]">{title}</h2>
         <p className="mt-1.5 whitespace-pre-line text-[14px] leading-6 text-[var(--color-text)]">{doc.intro}</p>
       </div>
     </section>
@@ -1515,16 +1519,18 @@ function IntroNote({ doc, t }: { doc: PublicDocument; t: DocumentStrings }) {
 
 function Photos({
   photos,
+  title,
   t,
   onView,
 }: {
   photos: DocumentAsset[];
+  title: string;
   t: DocumentStrings;
   onView: (index: number) => void;
 }) {
   if (!photos.length) return null;
   return (
-    <Section title={t.photos}>
+    <Section title={title}>
       <ul className="public-document-photos grid grid-cols-2 gap-3 sm:grid-cols-4">
         {photos.map((photo, index) => (
           <li key={photo.id} className="public-document-photo">
@@ -1636,7 +1642,7 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
           }
         />
 
-        <IntroNote doc={doc} t={t} />
+        <IntroNote doc={doc} title={t.noteFrom(doc.company.name)} />
 
         <Section title={t.items}>
           <LineRows items={doc.items.filter(isIncluded)} t={t} />
@@ -1683,7 +1689,7 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
           </span>
         </section>
 
-        <Photos photos={photos} t={t} onView={setViewing} />
+        <Photos photos={photos} title={t.photos} t={t} onView={setViewing} />
         <Files doc={doc} t={t} files={files} />
       </Sheet>
       {viewing != null && photos[viewing] ? (

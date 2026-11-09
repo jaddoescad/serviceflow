@@ -103,7 +103,7 @@ const en = {
   close: "Close",
   previousPhoto: "Previous photo",
   nextPhoto: "Next photo",
-  yourInvestment: "Your Investment",
+  yourInvestment: "Price",
   amountDue: "Amount Due",
   lineItemsTotal: "Line items",
   optionalUpgrades: "Optional upgrades",

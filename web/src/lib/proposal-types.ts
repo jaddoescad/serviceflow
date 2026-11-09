@@ -139,7 +139,10 @@ export type CustomBlock =
   | (BlockBase & { type: "video"; url: string });
 
 /** One section of the customer's proposal page: the company's own, or a part of the proposal. */
-export type PageBlock = CustomBlock | { id: ProposalPart; type: ProposalPart };
+export type PageBlock = CustomBlock | PartBlock;
+
+/** A part of the proposal, under the company's own heading for it ("" keeps the usual one). */
+export type PartBlock = { id: ProposalPart; type: ProposalPart; title: string };
 
 export function isCustomBlock(block: PageBlock): block is CustomBlock {
   return (CUSTOM_BLOCKS as readonly string[]).includes(block.type);
@@ -261,7 +264,7 @@ function reviveBlocks(value: unknown): PageBlock[] {
     const saved = record(entry);
     const part = PROPOSAL_PARTS.find((key) => key === saved.type);
     if (part) {
-      if (!ids.has(part)) blocks.push({ id: part, type: part });
+      if (!ids.has(part)) blocks.push({ id: part, type: part, title: clip(saved.title, 60) });
       ids.add(part);
       continue;
     }
@@ -273,7 +276,7 @@ function reviveBlocks(value: unknown): PageBlock[] {
     blocks.push(reviveCustomBlock(type, saved, id));
   }
   for (const part of PROPOSAL_PARTS) {
-    if (!ids.has(part)) blocks.push({ id: part, type: part });
+    if (!ids.has(part)) blocks.push({ id: part, type: part, title: "" });
   }
   return blocks;
 }
