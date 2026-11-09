@@ -11,12 +11,12 @@ import type { DealOverview } from "@/lib/crm-types";
 import { fmtDate, fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import { fmtCents } from "@/lib/line-items";
 import type { Thread } from "@/lib/inbox-types";
-import { RECORD_STATUS_OPTIONS, dealHref, proposalHref, type DealExtras } from "@/lib/pipeline-types";
+import { RECORD_STATUS_OPTIONS, proposalHref, type DealExtras } from "@/lib/pipeline-types";
 import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_TONES, type ProposalStatus } from "@/lib/proposal-types";
 import { Composer, ThreadMessages, ThreadScroller, useEarlierMessages } from "./inbox/thread";
 import { useContactThread } from "./inbox/use-contact-thread";
-import { DocumentIcon, Initials, fmtDay, linkStyle } from "./pipeline-ui";
-import { Badge, Button, Spinner, Tag, Textarea, buttonClassName, cn } from "./ui";
+import { DocumentIcon, Initials, fmtDay } from "./pipeline-ui";
+import { Badge, Button, Spinner, Textarea, buttonClassName } from "./ui";
 
 
 /** The deal page's center panels: communications, notes and the records
@@ -267,15 +267,10 @@ export function NotesPanel({ deal, autoFocus }: { deal: DealOverview; autoFocus:
 
 export function ProposalsPanel({
   deal,
-  extras,
-  stageName,
 }: {
   deal: DealOverview;
-  extras: DealExtras;
-  stageName: string | null;
 }) {
-  const job = extras.job;
-  if (!job && !deal.proposals.length) {
+  if (!deal.proposals.length) {
     return (
       <Empty
         action={
@@ -286,30 +281,12 @@ export function ProposalsPanel({
           ) : null
         }
       >
-        No proposals or jobs yet.
+        No proposals yet.
       </Empty>
     );
   }
   return (
     <ul className={list}>
-      {job ? (
-        <li className={row}>
-          <Tag tone="green">Job</Tag>
-          <Link
-            href={dealHref(job.id)}
-            className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)] hover:underline"
-          >
-            {job.name}
-          </Link>
-          <span className="hidden text-xs text-[var(--color-muted)] sm:inline">
-            {(job.id === deal.id && stageName) || JOB_STATUS_LABELS[job.status] || job.status}
-          </span>
-          <Link href={`/jobs/${encodeURIComponent(job.id)}/work-order`} className={cn("text-xs", linkStyle)}>
-            Work order
-          </Link>
-          <span className="w-24 text-right tabular-nums text-[var(--color-heading)]">{fmtCents(job.valueCents)}</span>
-        </li>
-      ) : null}
       {deal.proposals.map((proposal) => {
         const status = proposalStatus(proposal.status);
         return (

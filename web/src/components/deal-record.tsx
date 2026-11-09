@@ -272,7 +272,7 @@ export function DealRecord({
   const counts: Record<DealTab, number> = {
     communications: deal.messages.length,
     notes: deal.notes.length,
-    proposals: deal.proposals.length + (job ? 1 : 0),
+    proposals: deal.proposals.length,
     invoices: extras.invoices.length,
     appointments: deal.appointments.length,
     photos: 0,
@@ -539,7 +539,7 @@ export function DealRecord({
             ) : tab === "notes" ? (
               <NotesPanel deal={deal} autoFocus={initialTab === "notes"} />
             ) : tab === "proposals" ? (
-              <ProposalsPanel deal={deal} extras={extras} stageName={stage?.name ?? null} />
+              <ProposalsPanel deal={deal} />
             ) : tab === "invoices" ? (
               <InvoicesPanel extras={extras} />
             ) : tab === "appointments" ? (
@@ -587,13 +587,20 @@ export function DealRecord({
                 meta={
                   <>
                     <span>{(job.id === deal.id && stage?.name) || JOB_STATUS_LABELS[job.status] || job.status}</span>
-                    <span className="text-[var(--color-heading)]">{fmtCents(job.valueCents)}</span>
+                    <span className="text-[var(--color-heading)]">{fmtCents(job.valueCents)} before tax</span>
                   </>
                 }
               />
             ) : (
               <None>No job yet</None>
             )}
+            {job ? (
+              <div className="mt-1 text-xs">
+                <Link href={`/jobs/${encodeURIComponent(job.id)}/work-order`} className={linkStyle}>
+                  Work order
+                </Link>
+              </div>
+            ) : null}
           </Association>
 
           <Association title="Upcoming appointments" count={upcoming.length} addHref={appointmentHref} addLabel="New appointment">
