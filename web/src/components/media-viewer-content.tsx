@@ -79,7 +79,7 @@ export function MediaViewerContent({
               aria-label={alt}
               className="h-full w-full object-contain"
             />
-            <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg bg-white p-2 text-slate-800 shadow-sm">
+            <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg bg-[var(--color-surface)] p-2 text-[var(--color-text)] shadow-sm">
               <a
                 aria-label="Download original"
                 title="Download original"
@@ -108,7 +108,7 @@ export function MediaViewerContent({
             type="button"
             onClick={onPrevious}
             aria-label="Previous media"
-            className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-700 shadow hover:bg-white"
+            className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-hover)] text-2xl text-[var(--color-text)] shadow hover:bg-[var(--color-surface)]"
           >
             ‹
           </button>
@@ -118,14 +118,14 @@ export function MediaViewerContent({
             type="button"
             onClick={onNext}
             aria-label="Next media"
-            className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-700 shadow hover:bg-white"
+            className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--color-hover)] text-2xl text-[var(--color-text)] shadow hover:bg-[var(--color-surface)]"
           >
             ›
           </button>
         ) : null}
       </div>
       <aside
-        className="min-w-0 overflow-y-auto bg-white text-slate-900"
+        className="min-w-0 overflow-y-auto bg-[var(--color-surface)] text-[var(--color-heading)]"
         aria-label="Media details"
       >
         <header className="p-6">
@@ -136,12 +136,12 @@ export function MediaViewerContent({
                 onClick={(event) => {
                   if (!beforeNavigate()) event.preventDefault();
                 }}
-                className="block truncate text-lg font-bold hover:text-blue-600"
+                className="block truncate text-lg font-bold hover:text-[var(--color-brand-strong)]"
               >
                 {projectName}
               </Link>
               {address ? (
-                <p className="mt-1 text-xs text-slate-600">{address}</p>
+                <p className="mt-1 text-xs text-[var(--color-muted)]">{address}</p>
               ) : null}
             </div>
             <button
@@ -149,13 +149,13 @@ export function MediaViewerContent({
               type="button"
               onClick={onClose}
               aria-label="Close gallery"
-              className="-mr-2 -mt-2 flex h-8 w-8 shrink-0 items-center justify-center text-3xl font-light text-slate-600"
+              className="-mr-2 -mt-2 flex h-8 w-8 shrink-0 items-center justify-center text-3xl font-light text-[var(--color-muted)]"
             >
               ×
             </button>
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs text-slate-600">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-hover)] text-xs text-[var(--color-muted)]">
               {creatorName
                 .split(" ")
                 .map((part) => part[0])
@@ -166,7 +166,7 @@ export function MediaViewerContent({
               <p className="text-sm">{creatorName}</p>
               <time
                 dateTime={capturedAt}
-                className="mt-0.5 block text-xs text-slate-500"
+                className="mt-0.5 block text-xs text-[var(--color-muted)]"
               >
                 {new Intl.DateTimeFormat("en-CA", {
                   dateStyle: "short",

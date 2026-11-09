@@ -277,12 +277,12 @@ export function ProjectPhotosPanel({
           />
         </fieldset>
         {linked.loading ? (
-          <p role="status" className="mb-3 text-sm text-slate-500">
+          <p role="status" className="mb-3 text-sm text-[var(--color-muted)]">
             Opening photo…
           </p>
         ) : null}
         {linked.error ? (
-          <p role="alert" className="mb-3 text-sm text-red-700">
+          <p role="alert" className="mb-3 text-sm text-[var(--color-bad)]">
             {linked.error}{" "}
             <button onClick={linked.retry} className="underline">
               Retry
@@ -296,12 +296,12 @@ export function ProjectPhotosPanel({
           </p>
         ) : null}
         {gallery.loading ? (
-          <p role="status" className="mb-3 text-sm text-slate-500">
+          <p role="status" className="mb-3 text-sm text-[var(--color-muted)]">
             Loading photos…
           </p>
         ) : null}
         {gallery.error ? (
-          <p role="alert" className="mb-3 text-sm text-red-700">
+          <p role="alert" className="mb-3 text-sm text-[var(--color-bad)]">
             {gallery.error}{" "}
             <button onClick={gallery.reload} className="underline">
               Retry
@@ -417,7 +417,7 @@ export function ProjectPhotosPanel({
                                 aria-hidden="true"
                                 className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/45 to-transparent px-2 pb-2 pt-7 text-left"
                               >
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10px] text-slate-600">
+                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-hover)] text-[10px] text-[var(--color-muted)]">
                                   {(item.creatorName ?? SITE_NAME)
                                     .split(" ")
                                     .map((part) => part[0])

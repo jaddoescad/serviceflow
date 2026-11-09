@@ -103,7 +103,7 @@ export function ProjectPhotoCanvas({
           }}
         />
       ) : null}
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg bg-white p-2 text-slate-800 shadow-sm">
+      <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg bg-[var(--color-surface)] p-2 text-[var(--color-text)] shadow-sm">
         <button
           title="Edit Photo"
           aria-label="Edit photo"
@@ -116,7 +116,7 @@ export function ProjectPhotoCanvas({
               setAnnotationError(true);
             }
           }}
-          className="p-2 text-slate-800 disabled:opacity-40"
+          className="p-2 text-[var(--color-text)] disabled:opacity-40"
         >
           <PhotoToolIcon name="edit" />
         </button>
@@ -124,7 +124,7 @@ export function ProjectPhotoCanvas({
           title="Fullscreen"
           onClick={() => void fullscreen()}
           aria-label="Toggle fullscreen photo"
-          className="p-2 text-slate-800"
+          className="p-2 text-[var(--color-text)]"
         >
           <PhotoToolIcon name="fullscreen" />
         </button>
@@ -133,7 +133,7 @@ export function ProjectPhotoCanvas({
           onClick={() => setZoom((value) => Math.max(1, value - 0.5))}
           disabled={zoom === 1}
           aria-label="Zoom out"
-          className="p-2 text-slate-800 disabled:opacity-40"
+          className="p-2 text-[var(--color-text)] disabled:opacity-40"
         >
           <PhotoToolIcon name="minus" />
         </button>
@@ -142,7 +142,7 @@ export function ProjectPhotoCanvas({
           onClick={() => setZoom((value) => Math.min(4, value + 0.5))}
           disabled={zoom === 4}
           aria-label="Zoom in"
-          className="p-2 text-slate-800 disabled:opacity-40"
+          className="p-2 text-[var(--color-text)] disabled:opacity-40"
         >
           <PhotoToolIcon name="plus" />
         </button>
@@ -151,7 +151,7 @@ export function ProjectPhotoCanvas({
           aria-label="Download original"
           href={`${src}?download=1`}
           download={downloadName}
-          className="p-2 text-slate-800"
+          className="p-2 text-[var(--color-text)]"
         >
           <PhotoToolIcon name="download" />
         </a>
@@ -159,7 +159,7 @@ export function ProjectPhotoCanvas({
         {annotationError ? (
           <button
             onClick={() => setLoadAttempt((value) => value + 1)}
-            className="px-2 text-xs text-amber-700"
+            className="px-2 text-xs text-[var(--color-warn)]"
           >
             Retry drawings
           </button>

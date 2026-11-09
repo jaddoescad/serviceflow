@@ -197,7 +197,7 @@ export function ProjectUploadSession({projectId,isLead,open,onOpen,onSummary}: {
         </button>
         <p className="text-xs text-[var(--color-muted)]">Photos up to 25 MB · videos up to 95 MB</p>
         {preparing?<p role="status" className="text-sm">Preparing uploads…</p>:null}
-        {storageError?<p role="alert" className="text-sm text-red-700">{storageError}</p>:null}
+        {storageError?<p role="alert" className="text-sm text-[var(--color-bad)]">{storageError}</p>:null}
         {items.length?<ul className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4" aria-label="Upload queue">{items.map(item=><UploadPhotoTile key={item.id} item={item} onCancel={()=>cancel(item.id)} onRetry={()=>void retry(item)}/>)}</ul>:null}
         {items.length>0?<div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
           <span className="text-sm text-[var(--color-muted)]" aria-live="polite">{complete} uploaded{failed?` · ${failed} failed`:''}</span>

@@ -65,13 +65,13 @@ export function MediaItemMenu({
         ref={menu}
         popover="auto"
         style={position}
-        className="fixed m-0 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-lg"
+        className="fixed m-0 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm text-[var(--color-text)] shadow-lg"
       >
         <a
           href={`/api/jobs/${projectId}/media/${mediaId}?download=1`}
           download
           onClick={() => menu.current?.hidePopover()}
-          className="block rounded px-4 py-2 hover:bg-slate-100"
+          className="block rounded px-4 py-2 hover:bg-[var(--color-hover)]"
         >
           Download
         </a>
@@ -80,7 +80,7 @@ export function MediaItemMenu({
             type="button"
             disabled={coverBusy}
             onClick={() => choose("duplicate")}
-            className="block w-full rounded px-4 py-2 text-left hover:bg-slate-100"
+            className="block w-full rounded px-4 py-2 text-left hover:bg-[var(--color-hover)]"
           >
             Duplicate
           </button>
@@ -104,7 +104,7 @@ export function MediaItemMenu({
                 onBusy(false);
               }
             }}
-            className="block w-full rounded px-4 py-2 text-left hover:bg-slate-100 disabled:opacity-50"
+            className="block w-full rounded px-4 py-2 text-left hover:bg-[var(--color-hover)] disabled:opacity-50"
           >
             {coverBusy ? "Updating cover…" : "Set as Cover Photo"}
           </button>
@@ -113,7 +113,7 @@ export function MediaItemMenu({
           type="button"
           disabled={coverBusy}
           onClick={() => choose("add-tags")}
-          className="block w-full rounded px-4 py-2 text-left hover:bg-slate-100"
+          className="block w-full rounded px-4 py-2 text-left hover:bg-[var(--color-hover)]"
         >
           Tag
         </button>
@@ -121,14 +121,14 @@ export function MediaItemMenu({
           type="button"
           disabled={coverBusy}
           onClick={() => choose("trash")}
-          className="block w-full rounded px-4 py-2 text-left text-red-700 hover:bg-red-50"
+          className="block w-full rounded px-4 py-2 text-left text-[var(--color-bad)] hover:bg-[var(--color-bad-soft)]"
         >
           Move to Trash
         </button>
         {coverMessage ? (
           <p
             role="status"
-            className="border-t border-slate-100 px-4 py-2 text-xs"
+            className="border-t border-[var(--color-border)] px-4 py-2 text-xs"
           >
             {coverMessage}
           </p>

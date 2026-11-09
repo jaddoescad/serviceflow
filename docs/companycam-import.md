@@ -10,7 +10,7 @@ node --experimental-strip-types scripts/sync-companycam.mjs --apply --photos-onl
 
 The default is a dry run. `--report /absolute/path.json` selects a private local
 report; `--max-items N` limits a pilot and `--concurrency N` bounds photo requests
-(default 8, maximum 12). A rerun skips existing source identities. This is a
+(default 2, maximum 12). A rerun skips existing source identities. This is a
 manual one-way import, not a scheduled or two-way sync.
 
 The `import-companycam-documents` Edge Function reads CompanyCam's current

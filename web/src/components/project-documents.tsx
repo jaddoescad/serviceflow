@@ -527,7 +527,7 @@ function RowMenu({ label, items }: { label: string; items: MenuItem[] }) {
   const menu = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const itemClass = (danger?: boolean) =>
-    `block w-full rounded px-4 py-2 text-left hover:bg-slate-100 ${danger ? "text-red-600" : ""}`;
+    `block w-full rounded px-4 py-2 text-left hover:bg-[var(--color-hover)] ${danger ? "text-[var(--color-bad)]" : ""}`;
   return (
     <>
       <button
@@ -554,7 +554,7 @@ function RowMenu({ label, items }: { label: string; items: MenuItem[] }) {
         ref={menu}
         popover="auto"
         style={position}
-        className="fixed m-0 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-lg"
+        className="fixed m-0 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm text-[var(--color-text)] shadow-lg"
       >
         {items.map((item) =>
           item.href ? (
@@ -775,14 +775,14 @@ function DocumentMenu({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
-  const item = "flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-slate-100";
+  const item = "flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[var(--color-hover)]";
   return (
     <div ref={root} className="relative">
       <Button disabled={disabled} aria-expanded={open} onClick={() => setOpen(!open)}>
         <span aria-hidden="true">⊕</span> Document
       </Button>
       {open ? (
-        <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm text-[var(--color-text)] shadow-lg">
           <button
             type="button"
             className={item}

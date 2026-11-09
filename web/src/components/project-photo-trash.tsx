@@ -55,8 +55,8 @@ export function PhotoTrashAction({
         title="Move to trash"
         className={
           compact
-            ? "p-2 text-slate-800 disabled:opacity-50"
-            : "rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium disabled:opacity-50"
+            ? "p-2 text-[var(--color-text)] disabled:opacity-50"
+            : "rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-medium disabled:opacity-50"
         }
       >
         {compact ? (
@@ -71,7 +71,7 @@ export function PhotoTrashAction({
         <div
           role="group"
           aria-label="Confirm photo trash"
-          className={`${compact ? "absolute top-12 left-0 w-64 bg-white text-slate-900 shadow-lg" : "mt-3"} space-y-3 rounded-lg border border-slate-300 p-3`}
+          className={`${compact ? "absolute top-12 left-0 w-64 bg-[var(--color-surface)] text-[var(--color-heading)] shadow-lg" : "mt-3"} space-y-3 rounded-lg border border-[var(--color-border-strong)] p-3`}
         >
           <p className="text-sm">Move this photo to trash?</p>
           <div className="flex gap-3">
@@ -93,7 +93,7 @@ export function PhotoTrashAction({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="mt-2 text-sm text-red-700">
+        <p role="alert" className="mt-2 text-sm text-[var(--color-bad)]">
           {error}
         </p>
       ) : null}

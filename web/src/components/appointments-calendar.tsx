@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition, type CSSProperties, type Re
 import { useRouter } from "next/navigation";
 import { saveAppointment } from "@/lib/actions/appointments";
 import type { CalendarConnection } from "@/lib/actions/calendar";
+import { getDealCustomer, updateCustomer, type DealCustomer } from "@/lib/actions/contacts";
 import { searchProjects } from "@/lib/actions/project-search";
 import {
   APPOINTMENT_KINDS,
@@ -121,6 +122,16 @@ function timeRange(item: Appointment): string {
 }
 
 const label = (item: Appointment) => `${item.projectName ?? "Project"} — ${item.title}`;
+
+/** The deal's customer details, shown and corrected on the appointment form. */
+type CustomerFields = Pick<DealCustomer, "name" | "phone" | "email">;
+type CustomerLoad = { projectId: string; saved: DealCustomer | null; error?: string };
+const CUSTOMER_INPUTS = [
+  { key: "name", label: "Customer", type: "text", maxLength: 160, required: true },
+  { key: "phone", label: "Phone", type: "tel", maxLength: 60, required: false },
+  { key: "email", label: "Email", type: "email", maxLength: 320, required: false },
+] as const;
+const customerFields = ({ name, phone, email }: CustomerFields): CustomerFields => ({ name, phone, email });
 
 function describe(item: Appointment): string {
   const status = item.status === "cancelled" ? " · Cancelled" : item.status === "completed" ? " · Done" : "";
@@ -391,6 +402,9 @@ function AppointmentDialog({
   const [draft, setDraft] = useState(initial);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ id: string; name: string; address: string | null }[]>([]);
+  const [loadedCustomer, setLoadedCustomer] = useState<CustomerLoad | null>(null);
+  const [fields, setFields] = useState<CustomerFields>({ name: "", phone: "", email: "" });
+  const customer = loadedCustomer?.projectId === draft.projectId ? loadedCustomer : null;
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const isNew = initial.isNew;
@@ -426,9 +440,40 @@ function AppointmentDialog({
     };
   }, [query, draft.projectId]);
 
+  useEffect(() => {
+    const projectId = draft.projectId;
+    if (!projectId) return;
+    let cancelled = false;
+    getDealCustomer(projectId).then(
+      (saved) => {
+        if (cancelled) return;
+        setLoadedCustomer({ projectId, saved });
+        if (saved) setFields(customerFields(saved));
+      },
+      () => !cancelled && setLoadedCustomer({ projectId, saved: null, error: "Could not load the customer's details." }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.projectId]);
+
   function submit(status: AppointmentStatus) {
     startTransition(async () => {
       setError("");
+      // Corrections save first, so a confirmation goes to the right phone and email.
+      const saved = customer?.saved;
+      const edited = customerFields({ name: fields.name.trim(), phone: fields.phone.trim(), email: fields.email.trim() });
+      if (saved && CUSTOMER_INPUTS.some(({ key }) => edited[key] !== saved[key].trim())) {
+        const result = await updateCustomer({ ...edited, id: saved.id, address: saved.address, expectedUpdatedAt: saved.updatedAt }).catch(
+          () => ({ error: "Could not save the customer's details. Try again." }),
+        );
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+        // Saved; a retry after a failed booking reads the new version itself.
+        setLoadedCustomer({ projectId: draft.projectId, saved: { ...saved, ...edited, updatedAt: "" } });
+      }
       const [hour, minute] = draft.start.split(":").map(Number);
       const starts = instant(draft.date, hour * 60 + minute);
       const ends = new Date(starts.getTime() + draft.minutes * 60_000);
@@ -515,6 +560,25 @@ function AppointmentDialog({
                   ))}
                 </div>
               ) : null}
+            </div>
+          )}
+          {!draft.projectId || (customer && !customer.saved && !customer.error) ? null : customer?.error ? (
+            <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+              {customer.error}
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_minmax(0,1.4fr)]">
+              {CUSTOMER_INPUTS.map(({ key, label, ...input }) => (
+                <Field key={key} label={label}>
+                  <Input
+                    {...input}
+                    autoComplete="off"
+                    disabled={!customer}
+                    value={customer ? fields[key] : ""}
+                    onChange={(event) => setFields((current) => ({ ...current, [key]: event.target.value }))}
+                  />
+                </Field>
+              ))}
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">

@@ -18,7 +18,7 @@ export function ProjectMediaPreview({
       <span
         role="img"
         aria-label={alt}
-        className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-slate-500"
+        className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-[var(--color-muted)]"
       >
         {video ? "▶ Open video" : "Preview unavailable"}
       </span>

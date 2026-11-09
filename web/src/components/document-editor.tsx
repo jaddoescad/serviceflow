@@ -515,8 +515,8 @@ export function DocumentEditor({
     </button>
   );
 
-  const panel = "absolute left-0 top-full z-30 mt-1 rounded-lg border border-slate-200 bg-white p-1 text-sm text-slate-800 shadow-lg";
-  const item = "flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-slate-100";
+  const panel = "absolute left-0 top-full z-30 mt-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 text-sm text-[var(--color-text)] shadow-lg";
+  const item = "flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-[var(--color-hover)]";
 
   return (
     <div className="-mx-4 -my-5 flex min-h-svh lg:-mx-6 lg:-my-6">
@@ -588,7 +588,7 @@ export function DocumentEditor({
                     <div className={`${panel} left-auto right-0 w-44`}>
                       <button
                         type="button"
-                        className={`${item} text-red-600`}
+                        className={`${item} text-[var(--color-bad)]`}
                         onClick={() => {
                           setMenu(null);
                           setConfirmDelete(true);
@@ -652,7 +652,7 @@ export function DocumentEditor({
                         aria-label={color.label}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() => exec("foreColor", color.value)}
-                        className="h-8 w-8 rounded-md border border-slate-200 hover:scale-105"
+                        className="h-8 w-8 rounded-md border border-[var(--color-border)] hover:scale-105"
                         style={{ background: color.value }}
                       />
                     ))}

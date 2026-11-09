@@ -121,7 +121,7 @@ export function MoveMediaDialog({
       }}
     >
       <div className="space-y-6 p-6">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-[var(--color-muted)]">
           Choose a project for the {selected.length} selected photos and videos.
         </p>
         <div className="relative">
@@ -173,17 +173,17 @@ export function MoveMediaDialog({
                 setExpanded(false);
               }
             }}
-            className="h-12 w-full rounded-lg border border-slate-300 px-3 text-sm focus:border-blue-500 focus:outline-none"
+            className="h-12 w-full rounded-lg border border-[var(--color-border-strong)] px-3 text-sm focus:border-[var(--color-brand)] focus:outline-none"
           />
           {expanded && !busy && !batch.current ? (
             <div
               id="media-destinations"
               role="listbox"
               aria-label="Projects"
-              className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+              className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
             >
               {searching ? (
-                <p role="status" className="p-3 text-sm text-slate-500">
+                <p role="status" className="p-3 text-sm text-[var(--color-muted)]">
                   Finding projects…
                 </p>
               ) : (
@@ -195,11 +195,11 @@ export function MoveMediaDialog({
                     aria-selected={destination?.id === option.id}
                     onClick={() => choose(option)}
                     onMouseEnter={() => setHighlighted(index)}
-                    className={`block w-full px-4 py-3 text-left text-sm ${highlighted === index ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                    className={`block w-full px-4 py-3 text-left text-sm ${highlighted === index ? "bg-[var(--color-brand-soft)]" : "hover:bg-[var(--color-surface-2)]"}`}
                   >
                     <span className="block font-medium">{option.name}</span>
                     {option.address ? (
-                      <span className="mt-1 block text-xs text-slate-500">
+                      <span className="mt-1 block text-xs text-[var(--color-muted)]">
                         {option.address}
                       </span>
                     ) : null}
@@ -207,7 +207,7 @@ export function MoveMediaDialog({
                 ))
               )}
               {!searching && !options.length ? (
-                <p className="p-3 text-sm text-slate-500">
+                <p className="p-3 text-sm text-[var(--color-muted)]">
                   No matching projects
                 </p>
               ) : null}
@@ -215,14 +215,14 @@ export function MoveMediaDialog({
           ) : null}
         </div>
         {error ? (
-          <p role="alert" className="text-sm text-red-700">
+          <p role="alert" className="text-sm text-[var(--color-bad)]">
             {error}
           </p>
         ) : null}
         {batch.current
           ?.filter((entry) => entry.error)
           .map((entry) => (
-            <p key={entry.item.id} className="text-xs text-red-700">
+            <p key={entry.item.id} className="text-xs text-[var(--color-bad)]">
               {entry.item.originalFilename ?? "Media"}: {entry.error}
             </p>
           ))}

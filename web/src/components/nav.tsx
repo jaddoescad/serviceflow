@@ -16,6 +16,7 @@ import { NAV_ICONS } from "@/components/nav-icons";
 import { ReportPending, usePendingHref } from "@/components/navigation-pending";
 import { ProjectSearch } from "@/components/project-search";
 import { SignOutButton } from "@/components/sign-out";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { cn } from "@/components/ui";
 import { useUnreadInbox } from "@/components/unread-inbox";
@@ -325,6 +326,7 @@ export function SidebarHeader({
                   <span className="text-[var(--color-muted)]">{NAV_ICONS["/photos"]}</span>
                   My Photos
                 </Link>
+                <ThemeToggle />
                 <SignOutButton className="w-full justify-start px-2 text-[13px] text-[var(--color-text)]" />
               </>
             )}

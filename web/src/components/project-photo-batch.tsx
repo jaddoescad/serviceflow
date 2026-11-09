@@ -127,7 +127,7 @@ export function ProjectPhotoBatch({
   const batch = pending.current;
   if (!selected.length && !batch)
     return message ? (
-      <p role="status" className="mb-3 text-sm text-teal-700">
+      <p role="status" className="mb-3 text-sm text-[var(--color-good)]">
         {message}
       </p>
     ) : null;
@@ -195,13 +195,13 @@ export function ProjectPhotoBatch({
           ref={menu}
           popover="auto"
           style={menuPosition}
-          className="fixed m-0 max-h-[calc(100dvh-16px)] w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-2 text-sm text-slate-800 shadow-xl"
+          className="fixed m-0 max-h-[calc(100dvh-16px)] w-56 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-2 text-sm text-[var(--color-text)] shadow-xl"
         >
           {selected.length === 1 ? (
             <a
               href={`/api/jobs/${selected[0].ownerProjectId ?? projectId}/media/${selected[0].id}?download=1`}
               download
-              className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+              className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
               onClick={() => {
                 menu.current?.hidePopover();
               }}
@@ -225,7 +225,7 @@ export function ProjectPhotoBatch({
               <button
                 type="submit"
                 disabled={busy || !!batch}
-                className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+                className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
               >
                 Download
               </button>
@@ -235,7 +235,7 @@ export function ProjectPhotoBatch({
             <button
               disabled={busy || !!batch}
               onClick={() => choose("duplicate")}
-              className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+              className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
             >
               Duplicate
             </button>
@@ -243,18 +243,18 @@ export function ProjectPhotoBatch({
           <button
             disabled={busy || !!batch}
             onClick={() => choose("add-tags")}
-            className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+            className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
           >
             Tag
           </button>
           <button
             disabled={busy || !!batch}
             onClick={() => choose("remove-tags")}
-            className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+            className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
           >
             Remove Tags
           </button>
-          <hr className="my-2 border-slate-200" />
+          <hr className="my-2 border-[var(--color-border)]" />
           <button
             disabled={busy || !!batch}
             onClick={() => {
@@ -262,14 +262,14 @@ export function ProjectPhotoBatch({
               setMoving(true);
               onBusy(true);
             }}
-            className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+            className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
           >
             Move
           </button>
           <button
             disabled={busy || !!batch}
             onClick={() => choose("trash")}
-            className="block w-full px-4 py-2 text-left hover:bg-slate-100"
+            className="block w-full px-4 py-2 text-left hover:bg-[var(--color-hover)]"
           >
             Move to Trash
           </button>
@@ -306,7 +306,7 @@ export function ProjectPhotoBatch({
           event.preventDefault();
           dismiss();
         }}
-        className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-md rounded-lg bg-white p-6 text-slate-800 shadow-xl backdrop:bg-black/50"
+        className="fixed inset-0 m-auto w-[calc(100%_-_2rem)] max-w-md rounded-lg bg-[var(--color-surface)] p-6 text-[var(--color-text)] shadow-xl backdrop:bg-black/50"
       >
         <div className="mb-5 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">
@@ -322,7 +322,7 @@ export function ProjectPhotoBatch({
             aria-label="Close photo action"
             disabled={busy}
             onClick={dismiss}
-            className="rounded p-1 text-2xl text-slate-500"
+            className="rounded p-1 text-2xl text-[var(--color-muted)]"
           >
             ×
           </button>
@@ -361,7 +361,7 @@ export function ProjectPhotoBatch({
           <button
             disabled={busy}
             onClick={dismiss}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm"
+            className="rounded-md border border-[var(--color-border-strong)] px-4 py-2 text-sm"
           >
             {batch ? "Finish" : "Cancel"}
           </button>
@@ -394,7 +394,7 @@ export function ProjectPhotoBatch({
           </p>
         ) : null}
         {batch?.some((item) => item.error) ? (
-          <ul className="mt-2 max-h-32 overflow-auto text-sm text-red-700">
+          <ul className="mt-2 max-h-32 overflow-auto text-sm text-[var(--color-bad)]">
             {batch
               .filter((item) => item.error)
               .map((item) => (

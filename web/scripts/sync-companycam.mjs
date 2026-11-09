@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { ORG, sourceUuid, projectMap, sourceUrl, photoUrl, renderPage } from './companycam-import-lib.mjs';
+import { ORG, sourceUuid, projectMap, sourceUrl, photoUrl, renderPage, leadMatchesProject } from './companycam-import-lib.mjs';
 
 const REF = 'bwbckdkouqghdadpkjvn';
 const BASE = `https://${REF}.supabase.co`;
@@ -14,8 +14,12 @@ const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 const option = name => { const index = args.indexOf(name); return index < 0 ? null : args[index + 1]; };
 const limit = Number(option('--max-items') ?? Infinity);
-const concurrency = Math.max(1,Math.min(12,Number(option('--concurrency') ?? 8)));
+const concurrency = Math.max(1,Math.min(12,Number(option('--concurrency') ?? 2)));
 const reportPath = option('--report') ?? '/tmp/serviceflow-companycam-import-report.json';
+const projectFilter = option('--project-id');
+const targetLeadId = option('--target-lead-id');
+const expectedTargetId = option('--expect-target-id');
+if (targetLeadId && !projectFilter) throw new Error('--target-lead-id requires --project-id');
 const report = { startedAt: new Date().toISOString(), apply, documents: [], photos: [], unmatched: [], errors: [] };
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? JSON.parse(execFileSync('supabase', ['projects','api-keys','--project-ref',REF,'--output','json'], {encoding:'utf8',stdio:['ignore','pipe','pipe']})).find(k => k.name === 'service_role').api_key;
 const dbHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type':'application/json' };
@@ -49,6 +53,17 @@ async function source(kind, extra = {}) {
   })).json();
 }
 async function* sourceBatches(kind) {
+  if (kind === 'photos' && projectFilter) {
+    for (let page = 1; ; page++) {
+      const data = await (await request(`${BASE}/functions/v1/import-companycam-videos`, {
+        method:'POST', headers:dbHeaders, body:JSON.stringify({kind:'photos', projectId:projectFilter, page}),
+      })).json();
+      if (!Array.isArray(data.photos)) throw new Error('Invalid project photo response');
+      yield data.photos;
+      if (data.photos.length < 100) return;
+      await sleep(400);
+    }
+  }
   let after;
   const seen = new Set();
   while (true) {
@@ -57,12 +72,14 @@ async function* sourceBatches(kind) {
     if (!data.meta.has_next) return;
     if (!data.meta.next_cursor || seen.has(data.meta.next_cursor)) throw new Error('CompanyCam pagination did not advance');
     after = data.meta.next_cursor; seen.add(after);
+    // Keep sustained reads below CompanyCam's per-minute limit.
+    await sleep(400);
   }
 }
 const norm = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]/g,'');
 const jobs = await allRows('jobs',`org_id=eq.${ORG}&select=id,lead_id,name,companycam_project_ids,address_line_1,formatted_address,postal_code,contacts(name,email,phone)`);
 const linked = projectMap(jobs);
-const leads = await allRows('leads',`org_id=eq.${ORG}&select=id,address,postal_code,metadata,contacts(name,email,phone)`);
+const leads = await allRows('leads',`org_id=eq.${ORG}&select=id,address,postal_code,created_at,metadata,contacts(name,email,phone)`);
 for (const lead of leads) {
   const related = jobs.filter(job => job.lead_id === lead.id);
   const target = related.length === 1 ? related[0] : related.length ? null : {...lead,kind:'lead'};
@@ -71,14 +88,30 @@ for (const lead of leads) {
 }
 const projects = new Map();
 const projectLookups = new Map();
+if (targetLeadId) {
+  const lead = leads.find(row => row.id === targetLeadId);
+  const relatedJobs = jobs.filter(job => job.lead_id === targetLeadId);
+  if (!lead || relatedJobs.length > 1) throw new Error('Target lead is missing or has multiple jobs');
+  const project = (await source('projects',{projectId:projectFilter})).projects.data;
+  if (!leadMatchesProject(lead,project)) throw new Error('Lead identity and creation time do not match source project');
+  if (leads.filter(candidate => leadMatchesProject(candidate,project)).length !== 1) throw new Error('Lead identity is ambiguous');
+  const target = relatedJobs[0] ?? {...lead,kind:'lead'};
+  if (expectedTargetId && target.id !== expectedTargetId) throw new Error('Lead destination changed since inventory');
+  linked.set(projectFilter,target);
+}
 let currentDocuments = [];
 let templates = [];
 const seenStartProjects = new Set();
 async function resolveProject(id) {
   id = String(id);
-  if (linked.has(id)) return linked.get(id);
-  if (!projectLookups.has(id)) projectLookups.set(id,matchProject(id));
-  return projectLookups.get(id);
+  let target;
+  if (linked.has(id)) target = linked.get(id);
+  else {
+    if (!projectLookups.has(id)) projectLookups.set(id,matchProject(id));
+    target = await projectLookups.get(id);
+  }
+  if (expectedTargetId && id === projectFilter && target?.id !== expectedTargetId) throw new Error('Project destination changed since inventory');
+  return target;
 }
 async function matchProject(id) {
   const project = (await source('projects',{projectId:id})).projects.data;
@@ -89,7 +122,7 @@ async function matchProject(id) {
   const candidates = jobs.filter(job => {
     const address = norm(job.address_line_1 || job.formatted_address);
     const sameStreet = street.length >= 6 && (address === street || address.startsWith(street));
-    const sameIdentity = norm(job.name) === norm(project.name) || norm(job.contacts?.name) === norm(contact.name) ||
+    const sameIdentity = (norm(project.name) && norm(job.name) === norm(project.name)) || (norm(contact.name) && norm(job.contacts?.name) === norm(contact.name)) ||
       (contact.email && job.contacts?.email?.toLowerCase() === contact.email.toLowerCase());
     const samePostal = postal && (norm(job.postal_code) === postal || address.includes(postal));
     return sameStreet && sameIdentity && samePostal;
@@ -99,6 +132,7 @@ async function matchProject(id) {
   if (!job) report.unmatched.push({sourceProjectId:id,name:project.name,reason:candidates.length > 1 ? 'ambiguous' : 'no verified job match'});
   return job;
 }
+if (projectFilter && expectedTargetId) await resolveProject(projectFilter);
 async function imageBytes(url) {
   // Validate every redirect; never forward credentials to image hosts.
   for (let count=0; count<5; count++) {
@@ -170,7 +204,12 @@ let cloudflareToken;
 async function r2Ready() {
   cloudflareToken = process.env.CLOUDFLARE_API_TOKEN;
   if (!cloudflareToken) {
-    const config = await readFile(`${homedir()}/Library/Preferences/.wrangler/config/default.toml`,'utf8');
+    let config = await readFile(`${homedir()}/Library/Preferences/.wrangler/config/default.toml`,'utf8');
+    const expires = Date.parse(config.match(/^expiration_time\s*=\s*"([^"]+)"/m)?.[1] ?? '');
+    if (Number.isFinite(expires) && expires - Date.now() < 5 * 60_000) {
+      execFileSync('../cloudflare/project-media-worker/node_modules/.bin/wrangler',['whoami'],{stdio:['ignore','ignore','pipe'],timeout:60000});
+      config = await readFile(`${homedir()}/Library/Preferences/.wrangler/config/default.toml`,'utf8');
+    }
     cloudflareToken = config.match(/^oauth_token\s*=\s*"([^"]+)"/m)?.[1];
   }
   if (!cloudflareToken) throw new Error('Log into Wrangler or set CLOUDFLARE_API_TOKEN');
@@ -180,7 +219,7 @@ async function importPhoto(photo, existing) {
   if (existing.has(String(photo.id))) return;
   const job = await resolveProject(photo.project_id);
   if (!job) return;
-  if (photo.status !== 'active' || photo.internal || photo.processing_status !== 'processed') {
+  if (photo.status !== 'active' || photo.internal || !['processed','duplicate'].includes(photo.processing_status)) {
     report.photos.push({sourceId:photo.id,status:'skipped',reason:'inactive, private or unprocessed'}); return;
   }
   const id = sourceUuid('photo',photo.id);
@@ -193,7 +232,7 @@ async function importPhoto(photo, existing) {
   });
   const row = {
     id,org_id:ORG,[job.kind === 'lead' ? 'lead_id' : 'job_id']:job.id,object_key:objectKey,media_type:'image',mime_type:type,
-    original_filename:`companycam-${photo.id}.${ext}`,byte_size:bytes.length,captured_at:photo.captured_at || photo.created_at,
+    original_filename:`companycam-${photo.id}.${ext}`,byte_size:bytes.length,captured_at:typeof (photo.captured_at || photo.created_at) === 'number' ? new Date((photo.captured_at || photo.created_at) * 1000).toISOString() : (photo.captured_at || photo.created_at),
     uploaded_by:null,source_provider:'companycam',source_id:String(photo.id),source_project_id:String(photo.project_id),
     source_metadata:{creator_id:photo.creator_id,creator_name:photo.creator_name,description:photo.description,hash:photo.hash,photo_url:photo.photo_url,processing_status:photo.processing_status,import_sha256:createHash('sha256').update(bytes).digest('hex')},
   };
@@ -212,6 +251,7 @@ try {
     const batches = snapshot ? [(JSON.parse(await readFile(snapshot,'utf8'))).pages] : sourceBatches('pages');
     for await (const batch of batches) {
       for (const page of batch) {
+        if (projectFilter && String(page.project_id) !== projectFilter) continue;
         if (report.documents.filter(row=>row.status!=='exists').length >= limit) break;
         try { await importPage(page,existing); if (report.documents.length % 25 === 0) { await checkpoint(); console.log(`Documents processed: ${report.documents.length}`); } } catch (error) { report.errors.push({kind:'page',sourceId:page.id,error:error.message}); }
       }
@@ -222,12 +262,15 @@ try {
     if (apply) await r2Ready();
     const existing = new Set((await allRows('job_media',`org_id=eq.${ORG}&source_provider=eq.companycam&select=source_id`)).map(row=>row.source_id));
     outer: for await (const batch of sourceBatches('photos')) {
+      if (report.photos.length >= limit) break;
+      const selected = projectFilter ? batch.filter(photo => String(photo.project_id) === projectFilter) : batch;
       // Keep API traffic bounded and checkpoint after every 50 photos.
-      for (let offset=0;offset<batch.length;offset+=concurrency) {
+      for (let offset=0;offset<selected.length;offset+=concurrency) {
         if (report.photos.length>=limit) break outer;
-        await Promise.all(batch.slice(offset,offset+Math.min(concurrency,limit-report.photos.length)).map(async photo=>{
+        await Promise.all(selected.slice(offset,offset+Math.min(concurrency,limit-report.photos.length)).map(async photo=>{
           try { await importPhoto(photo,existing); } catch(error) { report.errors.push({kind:'photo',sourceId:photo.id,error:error.message}); }
         }));
+        if (apply) await sleep(600);
       }
       await checkpoint(); console.log(`New photos processed: ${report.photos.length}; unmatched projects: ${report.unmatched.length}; errors: ${report.errors.length}`);
     }

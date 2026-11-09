@@ -81,6 +81,64 @@
   --sidebar-border: var(--color-border);
   --sidebar-text: var(--color-text);
   --sidebar-muted: var(--color-muted);
+
+  color-scheme: light;
+}
+
+/* Dark theme. Staff pages default to it; the account menu toggles it and the
+   root layout applies the saved choice before first paint. Customer pages
+   never get data-theme, so they stay light. */
+:root[data-theme="dark"] {
+  --color-bg: #0e0e10;
+  --color-surface: #131315;
+  --color-surface-2: #19191c;
+  --color-hover: #1f1f23;
+  --color-row-hover: #18181b;
+  --color-selected: #2a2a2f;
+
+  --color-border: #26262b;
+  --color-border-strong: #35353b;
+
+  --color-heading: #f4f4f5;
+  --color-text: #dadade;
+  --color-muted: #9d9da6;
+  --color-faint: #6e6e78;
+
+  --color-primary: #f4f4f5;
+  --color-primary-hover: #dadade;
+  --color-primary-ink: #111113;
+
+  --color-brand: #4d82ff;
+  --color-brand-ink: #ffffff;
+  --color-brand-soft: #172241;
+  --color-brand-strong: #86a8ff;
+  --focus-ring: 0 0 0 3px rgba(77, 130, 255, 0.3);
+
+  --tag-gray-bg: #242428;
+  --tag-gray-text: #b6b6bf;
+  --tag-blue-bg: #172241;
+  --tag-blue-text: #8fb0ff;
+  --tag-green-bg: #11291c;
+  --tag-green-text: #5fd08f;
+  --tag-yellow-bg: #2c250f;
+  --tag-yellow-text: #e3c25c;
+  --tag-orange-bg: #321f10;
+  --tag-orange-text: #f0a062;
+  --tag-red-bg: #341718;
+  --tag-red-text: #ff8b8b;
+  --tag-red-border: #5c2729;
+  --tag-purple-bg: #231a3c;
+  --tag-purple-text: #b89cff;
+
+  --chart-grid: #26262b;
+  --chart-axis: #6e6e78;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-pop-lite: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  --sidebar-bg: #0e0e10;
+
+  color-scheme: dark;
 }
 
 html,

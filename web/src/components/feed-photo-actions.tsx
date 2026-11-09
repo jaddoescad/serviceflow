@@ -24,7 +24,7 @@ function ActionLoading({
         event.preventDefault();
         onCancel();
       }}
-      className="fixed inset-0 m-auto w-80 rounded-lg bg-white p-6 text-slate-800 shadow-xl backdrop:bg-black/50"
+      className="fixed inset-0 m-auto w-80 rounded-lg bg-[var(--color-surface)] p-6 text-[var(--color-text)] shadow-xl backdrop:bg-black/50"
     >
       <p role="status" className="text-sm">
         {error || "Loading photo…"}
@@ -32,7 +32,7 @@ function ActionLoading({
       <button
         type="button"
         onClick={onCancel}
-        className="mt-4 text-sm font-semibold text-blue-600"
+        className="mt-4 text-sm font-semibold text-[var(--color-brand-strong)]"
       >
         Cancel
       </button>

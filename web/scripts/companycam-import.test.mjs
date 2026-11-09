@@ -1,6 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sourceUuid, projectMap, sourceUrl, renderPage } from './companycam-import-lib.mjs';
+import { sourceUuid, projectMap, sourceUrl, renderPage, leadMatchesProject } from './companycam-import-lib.mjs';
+
+test('lead matching requires corroborating identity and creation time', () => {
+  const lead = {created_at:'2026-03-30T05:47:26Z',contacts:{email:'person@example.com',phone:'6135550123'}};
+  const project = {name:'Person Example - 2026-03-29T21:47:26.52',created_at:'2026-10-30T23:51:42Z',primary_contact:{name:'Person Example',email:'person@example.com',phone_number:'6135550123'}};
+  assert.equal(leadMatchesProject(lead,project),true);
+  assert.equal(leadMatchesProject(lead,{...project,primary_contact:{...project.primary_contact,phone_number:'6135559999'}}),false);
+  assert.equal(leadMatchesProject({...lead,contacts:{...lead.contacts,phone:'343364431'}},{...project,primary_contact:{...project.primary_contact,phone_number:'343364431'}}),true);
+  assert.equal(leadMatchesProject(lead,{...project,primary_contact:{...project.primary_contact,email:'other@example.com'}}),false);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-10-30T23:51:30Z'},project),true);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-03-29T21:47:26Z'},project),true);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-10-31T03:51:35Z'},project),true);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-03-29T04:00:00Z'},project),true);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-10-30T23:49:00Z'},project),false);
+});
+
+test('lead matching without a source contact requires address, name, and nearby creation time', () => {
+  const lead = {created_at:'2026-08-31T15:56:48Z',address:'305 Cresthaven Dr, Ottawa, ON, K2G 4R5',contacts:{name:'Usha Usha'}};
+  const project = {name:'Usha',created_at:'2026-08-31T19:42:23Z',address:{street_address_1:'305 Cresthaven Dr',city:'Ottawa',postal_code:'K2G 4R5'}};
+  assert.equal(leadMatchesProject(lead,project),true);
+  assert.equal(leadMatchesProject({...lead,address:'306 Cresthaven Dr, Ottawa, ON, K2G 4R5'},project),false);
+  assert.equal(leadMatchesProject({...lead,contacts:{name:'Other Person'}},project),false);
+  assert.equal(leadMatchesProject({...lead,created_at:'2026-08-30T15:56:48Z'},project),false);
+});
 
 test('ambiguous CompanyCam project links cannot choose a destination', () => {
   const map = projectMap([{id:'first',companycam_project_ids:['123']},{id:'second',companycam_project_ids:['123']}]);

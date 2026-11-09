@@ -61,11 +61,11 @@ export function ProjectUploadProvider({children}:{children:React.ReactNode}) {
   return <UploadContext.Provider value={{register,open:setOpenKey,ready:!!userId}}>
     {children}
     {userId?[...queues.entries()].map(([key,queue])=><ProjectUploadSession key={`${userId}/${key}`} projectId={queue.projectId} isLead={queue.isLead} open={key===openKey} onOpen={open=>setOpenKey(open?key:null)} onSummary={summary}/>):null}
-    {!openKey&&active.length?<div className="fixed bottom-5 right-5 z-40 max-w-xs rounded-xl border border-slate-300 bg-white p-3 shadow-lg">
+    {!openKey&&active.length?<div className="fixed bottom-5 right-5 z-40 max-w-xs rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 shadow-lg">
       <button onClick={()=>setExpanded(value=>!value)} className="px-2 py-1 text-sm font-semibold" aria-expanded={expanded} aria-live="polite">{remaining?`${remaining} uploads in progress`:'Uploads'} · {active.length} {active.length===1?'project':'projects'}</button>
-      {expanded?<ul className="mt-2 max-h-56 overflow-auto">{active.map(([key,queue])=><li key={key}><button onClick={()=>setOpenKey(key)} className="block w-full rounded-lg p-2 text-left text-sm hover:bg-slate-100"><span className="block truncate font-medium">{queue.label}</span><span className="text-xs text-slate-500">{queue.summary?.complete}/{queue.summary?.total} uploaded{queue.summary?.failed?` · ${queue.summary.failed} need attention`:''}</span></button></li>)}</ul>:null}
+      {expanded?<ul className="mt-2 max-h-56 overflow-auto">{active.map(([key,queue])=><li key={key}><button onClick={()=>setOpenKey(key)} className="block w-full rounded-lg p-2 text-left text-sm hover:bg-[var(--color-hover)]"><span className="block truncate font-medium">{queue.label}</span><span className="text-xs text-[var(--color-muted)]">{queue.summary?.complete}/{queue.summary?.total} uploaded{queue.summary?.failed?` · ${queue.summary.failed} need attention`:''}</span></button></li>)}</ul>:null}
     </div>:null}
-    {recoveryError?<p role="alert" className="fixed bottom-2 left-2 z-40 max-w-sm rounded border bg-white p-3 text-sm text-red-700">Could not recover saved uploads. Allow browser storage and reload.</p>:null}
+    {recoveryError?<p role="alert" className="fixed bottom-2 left-2 z-40 max-w-sm rounded border bg-[var(--color-surface)] p-3 text-sm text-[var(--color-bad)]">Could not recover saved uploads. Allow browser storage and reload.</p>:null}
   </UploadContext.Provider>;
 }
 

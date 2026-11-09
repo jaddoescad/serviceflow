@@ -35,8 +35,8 @@ export function Switch({
       <span
         aria-hidden="true"
         className={cn(
-          "inline-block h-3.5 w-3.5 rounded-full bg-white shadow-[var(--shadow-pop-lite)] transition-transform",
-          checked ? "translate-x-4" : "translate-x-0.5",
+          "inline-block h-3.5 w-3.5 rounded-full shadow-[var(--shadow-pop-lite)] transition-transform",
+          checked ? "translate-x-4 bg-[var(--color-primary-ink)]" : "translate-x-0.5 bg-white",
         )}
       />
     </button>

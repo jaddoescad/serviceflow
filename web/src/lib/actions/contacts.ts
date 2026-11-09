@@ -45,12 +45,52 @@ export async function searchCustomers(query: string): Promise<CustomerRow[]> {
   return [...customers.values()].slice(0, 8);
 }
 
+export type DealCustomer = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  updatedAt: string;
+};
+
+/** The customer a deal or job belongs to, as the appointment form edits it. */
+export async function getDealCustomer(projectId: string): Promise<DealCustomer | null> {
+  await requireStaff();
+  const supabase = await createClient();
+  const { data: project, error: projectError } = await supabase
+    .from("project_directory")
+    .select("contact_id")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (projectError) throw new Error("Could not load the customer.");
+  if (!project?.contact_id) return null;
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("id,name,email,phone,metadata,updated_at")
+    .eq("id", project.contact_id)
+    .eq("kind", "customer")
+    .maybeSingle();
+  if (error) throw new Error("Could not load the customer.");
+  if (!data) return null;
+  return {
+    id: data.id,
+    name: data.name ?? "",
+    email: data.email ?? "",
+    phone: data.phone ?? "",
+    address: typeof data.metadata?.address === "string" ? data.metadata.address : "",
+    updatedAt: data.updated_at,
+  };
+}
+
 export async function updateCustomer(input: {
   id: string;
   name: string;
   email: string;
   phone: string;
   address: string;
+  /** The version the form was loaded from, so a newer edit is never overwritten. */
+  expectedUpdatedAt?: string;
 }): Promise<{ id?: string; error?: string }> {
   await requireStaff();
   if (
@@ -62,17 +102,21 @@ export async function updateCustomer(input: {
   )
     return { error: "Enter a customer name and check the field lengths." };
   const supabase = await createClient();
-  const { data: current, error: readError } = await supabase
-    .from("contacts")
-    .select("updated_at")
-    .eq("id", input.id)
-    .eq("kind", "customer")
-    .maybeSingle();
-  if (readError || !current)
-    return { error: "Customer could not be loaded. Try again." };
+  let expectedUpdatedAt = input.expectedUpdatedAt;
+  if (!expectedUpdatedAt) {
+    const { data: current, error: readError } = await supabase
+      .from("contacts")
+      .select("updated_at")
+      .eq("id", input.id)
+      .eq("kind", "customer")
+      .maybeSingle();
+    if (readError || !current)
+      return { error: "Customer could not be loaded. Try again." };
+    expectedUpdatedAt = current.updated_at;
+  }
   const { data, error } = await supabase.rpc("update_customer_contact", {
     contact_id: input.id,
-    expected_updated_at: current.updated_at,
+    expected_updated_at: expectedUpdatedAt,
     contact_name: input.name,
     contact_email: input.email,
     contact_phone: input.phone,

@@ -2,6 +2,34 @@ import { createHash } from 'node:crypto';
 import { sanitizeRichText } from '../src/lib/rich-text.ts';
 
 export const ORG = 'fa66dad2-0401-400d-a504-dafba2ebf71b';
+export function leadMatchesProject(lead, project) {
+  const sourceEmail = project.primary_contact?.email?.trim().toLowerCase();
+  const leadEmail = lead.contacts?.email?.trim().toLowerCase();
+  if (!sourceEmail) {
+    const norm = value => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const street = norm(project.address?.street_address_1), city = norm(project.address?.city);
+    const address = norm(lead.address), postal = norm(project.address?.postal_code);
+    const sourceName = norm(project.name), leadName = norm(lead.contacts?.name);
+    const sameName = sourceName && (sourceName === leadName || sourceName + sourceName === leadName);
+    const difference = Math.abs(Date.parse(project.created_at) - Date.parse(lead.created_at));
+    return Boolean(street.length >= 8 && address.startsWith(street) && city.length >= 3 && address.includes(city) && (!postal || address.includes(postal) || norm(lead.postal_code) === postal) && sameName && Number.isFinite(difference) && difference <= 6*60*60*1000);
+  }
+  if (!sourceEmail || sourceEmail !== leadEmail) return false;
+  const directDifference = Math.abs(Date.parse(project.created_at) - Date.parse(lead.created_at));
+  if (Number.isFinite(directDifference) && directDifference <= 60000) return true;
+  const sourcePhone = String(project.primary_contact?.phone_number ?? '').replace(/\D/g,'');
+  const leadPhone = String(lead.contacts?.phone ?? '').replace(/\D/g,'');
+  if (sourcePhone.length >= 7 && sourcePhone === leadPhone && Number.isFinite(directDifference) && Math.abs(directDifference - 4*60*60*1000) <= 60000) return true;
+  const name = String(project.primary_contact?.name ?? '').trim();
+  const title = String(project.name ?? '');
+  const timestamp = name && title.startsWith(`${name} - `) ? Date.parse(`${title.slice(name.length + 3).replace(/Z$/, '')}Z`) : NaN;
+  const difference = Math.abs(Date.parse(lead.created_at) - timestamp);
+  if (sourcePhone.length < 7 || sourcePhone !== leadPhone || !Number.isFinite(difference)) return false;
+  if (difference < 1000 || Math.abs(difference - 4*60*60*1000) < 1000 || Math.abs(difference - 8*60*60*1000) < 1000) return true;
+  const parts = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Toronto',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(new Date(lead.created_at));
+  const values = Object.fromEntries(parts.map(part => [part.type,part.value]));
+  return `${values.year}-${values.month}-${values.day}` === new Date(timestamp).toISOString().slice(0,10) && values.hour === '00' && values.minute === '00' && values.second === '00';
+}
 export function sourceUuid(kind, sourceId) {
   const hash = createHash('sha256').update(`serviceflow:${ORG}:companycam:${kind}:${sourceId}`).digest('hex');
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;

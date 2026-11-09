@@ -110,7 +110,7 @@ export function PhotoDetailsEditor({
       }}
       className="text-sm"
     >
-      <div className="border-b border-slate-200 px-5 pb-5">
+      <div className="border-b border-[var(--color-border)] px-5 pb-5">
         {editing === "tags" ? (
           <div className="space-y-3">
             <PhotoTagPicker
@@ -129,7 +129,7 @@ export function PhotoDetailsEditor({
                 key={tag}
                 disabled={editing !== null}
                 onClick={() => setEditing("tags")}
-                className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700"
+                className="rounded bg-[var(--color-brand-soft)] px-2 py-1 text-xs text-[var(--color-brand-strong)]"
               >
                 {tag}
               </button>
@@ -138,20 +138,20 @@ export function PhotoDetailsEditor({
               type="button"
               disabled={editing !== null}
               onClick={() => setEditing("tags")}
-              className="text-xs font-semibold text-blue-600"
+              className="text-xs font-semibold text-[var(--color-brand-strong)]"
             >
               {saved.tags.length ? "Edit Tags" : "Add Tags"}
             </button>
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between bg-slate-50 px-5 py-2 text-xs font-semibold">
+      <div className="flex items-center justify-between bg-[var(--color-surface-2)] px-5 py-2 text-xs font-semibold">
         <span>Description</span>
         <button
           type="button"
           disabled={editing !== null}
           onClick={() => setEditing("description")}
-          className="text-blue-600 disabled:opacity-40"
+          className="text-[var(--color-brand-strong)] disabled:opacity-40"
         >
           Edit
         </button>
@@ -167,7 +167,7 @@ export function PhotoDetailsEditor({
               disabled={busy || conflict}
               onChange={(event) => setDraft(event.target.value)}
               rows={5}
-              className="w-full resize-y rounded border border-slate-300 p-2"
+              className="w-full resize-y rounded border border-[var(--color-border-strong)] p-2"
             />
             {controls()}
           </div>
@@ -176,19 +176,19 @@ export function PhotoDetailsEditor({
             type="button"
             disabled={editing !== null}
             onClick={() => setEditing("description")}
-            className={`w-full whitespace-pre-wrap text-left text-sm ${saved.description ? "text-slate-700" : "text-slate-400"}`}
+            className={`w-full whitespace-pre-wrap text-left text-sm ${saved.description ? "text-[var(--color-text)]" : "text-[var(--color-faint)]"}`}
           >
             {saved.description || "Add a description…"}
           </button>
         )}
       </div>
       {message ? (
-        <p role="status" className="px-5 pb-3 text-red-700">
+        <p role="status" className="px-5 pb-3 text-[var(--color-bad)]">
           {message}
         </p>
       ) : null}
       {conflict ? (
-        <p className="px-5 pb-3 text-slate-600">
+        <p className="px-5 pb-3 text-[var(--color-muted)]">
           Your draft is still here. Copy it before reloading.
         </p>
       ) : null}
@@ -200,7 +200,7 @@ export function PhotoDetailsEditor({
         <button
           type="submit"
           disabled={busy || !dirty || conflict}
-          className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+          className="rounded bg-[var(--color-brand)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
         >
           {busy ? "Saving…" : "Save"}
         </button>
@@ -208,7 +208,7 @@ export function PhotoDetailsEditor({
           type="button"
           disabled={busy}
           onClick={cancel}
-          className="text-xs text-slate-500"
+          className="text-xs text-[var(--color-muted)]"
         >
           Cancel
         </button>

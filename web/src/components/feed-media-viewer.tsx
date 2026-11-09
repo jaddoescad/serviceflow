@@ -179,7 +179,7 @@ export function FeedMediaViewer({
               }}
             />
           ) : (
-            <p role="status" className="px-5 text-sm text-slate-500">
+            <p role="status" className="px-5 text-sm text-[var(--color-muted)]">
               {error || "Loading details…"}
             </p>
           )}
