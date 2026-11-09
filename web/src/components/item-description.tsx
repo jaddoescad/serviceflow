@@ -134,34 +134,6 @@ export function ItemDescriptionEditor({
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
     >
-      {focused ? (
-        <div
-          role="toolbar"
-          aria-label="Formatting"
-          className="absolute left-0 top-full z-20 mt-1 flex items-center gap-0.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5 shadow-[var(--shadow-pop)]"
-        >
-          {FORMATS.map((format) => (
-            <button
-              key={format.key}
-              type="button"
-              aria-label={format.label}
-              aria-pressed={active.has(format.key)}
-              title={format.label}
-              // Keeps the cursor (and the selection) in the description.
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => apply(format.key)}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[13px] outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]",
-                active.has(format.key)
-                  ? "bg-[var(--color-selected)] text-[var(--color-heading)]"
-                  : "text-[var(--color-muted)]",
-              )}
-            >
-              {format.face}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <div
         ref={field}
         role="textbox"
@@ -189,10 +161,38 @@ export function ItemDescriptionEditor({
           report();
         }}
         className={cn(
-          "item-description item-description-field min-h-7 rounded-[var(--radius-control)] border border-transparent px-2 py-1 outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:bg-[var(--color-surface)] focus:shadow-[var(--focus-ring)]",
+          "item-description item-description-field min-h-7 data-[empty=true]:focus:min-h-20 rounded-[var(--radius-control)] border border-transparent px-2 py-1 outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:bg-[var(--color-surface)] focus:shadow-[var(--focus-ring)]",
           className,
         )}
       />
+      {focused ? (
+        <div
+          role="toolbar"
+          aria-label="Formatting"
+          className="mt-1 inline-flex items-center gap-0.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5"
+        >
+          {FORMATS.map((format) => (
+            <button
+              key={format.key}
+              type="button"
+              aria-label={format.label}
+              aria-pressed={active.has(format.key)}
+              title={format.label}
+              // Keeps the cursor (and the selection) in the description.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => apply(format.key)}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] text-[13px] outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]",
+                active.has(format.key)
+                  ? "bg-[var(--color-selected)] text-[var(--color-heading)]"
+                  : "text-[var(--color-muted)]",
+              )}
+            >
+              {format.face}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {tooLong ? (
         <p role="alert" className="mt-1 px-2 text-xs text-[var(--color-bad)]">
           This description is too long to save. Shorten it a little.
