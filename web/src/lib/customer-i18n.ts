@@ -4,9 +4,11 @@
 
 import type { DocumentKind } from "./proposal-types";
 
-const TIME_ZONE = "America/Toronto";
+/** Used when a company has no time zone on file. */
+const DEFAULT_TIME_ZONE = "America/Toronto";
 
-function formats(locale: string) {
+/** Money and dates as the page shows them; dates in the company's time zone. */
+function formats(locale: string, timeZone: string) {
   return {
     money(cents: number | null | undefined): string {
       if (cents == null || !Number.isFinite(cents)) return "—";
@@ -16,14 +18,14 @@ function formats(locale: string) {
       if (!value) return "—";
       const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value);
       if (Number.isNaN(date.getTime())) return "—";
-      return date.toLocaleDateString(locale, { timeZone: TIME_ZONE, month: "short", day: "numeric", year: "numeric" });
+      return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric", year: "numeric" });
     },
     dateTime(value: string | null | undefined): string {
       if (!value) return "—";
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return "—";
       return date.toLocaleString(locale, {
-        timeZone: TIME_ZONE,
+        timeZone,
         month: "short",
         day: "numeric",
         hour: "numeric",
@@ -39,7 +41,6 @@ function sentence(text: string): string {
 }
 
 const en = {
-  ...formats("en-CA"),
   locale: "en-CA",
   kind: { proposal: "Proposal", change_order: "Change Order", invoice: "Invoice" } satisfies Record<DocumentKind, string>,
   /** "proposal" inside a sentence. */
@@ -66,6 +67,10 @@ const en = {
   expired: (date: string | null) =>
     date ? `This proposal expired on ${date}. Contact us for an updated one.` : "This proposal expired. Contact us for an updated one.",
   callUs: "Call us",
+  questions: "Questions? Call us",
+  website: "Visit website",
+  reviews: "Reviews",
+  followUs: "Follow us",
   menu: "Menu",
   myDocument: (kind: DocumentKind) => `My ${en.noun[kind]}`,
   documents: "Documents",
@@ -73,14 +78,13 @@ const en = {
   onlyDeposit: (amount: string) => `Only ${amount} deposit`,
   approveAndSign: "Approve & Sign",
   downloadPdf: (kind: DocumentKind) => `Download ${en.kind[kind]} PDF`,
-  number: (kind: DocumentKind) => `${en.kind[kind]} #`,
   dateLabel: "Date",
   total: "Total",
   validUntil: "Valid until",
   preparedFor: "Prepared for",
   billTo: "Bill to",
   projectLocation: "Project location",
-  company: "Company",
+  from: "From",
   noteFrom: (company: string) => `Note from ${company}`,
   license: (value: string) => `Licence # ${value}`,
   whyChoose: (company: string) => `Why choose ${company}`,
@@ -92,12 +96,13 @@ const en = {
   select: "Select",
   selected: "Selected",
   packageLabel: (name: string) => `${name} package`,
-  lineItems: "Line Items",
-  addedTo: (kind: DocumentKind) => `Added to ${en.noun[kind]}`,
+  scope: "Scope of work",
+  addOns: "Optional add-ons",
+  addOnsHint: "Add what you'd like. Your total updates as you choose.",
   notIncluded: "Not included",
   add: "Add",
-  remove: "Remove",
-  media: "Media",
+  added: "Added",
+  photos: "Photos",
   viewPhoto: (name: string) => `View ${name}`,
   close: "Close",
   previousPhoto: "Previous photo",
@@ -156,8 +161,6 @@ const en = {
   paidRemaining: (paid: string, remaining: string) => `${paid} paid • ${remaining} remaining`,
   paidInFull: "Paid in full",
   downloadInvoice: "Download Invoice",
-  contact: "Contact",
-  jobAddress: "Job address",
   dueDate: "Due date",
   balance: "Balance",
   items: "Items",
@@ -190,8 +193,8 @@ const en = {
   } as Record<string, string>,
 };
 
-export type DocumentStrings = typeof en;
+export type DocumentStrings = typeof en & ReturnType<typeof formats>;
 
-export function documentStrings(): DocumentStrings {
-  return en;
+export function documentStrings(timeZone?: string | null): DocumentStrings {
+  return { ...en, ...formats(en.locale, timeZone || DEFAULT_TIME_ZONE) };
 }

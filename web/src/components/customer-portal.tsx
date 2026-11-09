@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { requestPortalAppointment, savePortalPreferences } from "@/lib/actions/portal";
 import {
@@ -20,6 +20,7 @@ import {
   type CustomerPortal,
   type VisitWindow,
 } from "@/lib/portal-types";
+import { companyLinks } from "@/lib/proposal-types";
 import { CustomerShell, NavIcon, type ShellNavIcon } from "./customer-shell";
 import { Input, Select, Textarea, cn } from "./ui";
 
@@ -482,6 +483,8 @@ export function CustomerPortalView({
       company={company}
       callLabel={t.call}
       menuLabel={t.menu}
+      links={companyLinks(company)}
+      linkLabels={{ website: t.website, reviews: t.reviews, followUs: t.followUs }}
       nav={nav.map((item) => ({
         key: item.view,
         label: t.nav[item.view],

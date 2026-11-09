@@ -21,6 +21,9 @@ export type CustomerPortal = {
     logoPath: string | null;
     brandColor: string | null;
     timezone: string | null;
+    /** The company's proposal page settings and review link, for the sidebar's links. */
+    page?: unknown;
+    reviewLink?: string | null;
   };
   customer: {
     name: string;

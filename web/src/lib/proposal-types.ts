@@ -132,7 +132,31 @@ export type ProposalPage = {
   stats: { projects: string; years: string; rating: string };
   /** Used when a proposal has no terms of its own. */
   terms: string;
+  /** The company's website and social pages, linked from the sidebar of customer pages. */
+  links: Record<CompanyLink, string>;
+  /** The order of the page's sections between the header and the terms, and which of the company's own are off. */
+  layout: { section: PageSection; hidden: boolean }[];
 };
+
+/** The parts of a customer's proposal page a company arranges, in their usual order. */
+export const PAGE_SECTIONS = [
+  "highlights",
+  "about",
+  "note",
+  "packages",
+  "scope",
+  "addOns",
+  "photos",
+  "investment",
+  "stats",
+] as const;
+export type PageSection = (typeof PAGE_SECTIONS)[number];
+
+/** The company's own sections can be switched off; the rest show whenever the proposal has them. */
+export const HIDEABLE_SECTIONS: readonly PageSection[] = ["highlights", "about", "stats"];
+
+export const COMPANY_LINKS = ["website", "facebook", "instagram", "linkedin", "x"] as const;
+export type CompanyLink = (typeof COMPANY_LINKS)[number];
 
 export const MAX_HIGHLIGHTS = 3;
 export const MAX_ABOUT_POINTS = 12;
@@ -142,10 +166,34 @@ const list = (value: unknown) => (Array.isArray(value) ? value : []);
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
+/** A web address as typed ("example.com" gains https://); anything that is not one is dropped. */
+function webLink(value: unknown): string {
+  const text = clip(value, 300);
+  if (!text || /\s/.test(text)) return "";
+  const url = /^https?:\/\//i.test(text) ? text : `https://${text}`;
+  return /^https?:\/\/[^/]+\.[^/]+/i.test(url) ? url : "";
+}
+
+/** Every section once, in the saved order; ones the saved layout doesn't know go last. */
+function reviveLayout(value: unknown): ProposalPage["layout"] {
+  const layout: ProposalPage["layout"] = [];
+  for (const entry of list(value)) {
+    const saved = record(entry);
+    const section = PAGE_SECTIONS.find((key) => key === saved.section);
+    if (!section || layout.some((placed) => placed.section === section)) continue;
+    layout.push({ section, hidden: saved.hidden === true && HIDEABLE_SECTIONS.includes(section) });
+  }
+  for (const section of PAGE_SECTIONS) {
+    if (!layout.some((placed) => placed.section === section)) layout.push({ section, hidden: false });
+  }
+  return layout;
+}
+
 /** Saved or submitted settings, trimmed to their limits; empty points and cards are dropped. */
 export function reviveProposalPage(value: unknown): ProposalPage {
   const page = record(value);
   const stats = record(page.stats);
+  const links = record(page.links);
   return {
     heroPath: clip(page.heroPath, 500) || null,
     license: clip(page.license, 80),
@@ -167,6 +215,26 @@ export function reviveProposalPage(value: unknown): ProposalPage {
       .slice(0, MAX_ABOUT_POINTS),
     stats: { projects: clip(stats.projects, 20), years: clip(stats.years, 20), rating: clip(stats.rating, 20) },
     terms: clip(page.terms, 20000),
+    links: Object.fromEntries(COMPANY_LINKS.map((key) => [key, webLink(links[key])])) as ProposalPage["links"],
+    layout: reviveLayout(page.layout),
+  };
+}
+
+export type SocialLink = Exclude<CompanyLink, "website">;
+
+/** What a customer page's sidebar links to: only the ones the company has set. */
+export type CompanyLinks = {
+  website: string | null;
+  reviews: string | null;
+  social: { key: SocialLink; href: string }[];
+};
+
+export function companyLinks(company: { page?: unknown; reviewLink?: unknown }): CompanyLinks {
+  const { website, ...social } = reviveProposalPage(company.page).links;
+  return {
+    website: website || null,
+    reviews: webLink(company.reviewLink) || null,
+    social: (Object.keys(social) as SocialLink[]).filter((key) => social[key]).map((key) => ({ key, href: social[key] })),
   };
 }
 
@@ -226,6 +294,9 @@ export type PublicDocument = {
     logoPath: string | null;
     brandColor: string | null;
     page: ProposalPage;
+    /** Where customers leave a review (Settings › Reviews & aftercare). */
+    reviewLink: string | null;
+    timezone: string | null;
   };
   assets: DocumentAsset[];
   companyDocuments: CompanyDocument[];

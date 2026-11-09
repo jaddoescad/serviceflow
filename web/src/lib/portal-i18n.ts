@@ -12,6 +12,9 @@ const en = {
   greeting: (first: string) => (first ? `Hi ${first}` : "Hi"),
   call: "Call",
   menu: "Menu",
+  website: "Visit website",
+  reviews: "Reviews",
+  followUs: "Follow us",
   nav: {
     proposals: "My Proposals",
     changeOrders: "My Change Orders",

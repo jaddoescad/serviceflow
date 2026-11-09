@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { acceptPublicChangeOrder, declinePublicChangeOrder } from "@/lib/actions/billing";
 import { acceptPublicProposal, declinePublicProposal } from "@/lib/actions/proposals";
@@ -19,25 +19,29 @@ import {
   type LineItem,
   type ProposalPackage,
 } from "@/lib/line-items";
-import type {
-  CompanyDocument,
-  DocumentAsset,
-  DocumentKind,
-  HighlightIcon,
-  ProposalPage,
-  PublicDocument,
+import {
+  companyLinks,
+  type CompanyDocument,
+  type DocumentAsset,
+  type DocumentKind,
+  type HighlightIcon,
+  type PageSection,
+  type ProposalPage,
+  type PublicDocument,
 } from "@/lib/proposal-types";
-import { CompanyLogo, CustomerShell, type ShellNavItem } from "./customer-shell";
+import { CompanyLogo, CustomerShell, SIDEBAR_GROUP_LABEL, type ShellNavItem } from "./customer-shell";
 import { PayButton } from "./pay-button";
 import { ProjectModal } from "./project-profile-panel";
 import { Button, Input, Textarea, cn } from "./ui";
 
-// The customer's page follows the DripJobs customer portal the company used
-// before, inside the portal's frame (customer-shell.tsx). Proposals and change
-// orders: a sticky bar at the top with the live total and Approve & Sign, a
-// dark header card, packages and optional items the customer chooses, and a
-// "Your Investment" summary. Invoices: a balance banner with the pay button,
-// a dark header card, items, totals and payments.
+// A customer's document page, inside the customer frame (customer-shell.tsx).
+// The document is one white sheet read top to bottom, its sections divided by
+// hairlines, with every accent in the company's colour. Proposals and change
+// orders keep the price and Approve & Sign in view (a card beside the sheet on
+// wide screens, a bar above it otherwise); the company's own sections
+// (Settings › Customer proposal page) frame the scope, and optional items are
+// added and removed in place. Invoices: a balance banner with the pay button,
+// then the same sheet.
 
 /** Documents the customer signs; invoices are read-only. */
 const RESPONDERS: Partial<
@@ -62,39 +66,27 @@ const RESPONDERS: Partial<
 /** Print rules in globals.css hide these and lay the page out for letter paper. */
 const NO_PRINT = "public-document-noprint";
 
+/** The page's main action, in the company's colour. */
 const APPROVE_BUTTON =
-  "inline-flex items-center justify-center gap-2 rounded-lg bg-[#16a34a] font-semibold text-white shadow-sm outline-none transition-colors hover:bg-[#15803d] focus-visible:shadow-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] font-semibold text-[var(--brand-ink)] shadow-sm outline-none transition-opacity hover:opacity-90 focus-visible:shadow-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-50";
 const OUTLINE_BUTTON =
-  "inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-strong)] bg-white font-medium text-[var(--color-heading)] outline-none transition-colors hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]";
-const FACT_LABEL = "text-[11px] font-semibold uppercase tracking-wider";
+  "inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-white font-medium text-[var(--color-heading)] outline-none transition-colors hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]";
+const LABEL = "text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-muted)]";
+const CARD = "rounded-2xl border border-[var(--color-border)] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.05)]";
+/** A sheet section's padding. */
+const PAD = "px-5 py-6 sm:px-8 sm:py-7";
 
 const ICONS = {
   check: "M20 6 9 17l-5-5",
   checkCircle: "M22 11.1V12a10 10 0 1 1-5.9-9.1M22 4 12 14l-3-3",
-  minusCircle: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM8 12h8",
   plus: "M12 5v14M5 12h14",
-  x: "M18 6 6 18M6 6l12 12",
   tag: "M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8ZM7 7h.01",
   file: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6M8 13h8M8 17h5",
-  list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   layers: "M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5",
-  image:
-    "M21 15V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM21 15l-5-5L5 21",
-  calculator:
-    "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2ZM8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h4",
-  note: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2ZM8 9h8M8 13h5",
-  user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z",
-  pin: "M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12ZM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
-  building:
-    "M4 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M16 9h2a2 2 0 0 1 2 2v11M2 22h20M8 6h4M8 10h4M8 14h4M8 18h4",
-  folder:
-    "M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z",
   phone:
     "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z",
   download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
-  pen: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
-  card: "M2 7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2ZM2 10h20M6 15h4",
   dollar: "M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
   award: "M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM8.2 13.9 7 22l5-3 5 3-1.2-8.1",
   star: "m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2 2 9.3l6.9-1Z",
@@ -154,7 +146,7 @@ function StatusPill({ status, t }: { status: string; t: DocumentStrings }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide",
-        STATUS_PILL_CLASSES[status] ?? "bg-white/15 text-white",
+        STATUS_PILL_CLASSES[status] ?? "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
       )}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -163,48 +155,69 @@ function StatusPill({ status, t }: { status: string; t: DocumentStrings }) {
   );
 }
 
-const TILES = {
-  dark: "bg-[#111113]",
-  green: "bg-[#16a34a]",
-};
+/** The white sheet a document is set on; hairlines divide its sections. */
+function Sheet({ children }: { children: React.ReactNode }) {
+  return (
+    <article
+      className={cn(
+        CARD,
+        "divide-y divide-[var(--color-border)] overflow-hidden print:rounded-none print:border-0 print:shadow-none",
+      )}
+    >
+      {children}
+    </article>
+  );
+}
 
-/** A white card with the dark icon tile and title DripJobs uses for every section. */
+/** One part of the sheet under a small heading. */
 function Section({
-  icon,
   title,
-  tile = "dark",
+  hint,
   children,
   className,
 }: {
-  icon: IconName;
   title: string;
-  tile?: keyof typeof TILES;
+  hint?: string;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-6", className)}>
-      <h2 className="mb-4 flex items-center gap-3 text-[16px] font-semibold text-[var(--color-heading)]">
-        <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white", TILES[tile])}>
-          <Icon name={icon} />
-        </span>
-        {title}
-      </h2>
-      {children}
+    <section className={cn(PAD, className)}>
+      <h2 className={LABEL}>{title}</h2>
+      {hint ? <p className="mt-1 text-[13px] leading-5 text-[var(--color-muted)]">{hint}</p> : null}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-function InfoBlock({ icon, label, children }: { icon: IconName; label: string; children: React.ReactNode }) {
+function Party({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-muted)]">
-        <Icon name={icon} />
-      </span>
-      <div className="min-w-0 text-[13px] leading-5 [overflow-wrap:anywhere]">
-        <div className={cn(FACT_LABEL, "mb-0.5 text-[var(--color-muted)]")}>{label}</div>
-        {children}
-      </div>
+    <div className="min-w-0 text-[13px] leading-5 text-[var(--color-muted)] [overflow-wrap:anywhere]">
+      <div className={cn(LABEL, "mb-1")}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/** Who the document is for, where the work is, and who it is from. */
+function Parties({ doc, t, customerLabel }: { doc: PublicDocument; t: DocumentStrings; customerLabel: string }) {
+  const name = "font-semibold text-[var(--color-heading)]";
+  return (
+    <div className="grid gap-5 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-5 sm:grid-cols-3 sm:px-8">
+      <Party label={customerLabel}>
+        <div className={name}>{doc.customer.name ?? "—"}</div>
+        {doc.customer.email ? <div>{doc.customer.email}</div> : null}
+        {doc.customer.phone ? <div>{doc.customer.phone}</div> : null}
+      </Party>
+      <Party label={t.projectLocation}>
+        <div className={name}>{doc.customer.address ?? "—"}</div>
+      </Party>
+      <Party label={t.from}>
+        <div className={name}>{doc.company.name}</div>
+        {doc.company.page.license ? <div>{t.license(doc.company.page.license)}</div> : null}
+        {doc.company.address ? <div>{doc.company.address}</div> : null}
+        {doc.company.phone ? <div>{doc.company.phone}</div> : null}
+      </Party>
     </div>
   );
 }
@@ -212,128 +225,129 @@ function InfoBlock({ icon, label, children }: { icon: IconName; label: string; c
 const FACT_COLUMNS: Record<number, string> = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-4" };
 
 /**
- * The dark card at the top of every document: the company's letterhead and
- * the status, the document's title, its key facts, then a light strip.
+ * The top of every document: the company's cover photo (when it has one), the
+ * kind and number, the title and status, its key facts, then who it is between.
  */
-function HeaderCard({
+function DocumentHeader({
   doc,
   t,
   status,
   eyebrow,
   title,
-  subtitle,
   action,
   facts,
-  children,
+  cover,
+  customerLabel,
 }: {
   doc: PublicDocument;
   t: DocumentStrings;
   status: string;
-  eyebrow?: string;
+  eyebrow: string;
   title: string;
-  subtitle?: string | null;
-  /** Beside the title, e.g. the invoice's download button. */
+  /** Under the status, e.g. the invoice's download button. */
   action?: React.ReactNode;
   facts: Array<[string, string]>;
-  /** The light strip under the dark part. */
-  children: React.ReactNode;
+  cover?: string | null;
+  customerLabel: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm">
-      <div className="bg-[#0f1115] px-5 py-5 text-white sm:px-6 sm:py-6">
+    <header>
+      {cover ? (
+        <img src={documentAssetUrl(cover)} alt="" className="aspect-[3/1] w-full bg-[var(--color-surface-2)] object-cover" />
+      ) : null}
+      <div className={PAD}>
+        {/* The letterhead: phones and paper have no sidebar to carry the logo. */}
+        <div className="mb-6 hidden items-center gap-3 max-lg:flex print:flex">
+          {doc.company.logoPath ? (
+            <CompanyLogo company={doc.company} className="h-11 w-auto max-w-[180px]" />
+          ) : (
+            <CompanyLogo company={doc.company} className="h-11 w-11 rounded-xl bg-[var(--brand-tint)] text-[15px]" />
+          )}
+          {doc.company.logoPath ? null : (
+            <div className="min-w-0 truncate text-[15px] font-semibold text-[var(--color-heading)]">{doc.company.name}</div>
+          )}
+        </div>
         <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-1.5">
-              <CompanyLogo company={doc.company} className="h-full w-full text-[15px]" />
-            </span>
-            <div className="min-w-0 text-[13px] leading-5">
-              <div className="truncate text-[15px] font-semibold">{doc.company.name}</div>
-              {doc.company.page.license ? (
-                <div className="truncate text-white/60">{t.license(doc.company.page.license)}</div>
-              ) : null}
-              {doc.company.address ? <div className="truncate text-white/60">{doc.company.address}</div> : null}
-              {doc.company.phone ? <div className="truncate text-white/60">{doc.company.phone}</div> : null}
-            </div>
-          </div>
-          <StatusPill status={status} t={t} />
-        </div>
-        <div className="mt-6 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
           <div className="min-w-0">
-            {eyebrow ? <div className={cn(FACT_LABEL, "mb-1 text-white/50")}>{eyebrow}</div> : null}
-            <h1 className="text-[26px] font-bold leading-tight tracking-tight [overflow-wrap:anywhere]">{title}</h1>
-            {subtitle ? <div className="mt-1 text-[14px] text-white/60">{subtitle}</div> : null}
+            <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--brand-text)]">{eyebrow}</div>
+            <h1 className="mt-1.5 text-[28px] font-bold leading-[1.15] tracking-tight text-[var(--color-heading)] [overflow-wrap:anywhere] sm:text-[32px]">
+              {title}
+            </h1>
           </div>
-          {action}
+          <div className="flex shrink-0 flex-col items-end gap-2.5">
+            <StatusPill status={status} t={t} />
+            {action}
+          </div>
         </div>
-        <dl className={cn("mt-5 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/15 pt-4", FACT_COLUMNS[facts.length])}>
+        <dl className={cn("mt-6 grid grid-cols-2 gap-x-6 gap-y-4", FACT_COLUMNS[facts.length])}>
           {facts.map(([label, value]) => (
             <div key={label} className="min-w-0">
-              <dt className={cn(FACT_LABEL, "mb-0.5 text-white/50")}>{label}</dt>
-              <dd className="text-[15px] font-semibold leading-5 tabular-nums [overflow-wrap:anywhere]">{value}</dd>
+              <dt className={LABEL}>{label}</dt>
+              <dd className="mt-1 text-[15px] font-semibold leading-5 tabular-nums text-[var(--color-heading)] [overflow-wrap:anywhere]">
+                {value}
+              </dd>
             </div>
           ))}
         </dl>
       </div>
-      {children}
-    </section>
+      <Parties doc={doc} t={t} customerLabel={customerLabel} />
+    </header>
   );
 }
 
-/** One line on the document: name, quantity and description, its total on the right. */
-function LineCard({
-  item,
+/** What a line says about itself: name, quantity when it isn't one, description. */
+function LineText({ item, t }: { item: LineItem; t: DocumentStrings }) {
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="text-[15px] font-semibold leading-6 text-[var(--color-heading)]">{item.name}</div>
+      {item.quantity !== 1 ? (
+        <div className="text-[13px] tabular-nums text-[var(--color-muted)]">
+          {item.quantity} × {t.money(item.unitPriceCents)}
+        </div>
+      ) : null}
+      {item.description ? (
+        <p className="mt-1 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{item.description}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The document's lines as rows divided by hairlines, each with its total on the right. */
+function LineRows({
+  items,
   t,
-  strip,
   tag,
-  counted = true,
-  className,
 }: {
-  item: LineItem;
+  items: LineItem[];
   t: DocumentStrings;
-  /** A coloured bar across the top (optional items). */
-  strip?: React.ReactNode;
-  /** A small label above the name (the item's package). */
-  tag?: React.ReactNode;
-  counted?: boolean;
-  className?: string;
+  /** A small label above a line's name (its package). */
+  tag?: (item: LineItem) => React.ReactNode;
 }) {
   return (
-    <li className={cn("public-document-line overflow-hidden rounded-xl border bg-white", className)}>
-      {strip}
-      <div className="px-4 py-3.5">
-        {tag}
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 text-[15px] font-semibold leading-6 text-[var(--color-heading)]">{item.name}</div>
-          <div
-            className={cn(
-              "shrink-0 text-[15px] font-semibold leading-6 tabular-nums",
-              counted ? "text-[var(--color-heading)]" : "text-[var(--color-faint)]",
-            )}
-          >
-            {t.money(lineTotalCents(item))}
+    <ul className="-my-4 divide-y divide-[var(--color-border)]">
+      {items.map((item) => (
+        <li key={item.id} className="public-document-line py-4">
+          {tag?.(item)}
+          <div className="flex items-start justify-between gap-6">
+            <LineText item={item} t={t} />
+            <div className="shrink-0 text-[15px] font-semibold leading-6 tabular-nums text-[var(--color-heading)]">
+              {t.money(lineTotalCents(item))}
+            </div>
           </div>
-        </div>
-        {item.quantity !== 1 ? (
-          <div className="text-[13px] tabular-nums text-[var(--color-muted)]">
-            {item.quantity} × {t.money(item.unitPriceCents)}
-          </div>
-        ) : null}
-        {item.description ? (
-          <p className="mt-1 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{item.description}</p>
-        ) : null}
-      </div>
-    </li>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 function FileLinks({ files }: { files: Array<DocumentAsset | CompanyDocument> }) {
   return (
-    <ul className="space-y-1">
+    <ul>
       {files.map((file) => (
         <li key={file.id} className="public-document-file">
           <a
             href={downloadUrl(file)}
-            className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-[13px] text-[var(--color-text)] hover:bg-[var(--color-hover)]"
+            className="flex min-h-10 items-center gap-2.5 rounded-lg px-3 text-[13px] text-[var(--color-text)] outline-none hover:bg-[var(--color-hover)] focus-visible:shadow-[var(--focus-ring)]"
           >
             <Icon name="file" className="text-[var(--color-muted)]" />
             <span className="min-w-0 flex-1 truncate">{file.name}</span>
@@ -345,44 +359,12 @@ function FileLinks({ files }: { files: Array<DocumentAsset | CompanyDocument> })
   );
 }
 
-/** Documents and insurance in the sidebar, each group opening and closing like DripJobs'. */
-function SidebarFiles({
-  icon,
-  label,
-  files,
-}: {
-  icon: IconName;
-  label: string;
-  files: Array<DocumentAsset | CompanyDocument>;
-}) {
-  const [open, setOpen] = useState(true);
+/** A group of files in the sidebar: the document's own, or the company's insurance. */
+function SidebarFiles({ label, files }: { label: string; files: Array<DocumentAsset | CompanyDocument> }) {
   return (
     <div>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex h-10 w-full items-center gap-2.5 rounded-lg px-3 text-[14px] font-medium text-[var(--color-text)] hover:bg-[var(--color-hover)]"
-      >
-        <Icon name={icon} className="text-[var(--color-muted)]" />
-        <span className="flex-1 text-left">{label}</span>
-        <span className="text-xs text-[var(--color-muted)]">{files.length}</span>
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className={cn("h-3.5 w-3.5 text-[var(--color-muted)] transition-transform", !open && "-rotate-90")}
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </button>
-      {open ? (
-        <div className="pl-2">
-          <FileLinks files={files} />
-        </div>
-      ) : null}
+      <div className={cn(SIDEBAR_GROUP_LABEL, "mb-1.5")}>{label}</div>
+      <FileLinks files={files} />
     </div>
   );
 }
@@ -393,12 +375,18 @@ const CURRENT_NAV: Record<DocumentKind, keyof DocumentStrings["nav"]> = {
   invoice: "invoices",
 };
 
-/** The portal's sections, linking back into it; the one for this document's kind is highlighted. */
-function documentNav(doc: PublicDocument, t: DocumentStrings): ShellNavItem[] {
+/**
+ * The portal's sections, linking back into it; the one for this document's
+ * kind is highlighted. A staff preview lists them before the customer's portal
+ * link exists, so the sidebar reads as the customer will see it.
+ */
+function documentNav(doc: PublicDocument, t: DocumentStrings, preview: boolean): ShellNavItem[] {
   const current = CURRENT_NAV[doc.kind];
   // Without a customer contact there is no portal: only this document.
-  if (!doc.portalToken) return [{ key: "document", label: t.myDocument(doc.kind), icon: "file", active: true }];
-  const base = `/portal/${encodeURIComponent(doc.portalToken)}`;
+  if (!doc.portalToken && !preview) {
+    return [{ key: "document", label: t.myDocument(doc.kind), icon: "file", active: true }];
+  }
+  const base = doc.portalToken ? `/portal/${encodeURIComponent(doc.portalToken)}` : null;
   const sections: Array<[keyof DocumentStrings["nav"], ShellNavItem["icon"]]> = [
     ["proposals", "file"],
     ...(doc.kind === "change_order" ? [["changeOrders", "swap"] as [keyof DocumentStrings["nav"], ShellNavItem["icon"]]] : []),
@@ -412,7 +400,7 @@ function documentNav(doc: PublicDocument, t: DocumentStrings): ShellNavItem[] {
     label: t.nav[key],
     icon,
     active: key === current,
-    href: `${base}?view=${key}`,
+    href: base ? `${base}?view=${key}` : undefined,
   }));
 }
 
@@ -606,6 +594,11 @@ function SignaturePad({ t, onChange }: { t: DocumentStrings; onChange: (image: s
   );
 }
 
+/** In a staff preview the dialogs open so staff can see them, with their action off. */
+function PreviewNote() {
+  return <p className="text-xs text-[var(--color-muted)]">Preview: your customer approves or declines from their own link.</p>;
+}
+
 function DialogFooter({ children }: { children: React.ReactNode }) {
   return (
     <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] bg-white px-5 py-3">
@@ -618,38 +611,44 @@ function DialogFooter({ children }: { children: React.ReactNode }) {
 function ApproveDialog({
   doc,
   t,
+  terms,
   totalCents,
   depositDue,
   packageName,
   pending,
+  locked,
   error,
   onCancel,
   onApprove,
 }: {
   doc: PublicDocument;
   t: DocumentStrings;
+  /** The proposal's own terms, or the company's. */
+  terms: string;
   totalCents: number;
   depositDue: number;
   packageName: string | null;
   pending: boolean;
+  /** A staff preview: the dialog shows, approving is off. */
+  locked: boolean;
   error: string;
   onCancel: () => void;
   onApprove: (input: { signer: string; signature: string }) => void;
 }) {
   const [signer, setSigner] = useState(doc.customer.name ?? "");
   const [signature, setSignature] = useState<string | null>(null);
-  const [agreed, setAgreed] = useState(!doc.terms);
+  const [agreed, setAgreed] = useState(!terms);
   const ready = !!signer.trim() && !!signature && agreed;
   return (
     <ProjectModal title={t.approveTitle(doc.kind)} onClose={() => !pending && onCancel()}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (ready && signature) onApprove({ signer: signer.trim(), signature });
+          if (ready && signature && !locked) onApprove({ signer: signer.trim(), signature });
         }}
       >
         <div className="space-y-4 p-5">
-          <dl className="divide-y divide-[var(--color-border)] rounded-xl bg-[#f8fafc] px-4">
+          <dl className="divide-y divide-[var(--color-border)] rounded-xl bg-[var(--color-surface-2)] px-4">
             {packageName ? (
               <div className="flex items-center justify-between gap-3 py-3">
                 <dt className="text-sm text-[var(--color-muted)]">{t.package}</dt>
@@ -663,23 +662,23 @@ function ApproveDialog({
             {depositDue ? (
               <div className="flex items-center justify-between py-3">
                 <dt className="text-sm font-semibold text-[var(--color-heading)]">{t.depositRequired}</dt>
-                <dd className="text-lg font-bold tabular-nums text-[#16a34a]">{t.money(depositDue)}</dd>
+                <dd className="text-lg font-bold tabular-nums text-[var(--brand-text)]">{t.money(depositDue)}</dd>
               </div>
             ) : null}
           </dl>
 
-          {doc.terms ? (
+          {terms ? (
             <div className="space-y-2">
               <div className="text-sm font-semibold text-[var(--color-heading)]">{t.termsTitle}</div>
-              <p className="max-h-28 overflow-y-auto whitespace-pre-line rounded-xl bg-[#f8fafc] px-3 py-2.5 text-[13px] leading-5 text-[var(--color-muted)]">
-                {doc.terms}
+              <p className="max-h-28 overflow-y-auto whitespace-pre-line rounded-xl bg-[var(--color-surface-2)] px-3 py-2.5 text-[13px] leading-5 text-[var(--color-muted)]">
+                {terms}
               </p>
-              <label className="flex items-start gap-2.5 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2.5 text-[13px] text-[#1e3a8a]">
+              <label className="flex items-start gap-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-[13px] text-[var(--color-text)]">
                 <input
                   type="checkbox"
                   checked={agreed}
                   onChange={(event) => setAgreed(event.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-[#2563eb]"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--brand-accent)]"
                 />
                 {t.acceptTerms}
               </label>
@@ -704,15 +703,16 @@ function ApproveDialog({
           </div>
 
           <p className="text-xs leading-5 text-[var(--color-muted)]">
-            {t.bySigning(doc.kind, t.money(totalCents), !!doc.terms)}
+            {t.bySigning(doc.kind, t.money(totalCents), !!terms)}
           </p>
+          {locked ? <PreviewNote /> : null}
           <ErrorText message={error} />
         </div>
         <DialogFooter>
           <Button type="button" variant="secondary" disabled={pending} onClick={onCancel} className="h-9 px-4">
             {t.cancel}
           </Button>
-          <button type="submit" disabled={pending || !ready} className={cn(APPROVE_BUTTON, "h-9 px-4 text-[13px]")}>
+          <button type="submit" disabled={pending || !ready || locked} className={cn(APPROVE_BUTTON, "h-9 px-4 text-[13px]")}>
             <Icon name="checkCircle" />
             {pending ? t.approving : t.approve}
           </button>
@@ -726,6 +726,7 @@ function DeclineDialog({
   kind,
   t,
   pending,
+  locked,
   error,
   onCancel,
   onDecline,
@@ -733,6 +734,7 @@ function DeclineDialog({
   kind: DocumentKind;
   t: DocumentStrings;
   pending: boolean;
+  locked: boolean;
   error: string;
   onCancel: () => void;
   onDecline: (reason: string) => void;
@@ -752,13 +754,14 @@ function DeclineDialog({
           onChange={(event) => setReason(event.target.value)}
           className="w-full px-3 py-2"
         />
+        {locked ? <PreviewNote /> : null}
         <ErrorText message={error} />
       </div>
       <DialogFooter>
         <Button type="button" variant="secondary" disabled={pending} onClick={onCancel}>
           {t.cancel}
         </Button>
-        <Button type="button" variant="danger" disabled={pending} onClick={() => onDecline(reason)}>
+        <Button type="button" variant="danger" disabled={pending || locked} onClick={() => onDecline(reason)}>
           {pending ? t.declining : t.declineTitle(kind)}
         </Button>
       </DialogFooter>
@@ -898,9 +901,9 @@ function TotalLine({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-3 px-3 py-2", className)}>
+    <div className={cn("flex items-center justify-between gap-4", className)}>
       <dt>{label}</dt>
-      <dd className="font-semibold tabular-nums">{value}</dd>
+      <dd className="font-medium tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -915,12 +918,12 @@ function SignableBody({
   doc: PublicDocument;
   token: string;
   t: DocumentStrings;
-  /** Staff's Customer view: the customer's choices work, approving and declining don't. */
+  /** Staff's Customer view: everything opens and the choices work, but nothing is sent. */
   preview: boolean;
 }) {
   const router = useRouter();
-  const respond = preview ? undefined : RESPONDERS[doc.kind];
-  const open = doc.status === "sent" && !doc.expired && (preview || !!respond);
+  const respond = RESPONDERS[doc.kind];
+  const open = doc.status === "sent" && !doc.expired && !!respond;
   const packages = doc.packages ?? [];
   const [packageId, setPackageId] = useState(() => chosenPackageId(packages, doc.selectedPackageId));
   const [selected, setSelected] = useState(
@@ -965,17 +968,19 @@ function SignableBody({
           cents: doc.depositPercent == null && doc.depositCents ? doc.depositCents : null,
         })
       : 0;
+  const depositLabel = t.depositToStart(doc.depositPercent != null ? Number(doc.depositPercent) : null);
   // The company's own sections (Settings › Customer proposal page) frame proposals only.
   const page = kind === "proposal" ? doc.company.page : null;
   const terms = doc.terms || page?.terms || "";
   const banner = doc.expired ? null : t.banner[doc.status];
   const shownItems = items.filter((item) => !item.packageId || item.packageId === activePackageId);
-  const hasSidebarFiles = files.length > 0 || doc.companyDocuments.length > 0;
+  const scope = shownItems.filter((item) => !isAddOn(item));
+  const addOns = shownItems.filter(isAddOn);
+  const totalLabel = kind === "proposal" ? t.projectTotal : t.total;
   const facts: Array<[string, string]> = [
-    ...(doc.number ? [[t.number(kind), doc.number] as [string, string]] : []),
     [t.dateLabel, doc.sentAt ? t.date(doc.sentAt) : "—"],
-    [t.total, t.money(totals.totalCents)],
     ...(doc.validUntil ? [[t.validUntil, t.date(doc.validUntil)] as [string, string]] : []),
+    [t.total, t.money(totals.totalCents)],
   ];
 
   function submit(action: () => Promise<ActionResult>, fallback: string) {
@@ -999,197 +1004,113 @@ function SignableBody({
     setSelected(next);
   }
 
-  return (
-    <>
-      <div className={cn("sticky top-16 z-20 -mx-4 bg-[#f3f4f6] px-4 pb-1 pt-4 sm:-mx-6 sm:px-6", NO_PRINT)}>
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-[var(--color-border)] bg-white py-2.5 pl-4 pr-2.5 shadow-sm">
-          <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-medium leading-4 text-[var(--color-muted)]">
-              {kind === "proposal" ? t.projectTotal : t.total}
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span className="text-[19px] font-bold leading-7 tabular-nums text-[var(--color-heading)]">
-                {t.money(totals.totalCents)}
-              </span>
-              {open && deposit ? (
-                <span className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md border border-[#bbf7d0] bg-[#f0fdf4] px-1.5 text-xs font-semibold text-[#15803d]">
-                  <Icon name="tag" className="h-3 w-3" />
-                  {t.onlyDeposit(t.money(deposit))}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className={cn("flex items-center gap-2", open && "w-full sm:w-auto")}>
-            {open ? (
-              <button
-                type="button"
-                className={cn(APPROVE_BUTTON, "h-10 flex-1 px-4 text-[14px] sm:flex-none")}
-                onClick={() => {
-                  setError("");
-                  setDialog("approve");
-                }}
-              >
-                <Icon name="checkCircle" />
-                {t.approveAndSign}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              aria-label={t.downloadPdf(kind)}
-              title={t.downloadPdf(kind)}
-              onClick={() => void printDocument()}
-              className={cn(OUTLINE_BUTTON, "h-10 px-3 text-[13px]")}
-            >
-              <Icon name="download" />
-              <span className="hidden sm:inline">{t.downloadPdf(kind)}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+  function ask(next: "approve" | "decline") {
+    setError("");
+    setDialog(next);
+  }
 
-      {doc.status === "accepted" ? <ApprovedPanel doc={doc} token={token} t={t} depositDue={deposit} /> : null}
-      {doc.expired ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[13px] font-medium text-[#9a3412]">
-          <p>{t.expired(doc.validUntil ? t.date(doc.validUntil) : null)}</p>
-          {doc.company.phone ? (
-            <a href={`tel:${doc.company.phone}`} className={cn(OUTLINE_BUTTON, "h-8 px-3 text-[13px]", NO_PRINT)}>
-              <Icon name="phone" className="h-3.5 w-3.5" />
-              {t.callUs}
-            </a>
-          ) : null}
-        </section>
-      ) : null}
-      {banner ? (
-        <p
-          className={cn(
-            "rounded-2xl border px-4 py-3 text-[13px] font-medium",
-            doc.status === "declined"
-              ? "border-[#fecaca] bg-[#fef2f2] text-[#991b1b]"
-              : "border-[var(--color-border)] bg-white text-[var(--color-text)]",
-          )}
-        >
-          {banner}
-        </p>
-      ) : null}
-
-      <HeaderCard
-        doc={doc}
-        t={t}
-        status={doc.expired ? "expired" : doc.status}
-        eyebrow={t.kind[kind]}
-        title={doc.name}
-        facts={facts}
+  /** What each section of the page shows; the company's layout (Settings) decides their order. */
+  const sections: Record<PageSection, React.ReactNode> = {
+    highlights: page ? <Highlights cards={page.highlights} /> : null,
+    about: page ? <WhyChooseUs page={page} company={doc.company.name} t={t} /> : null,
+    note: <IntroNote doc={doc} t={t} />,
+    packages: packages.length ? (
+      <Section
+        title={t.choosePackage}
+        hint={open ? t.choosePackageHint : undefined}
+        className="public-document-keep"
       >
-        <div className="grid gap-4 bg-[#f8fafc] px-5 py-4 sm:grid-cols-[1.25fr_1fr_1fr] sm:px-6">
-          <InfoBlock icon="user" label={t.preparedFor}>
-            <div className="font-semibold text-[var(--color-heading)]">{doc.customer.name ?? "—"}</div>
-            {doc.customer.email ? <div className="text-[var(--color-muted)]">{doc.customer.email}</div> : null}
-            {doc.customer.phone ? <div className="text-[var(--color-muted)]">{doc.customer.phone}</div> : null}
-          </InfoBlock>
-          <InfoBlock icon="pin" label={t.projectLocation}>
-            <div className="font-semibold text-[var(--color-heading)]">{doc.customer.address ?? "—"}</div>
-          </InfoBlock>
-          <InfoBlock icon="building" label={t.company}>
-            <div className="font-semibold text-[var(--color-heading)]">{doc.company.name}</div>
-            {doc.company.address ? <div className="text-[var(--color-muted)]">{doc.company.address}</div> : null}
-            {doc.company.phone ? <div className="text-[var(--color-muted)]">{doc.company.phone}</div> : null}
-          </InfoBlock>
-        </div>
-        {page?.heroPath ? (
-          <div className="p-4 sm:p-5">
-            <img
-              src={documentAssetUrl(page.heroPath)}
-              alt=""
-              className="aspect-[3/1] w-full rounded-xl bg-[var(--color-surface-2)] object-cover"
-            />
-          </div>
-        ) : null}
-      </HeaderCard>
-
-      {page ? <Highlights cards={page.highlights} /> : null}
-      {page ? <WhyChooseUs page={page} company={doc.company.name} t={t} /> : null}
-      <IntroNote doc={doc} t={t} />
-
-      {packages.length ? (
-        <Section icon="layers" title={t.choosePackage} className="public-document-keep">
-          {open ? <p className={cn("-mt-2 mb-3 text-[13px] text-[var(--color-muted)]", NO_PRINT)}>{t.choosePackageHint}</p> : null}
-          <PackageCards
-            packages={packages}
-            items={items}
-            activeId={activePackageId}
-            open={open}
-            t={t}
-            onSelect={setPackageId}
-          />
-        </Section>
-      ) : null}
-
-      <Section icon="list" title={t.lineItems}>
-        <ul className="space-y-3">
-          {shownItems.map((item) => {
-            const counted = isIncluded(item);
-            const addOn = isAddOn(item);
+        <PackageCards
+          packages={packages}
+          items={items}
+          activeId={activePackageId}
+          open={open}
+          t={t}
+          onSelect={setPackageId}
+        />
+      </Section>
+    ) : null,
+    scope: scope.length ? (
+      <Section title={t.scope}>
+        <LineRows
+          items={scope}
+          t={t}
+          tag={(item) => {
             const pack = item.packageId ? packages.find((candidate) => candidate.id === item.packageId) : null;
+            return pack ? (
+              <div className="mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-[var(--brand-text)]">
+                <Icon name="layers" className="h-3.5 w-3.5" />
+                {t.packageLabel(pack.name)}
+              </div>
+            ) : null;
+          }}
+        />
+      </Section>
+    ) : null,
+    addOns: addOns.length ? (
+      <Section title={t.addOns} hint={open ? t.addOnsHint : undefined}>
+        <ul className="space-y-2.5">
+          {addOns.map((item) => {
+            const added = isIncluded(item);
             return (
-              <LineCard
+              <li
                 key={item.id}
-                item={item}
-                t={t}
-                counted={counted}
                 className={cn(
-                  !addOn && "border-[var(--color-border)]",
-                  addOn && counted && "border-[#86efac]",
-                  addOn && !counted && "border-dashed border-[#fdba74]",
+                  "public-document-line flex items-center gap-4 rounded-xl border px-4 py-3.5 transition-colors",
+                  added
+                    ? "border-[var(--brand-accent)] bg-[var(--brand-tint)]"
+                    : "border-[var(--color-border-strong)]",
                 )}
-                tag={
-                  pack ? (
-                    <div className="mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-[var(--brand-accent)]">
-                      <Icon name="layers" className="h-3.5 w-3.5" />
-                      {t.packageLabel(pack.name)}
-                    </div>
-                  ) : null
-                }
-                strip={
-                  addOn ? (
-                    <div
+              >
+                <LineText item={item} t={t} />
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <div
+                    className={cn(
+                      "text-[15px] font-semibold leading-6 tabular-nums",
+                      added ? "text-[var(--color-heading)]" : "text-[var(--color-muted)]",
+                    )}
+                  >
+                    {added ? "" : "+ "}
+                    {t.money(lineTotalCents(item))}
+                  </div>
+                  {open ? (
+                    <button
+                      type="button"
+                      aria-pressed={added}
+                      onClick={() => toggle(item.id)}
                       className={cn(
-                        "flex min-h-10 items-center justify-between gap-2 px-4 text-xs font-semibold",
-                        counted ? "bg-[#f0fdf4] text-[#15803d]" : "bg-[#fff7ed] text-[#c2410c]",
+                        "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
+                        NO_PRINT,
+                        added
+                          ? "bg-[var(--brand-accent)] text-[var(--brand-ink)]"
+                          : "border border-[var(--color-border-strong)] bg-white text-[var(--color-heading)] hover:bg-[var(--color-hover)]",
                       )}
                     >
-                      <span className="flex items-center gap-1.5">
-                        <Icon name={counted ? "checkCircle" : "minusCircle"} className="h-3.5 w-3.5" />
-                        {counted ? t.addedTo(kind) : t.notIncluded}
-                      </span>
-                      {open ? (
-                        <button
-                          type="button"
-                          onClick={() => toggle(item.id)}
-                          className={cn(
-                            "inline-flex h-7 items-center gap-1 rounded-md px-2.5 outline-none transition-colors focus-visible:shadow-[var(--focus-ring)]",
-                            counted
-                              ? "border border-[#86efac] bg-white text-[#15803d] hover:bg-[#f0fdf4]"
-                              : "bg-[#f97316] text-white hover:bg-[#ea580c]",
-                            NO_PRINT,
-                          )}
-                        >
-                          <Icon name={counted ? "x" : "plus"} className="h-3 w-3" />
-                          {counted ? t.remove : t.add}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null
-                }
-              />
+                      <Icon name={added ? "check" : "plus"} className="h-3.5 w-3.5" />
+                      {added ? t.added : t.add}
+                    </button>
+                  ) : (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 text-xs font-semibold",
+                        added ? "text-[var(--brand-text)]" : "text-[var(--color-muted)]",
+                      )}
+                    >
+                      {added ? <Icon name="check" className="h-3 w-3" /> : null}
+                      {added ? t.added : t.notIncluded}
+                    </span>
+                  )}
+                </div>
+              </li>
             );
           })}
         </ul>
       </Section>
-
-      <MediaAndFiles doc={doc} t={t} photos={photos} files={files} show={hasSidebarFiles} onView={setViewing} />
-
-      <Section icon="calculator" title={t.yourInvestment} className="public-document-keep">
-        <dl className="public-document-totals space-y-1 text-sm text-[var(--color-heading)]">
+    ) : null,
+    photos: <Photos photos={photos} t={t} onView={setViewing} />,
+    investment: (
+      <Section title={t.yourInvestment} className="public-document-keep">
+        <dl className="public-document-totals space-y-2.5 text-[14px] text-[var(--color-text)]">
           {baseCents || !activePackage ? <TotalLine label={t.lineItemsTotal} value={t.money(baseCents)} /> : null}
           {activePackage ? (
             <TotalLine
@@ -1197,18 +1118,7 @@ function SignableBody({
               value={t.money(packageCents(items, activePackage.id))}
             />
           ) : null}
-          {upgradesCents ? (
-            <TotalLine
-              label={
-                <span className="flex items-center gap-1.5">
-                  <Icon name="checkCircle" className="h-3.5 w-3.5" />
-                  {t.optionalUpgrades}
-                </span>
-              }
-              value={t.money(upgradesCents)}
-              className="rounded-lg border border-[#bbf7d0] bg-[#f0fdf4] font-semibold text-[#15803d]"
-            />
-          ) : null}
+          {upgradesCents ? <TotalLine label={t.optionalUpgrades} value={t.money(upgradesCents)} /> : null}
           {totals.discountCents ? (
             <TotalLine
               label={t.discount(doc.discount?.percent ?? null)}
@@ -1217,76 +1127,218 @@ function SignableBody({
             />
           ) : null}
           <TotalLine label={t.tax(doc.taxRatePercent)} value={t.money(totals.taxCents)} />
-          {deposit ? (
-            <TotalLine
-              label={t.depositToStart(doc.depositPercent != null ? Number(doc.depositPercent) : null)}
-              value={t.money(deposit)}
-              className="rounded-lg bg-[#eff6ff] font-semibold text-[#1d4ed8]"
-            />
-          ) : null}
         </dl>
-        <div className="mt-3 flex items-end justify-between gap-4 rounded-xl bg-black px-4 py-3.5 text-white">
-          <div>
-            <div className="text-xs text-white/60">{kind === "proposal" ? t.projectTotal : t.total}</div>
-            <div className="text-2xl font-bold tabular-nums">{t.money(totals.totalCents)}</div>
+        <div className="mt-4 flex items-end justify-between gap-4 border-t border-[var(--color-border)] pt-4">
+          <div className="text-[15px] font-semibold text-[var(--color-heading)]">{totalLabel}</div>
+          <div className="text-[30px] font-bold leading-none tracking-tight tabular-nums text-[var(--color-heading)]">
+            {t.money(totals.totalCents)}
           </div>
-          {deposit ? (
-            <div className="text-right">
-              <div className="text-xs text-white/60">{t.balanceAtCompletion}</div>
-              <div className="text-lg font-bold tabular-nums">{t.money(totals.totalCents - deposit)}</div>
+        </div>
+        {deposit ? (
+          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-[var(--brand-tint)] px-4 py-3.5">
+              <dt className={cn(LABEL, "text-[var(--brand-text)]")}>{depositLabel}</dt>
+              <dd className="mt-1 text-[20px] font-bold tabular-nums text-[var(--color-heading)]">
+                {t.money(deposit)}
+              </dd>
             </div>
+            <div className="rounded-xl bg-[var(--color-surface-2)] px-4 py-3.5">
+              <dt className={LABEL}>{t.balanceAtCompletion}</dt>
+              <dd className="mt-1 text-[20px] font-bold tabular-nums text-[var(--color-heading)]">
+                {t.money(totals.totalCents - deposit)}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </Section>
+    ),
+    stats: page ? <Stats stats={page.stats} t={t} /> : null,
+  };
+
+  const approveButton = (className: string) => (
+    <button type="button" className={cn(APPROVE_BUTTON, className)} onClick={() => ask("approve")}>
+      <Icon name="checkCircle" />
+      {t.approveAndSign}
+    </button>
+  );
+
+  return (
+    <>
+      <div className="xl:flex xl:items-start xl:gap-8 xl:pt-6">
+        <div className="min-w-0 flex-1 space-y-4">
+          {/* Below the widest screens the price and Approve & Sign ride along in this bar; there, in the card beside the sheet. */}
+          <div
+            className={cn(
+              "sticky top-16 z-20 -mx-4 bg-[var(--page-bg)] px-4 pb-1 pt-4 sm:-mx-6 sm:px-6 xl:hidden",
+              NO_PRINT,
+            )}
+          >
+            <div className={cn(CARD, "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 pl-4 pr-2.5")}>
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-medium leading-4 text-[var(--color-muted)]">{totalLabel}</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-[19px] font-bold leading-7 tabular-nums text-[var(--color-heading)]">
+                    {t.money(totals.totalCents)}
+                  </span>
+                  {open && deposit ? (
+                    <span className="inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-md bg-[var(--brand-tint)] px-1.5 text-xs font-semibold text-[var(--brand-text)]">
+                      <Icon name="tag" className="h-3 w-3" />
+                      {t.onlyDeposit(t.money(deposit))}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div className={cn("flex items-center gap-2", open && "w-full sm:w-auto")}>
+                {open ? approveButton("h-10 flex-1 px-4 text-[14px] sm:flex-none") : null}
+                <button
+                  type="button"
+                  aria-label={t.downloadPdf(kind)}
+                  title={t.downloadPdf(kind)}
+                  onClick={() => void printDocument()}
+                  className={cn(OUTLINE_BUTTON, "h-10 px-3 text-[13px]")}
+                >
+                  <Icon name="download" />
+                  <span className="hidden sm:inline">{t.downloadPdf(kind)}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {doc.status === "accepted" ? <ApprovedPanel doc={doc} token={token} t={t} depositDue={deposit} /> : null}
+          {doc.expired ? (
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] px-4 py-3 text-[13px] font-medium text-[#9a3412]">
+              <p>{t.expired(doc.validUntil ? t.date(doc.validUntil) : null)}</p>
+              {doc.company.phone ? (
+                <a href={`tel:${doc.company.phone}`} className={cn(OUTLINE_BUTTON, "h-8 px-3 text-[13px]", NO_PRINT)}>
+                  <Icon name="phone" className="h-3.5 w-3.5" />
+                  {t.callUs}
+                </a>
+              ) : null}
+            </section>
+          ) : null}
+          {banner ? (
+            <p
+              className={cn(
+                "rounded-2xl border px-4 py-3 text-[13px] font-medium",
+                doc.status === "declined"
+                  ? "border-[#fecaca] bg-[#fef2f2] text-[#991b1b]"
+                  : "border-[var(--color-border)] bg-white text-[var(--color-text)]",
+              )}
+            >
+              {banner}
+            </p>
+          ) : null}
+
+          <Sheet>
+            <DocumentHeader
+              doc={doc}
+              t={t}
+              status={doc.expired ? "expired" : doc.status}
+              eyebrow={doc.number ? `${t.kind[kind]} #${doc.number}` : t.kind[kind]}
+              title={doc.name}
+              facts={facts}
+              cover={page?.heroPath}
+              customerLabel={t.preparedFor}
+            />
+
+            {doc.company.page.layout.map(({ section, hidden }) =>
+              hidden ? null : <Fragment key={section}>{sections[section]}</Fragment>,
+            )}
+
+            {terms ? (
+              <Section title={t.terms}>
+                <p className="whitespace-pre-line text-[13px] leading-6 text-[var(--color-muted)]">{terms}</p>
+              </Section>
+            ) : null}
+
+            {doc.status === "accepted" && (doc.signatureImage || doc.signedName) ? (
+              <Section title={t.signature} className="public-document-signature">
+                <div className="inline-block min-w-64 border-b border-[var(--color-border-strong)] pb-1">
+                  {doc.signatureImage ? (
+                    <img src={doc.signatureImage} alt={t.signatureOf(doc.signedName ?? null)} className="h-16 w-auto" />
+                  ) : null}
+                </div>
+                <div className="mt-1 text-[13px] text-[var(--color-muted)]">
+                  {doc.signedName}
+                  {doc.signedAt ? ` · ${t.dateTime(doc.signedAt)}` : ""}
+                </div>
+              </Section>
+            ) : null}
+
+            <Files doc={doc} t={t} files={files} />
+          </Sheet>
+
+          {open ? (
+            <p className={cn("pt-1 text-center text-[13px] text-[var(--color-muted)]", NO_PRINT)}>
+              {t.notMovingForward}{" "}
+              <button
+                type="button"
+                className="font-medium text-[var(--color-heading)] underline underline-offset-2"
+                onClick={() => ask("decline")}
+              >
+                {t.declineThis(kind)}
+              </button>
+            </p>
           ) : null}
         </div>
-      </Section>
 
-      {page ? <Stats stats={page.stats} t={t} /> : null}
-
-      {terms ? (
-        <Section icon="file" title={t.terms}>
-          <p className="whitespace-pre-line rounded-xl bg-[#f8fafc] px-4 py-3 text-[13px] leading-5 text-[var(--color-text)]">
-            {terms}
-          </p>
-        </Section>
-      ) : null}
-
-      {doc.status === "accepted" && (doc.signatureImage || doc.signedName) ? (
-        <Section icon="pen" title={t.signature} className="public-document-signature">
-          <div className="inline-block min-w-64 border-b border-[var(--color-border-strong)] pb-1">
-            {doc.signatureImage ? (
-              <img src={doc.signatureImage} alt={t.signatureOf(doc.signedName ?? null)} className="h-16 w-auto" />
+        <aside className={cn("sticky top-[88px] hidden w-[296px] shrink-0 space-y-3 xl:block", NO_PRINT)}>
+          <div className={cn(CARD, "p-5")}>
+            <div className={LABEL}>{totalLabel}</div>
+            <div className="mt-1.5 text-[32px] font-bold leading-none tracking-tight tabular-nums text-[var(--color-heading)]">
+              {t.money(totals.totalCents)}
+            </div>
+            {deposit ? (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-[var(--brand-tint)] px-3 py-2 text-[13px]">
+                <span className="text-[var(--brand-text)]">{depositLabel}</span>
+                <span className="font-semibold tabular-nums text-[var(--color-heading)]">{t.money(deposit)}</span>
+              </div>
+            ) : null}
+            {open ? approveButton("mt-4 h-11 w-full text-[15px]") : null}
+            <button
+              type="button"
+              onClick={() => void printDocument()}
+              className={cn(OUTLINE_BUTTON, "h-10 w-full text-[13px]", open ? "mt-2" : "mt-4")}
+            >
+              <Icon name="download" />
+              {t.downloadPdf(kind)}
+            </button>
+            {open && doc.validUntil ? (
+              <p className="mt-3 text-center text-xs text-[var(--color-muted)]">
+                {t.validUntil} {t.date(doc.validUntil)}
+              </p>
             ) : null}
           </div>
-          <div className="mt-1 text-[13px] text-[var(--color-muted)]">
-            {doc.signedName}
-            {doc.signedAt ? ` · ${t.dateTime(doc.signedAt)}` : ""}
-          </div>
-        </Section>
-      ) : null}
-
-      {open ? (
-        <p className={cn("pt-2 text-center text-[13px] text-[var(--color-muted)]", NO_PRINT)}>
-          {t.notMovingForward}{" "}
-          <button
-            type="button"
-            className="font-medium text-[var(--color-heading)] underline underline-offset-2"
-            onClick={() => {
-              setError("");
-              setDialog("decline");
-            }}
-          >
-            {t.declineThis(kind)}
-          </button>
-        </p>
-      ) : null}
+          {doc.company.phone ? (
+            <a
+              href={`tel:${doc.company.phone}`}
+              className={cn(
+                CARD,
+                "flex items-center gap-3 px-5 py-4 outline-none transition-colors hover:border-[var(--color-border-strong)] focus-visible:shadow-[var(--focus-ring)]",
+              )}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--brand-tint)] text-[var(--brand-text)]">
+                <Icon name="phone" />
+              </span>
+              <span className="min-w-0 text-[13px] leading-5">
+                <span className="block text-[var(--color-muted)]">{t.questions}</span>
+                <span className="block font-semibold text-[var(--color-heading)]">{doc.company.phone}</span>
+              </span>
+            </a>
+          ) : null}
+        </aside>
+      </div>
 
       {dialog === "approve" && respond ? (
         <ApproveDialog
           doc={doc}
           t={t}
+          terms={terms}
           totalCents={totals.totalCents}
           depositDue={deposit}
           packageName={open ? (activePackage?.name ?? null) : null}
           pending={pending}
+          locked={preview}
           error={error}
           onCancel={() => setDialog(null)}
           onApprove={({ signer, signature }) =>
@@ -1302,6 +1354,7 @@ function SignableBody({
           kind={kind}
           t={t}
           pending={pending}
+          locked={preview}
           error={error}
           onCancel={() => setDialog(null)}
           onDecline={(reason) => submit(() => respond.decline({ token, reason }), t.declineFailed)}
@@ -1316,20 +1369,25 @@ function SignableBody({
 
 const COLUMNS: Record<number, string> = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3" };
 
-/** The company's highlight cards under the header. */
+/** The company's highlights, side by side under the header. */
 function Highlights({ cards }: { cards: ProposalPage["highlights"] }) {
   if (!cards.length) return null;
   return (
-    <ul className={cn("public-document-keep grid gap-3", COLUMNS[cards.length])}>
+    <ul
+      className={cn(
+        "public-document-keep grid gap-6 px-5 py-6 sm:gap-0 sm:divide-x sm:divide-[var(--color-border)] sm:px-2 sm:py-7",
+        COLUMNS[cards.length],
+      )}
+    >
       {cards.map((card, index) => (
-        <li key={index} className="rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
+        <li key={index} className="sm:px-6">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--brand-tint)] text-[var(--brand-text)]">
             <Icon name={HIGHLIGHT_ICON[card.icon]} />
           </span>
           {card.title ? (
             <h2 className="mt-3 text-[15px] font-semibold leading-5 text-[var(--color-heading)]">{card.title}</h2>
           ) : null}
-          {card.body ? <p className="mt-1 text-[13px] leading-5 text-[var(--color-muted)]">{card.body}</p> : null}
+          {card.body ? <p className="mt-1.5 text-[13px] leading-5 text-[var(--color-muted)]">{card.body}</p> : null}
         </li>
       ))}
     </ul>
@@ -1340,22 +1398,22 @@ function Highlights({ cards }: { cards: ProposalPage["highlights"] }) {
 function WhyChooseUs({ page, company, t }: { page: ProposalPage; company: string; t: DocumentStrings }) {
   if (!page.aboutPoints.length) return null;
   return (
-    <section className="rounded-2xl border border-[var(--color-border)] bg-white p-4 sm:p-6">
-      <h2 className="text-[20px] font-bold leading-tight text-[var(--color-heading)]">
+    <section className={PAD}>
+      <h2 className="text-[20px] font-bold leading-tight tracking-tight text-[var(--color-heading)]">
         {page.aboutHeading || t.whyChoose(company)}
       </h2>
-      <ul className="mt-4 space-y-4">
+      <ul className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-2">
         {page.aboutPoints.map((point, index) => (
-          <li key={index} className="flex gap-3">
-            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
-              <Icon name="check" className="h-3.5 w-3.5" />
+          <li key={index} className="public-document-keep flex gap-3">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--brand-accent)] text-[var(--brand-ink)]">
+              <Icon name="check" className="h-3 w-3" />
             </span>
             <div className="min-w-0">
               {point.title ? (
-                <div className="text-[15px] font-semibold leading-6 text-[var(--color-heading)]">{point.title}</div>
+                <div className="text-[14px] font-semibold leading-5 text-[var(--color-heading)]">{point.title}</div>
               ) : null}
               {point.body ? (
-                <p className="whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{point.body}</p>
+                <p className="mt-0.5 whitespace-pre-line text-[13px] leading-5 text-[var(--color-muted)]">{point.body}</p>
               ) : null}
             </div>
           </li>
@@ -1376,88 +1434,81 @@ function Stats({ stats, t }: { stats: ProposalPage["stats"]; t: DocumentStrings 
   return (
     <dl
       className={cn(
-        "public-document-keep grid gap-4 rounded-2xl border border-[var(--color-border)] bg-white px-4 py-5 text-center sm:divide-x sm:divide-[var(--color-border)]",
+        "public-document-keep grid gap-5 px-5 py-6 text-center sm:gap-0 sm:divide-x sm:divide-[var(--color-border)] sm:px-2",
         COLUMNS[entries.length],
       )}
     >
       {entries.map(([value, name]) => (
-        <div key={name} className="flex flex-col-reverse">
-          <dt className="text-xs text-[var(--color-muted)]">{name}</dt>
-          <dd className="text-[22px] font-bold tabular-nums text-[var(--color-heading)]">{value}</dd>
+        <div key={name} className="flex flex-col-reverse sm:px-6">
+          <dt className="mt-0.5 text-xs text-[var(--color-muted)]">{name}</dt>
+          <dd className="text-[24px] font-bold leading-8 tracking-tight tabular-nums text-[var(--color-heading)]">{value}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
+/** The company's own words to this customer. */
 function IntroNote({ doc, t }: { doc: PublicDocument; t: DocumentStrings }) {
   return doc.intro ? (
-    <section className="flex gap-3 rounded-2xl border border-[#fcd34d] bg-[#fffbeb] p-4 sm:p-5">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#fbbf24] text-white">
-        <Icon name="note" />
-      </span>
-      <div className="min-w-0">
-        <h2 className="text-[15px] font-semibold text-[#92400e]">{t.noteFrom(doc.company.name)}</h2>
-        <p className="mt-1 whitespace-pre-line text-[13px] leading-5 text-[#78350f]">{doc.intro}</p>
+    <section className={cn(PAD, "public-document-keep")}>
+      <div className="rounded-xl bg-[var(--brand-tint)] px-5 py-4">
+        <h2 className="text-[13px] font-semibold text-[var(--brand-text)]">{t.noteFrom(doc.company.name)}</h2>
+        <p className="mt-1.5 whitespace-pre-line text-[14px] leading-6 text-[var(--color-text)]">{doc.intro}</p>
       </div>
     </section>
   ) : null;
 }
 
-/** Photos, and on phones (and paper) the files the sidebar holds on wide screens. */
-function MediaAndFiles({
-  doc,
-  t,
+function Photos({
   photos,
-  files,
-  show,
+  t,
   onView,
 }: {
-  doc: PublicDocument;
-  t: DocumentStrings;
   photos: DocumentAsset[];
-  files: DocumentAsset[];
-  show: boolean;
+  t: DocumentStrings;
   onView: (index: number) => void;
 }) {
+  if (!photos.length) return null;
   return (
-    <>
-      {photos.length ? (
-        <Section icon="image" title={t.media}>
-          <ul className="public-document-photos grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {photos.map((photo, index) => (
-              <li key={photo.id} className="public-document-photo rounded-xl border border-[var(--color-border)] bg-white p-1.5">
-                <button
-                  type="button"
-                  aria-label={t.viewPhoto(photo.name)}
-                  onClick={() => onView(index)}
-                  className="block aspect-[3/4] w-full overflow-hidden rounded-lg bg-[var(--color-surface-2)] outline-none focus-visible:shadow-[var(--focus-ring)]"
-                >
-                  <img src={documentAssetUrl(photo.path)} alt={photo.name} loading="lazy" className="h-full w-full object-cover" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : null}
-      {show ? (
-        <Section icon="folder" title={t.documents} className="lg:hidden print:block">
-          <div className="space-y-3">
-            {files.length ? <FileLinks files={files} /> : null}
-            {doc.companyDocuments.length ? (
-              <div>
-                <div className={cn(FACT_LABEL, "mb-1 px-2 text-[var(--color-muted)]")}>{t.insurance}</div>
-                <FileLinks files={doc.companyDocuments} />
-              </div>
-            ) : null}
-          </div>
-        </Section>
-      ) : null}
-    </>
+    <Section title={t.photos}>
+      <ul className="public-document-photos grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {photos.map((photo, index) => (
+          <li key={photo.id} className="public-document-photo">
+            <button
+              type="button"
+              aria-label={t.viewPhoto(photo.name)}
+              onClick={() => onView(index)}
+              className="block aspect-[4/3] w-full overflow-hidden rounded-xl bg-[var(--color-surface-2)] outline-none focus-visible:shadow-[var(--focus-ring)]"
+            >
+              <img src={documentAssetUrl(photo.path)} alt={photo.name} loading="lazy" className="h-full w-full object-cover" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
-/** An invoice, laid out like DripJobs' "Pay Invoice" page: balance and pay buttons first. */
+/** On phones and paper, the files the sidebar holds on wide screens. */
+function Files({ doc, t, files }: { doc: PublicDocument; t: DocumentStrings; files: DocumentAsset[] }) {
+  if (!files.length && !doc.companyDocuments.length) return null;
+  return (
+    <Section title={t.documents} className="lg:hidden print:block">
+      <div className="-mx-3 space-y-3">
+        {files.length ? <FileLinks files={files} /> : null}
+        {doc.companyDocuments.length ? (
+          <div>
+            <div className={cn(LABEL, "mb-1 px-3")}>{t.insurance}</div>
+            <FileLinks files={doc.companyDocuments} />
+          </div>
+        ) : null}
+      </div>
+    </Section>
+  );
+}
+
+/** An invoice: the balance and the pay button first, then the invoice itself. */
 function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t: DocumentStrings }) {
   const [viewing, setViewing] = useState<number | null>(null);
   const photos = doc.assets.filter((asset) => asset.kind === "photo");
@@ -1468,21 +1519,19 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
   const payments = doc.payments ?? [];
   const issued = doc.issuedOn ?? doc.sentAt;
   const facts: Array<[string, string]> = [
-    [t.contact, doc.customer.name ?? "—"],
-    [t.jobAddress, doc.customer.address ?? "—"],
     [t.dateLabel, issued ? t.date(issued) : "—"],
     [t.dueDate, doc.dueOn ? t.date(doc.dueOn) : "—"],
+    [t.balance, t.money(balance)],
   ];
   const banner = doc.status === "void" ? t.banner.void : null;
-  const stripLabel = cn(FACT_LABEL, "mb-0.5 text-[var(--color-muted)]");
 
   return (
     <>
       {doc.status !== "void" ? (
         <section
           className={cn(
-            "flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-r px-5 py-4 text-white shadow-sm",
-            settled ? "from-[#15803d] to-[#22c55e]" : "from-[#2563eb] to-[#06b6d4]",
+            "flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4 shadow-sm",
+            settled ? "bg-[#15803d] text-white" : "bg-[var(--brand-accent)] text-[var(--brand-ink)]",
             NO_PRINT,
           )}
         >
@@ -1494,142 +1543,96 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
               <div className="text-[19px] font-bold leading-7 tabular-nums">
                 {settled ? t.paidInFull : t.balanceDueBanner(t.money(balance))}
               </div>
-              <div className="text-[13px] tabular-nums text-white/85">{t.paidRemaining(t.money(paid), t.money(balance))}</div>
+              <div className="text-[13px] tabular-nums opacity-85">{t.paidRemaining(t.money(paid), t.money(balance))}</div>
             </div>
           </div>
           {settled ? null : (
-            // The card checkout, restyled for the banner: white with blue text.
+            // The card checkout, restyled for the banner: a white button on the company's colour.
             <PayButton
               token={token}
               t={t}
-              className="w-full sm:w-auto [&_button]:bg-white [&_button]:text-[#1d4ed8] [&_button:hover]:bg-white/90 [&_p]:text-white/85"
+              className="w-full sm:w-auto [&_button]:bg-white [&_button]:text-[#111113] [&_button:hover]:bg-white/90 [&_p]:text-current [&_p]:opacity-85"
             />
           )}
         </section>
       ) : null}
       {banner ? (
-        <p
-          className={cn(
-            "rounded-2xl border px-4 py-3 text-[13px] font-medium",
-            doc.status === "declined"
-              ? "border-[#fecaca] bg-[#fef2f2] text-[#991b1b]"
-              : "border-[var(--color-border)] bg-white text-[var(--color-text)]",
-          )}
-        >
+        <p className="rounded-2xl border border-[var(--color-border)] bg-white px-4 py-3 text-[13px] font-medium text-[var(--color-text)]">
           {banner}
         </p>
       ) : null}
 
-      <HeaderCard
-        doc={doc}
-        t={t}
-        status={doc.status}
-        title={doc.number ? `${t.kind.invoice} #${doc.number}` : doc.name}
-        subtitle={doc.number ? doc.name : null}
-        facts={facts}
-        action={
-          <button
-            type="button"
-            onClick={() => void printDocument()}
-            className={cn(
-              "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-[13px] font-medium text-white outline-none transition-colors hover:bg-white/20 focus-visible:shadow-[var(--focus-ring)]",
-              NO_PRINT,
-            )}
-          >
-            <Icon name="download" className="h-3.5 w-3.5" />
-            {t.downloadInvoice}
-          </button>
-        }
-      >
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 px-5 py-4 text-[13px] leading-5 sm:grid-cols-[1.4fr_1fr_1fr_1fr] sm:px-6">
-          <div className="col-span-2 min-w-0 [overflow-wrap:anywhere] sm:col-span-1">
-            <dt className={stripLabel}>{t.billTo}</dt>
-            <dd className="font-semibold text-[var(--color-heading)]">{doc.customer.name ?? "—"}</dd>
-            {doc.customer.address ? <dd className="text-[var(--color-muted)]">{doc.customer.address}</dd> : null}
-            {doc.customer.email ? <dd className="text-[var(--color-muted)]">{doc.customer.email}</dd> : null}
-            {doc.customer.phone ? <dd className="text-[var(--color-muted)]">{doc.customer.phone}</dd> : null}
-          </div>
-          {/* Phones skip it: the bill-to address and the header already show it. */}
-          <div className="hidden min-w-0 sm:block">
-            <dt className={stripLabel}>{t.jobAddress}</dt>
-            <dd className="font-semibold text-[var(--color-heading)]">{doc.customer.address ?? "—"}</dd>
-          </div>
-          <div className="min-w-0">
-            <dt className={stripLabel}>{t.balance}</dt>
-            <dd className="text-[20px] font-bold leading-7 tabular-nums text-[var(--color-heading)]">{t.money(balance)}</dd>
-          </div>
-          <div className="min-w-0">
-            <dt className={stripLabel}>{t.dueDate}</dt>
-            <dd className="font-semibold text-[var(--color-heading)]">{doc.dueOn ? t.date(doc.dueOn) : "—"}</dd>
-          </div>
-        </dl>
-      </HeaderCard>
+      <Sheet>
+        <DocumentHeader
+          doc={doc}
+          t={t}
+          status={doc.status}
+          eyebrow={doc.number ? `${t.kind.invoice} #${doc.number}` : t.kind.invoice}
+          title={doc.name}
+          facts={facts}
+          customerLabel={t.billTo}
+          action={
+            <button
+              type="button"
+              onClick={() => void printDocument()}
+              className={cn(OUTLINE_BUTTON, "h-9 px-3 text-[13px]", NO_PRINT)}
+            >
+              <Icon name="download" className="h-3.5 w-3.5" />
+              {t.downloadInvoice}
+            </button>
+          }
+        />
 
-      <IntroNote doc={doc} t={t} />
+        <IntroNote doc={doc} t={t} />
 
-      <Section icon="list" title={t.items}>
-        <ul className="space-y-3">
-          {doc.items.filter(isIncluded).map((item) => (
-            <LineCard key={item.id} item={item} t={t} className="border-[var(--color-border)]" />
-          ))}
-        </ul>
-        <dl className="public-document-totals ml-auto mt-4 w-full max-w-xs space-y-1.5 px-4 text-[13px] text-[var(--color-heading)]">
-          <div className="flex justify-between gap-4">
-            <dt className="text-[var(--color-muted)]">{t.invoiceAmount}</dt>
-            <dd className="tabular-nums">{t.money(doc.subtotalCents)}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-[var(--color-muted)]">{t.tax(doc.taxRatePercent)}</dt>
-            <dd className="tabular-nums">{t.money(doc.taxCents)}</dd>
-          </div>
-          <div className="flex justify-between gap-4 border-t border-[var(--color-border)] pt-2 text-[15px] font-bold">
-            <dt>{t.total}</dt>
-            <dd className="tabular-nums">{t.money(doc.totalCents)}</dd>
-          </div>
-        </dl>
-      </Section>
-
-      {payments.length ? (
-        <Section icon="card" title={t.payments} tile="green">
-          <ul className="space-y-2">
-            {payments.map((payment) => (
-              <li
-                key={payment.id}
-                className="public-document-line flex items-center justify-between gap-3 rounded-xl border border-[#bbf7d0] bg-[#f0fdf4] px-4 py-3 text-[13px]"
-              >
-                <span className="flex min-w-0 items-center gap-2.5 text-[var(--color-text)]">
-                  <Icon name="checkCircle" className="text-[#16a34a]" />
-                  <span className="min-w-0">
-                    {[
-                      t.date(payment.paidOn),
-                      t.method[payment.method] ?? payment.method,
-                      payment.reference,
-                      doc.invoiceKind === "deposit" ? t.depositNote : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </span>
-                <span className="shrink-0 font-semibold tabular-nums text-[#15803d]">{t.money(payment.amountCents)}</span>
-              </li>
-            ))}
-          </ul>
+        <Section title={t.items}>
+          <LineRows items={doc.items.filter(isIncluded)} t={t} />
+          <dl className="public-document-totals ml-auto mt-8 w-full max-w-xs space-y-2 border-t border-[var(--color-border)] pt-4 text-[14px] text-[var(--color-text)]">
+            <TotalLine label={t.invoiceAmount} value={t.money(doc.subtotalCents)} />
+            <TotalLine label={t.tax(doc.taxRatePercent)} value={t.money(doc.taxCents)} />
+            <TotalLine
+              label={t.total}
+              value={t.money(doc.totalCents)}
+              className="text-[15px] font-bold text-[var(--color-heading)]"
+            />
+          </dl>
         </Section>
-      ) : null}
 
-      <section className="public-document-totals flex items-center justify-between gap-4 rounded-2xl border border-[var(--color-border)] bg-white px-5 py-4 sm:px-6">
-        <span className="text-[16px] font-bold text-[var(--color-heading)]">{t.amountDue}</span>
-        <span className="text-[26px] font-bold tabular-nums text-[var(--color-heading)]">{t.money(balance)}</span>
-      </section>
+        {payments.length ? (
+          <Section title={t.payments}>
+            <ul className="-my-3 divide-y divide-[var(--color-border)]">
+              {payments.map((payment) => (
+                <li key={payment.id} className="public-document-line flex items-center justify-between gap-3 py-3 text-[13px]">
+                  <span className="flex min-w-0 items-center gap-2.5 text-[var(--color-text)]">
+                    <Icon name="checkCircle" className="text-[#16a34a]" />
+                    <span className="min-w-0">
+                      {[
+                        t.date(payment.paidOn),
+                        t.method[payment.method] ?? payment.method,
+                        payment.reference,
+                        doc.invoiceKind === "deposit" ? t.depositNote : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-[#15803d]">{t.money(payment.amountCents)}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        ) : null}
 
-      <MediaAndFiles
-        doc={doc}
-        t={t}
-        photos={photos}
-        files={files}
-        show={files.length > 0 || doc.companyDocuments.length > 0}
-        onView={setViewing}
-      />
+        <section className={cn(PAD, "public-document-totals flex items-end justify-between gap-4")}>
+          <span className="text-[15px] font-semibold text-[var(--color-heading)]">{t.amountDue}</span>
+          <span className="text-[30px] font-bold leading-none tracking-tight tabular-nums text-[var(--color-heading)]">
+            {t.money(balance)}
+          </span>
+        </section>
+
+        <Photos photos={photos} t={t} onView={setViewing} />
+        <Files doc={doc} t={t} files={files} />
+      </Sheet>
       {viewing != null && photos[viewing] ? (
         <PhotoViewer photos={photos} index={viewing} t={t} onIndex={setViewing} onClose={() => setViewing(null)} />
       ) : null}
@@ -1648,7 +1651,7 @@ export function PublicDocumentView({
   /** Staff's Customer view of a proposal: nothing is approved, declined or marked viewed. */
   preview?: boolean;
 }) {
-  const t = documentStrings();
+  const t = documentStrings(doc.company.timezone);
   const files = doc.assets.filter((asset) => asset.kind === "file");
 
   return (
@@ -1657,17 +1660,18 @@ export function PublicDocumentView({
         company={doc.company}
         callLabel={t.callUs}
         menuLabel={t.menu}
-        nav={documentNav(doc, t)}
+        nav={documentNav(doc, t, preview)}
+        links={companyLinks(doc.company)}
+        linkLabels={{ website: t.website, reviews: t.reviews, followUs: t.followUs }}
         sidebarExtra={
           files.length || doc.companyDocuments.length ? (
-            <div className="space-y-1">
-              {files.length ? <SidebarFiles icon="folder" label={t.documents} files={files} /> : null}
-              {doc.companyDocuments.length ? (
-                <SidebarFiles icon="shield" label={t.insurance} files={doc.companyDocuments} />
-              ) : null}
-            </div>
+            <>
+              {files.length ? <SidebarFiles label={t.documents} files={files} /> : null}
+              {doc.companyDocuments.length ? <SidebarFiles label={t.insurance} files={doc.companyDocuments} /> : null}
+            </>
           ) : null
         }
+        wide={doc.kind !== "invoice"}
         className="public-document"
         mainClassName={cn("public-document-main", doc.kind === "invoice" && "pt-20")}
       >
@@ -1678,9 +1682,9 @@ export function PublicDocumentView({
         )}
       </CustomerShell>
       {preview ? (
-        <div className={cn("pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4", NO_PRINT)}>
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 print:hidden">
           <p className="rounded-full bg-[#111113] px-4 py-2 text-center text-[13px] text-white shadow-lg">
-            Preview of what your customer sees. Approving and declining are off here.
+            Preview of what your customer sees. Nothing you do here is sent or saved.
           </p>
         </div>
       ) : null}

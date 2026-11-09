@@ -4,13 +4,18 @@ import { useRef, useState, useTransition } from "react";
 import { saveProposalPage } from "@/lib/actions/settings";
 import { documentAssetUrl, removeDocumentAssets, uploadDocumentAsset, webImage } from "@/lib/document-assets";
 import {
+  COMPANY_LINKS,
+  HIDEABLE_SECTIONS,
   HIGHLIGHT_ICONS,
   MAX_ABOUT_POINTS,
   MAX_HIGHLIGHTS,
+  reviveProposalPage,
+  type CompanyLink,
   type HighlightIcon,
+  type PageSection,
   type ProposalPage,
 } from "@/lib/proposal-types";
-import { Button, Input, Select, Textarea } from "@/components/ui";
+import { Button, Input, Select, Textarea, cn } from "@/components/ui";
 import { SaveStatus, SettingsSection } from "./settings-section";
 
 const ICON_LABELS: Record<HighlightIcon, string> = {
@@ -22,6 +27,26 @@ const ICON_LABELS: Record<HighlightIcon, string> = {
   tools: "Tools",
   thumbsUp: "Thumbs up",
   check: "Check",
+};
+
+const LINK_LABELS: Record<CompanyLink, string> = {
+  website: "Website",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  linkedin: "LinkedIn",
+  x: "X",
+};
+
+const SECTION_LABELS: Record<PageSection, string> = {
+  highlights: "Highlights",
+  about: "Why choose us",
+  note: "Message to the customer",
+  packages: "Packages",
+  scope: "Scope of work",
+  addOns: "Optional add-ons",
+  photos: "Photos",
+  investment: "Your investment",
+  stats: "Numbers",
 };
 
 const EMPTY_HIGHLIGHT = { icon: "check" as HighlightIcon, title: "", body: "" };
@@ -66,8 +91,10 @@ export function ProposalPageForm({
       setStatus({ error: result.error ?? "Could not save." });
       return false;
     }
-    setDraft(next);
-    setSaved(JSON.stringify(next));
+    // As saved: trimmed, and with https:// on a link typed without it.
+    const clean = withSlots(reviveProposalPage(next));
+    setDraft(clean);
+    setSaved(JSON.stringify(clean));
     setStatus({ message });
     return true;
   }
@@ -108,6 +135,13 @@ export function ProposalPageForm({
 
   function setHighlight(index: number, next: Partial<ProposalPage["highlights"][number]>) {
     patch({ highlights: draft.highlights.map((card, at) => (at === index ? { ...card, ...next } : card)) });
+  }
+
+  /** Swaps a section with the one above (-1) or below (1) it. */
+  function moveSection(index: number, by: -1 | 1) {
+    const layout = [...draft.layout];
+    [layout[index], layout[index + by]] = [layout[index + by], layout[index]];
+    patch({ layout });
   }
 
   function setPoint(index: number, next: Partial<ProposalPage["aboutPoints"][number]>) {
@@ -303,6 +337,33 @@ export function ProposalPageForm({
           </div>
         </div>
 
+        <div>
+          <h3 className={groupTitle}>Links</h3>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {COMPANY_LINKS.map((key) => (
+              <label key={key} className="block">
+                <span className={label}>{LINK_LABELS[key]}</span>
+                <Input
+                  type="url"
+                  inputMode="url"
+                  placeholder="https://"
+                  value={draft.links[key]}
+                  maxLength={300}
+                  disabled={disabled}
+                  onChange={(event) => patch({ links: { ...draft.links, [key]: event.target.value } })}
+                />
+              </label>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-[var(--color-muted)]">
+            The Reviews link is set under{" "}
+            <a href="#reviews" className="underline underline-offset-2">
+              Reviews &amp; aftercare
+            </a>
+            .
+          </p>
+        </div>
+
         <label className="block">
           <span className={groupTitle}>Terms and conditions</span>
           <Textarea
@@ -314,6 +375,70 @@ export function ProposalPageForm({
             onChange={(event) => patch({ terms: event.target.value })}
           />
         </label>
+
+        <div>
+          <h3 className={groupTitle}>Layout</h3>
+          <ol className="mt-2 divide-y divide-[var(--color-border)] rounded-[var(--radius)] border border-[var(--color-border)] text-[13px]">
+            <li className="flex min-h-10 items-center px-3 text-[var(--color-muted)]">Cover photo and header</li>
+            {draft.layout.map((entry, index) => {
+              const name = SECTION_LABELS[entry.section];
+              return (
+                <li key={entry.section} className="flex min-h-10 items-center gap-1 px-3">
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[var(--color-heading)]",
+                      entry.hidden && "text-[var(--color-faint)] line-through",
+                    )}
+                  >
+                    {name}
+                  </span>
+                  {HIDEABLE_SECTIONS.includes(entry.section) ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={!entry.hidden}
+                      disabled={disabled}
+                      onClick={() =>
+                        patch({
+                          layout: draft.layout.map((other) =>
+                            other.section === entry.section ? { ...other, hidden: !other.hidden } : other,
+                          ),
+                        })
+                      }
+                    >
+                      {entry.hidden ? "Show" : "Hide"}
+                    </Button>
+                  ) : null}
+                  {([-1, 1] as const).map((by) => (
+                    <button
+                      key={by}
+                      type="button"
+                      aria-label={`Move ${name} ${by < 0 ? "up" : "down"}`}
+                      title={by < 0 ? "Move up" : "Move down"}
+                      disabled={disabled || (by < 0 ? index === 0 : index === draft.layout.length - 1)}
+                      onClick={() => moveSection(index, by)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--color-muted)] outline-none hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)] disabled:pointer-events-none disabled:opacity-30"
+                    >
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-3.5 w-3.5"
+                      >
+                        <path d={by < 0 ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
+                      </svg>
+                    </button>
+                  ))}
+                </li>
+              );
+            })}
+            <li className="flex min-h-10 items-center px-3 text-[var(--color-muted)]">Terms and signature</li>
+          </ol>
+        </div>
       </div>
     </SettingsSection>
   );
