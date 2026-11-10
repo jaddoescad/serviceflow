@@ -63,9 +63,9 @@ export default function PrivacyPage() {
         </p>
         <ul>
           <li>
-            <strong>Adds, updates and removes events</strong> for the ServiceFlow appointments and jobs assigned to that
-            user (title, time, address and notes), and only for those. It does not change or delete events it did not
-            create.
+            <strong>Adds, updates and removes events</strong> for the ServiceFlow appointments assigned to that user and,
+            if they turn it on, their company&apos;s job schedule (title, time, address and notes), and only for those. It
+            does not change or delete events it did not create.
           </li>
           <li>
             <strong>Reads when the user is busy.</strong> For users who take appointment bookings, ServiceFlow checks

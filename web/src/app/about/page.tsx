@@ -56,8 +56,8 @@ export default function AboutPage() {
       <section className="mt-10">
         <h2 className="text-base font-semibold text-[var(--color-heading)]">Google Calendar</h2>
         <p className="mt-2 max-w-2xl text-[14px] leading-relaxed">
-          Each team member can connect their own Google Calendar in Settings. ServiceFlow then adds the appointments and
-          jobs assigned to them to that calendar, updates or removes those events when plans change, and checks when they
+          Each team member can connect their own Google Calendar in Settings. ServiceFlow then adds the appointments
+          assigned to them, and the job schedule if they choose, to that calendar, updates or removes those events when plans change, and checks when they
           are already busy so new appointments aren&apos;t booked over other commitments. ServiceFlow keeps only the start
           and end of those busy times, never the titles or details of your other events. You can disconnect at any time.
           See the <Link href="/privacy" className="text-[var(--color-brand-strong)] underline">privacy policy</Link> for
