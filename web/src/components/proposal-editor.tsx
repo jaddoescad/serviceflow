@@ -917,19 +917,21 @@ export function ProposalEditor({
 
       <div className="mt-5 space-y-4">
         <Card className="px-4 py-5 sm:px-7 sm:py-7">
-          <input
-            aria-label={isProposal ? "Proposal name" : "Template name"}
-            placeholder={isProposal ? "Proposal name" : "Template name"}
-            maxLength={120}
-            disabled={readOnly}
-            value={body.name}
-            onChange={(event) => patch({ name: event.target.value })}
-            className={cn(CELL, "-ml-2 h-10 text-[24px] font-bold tracking-tight text-[var(--color-heading)] disabled:hover:border-transparent")}
-          />
+          {isProposal ? null : (
+            <input
+              aria-label="Template name"
+              placeholder="Template name"
+              maxLength={120}
+              disabled={readOnly}
+              value={body.name}
+              onChange={(event) => patch({ name: event.target.value })}
+              className={cn(CELL, "-ml-2 mb-5 h-10 text-[24px] font-bold tracking-tight text-[var(--color-heading)] disabled:hover:border-transparent")}
+            />
+          )}
 
           <div
             className={cn(
-              "mt-5 hidden gap-x-2 border-b border-[var(--color-border)] pb-2 text-xs font-medium text-[var(--color-faint)] sm:grid",
+              "hidden gap-x-2 border-b border-[var(--color-border)] pb-2 text-xs font-medium text-[var(--color-faint)] sm:grid",
               COLUMNS,
             )}
           >
@@ -986,7 +988,6 @@ export function ProposalEditor({
             <DocumentTotals
               items={body.items}
               taxRatePercent={body.taxRatePercent}
-              onTaxRateChange={(taxRatePercent) => patch({ taxRatePercent })}
               readOnly={readOnly}
             >
               {shownPackage ? (

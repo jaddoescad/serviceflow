@@ -339,7 +339,6 @@ export function BillingEditor({
               <DocumentTotals
                 items={body.items}
                 taxRatePercent={body.taxRatePercent}
-                onTaxRateChange={(taxRatePercent) => patch({ taxRatePercent })}
                 readOnly={readOnly}
               >
                 {invoice ? (

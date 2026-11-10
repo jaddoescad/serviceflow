@@ -312,13 +312,11 @@ export function TotalRow({
 export function DocumentTotals({
   items,
   taxRatePercent,
-  onTaxRateChange,
   readOnly = false,
   children,
 }: {
   items: LineItem[];
   taxRatePercent: number;
-  onTaxRateChange: (rate: number) => void;
   readOnly?: boolean;
   children?: React.ReactNode;
 }) {
@@ -331,25 +329,7 @@ export function DocumentTotals({
     <dl>
       <TotalRow label="Subtotal" cents={totals.subtotalCents} />
       <TotalRow
-        label={
-          readOnly ? (
-            `Tax (${taxRatePercent}%)`
-          ) : (
-            <span className="flex items-center gap-1.5">
-              Tax
-              <span className="w-14">
-                <NumberInput
-                  aria-label="Tax rate percent"
-                  min={0}
-                  max={100}
-                  value={taxRatePercent}
-                  onChange={onTaxRateChange}
-                />
-              </span>
-              %
-            </span>
-          )
-        }
+        label={`Tax (${taxRatePercent}%)`}
         cents={totals.taxCents}
       />
       <TotalRow label="Total" cents={totals.totalCents} variant="total" />

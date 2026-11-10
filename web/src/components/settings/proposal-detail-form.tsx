@@ -17,6 +17,11 @@ const DETAILS = {
     description: "Shown under your company name on proposals, change orders and invoices.",
     maxLength: 80,
   },
+  taxRatePercent: {
+    title: "Sales tax",
+    description: "The tax percent added to new proposals, change orders and invoices. Ones already made keep their rate.",
+    maxLength: 6,
+  },
 };
 
 /**
@@ -33,15 +38,18 @@ export function ProposalDetailForm({
   canManage: boolean;
 }) {
   const detail = DETAILS[field];
-  const [value, setValue] = useState(page[field]);
-  const [saved, setSaved] = useState(page[field]);
+  const [value, setValue] = useState(String(page[field]));
+  const [saved, setSaved] = useState(String(page[field]));
   const [status, setStatus] = useState<{ error?: string; message?: string }>({});
   const [pending, startTransition] = useTransition();
   const Control = field === "terms" ? Textarea : Input;
 
   function save() {
     startTransition(async () => {
-      const result = await saveProposalDetail(field, value);
+      const result =
+        field === "taxRatePercent"
+          ? await saveProposalDetail(field, value.trim() ? Number(value) : NaN)
+          : await saveProposalDetail(field, value);
       if (!result.ok) {
         setStatus({ error: result.error ?? "Could not save." });
         return;
@@ -71,7 +79,11 @@ export function ProposalDetailForm({
     >
       <Control
         aria-label={detail.title}
-        {...(field === "terms" ? { rows: 10 } : { className: "max-w-sm" })}
+        {...(field === "terms"
+          ? { rows: 10 }
+          : field === "taxRatePercent"
+            ? { className: "max-w-24", inputMode: "decimal" as const }
+            : { className: "max-w-sm" })}
         value={value}
         maxLength={detail.maxLength}
         disabled={!canManage || pending}

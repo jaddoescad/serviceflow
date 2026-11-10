@@ -1,3 +1,4 @@
+import { getTaxRatePercent } from "@/lib/actions/settings";
 import { notFound } from "next/navigation";
 import { BillingEditor } from "@/components/billing-editor";
 import { requireStaff } from "@/lib/auth";
@@ -26,12 +27,13 @@ export default async function InvoicePage({
   const jobId = decodeURIComponent(id);
   const isNew = invoiceId === "new";
   const final = isNew && query.kind === "final";
-  const [shell, invoice, draft, catalog, extras] = await Promise.all([
+  const [shell, invoice, draft, catalog, extras, taxRate] = await Promise.all([
     getProjectShell(jobId),
     isNew ? null : getInvoice(invoiceId),
     final ? draftFinalInvoice(jobId) : null,
     getCatalogItems(),
     isNew ? null : getDocumentExtras("invoice", invoiceId),
+    getTaxRatePercent(),
     requireStaff(),
   ]);
   if (!shell || shell.isLead || (!isNew && (!invoice || invoice.jobId !== jobId))) notFound();
@@ -48,7 +50,7 @@ export default async function InvoicePage({
       initial={{
         name: invoice?.name ?? (final ? "Final invoice" : "Invoice"),
         items: invoice?.items ?? draft?.items ?? [],
-        taxRatePercent: invoice?.taxRatePercent ?? draft?.taxRatePercent ?? 13,
+        taxRatePercent: invoice?.taxRatePercent ?? draft?.taxRatePercent ?? taxRate,
         message: invoice?.notes ?? "",
         invoiceKind: invoice?.kind ?? (final ? "final" : "standard"),
         issuedOn: invoice?.issuedOn ?? addDays(0),

@@ -1,3 +1,4 @@
+import { getTaxRatePercent } from "@/lib/actions/settings";
 import { notFound } from "next/navigation";
 import { BillingEditor } from "@/components/billing-editor";
 import { requireStaff } from "@/lib/auth";
@@ -17,11 +18,12 @@ export default async function ChangeOrderPage({
   const { id, changeOrderId } = await params;
   const jobId = decodeURIComponent(id);
   const isNew = changeOrderId === "new";
-  const [shell, order, catalog, extras] = await Promise.all([
+  const [shell, order, catalog, extras, taxRate] = await Promise.all([
     getProjectShell(jobId),
     isNew ? null : getChangeOrder(changeOrderId),
     getCatalogItems(),
     isNew ? null : getDocumentExtras("change_order", changeOrderId),
+    getTaxRatePercent(),
     requireStaff(),
   ]);
   if (!shell || shell.isLead || (!isNew && (!order || order.jobId !== jobId))) notFound();
@@ -38,7 +40,7 @@ export default async function ChangeOrderPage({
       initial={{
         name: order?.name ?? "Change order",
         items: order?.items ?? [],
-        taxRatePercent: order?.taxRatePercent ?? 13,
+        taxRatePercent: order?.taxRatePercent ?? taxRate,
         message: order?.intro ?? "",
         invoiceKind: "standard",
         issuedOn: "",

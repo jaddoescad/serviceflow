@@ -41,6 +41,7 @@ async function Company() {
     <>
       <CompanyProfileForm company={company} canEdit={canEdit} />
       <ProposalDetailForm field="license" page={company.proposalPage} canManage={isManager} />
+      <ProposalDetailForm field="taxRatePercent" page={company.proposalPage} canManage={isManager} />
       <LabourBudgetSettingsForm settings={labour} />
     </>
   );

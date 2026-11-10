@@ -1,3 +1,4 @@
+import { getTaxRatePercent } from "@/lib/actions/settings";
 import { notFound } from "next/navigation";
 import { ProposalEditor } from "@/components/proposal-editor";
 import { requireStaff } from "@/lib/auth";
@@ -26,7 +27,7 @@ export default async function ProposalPage({
   const [{ id, proposalId }, query] = await Promise.all([params, searchParams]);
   const projectId = decodeURIComponent(id);
   const isNew = proposalId === "new";
-  const [shell, deal, proposal, templates, extras, overview, catalog] = await Promise.all([
+  const [shell, deal, proposal, templates, extras, overview, catalog, taxRate] = await Promise.all([
     getProjectShell(projectId),
     getProjectDeal(projectId),
     isNew ? null : getProposal(proposalId),
@@ -34,6 +35,7 @@ export default async function ProposalPage({
     isNew ? null : getDocumentExtras("proposal", proposalId),
     getDealOverview(projectId),
     getCatalogItems(),
+    getTaxRatePercent(),
     requireStaff(),
   ]);
   if (!shell || !deal?.leadId) notFound();
@@ -61,7 +63,7 @@ export default async function ProposalPage({
     : {
         name: template?.name ?? `Proposal ${count + 1}`,
         items: template?.items ?? [],
-        taxRatePercent: template?.taxRatePercent ?? 13,
+        taxRatePercent: taxRate,
         depositPercent: template?.depositPercent ?? null,
         depositCents: template?.depositCents ?? null,
         discountPercent: template?.discountPercent ?? null,

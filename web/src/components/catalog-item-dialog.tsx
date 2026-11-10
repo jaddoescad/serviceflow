@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { deleteCatalogItem, saveCatalogItem } from "@/lib/actions/proposals";
 import { centsFromDollars, type CatalogItem } from "@/lib/line-items";
 import { DialogFooter } from "./document-dialogs";
+import { ItemDescriptionEditor } from "./item-description";
 import { ProjectModal } from "./project-profile-panel";
-import { Button, Field, Input, Textarea } from "./ui";
+import { Button, Field, Input } from "./ui";
 
 /** Adds or edits a product or service; documents keep their own copy of its name, description and price. */
 export function CatalogItemDialog({ item, closeHref }: { item: CatalogItem | null; closeHref: string }) {
@@ -46,14 +47,14 @@ export function CatalogItemDialog({ item, closeHref }: { item: CatalogItem | nul
           <Field label="Name">
             <Input required maxLength={200} value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
-          <Field label="Description">
-            <Textarea
-              rows={4}
-              maxLength={4000}
+          <div>
+            <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Description</span>
+            <ItemDescriptionEditor
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={setDescription}
+              className="min-h-24 max-h-72 border-[var(--color-border-strong)]"
             />
-          </Field>
+          </div>
           <Field label="Price">
             <Input
               inputMode="decimal"

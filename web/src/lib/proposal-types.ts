@@ -141,7 +141,11 @@ export type ProposalPage = {
   terms: string;
   /** The company's website and social pages, linked from the sidebar of customer pages. */
   links: Record<CompanyLink, string>;
+  /** The sales tax every new proposal, change order and invoice charges. */
+  taxRatePercent: number;
 };
+
+export const DEFAULT_TAX_RATE_PERCENT = 13;
 
 export const COMPANY_LINKS = ["website", "facebook", "instagram", "linkedin", "x"] as const;
 export type CompanyLink = (typeof COMPANY_LINKS)[number];
@@ -289,6 +293,10 @@ export function reviveProposalPage(value: unknown): ProposalPage {
     blocks: reviveBlocks(page.blocks),
     terms: clip(page.terms, 20000),
     links: Object.fromEntries(COMPANY_LINKS.map((key) => [key, webLink(links[key])])) as ProposalPage["links"],
+    taxRatePercent:
+      typeof page.taxRatePercent === "number" && page.taxRatePercent >= 0 && page.taxRatePercent <= 100
+        ? page.taxRatePercent
+        : DEFAULT_TAX_RATE_PERCENT,
   };
 }
 

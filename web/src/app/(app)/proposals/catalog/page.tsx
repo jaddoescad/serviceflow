@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/kpi";
 import { DataTable, RowLink, TablePanel, Td, Th, Tr } from "@/components/table-ui";
 import { EmptyState, buttonClassName } from "@/components/ui";
 import { requireStaff } from "@/lib/auth";
+import { itemDescriptionPlain } from "@/lib/item-description";
 import { fmtCents } from "@/lib/line-items";
 import { getCatalogItems } from "@/lib/proposals";
 import { ProposalsTabs } from "../tabs";
@@ -42,7 +43,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
                   <RowLink href={`${PATH}?item=${item.id}`}>{item.name}</RowLink>
                 </Td>
                 <Td muted className="w-1/2 max-w-0 truncate">
-                  {item.description}
+                  {itemDescriptionPlain(item.description)}
                 </Td>
                 <Td numeric>{fmtCents(item.unitPriceCents)}</Td>
               </Tr>

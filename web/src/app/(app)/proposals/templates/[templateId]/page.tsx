@@ -1,3 +1,4 @@
+import { getTaxRatePercent } from "@/lib/actions/settings";
 import { notFound } from "next/navigation";
 import { ProposalEditor } from "@/components/proposal-editor";
 import { requireStaff } from "@/lib/auth";
@@ -22,7 +23,7 @@ export default async function ProposalTemplatePage({ params }: { params: Promise
         template ?? {
           name: "",
           items: [],
-          taxRatePercent: 13,
+          taxRatePercent: await getTaxRatePercent(),
           depositPercent: null,
           depositCents: null,
           discountPercent: null,

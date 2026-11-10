@@ -205,12 +205,26 @@ export async function saveCompanyBranding(input: { logoPath: string; brandColor:
  * set on their own settings pages, so the saved ones are kept as they are.
  */
 export async function saveProposalPage(input: ProposalPage) {
-  const { terms, license } = (await getCompanySettings()).company.proposalPage;
-  return staffWrite("save_proposal_page", { requested_page: reviveProposalPage({ ...input, terms, license }) }, ["/settings"]);
+  const { terms, license, taxRatePercent } = (await getCompanySettings()).company.proposalPage;
+  return staffWrite(
+    "save_proposal_page",
+    { requested_page: reviveProposalPage({ ...input, terms, license, taxRatePercent }) },
+    ["/settings"],
+  );
 }
 
-/** Changes one detail customer documents print (the default terms or the licence number), leaving the page alone. */
-export async function saveProposalDetail(field: "terms" | "license", value: string) {
+/** The sales tax new proposals, change orders and invoices charge. */
+export async function getTaxRatePercent(): Promise<number> {
+  return (await getCompanySettings()).company.proposalPage.taxRatePercent;
+}
+
+/** Changes one company-wide detail of customer documents (default terms, licence number, tax rate), leaving the page alone. */
+export async function saveProposalDetail(
+  ...[field, value]: [field: "terms" | "license", value: string] | [field: "taxRatePercent", value: number]
+) {
+  if (field === "taxRatePercent" && !(value >= 0 && value <= 100)) {
+    return { ok: false, error: "Enter a tax rate between 0 and 100." };
+  }
   const page = (await getCompanySettings()).company.proposalPage;
   return staffWrite("save_proposal_page", { requested_page: reviveProposalPage({ ...page, [field]: value }) }, ["/settings"]);
 }
