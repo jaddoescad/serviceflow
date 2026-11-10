@@ -74,15 +74,6 @@ export async function deleteProposal(id: string): Promise<ActionResult> {
   return staffWrite("delete_proposal", { requested_id: id }, PROPOSAL_PATHS);
 }
 
-/** Whether the customer's link offers the company's insurance and other documents. */
-export async function setProposalCompanyDocuments(id: string, include: boolean): Promise<ActionResult> {
-  return staffWrite(
-    "set_proposal_company_documents",
-    { requested_id: id, requested_include: include },
-    PROPOSAL_PATHS,
-  );
-}
-
 export async function saveProposalTemplate(input: { id: string; body: ProposalBody }): Promise<ActionResult> {
   return staffWrite("save_proposal_template", { requested_id: input.id, ...bodyArgs(input.body) }, ["/proposals"]);
 }

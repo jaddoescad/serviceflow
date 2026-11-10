@@ -2,7 +2,7 @@ import { getTaxRatePercent } from "@/lib/actions/settings";
 import { notFound } from "next/navigation";
 import { ProposalEditor } from "@/components/proposal-editor";
 import { requireStaff } from "@/lib/auth";
-import { getCompanyDocuments, getDocumentExtras } from "@/lib/documents";
+import { getDocumentExtras } from "@/lib/documents";
 import { getDealOverview } from "@/lib/pipeline";
 import { dealHref } from "@/lib/pipeline-types";
 import { getProjectShell } from "@/lib/project-data";
@@ -41,10 +41,7 @@ export default async function ProposalPage({
   if (!shell || !deal?.leadId) notFound();
   if (!isNew && (!proposal || proposal.leadId !== deal.leadId)) notFound();
 
-  const [count, companyDocuments] = await Promise.all([
-    isNew ? getLeadProposals(deal.leadId).then((list) => list.length) : 0,
-    extras ? getCompanyDocuments(extras.orgId) : [],
-  ]);
+  const count = isNew ? (await getLeadProposals(deal.leadId)).length : 0;
   const template = templates.find((item) => item.id === query.template);
   const initial: ProposalBody = proposal
     ? {
@@ -87,7 +84,6 @@ export default async function ProposalPage({
       deal={overview}
       catalog={catalog}
       extras={extras}
-      companyDocuments={companyDocuments}
       initialTemplateId={template?.id ?? null}
       projectName={shell.name}
       backHref={dealHref(shell.canonicalJobId ?? projectId)}

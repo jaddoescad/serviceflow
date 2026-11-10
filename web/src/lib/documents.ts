@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { CompanyDocument, DocumentAsset, DocumentDelivery, DocumentKind } from "@/lib/proposal-types";
+import type { DocumentAsset, DocumentDelivery, DocumentKind } from "@/lib/proposal-types";
 
 type Row = Record<string, any>;
 
@@ -63,20 +63,3 @@ export async function getDocumentExtras(kind: DocumentKind, id: string): Promise
   };
 }
 
-/** A company's insurance and other documents, offered with its proposals. */
-export async function getCompanyDocuments(orgId: string): Promise<CompanyDocument[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("company_documents")
-    .select("id,name,storage_path,mime_type,byte_size")
-    .eq("org_id", orgId)
-    .order("name");
-  if (error) throw new Error(`company documents: ${error.message}`);
-  return (data ?? []).map((row: Row) => ({
-    id: row.id,
-    name: row.name,
-    path: row.storage_path,
-    mimeType: row.mime_type,
-    byteSize: Number(row.byte_size ?? 0),
-  }));
-}

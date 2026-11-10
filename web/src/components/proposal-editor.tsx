@@ -27,7 +27,6 @@ import {
 import {
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_TONES,
-  type CompanyDocument,
   type Proposal,
   type ProposalBody,
 } from "@/lib/proposal-types";
@@ -618,7 +617,6 @@ export function ProposalEditor({
   deal = null,
   catalog = [],
   extras = null,
-  companyDocuments = [],
   initialTemplateId = null,
   backHref,
   backLabel,
@@ -640,7 +638,6 @@ export function ProposalEditor({
   catalog?: CatalogItem[];
   /** A saved proposal's attachments and latest delivery. */
   extras?: DocumentExtras | null;
-  companyDocuments?: CompanyDocument[];
   initialTemplateId?: string | null;
   backHref: string;
   backLabel: string;
@@ -1014,7 +1011,6 @@ export function ProposalEditor({
             projectId={projectId!}
             assets={extras.assets}
             readOnly={readOnly}
-            companyDocuments={{ include: proposal.includeCompanyDocuments, documents: companyDocuments }}
           />
         ) : null}
 

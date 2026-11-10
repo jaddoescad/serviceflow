@@ -1,11 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addDocumentAssets, removeDocumentAsset } from "@/lib/actions/documents";
 import { loadGalleryPage } from "@/lib/actions/gallery-page";
-import { setProposalCompanyDocuments } from "@/lib/actions/proposals";
 import {
   DOCUMENT_ASSET_MAX_BYTES,
   documentAssetUrl,
@@ -16,13 +14,11 @@ import {
 } from "@/lib/document-assets";
 import { DEFAULT_GALLERY_FILTERS, type GalleryCursor } from "@/lib/gallery-page";
 import type { ProjectMediaItem } from "@/lib/project-data";
-import type { CompanyDocument, DocumentAsset, DocumentKind } from "@/lib/proposal-types";
+import type { DocumentAsset, DocumentKind } from "@/lib/proposal-types";
 import { DialogFooter } from "./document-dialogs";
-import { Switch, linkStyle } from "./pipeline-ui";
 import { ProjectMediaPreview } from "./project-media-preview";
 import { ProjectModal } from "./project-profile-panel";
 import { Button, Card, EmptyState, cn } from "./ui";
-import { settingsHref } from "@/lib/settings-pages";
 
 type NewAsset = { kind: "photo" | "file"; name: string; path: string; mimeType: string; byteSize: number };
 type Prepared = { kind: "photo" | "file"; name: string; blob: Blob };
@@ -201,62 +197,6 @@ function RemoveButton({
   );
 }
 
-/** Proposals: whether the customer's link offers the company's insurance and other documents. */
-function CompanyDocumentsRow({
-  proposalId,
-  include: initialInclude,
-  documents,
-  readOnly,
-}: {
-  proposalId: string;
-  include: boolean;
-  documents: CompanyDocument[];
-  readOnly: boolean;
-}) {
-  const router = useRouter();
-  const [include, setInclude] = useState(initialInclude);
-  const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
-  if (!documents.length) {
-    return (
-      <div className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-2 text-[13px]">
-        <span className="text-[var(--color-muted)]">No company documents</span>
-        <Link href={settingsHref("documents")} className={linkStyle}>
-          Add in Settings
-        </Link>
-      </div>
-    );
-  }
-  return (
-    <div className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--color-border)] px-4 py-2">
-      <div className="min-w-0">
-        <div className="text-[13px] text-[var(--color-heading)]">Include company documents</div>
-        <div className={error ? "text-xs text-[var(--color-bad)]" : "truncate text-xs text-[var(--color-muted)]"}>
-          {error || documents.map((file) => file.name).join(", ")}
-        </div>
-      </div>
-      <Switch
-        label="Include company documents"
-        checked={include}
-        disabled={readOnly || pending}
-        onChange={(next) => {
-          setError("");
-          setInclude(next);
-          startTransition(async () => {
-            const result = await setProposalCompanyDocuments(proposalId, next);
-            if (!result.ok) {
-              setInclude(!next);
-              setError(result.error ?? "Could not update.");
-              return;
-            }
-            router.refresh();
-          });
-        }}
-      />
-    </div>
-  );
-}
-
 /** Photos and files the customer sees with the document. */
 export function DocumentAttachments({
   kind,
@@ -265,7 +205,6 @@ export function DocumentAttachments({
   projectId,
   assets,
   readOnly,
-  companyDocuments,
 }: {
   kind: DocumentKind;
   documentId: string;
@@ -274,8 +213,6 @@ export function DocumentAttachments({
   projectId: string;
   assets: DocumentAsset[];
   readOnly: boolean;
-  /** Proposals only. */
-  companyDocuments?: { include: boolean; documents: CompanyDocument[] };
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -287,7 +224,7 @@ export function DocumentAttachments({
   const busy = !!progress || !!removing;
   const photos = assets.filter((asset) => asset.kind === "photo");
   const files = assets.filter((asset) => asset.kind === "file");
-  if (readOnly && !assets.length && !companyDocuments) return null;
+  if (readOnly && !assets.length) return null;
 
   /** Uploads one at a time, then records whatever made it up. */
   async function attach(sources: Array<() => Promise<Prepared>>) {
@@ -407,14 +344,6 @@ export function DocumentAttachments({
             </li>
           ))}
         </ul>
-      ) : null}
-      {companyDocuments ? (
-        <CompanyDocumentsRow
-          proposalId={documentId}
-          include={companyDocuments.include}
-          documents={companyDocuments.documents}
-          readOnly={readOnly}
-        />
       ) : null}
       {picking ? (
         <ProjectPhotoPicker
