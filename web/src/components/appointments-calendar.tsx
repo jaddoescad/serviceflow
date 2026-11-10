@@ -206,10 +206,9 @@ function AppointmentButton({
   );
 }
 
-// Month chips have a fixed height so we can tell how many fit in a day.
+// Month chips have a fixed height, so each week row can be made tall enough for its busiest day.
 const CHIP_HEIGHT = 22;
 const CHIP_GAP = 2;
-const MORE_HEIGHT = 18;
 
 function MonthView({
   month,
@@ -226,45 +225,30 @@ function MonthView({
   onNew: (day: string) => void;
   onOpen: (item: Appointment) => void;
 }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [rowHeight, setRowHeight] = useState(120);
-  const weeks = monthWeeks(month).length;
-  useEffect(() => {
-    const body = bodyRef.current;
-    if (!body) return;
-    const measure = () => {
-      const row = body.firstElementChild as HTMLElement | null;
-      if (row) setRowHeight(row.clientHeight);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(body);
-    return () => observer.disconnect();
-  }, [weeks]);
-
-  const room = rowHeight - DAY_NUMBER_HEIGHT - 4;
-  const fits = Math.max(1, Math.floor((room + CHIP_GAP) / (CHIP_HEIGHT + CHIP_GAP)));
-  const fitsBesideMore = Math.max(0, Math.floor((room - MORE_HEIGHT) / (CHIP_HEIGHT + CHIP_GAP)));
   const byDay = new Map<string, Item[]>();
   for (const item of items) {
     const day = wall(item.startsAt).day;
     byDay.set(day, [...(byDay.get(day) ?? []), item]);
   }
+  // Every appointment shows: a week with a busy day grows and the month scrolls.
+  const rowMinHeights = monthWeeks(month).map((weekStart) => {
+    const most = Math.max(0, ...Array.from({ length: 7 }, (_, index) => byDay.get(addDays(weekStart, index))?.length ?? 0));
+    return DAY_NUMBER_HEIGHT + 6 + most * (CHIP_HEIGHT + CHIP_GAP);
+  });
 
   return (
     <CalendarMonthGrid
       month={month}
       today={today}
-      bodyRef={bodyRef}
+      rowMinHeights={rowMinHeights}
       dayHref={dayHref}
       onDayClick={onNew}
       renderDay={(day) => {
         const list = byDay.get(day);
         if (!list) return null;
-        const shown = list.length > fits ? list.slice(0, fitsBesideMore) : list;
         return (
           <div className="flex min-h-0 flex-col gap-0.5 px-1 pb-1">
-            {shown.map((item) => (
+            {list.map((item) => (
               <AppointmentButton
                 key={item.id}
                 item={item}
@@ -276,15 +260,6 @@ function MonthView({
                 <span className="truncate font-medium text-[var(--color-heading)]">{label(item)}</span>
               </AppointmentButton>
             ))}
-            {shown.length < list.length ? (
-              <Link
-                href={dayHref(day)}
-                onClick={(event) => event.stopPropagation()}
-                className="block shrink-0 truncate px-2 text-xs font-medium leading-[18px] text-[var(--color-muted)] hover:text-[var(--color-heading)]"
-              >
-                +{list.length - shown.length} more
-              </Link>
-            ) : null}
           </div>
         );
       }}
