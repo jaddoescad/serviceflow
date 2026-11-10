@@ -13,6 +13,8 @@ const DOCUMENT_TABLES: Record<DocumentKind, string> = {
 export type DocumentExtras = {
   /** The company that owns the document; uploads are stored under it. */
   orgId: string;
+  /** Fills the company into the send dialog's default messages. */
+  company: { name: string; phone: string | null } | null;
   assets: DocumentAsset[];
   delivery: DocumentDelivery | null;
 };
@@ -40,9 +42,13 @@ export async function getDocumentExtras(kind: DocumentKind, id: string): Promise
   if (assets.error) throw new Error(`document files: ${assets.error.message}`);
   if (delivery.error) throw new Error(`document delivery: ${delivery.error.message}`);
   if (!document.data) return null;
+  const orgId = (document.data as Row).org_id as string;
+  // Only prefills messages, so a failed read leaves the placeholders in.
+  const { data: company } = await supabase.from("organizations").select("name,phone").eq("id", orgId).maybeSingle();
   const message = delivery.data as Row | null;
   return {
-    orgId: (document.data as Row).org_id,
+    orgId,
+    company: company ? { name: company.name, phone: company.phone ?? null } : null,
     assets: (assets.data ?? []).map((row: Row) => ({
       id: row.id,
       kind: row.kind,

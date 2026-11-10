@@ -16,30 +16,47 @@ function revalidate(kind: DocumentKind) {
   for (const path of DOCUMENT_PATHS[kind]) revalidatePath(path, "layout");
 }
 
+export type SendChannel = "email" | "sms";
+
 /**
- * Marks the document sent and, for email or text, queues the message in the
- * same step. The customer's address and Quo are checked first, so an error
- * leaves the document as it was. Returns the token for the customer's link.
+ * Marks the document sent and queues its email and/or text. The text goes
+ * first: the customer's number and Quo are checked before anything changes,
+ * so a text that can't go out leaves the document as it was and sends no
+ * email. With neither message it only marks the document sent. Returns the
+ * token for the customer's link and which messages were queued.
  */
 export async function sendDocument(input: {
   kind: DocumentKind;
   id: string;
-  channel: "email" | "sms" | "link";
-  subject: string;
-  body: string;
-}): Promise<{ token?: string; error?: string }> {
+  email?: { subject: string; body: string };
+  sms?: { body: string };
+}): Promise<{ token?: string; sent: SendChannel[]; error?: string }> {
   await requireStaff();
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("send_document", {
-    requested_kind: input.kind,
-    requested_id: input.id,
-    requested_channel: input.channel,
-    requested_subject: input.channel === "email" ? input.subject : "",
-    requested_body: input.channel === "link" ? "" : input.body,
-  });
-  if (error) return { error: error.message };
+  const messages: { channel: SendChannel | "link"; subject: string; body: string }[] = [];
+  if (input.sms) messages.push({ channel: "sms", subject: "", body: input.sms.body });
+  if (input.email) messages.push({ channel: "email", ...input.email });
+  if (!messages.length) messages.push({ channel: "link", subject: "", body: "" });
+
+  let token: string | undefined;
+  const sent: SendChannel[] = [];
+  for (const message of messages) {
+    const { data, error } = await supabase.rpc("send_document", {
+      requested_kind: input.kind,
+      requested_id: input.id,
+      requested_channel: message.channel,
+      requested_subject: message.subject,
+      requested_body: message.body,
+    });
+    if (error) {
+      if (token) revalidate(input.kind);
+      return { token, sent, error: error.message };
+    }
+    token = data as string;
+    if (message.channel !== "link") sent.push(message.channel);
+  }
   revalidate(input.kind);
-  return { token: data as string };
+  return { token, sent };
 }
 
 /** Records files already uploaded to the document-assets bucket, after any already attached. */

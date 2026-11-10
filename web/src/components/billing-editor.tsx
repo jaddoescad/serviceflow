@@ -428,6 +428,7 @@ export function BillingEditor({
           }
           path={publicPath}
           token={linkReady ? token : null}
+          company={extras?.company}
           dirty={dirty}
           save={save}
           onClose={() => setDialog(null)}

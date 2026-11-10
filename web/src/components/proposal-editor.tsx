@@ -1046,6 +1046,8 @@ export function ProposalEditor({
           description="Marks the proposal sent, moves the deal to Proposal(s) Sent and copies the link where your customer accepts, signs or declines."
           path="/p"
           token={proposal.status === "sent" ? proposal.publicToken : null}
+          customer={contact ? { name: contact.name ?? deal?.name ?? null, email: contact.email, phone: contact.phone } : null}
+          company={extras?.company}
           dirty={dirty}
           save={save}
           onClose={() => setDialog(null)}
