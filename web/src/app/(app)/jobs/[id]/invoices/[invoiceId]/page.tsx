@@ -56,7 +56,7 @@ export default async function InvoicePage({
         issuedOn: invoice?.issuedOn ?? addDays(0),
         dueOn: invoice ? (invoice.dueOn ?? "") : addDays(14),
       }}
-      backHref={dealHref(jobId, "invoices")}
+      backHref={dealHref(jobId)}
       backLabel={shell.name}
     />
   );

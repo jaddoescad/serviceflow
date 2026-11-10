@@ -81,16 +81,15 @@ export type DealExtras = {
   documents: { id: string; projectId: string; name: string; kind: "file" | "page"; createdAt: string }[];
 };
 
-/** The deal page's center tabs, in order; the key is the ?tab= value. */
+/** The deal page's center tabs, in order; the key is the ?tab= value.
+ * Proposals, invoices and appointments live in the right sidebar only;
+ * Documents opens from the sidebar's "All documents", not the tab bar. */
 export const DEAL_TABS = [
   ["communications", "Communications"],
   ["notes", "Notes"],
   ["photos", "Photos"],
   ["documents", "Documents"],
-  ["proposals", "Proposals"],
   ["change-orders", "Change orders"],
-  ["invoices", "Invoices"],
-  ["appointments", "Appointments"],
   ["labour", "Labour budget"],
   ["tasks", "Tasks"],
 ] as const;

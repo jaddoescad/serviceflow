@@ -6,7 +6,8 @@ import { ProjectLabelPicker } from "./project-label-picker";
 import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { LabelChip } from "./label-chip";
 import { AddressInput } from "./address-input";
-import { Button, Field, Input, Tag, Textarea, buttonClassName } from "./ui";
+import { PencilIcon } from "./pipeline-ui";
+import { Button, Field, Input, Tag, buttonClassName } from "./ui";
 import {
   changeProjectLifecycle,
   saveWorkspaceProject,
@@ -17,15 +18,11 @@ import type { ProjectContact } from "@/lib/project-data";
 
 export function WorkspaceProjectActions({
   project,
-  contact,
-  description,
   labels,
   canManage,
   showLabels = true,
 }: {
   project: WorkspaceProject;
-  contact: ProjectContact;
-  description: string | null;
   labels: ProjectLabel[];
   canManage: boolean;
   /** The deal page shows labels in its details panel, so it leaves them out here. */
@@ -35,30 +32,10 @@ export function WorkspaceProjectActions({
   const menuId = useId();
   const menu = useRef<HTMLDivElement>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const [editing, setEditing] = useState(false);
   const [labelPicker, setLabelPicker] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
-  const [draft, setDraft] = useState<ProjectEdit>(() => values());
-  function values(): ProjectEdit {
-    return {
-      id: project.id,
-      name: project.name,
-      contactName: contact.name ?? "",
-      email: contact.email ?? "",
-      phone: contact.phone ?? "",
-      address: project.address ?? "",
-      description: description ?? "",
-      notes: contact.customerNotes ?? "",
-      labels: project.labels.map((label) => label.id),
-    };
-  }
-  function edit() {
-    setDraft(values());
-    setError("");
-    setEditing(true);
-  }
   function lifecycle(action: "archive" | "unarchive" | "trash" | "restore") {
     menu.current?.hidePopover();
     setError("");
@@ -93,11 +70,6 @@ export function WorkspaceProjectActions({
         ) : null}
         {canManage ? (
           <div className="flex gap-2">
-            {!project.trashed_at ? (
-              <Button variant="secondary" size={showLabels ? undefined : "sm"} onClick={edit}>
-                Edit Project
-              </Button>
-            ) : null}
             <div>
               <button
                 type="button"
@@ -172,7 +144,7 @@ export function WorkspaceProjectActions({
           </div>
         ) : null}
       </div>
-      {error && !editing && !confirmTrash ? (
+      {error && !confirmTrash ? (
         <p role="alert" className="mt-2 text-xs text-[var(--color-bad)]">
           {error}
         </p>
@@ -185,6 +157,85 @@ export function WorkspaceProjectActions({
           onClose={() => setLabelPicker(false)}
         />
       ) : null}
+      {confirmTrash ? (
+        <ProjectModal
+          title="Delete Project"
+          onClose={() => {
+            if (!pending) setConfirmTrash(false);
+          }}
+        >
+          <div className="space-y-3 p-5">
+            <p className="text-[13px] text-[var(--color-text)]">
+              Move {project.name} to trash? You can restore it for 90 days.
+            </p>
+            {error && (
+              <p role="alert" className="text-[13px] text-[var(--color-bad)]">
+                {error}
+              </p>
+            )}
+          </div>
+          <ModalFooter>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => setConfirmTrash(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" disabled={pending} onClick={() => lifecycle("trash")}>
+              {pending ? "Moving…" : "Move to Trash"}
+            </Button>
+          </ModalFooter>
+        </ProjectModal>
+      ) : null}
+    </>
+  );
+}
+
+/** Opens the project's name, address and contact editor. The description
+ * has its own editor in the deal page's sidebar and is saved unchanged. */
+export function EditProjectButton({
+  project,
+  contact,
+  description,
+}: {
+  project: WorkspaceProject;
+  contact: ProjectContact;
+  description: string | null;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [draft, setDraft] = useState<ProjectEdit>(() => values());
+  function values(): ProjectEdit {
+    return {
+      id: project.id,
+      name: project.name,
+      contactName: contact.name ?? "",
+      email: contact.email ?? "",
+      phone: contact.phone ?? "",
+      address: project.address ?? "",
+      description: description ?? "",
+      notes: contact.customerNotes ?? "",
+      labels: project.labels.map((label) => label.id),
+    };
+  }
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Edit project"
+        title="Edit project"
+        onClick={() => {
+          setDraft(values());
+          setError("");
+          setEditing(true);
+        }}
+        className={buttonClassName({ variant: "ghost", size: "sm", className: "w-7 px-0" })}
+      >
+        <PencilIcon />
+      </button>
       {editing ? (
         <ProjectModal
           title="Edit Project"
@@ -269,16 +320,6 @@ export function WorkspaceProjectActions({
                   </Field>
                 </div>
               </fieldset>
-              <Field label="Description">
-                <Textarea
-                  rows={4}
-                  maxLength={10000}
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft({ ...draft, description: event.target.value })
-                  }
-                />
-              </Field>
               {error ? (
                 <p role="alert" className="text-[13px] text-[var(--color-bad)]">
                   {error}
@@ -299,37 +340,6 @@ export function WorkspaceProjectActions({
               </Button>
             </ModalFooter>
           </form>
-        </ProjectModal>
-      ) : null}
-      {confirmTrash ? (
-        <ProjectModal
-          title="Delete Project"
-          onClose={() => {
-            if (!pending) setConfirmTrash(false);
-          }}
-        >
-          <div className="space-y-3 p-5">
-            <p className="text-[13px] text-[var(--color-text)]">
-              Move {project.name} to trash? You can restore it for 90 days.
-            </p>
-            {error && (
-              <p role="alert" className="text-[13px] text-[var(--color-bad)]">
-                {error}
-              </p>
-            )}
-          </div>
-          <ModalFooter>
-            <Button
-              variant="secondary"
-              disabled={pending}
-              onClick={() => setConfirmTrash(false)}
-            >
-              Cancel
-            </Button>
-            <Button variant="danger" disabled={pending} onClick={() => lifecycle("trash")}>
-              {pending ? "Moving…" : "Move to Trash"}
-            </Button>
-          </ModalFooter>
         </ProjectModal>
       ) : null}
     </>

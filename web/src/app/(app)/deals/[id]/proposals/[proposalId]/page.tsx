@@ -90,7 +90,7 @@ export default async function ProposalPage({
       companyDocuments={companyDocuments}
       initialTemplateId={template?.id ?? null}
       projectName={shell.name}
-      backHref={dealHref(shell.canonicalJobId ?? projectId, "proposals")}
+      backHref={dealHref(shell.canonicalJobId ?? projectId)}
       backLabel={shell.name}
     />
   );

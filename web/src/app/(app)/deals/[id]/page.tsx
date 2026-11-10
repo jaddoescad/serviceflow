@@ -6,7 +6,7 @@ import { getDealRecord, markLeadOpened } from "@/lib/pipeline";
 import { isDealProjectTab, isDealTab } from "@/lib/pipeline-types";
 import { getProjectPresentation } from "@/lib/project-data";
 import { getProjectLabels, getWorkspaceProject } from "@/lib/project-workspace";
-import { WorkspaceProjectActions } from "@/components/workspace-project-actions";
+import { EditProjectButton, WorkspaceProjectActions } from "@/components/workspace-project-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ export default async function DealPage({
   // Photos, documents and the rest belong to the job once there is one.
   const projectId = record.extras.job?.id ?? record.deal.id;
   const [project, presentation] = await Promise.all([getWorkspaceProject(projectId), getProjectPresentation(projectId)]);
+  const canManage = ["admin", "manager"].includes(profile.role);
   return (
     <DealRecord
       key={record.deal.id}
@@ -35,14 +36,19 @@ export default async function DealPage({
       allLabels={labels}
       initialTab={tab}
       projectId={projectId}
+      description={presentation?.description ?? null}
+      canEditDescription={canManage}
+      editProject={
+        canManage && project && presentation && !project.trashed_at ? (
+          <EditProjectButton project={project} contact={presentation.contact} description={presentation.description} />
+        ) : null
+      }
       actions={
         project && presentation ? (
           <WorkspaceProjectActions
             project={project}
-            contact={presentation.contact}
-            description={presentation.description}
             labels={labels}
-            canManage={["admin", "manager"].includes(profile.role)}
+            canManage={canManage}
             showLabels={false}
           />
         ) : null

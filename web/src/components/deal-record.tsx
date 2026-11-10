@@ -11,11 +11,8 @@ import type { DealRecord as DealRecordData } from "@/lib/pipeline";
 import { DEAL_TABS, PIPELINE_TITLES, isDealProjectTab, proposalHref, type DealTab } from "@/lib/pipeline-types";
 import type { ProjectLabel } from "@/lib/project-workspace";
 import {
-  AppointmentsPanel,
   CommunicationsPanel,
-  InvoicesPanel,
   NotesPanel,
-  ProposalsPanel,
   appointmentStatus,
   documentHref,
   proposalStatus,
@@ -42,6 +39,8 @@ import {
   stageColors,
 } from "./pipeline-ui";
 import { ProjectLabelPicker } from "./project-label-picker";
+import { DescriptionText } from "./description-text";
+import { ProjectDescriptionEditor } from "./project-profile-panel";
 import { Badge, Select, Spinner, Tag, buttonClassName, cn } from "./ui";
 
 /** A deal's (or job's) record page: HubSpot's layout (properties left,
@@ -108,6 +107,37 @@ function QuickAction({ href, label, title, icon }: { href: string | null; label:
     <a href={href} title={title} className={className}>
       {body}
     </a>
+  );
+}
+
+/** The job description the crew apps show, at the top of the right sidebar. */
+function DescriptionSection({
+  projectId,
+  description,
+  canEdit,
+}: {
+  projectId: string;
+  description: string | null;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <section className="border-b border-[var(--color-border)] px-4 py-3">
+      <div className="flex h-7 items-center justify-between gap-2">
+        <h2 className="text-[13px] font-semibold text-[var(--color-heading)]">Description</h2>
+        {canEdit ? (
+          <button type="button" onClick={() => setEditing(true)} className={buttonClassName({ variant: "ghost", size: "sm" })}>
+            Edit
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-1.5 max-h-72 overflow-y-auto text-[13px] leading-5 text-[var(--color-text)]">
+        {description ? <DescriptionText text={description} /> : <None>No description yet</None>}
+      </div>
+      {editing ? (
+        <ProjectDescriptionEditor projectId={projectId} description={description} onClose={() => setEditing(false)} />
+      ) : null}
+    </section>
   );
 }
 
@@ -215,6 +245,9 @@ export function DealRecord({
   allLabels,
   initialTab,
   projectId,
+  description,
+  canEditDescription,
+  editProject,
   actions,
   panel,
   panelTab,
@@ -223,7 +256,12 @@ export function DealRecord({
   initialTab: DealTab;
   /** The job once there is one, else the deal: where photos, documents and tasks live. */
   projectId: string;
-  /** Edit, archive and delete for the project, at the end of the top bar. */
+  /** The project's description (the one the crew apps show). */
+  description: string | null;
+  canEditDescription: boolean;
+  /** The Edit project icon, beside the record's avatar in the left sidebar. */
+  editProject: ReactNode;
+  /** Archive and delete for the project, at the end of the top bar. */
   actions: ReactNode;
   /** A project tab's content, loaded on the server for `panelTab`. */
   panel: ReactNode;
@@ -271,17 +309,14 @@ export function DealRecord({
   const counts: Record<DealTab, number> = {
     communications: deal.messages.length,
     notes: deal.notes.length,
-    proposals: deal.proposals.length,
-    invoices: extras.invoices.length,
-    appointments: deal.appointments.length,
     photos: 0,
     documents: extras.documents.length,
     "change-orders": 0,
     labour: 0,
     tasks: 0,
   };
-  // Change orders only exist on a job.
-  const tabs = DEAL_TABS.filter(([key]) => key !== "change-orders" || job);
+  // Change orders only exist on a job; Documents opens from the sidebar.
+  const tabs = DEAL_TABS.filter(([key]) => key !== "documents" && (key !== "change-orders" || job));
   const calculatorHref = `/jobs/${encodeURIComponent(projectId)}/calculator`;
 
   function changeTab(next: DealTab) {
@@ -388,7 +423,10 @@ export function DealRecord({
       <div className="grid flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:min-h-0 xl:grid-cols-[280px_minmax(0,1fr)_280px] xl:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)_300px]">
         {/* Details */}
         <aside className="border-[var(--color-border)] px-5 py-5 max-lg:border-b lg:border-r xl:overflow-y-auto">
-          <Initials name={deal.name} className="h-10 w-10 text-sm" />
+          <div className="flex items-start justify-between gap-2">
+            <Initials name={deal.name} className="h-10 w-10 text-sm" />
+            {editProject}
+          </div>
           <h1 className="mt-3 text-lg font-semibold leading-snug text-[var(--color-heading)]">{deal.name}</h1>
           <p className="mt-0.5 text-xs text-[var(--color-muted)]">
             {noun === "job" ? "Job" : "Deal"} · Created {fmtRelativeTime(deal.createdAt)}
@@ -545,12 +583,6 @@ export function DealRecord({
               <CommunicationsPanel deal={deal} />
             ) : tab === "notes" ? (
               <NotesPanel deal={deal} autoFocus={initialTab === "notes"} />
-            ) : tab === "proposals" ? (
-              <ProposalsPanel deal={deal} />
-            ) : tab === "invoices" ? (
-              <InvoicesPanel extras={extras} />
-            ) : tab === "appointments" ? (
-              <AppointmentsPanel deal={deal} />
             ) : panelTab === tab ? (
               panel
             ) : (
@@ -563,6 +595,7 @@ export function DealRecord({
 
         {/* Associated records */}
         <aside className="border-[var(--color-border)] max-lg:border-t lg:border-r lg:border-t xl:overflow-y-auto xl:border-l xl:border-r-0 xl:border-t-0">
+          <DescriptionSection projectId={projectId} description={description} canEdit={canEditDescription} />
           <Association title="Proposals" count={deal.proposals.length} addHref={newProposalHref} addLabel="New proposal">
             {deal.proposals.length ? (
               deal.proposals.map((proposal) => {

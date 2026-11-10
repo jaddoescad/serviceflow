@@ -1,26 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition, type ComponentProps, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { deleteProjectNote, saveProjectNote } from "@/lib/actions/crm";
 import { queueCustomerMessage } from "@/lib/actions/messaging";
 import { updateDealNote } from "@/lib/actions/pipeline";
-import { INVOICE_STATUS } from "@/lib/billing-types";
 import type { DealOverview } from "@/lib/crm-types";
-import { fmtDate, fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
-import { fmtCents } from "@/lib/line-items";
+import { fmtDateTime, fmtRelativeTime } from "@/lib/format";
 import type { Thread } from "@/lib/inbox-types";
-import { RECORD_STATUS_OPTIONS, proposalHref, type DealExtras } from "@/lib/pipeline-types";
+import { RECORD_STATUS_OPTIONS, type DealExtras } from "@/lib/pipeline-types";
 import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_TONES, type ProposalStatus } from "@/lib/proposal-types";
 import { Composer, ThreadMessages, ThreadScroller, useEarlierMessages } from "./inbox/thread";
 import { useContactThread } from "./inbox/use-contact-thread";
-import { DocumentIcon, Initials, fmtDay } from "./pipeline-ui";
-import { Badge, Button, Spinner, Textarea, buttonClassName } from "./ui";
+import { Initials } from "./pipeline-ui";
+import { Badge, Button, Spinner, Textarea } from "./ui";
 
 
-/** The deal page's center panels: communications, notes and the records
- * hanging off the deal. */
+/** The deal page's center panels: communications and notes. */
 
 export const JOB_STATUS_LABELS: Record<string, string> = Object.fromEntries(RECORD_STATUS_OPTIONS.jobs);
 
@@ -36,17 +32,8 @@ export const appointmentStatus = (status: string): Status => ({
   tone: status === "scheduled" ? "blue" : status === "completed" ? "green" : "gray",
 });
 
-/** Hairline-bordered list of 40px rows, Attio's table feel. */
-const list = "divide-y divide-[var(--color-border)] overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]";
-const row = "flex min-h-10 items-center gap-3 px-3 py-2 text-[13px] hover:bg-[var(--color-row-hover)]";
-
-function Empty({ children, action }: { children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center gap-3 px-4 py-12 text-center text-[13px] text-[var(--color-muted)]">
-      <p>{children}</p>
-      {action}
-    </div>
-  );
+function Empty({ children }: { children: ReactNode }) {
+  return <p className="px-4 py-12 text-center text-[13px] text-[var(--color-muted)]">{children}</p>;
 }
 
 function useAction() {
@@ -262,124 +249,6 @@ export function NotesPanel({ deal, autoFocus }: { deal: DealOverview; autoFocus:
         <Empty>No notes yet.</Empty>
       )}
     </div>
-  );
-}
-
-export function ProposalsPanel({
-  deal,
-}: {
-  deal: DealOverview;
-}) {
-  if (!deal.proposals.length) {
-    return (
-      <Empty
-        action={
-          deal.leadId ? (
-            <Link href={proposalHref(deal.id, "new")} className={buttonClassName({ variant: "secondary" })}>
-              New proposal
-            </Link>
-          ) : null
-        }
-      >
-        No proposals yet.
-      </Empty>
-    );
-  }
-  return (
-    <ul className={list}>
-      {deal.proposals.map((proposal) => {
-        const status = proposalStatus(proposal.status);
-        return (
-          <li key={proposal.id}>
-            <Link href={proposalHref(deal.id, proposal.id)} className={row}>
-              <DocumentIcon className="h-3.5 w-3.5 text-[var(--color-faint)]" />
-              <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">{proposal.name}</span>
-              {proposal.sentAt ? (
-                <span className="hidden text-xs text-[var(--color-muted)] sm:inline">Sent {fmtDate(proposal.sentAt)}</span>
-              ) : null}
-              <Badge tone={status.tone}>{status.label}</Badge>
-              <span className="w-24 text-right tabular-nums text-[var(--color-heading)]">{fmtCents(proposal.amountCents)}</span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-export function InvoicesPanel({ extras }: { extras: DealExtras }) {
-  const job = extras.job;
-  if (!extras.invoices.length) {
-    return (
-      <Empty
-        action={
-          job ? (
-            <Link href={`/jobs/${encodeURIComponent(job.id)}/invoices/new`} className={buttonClassName({ variant: "secondary" })}>
-              New invoice
-            </Link>
-          ) : null
-        }
-      >
-        {job ? "No invoices yet." : "Invoices start once a proposal is accepted."}
-      </Empty>
-    );
-  }
-  return (
-    <ul className={list}>
-      {extras.invoices.map((invoice) => {
-        const status = INVOICE_STATUS[invoice.status];
-        return (
-          <li key={invoice.id}>
-            <Link href={`/jobs/${encodeURIComponent(invoice.jobId)}/invoices/${invoice.id}`} className={row}>
-              <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">
-                #{invoice.number} {invoice.name}
-              </span>
-              <span className="hidden text-xs text-[var(--color-muted)] sm:inline">
-                {invoice.balanceCents > 0 && invoice.status !== "void" ? `${fmtCents(invoice.balanceCents)} due` : `Issued ${fmtDate(invoice.issuedOn)}`}
-              </span>
-              <Badge tone={status.tone}>{status.label}</Badge>
-              <span className="w-24 text-right tabular-nums text-[var(--color-heading)]">{fmtCents(invoice.amountCents)}</span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-export function AppointmentsPanel({ deal }: { deal: DealOverview }) {
-  if (!deal.appointments.length) {
-    return (
-      <Empty
-        action={
-          <Link href={`/appointments?new=${encodeURIComponent(deal.id)}`} className={buttonClassName({ variant: "secondary" })}>
-            New appointment
-          </Link>
-        }
-      >
-        No appointments yet.
-      </Empty>
-    );
-  }
-  return (
-    <ul className={list}>
-      {deal.appointments.map((appointment) => {
-        const status = appointmentStatus(appointment.status);
-        return (
-          <li key={appointment.id} className={row}>
-            <span className="w-28 shrink-0 tabular-nums">
-              <span className="text-[var(--color-heading)]">{fmtDay(appointment.startsAt)}</span>
-              <span className="ml-1.5 text-xs text-[var(--color-muted)]">{fmtTime(appointment.startsAt)}</span>
-            </span>
-            <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">{appointment.title}</span>
-            <span className="hidden min-w-0 truncate text-xs text-[var(--color-muted)] sm:inline">
-              {appointment.assigneeName ?? "Unassigned"}
-            </span>
-            <Badge tone={status.tone}>{status.label}</Badge>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

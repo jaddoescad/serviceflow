@@ -15,5 +15,5 @@ export default async function ProjectProposalsPage({
   const projectId = decodeURIComponent(id);
   const [shell] = await Promise.all([getProjectShell(projectId), requireStaff()]);
   if (!shell) notFound();
-  redirect(dealHref(shell.canonicalJobId ?? projectId, "proposals"));
+  redirect(dealHref(shell.canonicalJobId ?? projectId));
 }

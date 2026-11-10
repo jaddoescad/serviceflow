@@ -372,6 +372,30 @@ function TextEditor({
   );
 }
 
+/** Edits the job description the crew apps show. */
+export function ProjectDescriptionEditor({
+  projectId,
+  description,
+  onClose,
+}: {
+  projectId: string;
+  description: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <TextEditor
+      title="Edit project description"
+      label="Description"
+      placeholder="Add scope, measurements, colour details, and project instructions…"
+      initialValue={description}
+      onClose={onClose}
+      onSave={(value) =>
+        updateProjectDescription({ projectId, description: value })
+      }
+    />
+  );
+}
+
 export function ProjectProfilePanel({
   projectId,
   contact,
@@ -470,15 +494,10 @@ export function ProjectProfilePanel({
         />
       ) : null}
       {openPanel === "description" ? (
-        <TextEditor
-          title="Edit project description"
-          label="Description"
-          placeholder="Add scope, measurements, colour details, and project instructions…"
-          initialValue={description}
+        <ProjectDescriptionEditor
+          projectId={projectId}
+          description={description}
           onClose={() => setOpenPanel(null)}
-          onSave={(value) =>
-            updateProjectDescription({ projectId, description: value })
-          }
         />
       ) : null}
     </>

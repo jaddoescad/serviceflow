@@ -299,6 +299,12 @@ export const MoreIcon = ({ className }: IconProps) => (
   </Icon>
 );
 
+export const PencilIcon = ({ className }: IconProps) => (
+  <Icon className={className}>
+    <path d="M16.5 4.5a2.1 2.1 0 0 1 3 3L8 19l-4 1 1-4z" />
+  </Icon>
+);
+
 export const TrashIcon = ({ className }: IconProps) => (
   <Icon className={className}>
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
