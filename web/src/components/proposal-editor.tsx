@@ -33,7 +33,6 @@ import {
 } from "@/lib/proposal-types";
 import type { DealOverview } from "@/lib/crm-types";
 import { itemDescriptionPlain } from "@/lib/item-description";
-import { NotesPanel } from "./deal-tabs";
 import { ItemDescription, ItemDescriptionEditor } from "./item-description";
 import { DocumentAttachments } from "./document-attachments";
 import { ConfirmDialog, SendDocumentDialog } from "./document-dialogs";
@@ -1006,16 +1005,6 @@ export function ProposalEditor({
         </Card>
 
         {body.packages.length ? <PackagesPanel body={body} readOnly={readOnly} onChange={setPackages} /> : null}
-
-        {isProposal && deal ? (
-          <Card className="px-4 py-5 sm:px-7">
-            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className={SECTION_TITLE}>Notes</h2>
-              <span className="text-xs text-[var(--color-muted)]">From the deal. The customer never sees these.</span>
-            </div>
-            <NotesPanel deal={deal} autoFocus={false} />
-          </Card>
-        ) : null}
 
         {proposal && extras ? (
           <DocumentAttachments
