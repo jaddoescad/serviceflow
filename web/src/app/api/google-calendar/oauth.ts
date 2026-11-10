@@ -5,7 +5,10 @@ import { settingsHref } from "@/lib/settings-pages";
 // Google Calendar; the refresh token is stored by save_my_calendar_connection
 // and the calendar-sync function uses it to push events.
 
-export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+// Events on calendars the person owns: enough to add ServiceFlow's events to
+// their primary calendar and read its busy times, without access to calendars
+// shared with them.
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.owned";
 
 const STATE_COOKIE = "sf_google_calendar_state";
 const COOKIE_PATH = "/api/google-calendar";

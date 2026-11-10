@@ -58,7 +58,8 @@ export default function PrivacyPage() {
       <LegalSection title="Google Calendar">
         <p>
           Connecting Google Calendar is optional. Each user connects only their own calendar, in Settings › Calendar,
-          and grants ServiceFlow permission to view and edit events on it. With that permission ServiceFlow:
+          and grants ServiceFlow permission to view and edit events on calendars they own. ServiceFlow uses only their
+          primary calendar. With that permission ServiceFlow:
         </p>
         <ul>
           <li>
