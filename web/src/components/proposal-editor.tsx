@@ -571,9 +571,11 @@ function ProductPicker({
                           </span>
                         ) : null}
                       </span>
-                      <span className="shrink-0 text-[13px] tabular-nums text-[var(--color-heading)]">
-                        {fmtCents(product.unitPriceCents)}
-                      </span>
+                      {product.unitPriceCents ? (
+                        <span className="shrink-0 text-[13px] tabular-nums text-[var(--color-heading)]">
+                          {fmtCents(product.unitPriceCents)}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
