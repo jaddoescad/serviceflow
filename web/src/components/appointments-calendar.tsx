@@ -31,7 +31,7 @@ import {
   rangeLabel,
   tintStyle,
 } from "./calendar-month-grid";
-import { ProjectModal } from "./project-profile-panel";
+import { ModalFooter, ProjectModal } from "./project-profile-panel";
 import { AddressInput } from "./address-input";
 import { GoogleCalendarStatusLink } from "./settings/google-calendar-section";
 import { SuggestTimes } from "./suggest-times";
@@ -127,6 +127,13 @@ function timeRange(item: Item): string {
     : `${start.time} ${start.period} – ${end.time} ${end.period}`;
 }
 
+/** "9 AM", "9:30 AM" or "All day": the month view's chips leave the rest of the room to the name. */
+function startTime(item: Item): string {
+  if (item.event?.allDay) return "All day";
+  const minutes = wall(item.startsAt).minutes;
+  return `${Math.floor(minutes / 60) % 12 || 12}${minutes % 60 ? `:${pad(minutes % 60)}` : ""} ${minutes < 720 ? "AM" : "PM"}`;
+}
+
 const label = (item: Item) => (item.event ? item.title : `${item.projectName ?? "Project"} — ${item.title}`);
 
 /** The deal's customer details, shown and corrected on the appointment form. */
@@ -165,25 +172,29 @@ function AppointmentButton({
   children,
 }: {
   item: Item;
-  onOpen: (item: Appointment) => void;
+  onOpen: (item: Item) => void;
   className: string;
   style?: CSSProperties;
   children: ReactNode;
 }) {
-  // Google Calendar events are shown, not edited here.
+  // Google Calendar events open their details, read-only.
   if (item.event) {
     return (
-      <div
+      <button
+        type="button"
         title={describe(item)}
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen(item);
+        }}
         className={cn(
-          "cursor-default rounded-[5px] border border-dashed border-[var(--color-border-strong)] text-left text-xs",
+          "rounded-[5px] border border-dashed border-[var(--color-border-strong)] text-left text-xs hover:brightness-[0.97]",
           className,
         )}
         style={{ ...tintStyle(KIND_TINTS.other), ...style }}
       >
         {children}
-      </div>
+      </button>
     );
   }
   return (
@@ -223,7 +234,7 @@ function MonthView({
   items: Item[];
   dayHref: (day: string) => string;
   onNew: (day: string) => void;
-  onOpen: (item: Appointment) => void;
+  onOpen: (item: Item) => void;
 }) {
   const byDay = new Map<string, Item[]>();
   for (const item of items) {
@@ -256,7 +267,7 @@ function MonthView({
                 className="flex w-full shrink-0 items-center gap-1.5 pl-2 pr-1.5"
                 style={{ height: CHIP_HEIGHT }}
               >
-                <span className="shrink-0 tabular-nums text-[var(--color-muted)]">{timeRange(item)}</span>
+                <span className="shrink-0 tabular-nums text-[var(--color-muted)]">{startTime(item)}</span>
                 <span className="truncate font-medium text-[var(--color-heading)]">{label(item)}</span>
               </AppointmentButton>
             ))}
@@ -317,7 +328,7 @@ function DaysView({
   today: string;
   items: Item[];
   onNew: (day: string, minutes: number) => void;
-  onOpen: (item: Appointment) => void;
+  onOpen: (item: Item) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const days = [start, addDays(start, 1), addDays(start, 2)];
@@ -383,6 +394,90 @@ function DaysView({
         </div>
       </div>
     </>
+  );
+}
+
+const dayFormat = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Toronto",
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
+
+/**
+ * A Google Calendar entry's details. It was booked outside ServiceFlow (for
+ * example in DripJobs), so it is read-only here; deals named like it are
+ * offered so the estimate can be opened.
+ */
+function CalendarEventDialog({ item, onClose }: { item: Item; onClose: () => void }) {
+  const [deals, setDeals] = useState<{ id: string; name: string; address: string | null }[] | null>(null);
+  // "Jane Smith - On-Site Estimate" names Jane Smith.
+  const name = item.title.split(/\s+[-–—|:]\s+/)[0].trim();
+  useEffect(() => {
+    let cancelled = false;
+    if (name.length < 3) {
+      setDeals([]);
+      return;
+    }
+    searchProjects(name).then(
+      (rows) => !cancelled && setDeals(rows.slice(0, 3)),
+      () => !cancelled && setDeals([]),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+  if (!item.event) return null;
+  const { personName, calendar, location } = item.event;
+  const row = "grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3";
+  const key = "text-[var(--color-muted)]";
+  return (
+    <ProjectModal title={item.title} subtitle={`${dayFormat.format(new Date(item.startsAt))} · ${timeRange(item)}`} narrow onClose={onClose}>
+      <div className="space-y-3 px-5 py-4">
+        {location ? (
+          <div className={row}>
+            <span className={key}>Address</span>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[var(--color-brand-strong)] hover:underline"
+            >
+              {location}
+            </a>
+          </div>
+        ) : null}
+        <div className={row}>
+          <span className={key}>Calendar</span>
+          <span>
+            {personName}&apos;s Google Calendar{calendar ? ` (${calendar})` : ""}
+          </span>
+        </div>
+        <div className={row}>
+          <span className={key}>Deal</span>
+          {deals === null ? (
+            <span className={key}>Looking…</span>
+          ) : deals.length ? (
+            <span className="flex flex-col gap-1">
+              {deals.map((deal) => (
+                <Link key={deal.id} href={dealHref(deal.id)} className="text-[var(--color-brand-strong)] hover:underline">
+                  {deal.name}
+                  {deal.address ? <span className="text-[var(--color-muted)]"> · {deal.address}</span> : null}
+                </Link>
+              ))}
+            </span>
+          ) : (
+            <span className={key}>No deal with this name</span>
+          )}
+        </div>
+        <p className="text-xs text-[var(--color-muted)]">Booked outside ServiceFlow. Change or cancel it where it was booked.</p>
+      </div>
+      <ModalFooter>
+        <Button type="button" variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      </ModalFooter>
+    </ProjectModal>
   );
 }
 
@@ -827,7 +922,12 @@ export function AppointmentsCalendar({
     ...appointments.filter((item) => (!kind || item.kind === kind) && (!user || item.assignedTo === user)),
     ...fromGoogle,
   ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
-  const open = (item: Appointment) => {
+  const [viewing, setViewing] = useState<Item | null>(null);
+  const open = (item: Item) => {
+    if (item.event) {
+      setViewing(item);
+      return;
+    }
     const starts = wall(item.startsAt);
     setDraft({
       isNew: false,
@@ -903,6 +1003,7 @@ export function AppointmentsCalendar({
           <MonthView month={month} today={today} items={items} dayHref={dayHref} onNew={(day) => setDraft(blank(day))} onOpen={open} />
         )}
       </div>
+      {viewing ? <CalendarEventDialog item={viewing} onClose={() => setViewing(null)} /> : null}
       {draft ? (
         <AppointmentDialog
           key={draft.id}
