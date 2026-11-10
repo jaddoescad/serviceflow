@@ -3,7 +3,11 @@ import { createServerClient } from "@supabase/ssr";
 
 // Customer document links carry their own private token.
 // Card checkout and Stripe webhooks are called by customers and Stripe, not staff.
-const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/p/", "/co/", "/i/", "/u/", "/portal/", "/api/pay/", "/api/stripe/"];
+// The home page, privacy policy and terms are public (Google's OAuth review needs them).
+const PUBLIC_PATHS = [
+  "/login", "/signup", "/auth", "/p/", "/co/", "/i/", "/u/", "/portal/", "/api/pay/", "/api/stripe/",
+  "/about", "/privacy", "/terms",
+];
 
 export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
@@ -69,6 +73,17 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(userId);
 
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+
+  // Signed out, serviceflowapp.com itself shows the public home page; signed
+  // in, "/" stays the Today page.
+  if (!isAuthenticated && path === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/about";
+    const rewriteResponse = NextResponse.rewrite(url);
+    response.cookies.getAll().forEach((cookie) => rewriteResponse.cookies.set(cookie));
+    if (staleSession) clearAuthCookies(request, rewriteResponse);
+    return rewriteResponse;
+  }
 
   if (!isAuthenticated && !isPublic) {
     const url = request.nextUrl.clone();
