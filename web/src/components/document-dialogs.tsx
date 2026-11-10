@@ -114,9 +114,12 @@ function MessageSection({
         {title}
       </h3>
       {to ? (
-        <Field label="To">
-          <Input readOnly value={to} className="bg-[var(--color-surface-2)] text-[var(--color-muted)]" />
-        </Field>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">To</span>
+          <p className="flex min-h-8 items-center rounded-[var(--radius-control)] bg-[var(--color-surface-2)] px-2.5 text-[var(--color-muted)] [overflow-wrap:anywhere]">
+            {to}
+          </p>
+        </div>
       ) : null}
       {children}
     </section>
