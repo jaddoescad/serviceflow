@@ -12,7 +12,6 @@ import {
   lineTotalCents,
   newLineItem,
   type CatalogItem,
-  type Discount,
   type LineItem,
   type ProposalPackage,
 } from "@/lib/line-items";
@@ -310,95 +309,20 @@ export function TotalRow({
   );
 }
 
-type DiscountKind = "none" | "percent" | "amount";
-
-/** A proposal's discount: none, a percent or a fixed amount, shown as its own line before tax. */
-function DiscountRow({
-  discount,
-  discountCents,
-  onChange,
-  readOnly,
-}: {
-  discount: Discount;
-  discountCents: number;
-  onChange: (discount: Discount) => void;
-  readOnly: boolean;
-}) {
-  const kind: DiscountKind = discount.cents != null ? "amount" : discount.percent != null ? "percent" : "none";
-  if (readOnly) {
-    return kind === "none" ? null : (
-      <TotalRow label={`Discount${kind === "percent" ? ` (${discount.percent}%)` : ""}`} cents={-discountCents} />
-    );
-  }
-  return (
-    <TotalRow
-      label={
-        <span className="flex items-center gap-1.5">
-          Discount
-          {kind === "none" ? null : (
-            <span className={kind === "percent" ? "w-14" : "w-20"}>
-              {kind === "percent" ? (
-                <NumberInput
-                  aria-label="Discount percent"
-                  min={0}
-                  max={100}
-                  value={discount.percent ?? 0}
-                  onChange={(percent) => onChange({ percent, cents: null })}
-                />
-              ) : (
-                <NumberInput
-                  aria-label="Discount amount"
-                  scale={100}
-                  decimals={2}
-                  min={0}
-                  value={discount.cents ?? 0}
-                  onChange={(cents) => onChange({ percent: null, cents })}
-                />
-              )}
-            </span>
-          )}
-          <Select
-            aria-label="Discount type"
-            value={kind}
-            onChange={(event) => {
-              const next = event.target.value as DiscountKind;
-              onChange(
-                next === "none"
-                  ? { percent: null, cents: null }
-                  : next === "percent"
-                    ? { percent: discount.percent ?? 10, cents: null }
-                    : { percent: null, cents: discount.cents ?? discountCents },
-              );
-            }}
-          >
-            <option value="none">None</option>
-            <option value="percent">%</option>
-            <option value="amount">$</option>
-          </Select>
-        </span>
-      }
-      cents={-discountCents}
-    />
-  );
-}
-
 export function DocumentTotals({
   items,
   taxRatePercent,
   onTaxRateChange,
   readOnly = false,
-  discount,
   children,
 }: {
   items: LineItem[];
   taxRatePercent: number;
   onTaxRateChange: (rate: number) => void;
   readOnly?: boolean;
-  /** Proposals: a discount line between the subtotal and tax. */
-  discount?: { value: Discount; onChange: (value: Discount) => void };
   children?: React.ReactNode;
 }) {
-  const totals = documentTotals(items, taxRatePercent, discount?.value);
+  const totals = documentTotals(items, taxRatePercent);
   // Lines of packages the customer may not pick aren't "optional items".
   const optionalCents = items
     .filter((item) => isAddOn(item) && !isIncluded(item))
@@ -406,14 +330,6 @@ export function DocumentTotals({
   return (
     <dl>
       <TotalRow label="Subtotal" cents={totals.subtotalCents} />
-      {discount ? (
-        <DiscountRow
-          discount={discount.value}
-          discountCents={totals.discountCents}
-          onChange={discount.onChange}
-          readOnly={readOnly}
-        />
-      ) : null}
       <TotalRow
         label={
           readOnly ? (

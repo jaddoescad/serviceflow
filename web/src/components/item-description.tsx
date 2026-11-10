@@ -161,7 +161,7 @@ export function ItemDescriptionEditor({
           report();
         }}
         className={cn(
-          "item-description item-description-field min-h-7 max-h-56 overflow-y-auto overscroll-containdata-[empty=true]:focus:min-h-20 rounded-[var(--radius-control)] border border-transparent px-2 py-1 outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:bg-[var(--color-surface)] focus:shadow-[var(--focus-ring)]",
+          "item-description item-description-field min-h-7 max-h-56 overflow-y-auto data-[empty=true]:focus:min-h-20 rounded-[var(--radius-control)] border border-transparent px-2 py-1 outline-none hover:border-[var(--color-border-strong)] focus:border-[var(--color-brand)] focus:bg-[var(--color-surface)] focus:shadow-[var(--focus-ring)]",
           className,
         )}
       />

@@ -996,10 +996,6 @@ export function ProposalEditor({
               taxRatePercent={body.taxRatePercent}
               onTaxRateChange={(taxRatePercent) => patch({ taxRatePercent })}
               readOnly={readOnly}
-              discount={{
-                value: { percent: body.discountPercent, cents: body.discountCents },
-                onChange: (discount) => patch({ discountPercent: discount.percent, discountCents: discount.cents }),
-              }}
             >
               {shownPackage ? (
                 <div className="flex min-h-8 items-center text-xs text-[var(--color-faint)]">
