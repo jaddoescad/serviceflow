@@ -29,10 +29,14 @@ type Item = {
 
 type Outcome = { eventId: string | null; error?: string; connectionError?: boolean };
 
-type BusyTarget = { userId: string; refreshToken: string; calendarId: string; timezone: string; until: string };
+type BusyTarget = { userId: string; refreshToken: string; calendarId: string; timezone: string; since?: string; until: string };
+
+type BusyBlock = { starts_at: string; ends_at: string; title: string | null; location: string | null; all_day: boolean };
 
 type GoogleEvent = {
   status?: string;
+  summary?: string;
+  location?: string;
   transparency?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
@@ -182,17 +186,21 @@ async function sync(item: Item, access: string, appUrl: string): Promise<Outcome
   return { eventId: ((await response.json()) as { id: string }).id };
 }
 
-/** Busy times from now until `until`: events shown as busy, other than ServiceFlow's own and ones declined. */
-async function readBusy(target: BusyTarget, access: string): Promise<{ starts_at: string; ends_at: string }[]> {
-  const blocks: { starts_at: string; ends_at: string }[] = [];
+/**
+ * Busy times from `since` (else now) until `until`: events shown as busy, other
+ * than ServiceFlow's own and ones declined, with their title and address so
+ * the Appointments calendar can show them.
+ */
+async function readBusy(target: BusyTarget, access: string): Promise<BusyBlock[]> {
+  const blocks: BusyBlock[] = [];
   let pageToken: string | null = null;
   for (let page = 0; page < 5; page += 1) {
     const params = new URLSearchParams({
-      timeMin: new Date().toISOString(),
+      timeMin: new Date(target.since ?? Date.now()).toISOString(),
       timeMax: new Date(target.until).toISOString(),
       singleEvents: "true",
       maxResults: "2500",
-      fields: "nextPageToken,items(status,transparency,start,end,extendedProperties/private,attendees(self,responseStatus))",
+      fields: "nextPageToken,items(status,summary,location,transparency,start,end,extendedProperties/private,attendees(self,responseStatus))",
     });
     if (pageToken) params.set("pageToken", pageToken);
     const response = await fetch(`${API}/${encodeURIComponent(target.calendarId)}/events?${params}`, {
@@ -207,7 +215,13 @@ async function readBusy(target: BusyTarget, access: string): Promise<{ starts_at
       const start = moment(event.start, target.timezone);
       const end = moment(event.end, target.timezone);
       if (start !== null && end !== null && end > start) {
-        blocks.push({ starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString() });
+        blocks.push({
+          starts_at: new Date(start).toISOString(),
+          ends_at: new Date(end).toISOString(),
+          title: event.summary?.trim().slice(0, 300) || null,
+          location: event.location?.trim().slice(0, 500) || null,
+          all_day: !event.start?.dateTime,
+        });
       }
     }
     pageToken = result.nextPageToken ?? null;

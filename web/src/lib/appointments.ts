@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Appointment, TeamMember } from "@/lib/appointment-types";
+import type { Appointment, CalendarEvent, TeamMember } from "@/lib/appointment-types";
 
 export async function getAppointments(start: Date, end: Date): Promise<Appointment[]> {
   const supabase = await createClient();
@@ -9,6 +9,20 @@ export async function getAppointments(start: Date, end: Date): Promise<Appointme
   });
   if (error) throw new Error(`appointments: ${error.message}`);
   return (data ?? []) as Appointment[];
+}
+
+/** Events on the team's connected Google Calendars; none for people who aren't managers. */
+export async function getCalendarEvents(start: Date, end: Date): Promise<CalendarEvent[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("list_calendar_events", {
+    requested_from: start.toISOString(),
+    requested_to: end.toISOString(),
+  });
+  if (error) {
+    console.error(JSON.stringify({ message: "calendar events", error: error.message }));
+    return [];
+  }
+  return (data ?? []) as CalendarEvent[];
 }
 
 export async function getActiveTeam(): Promise<TeamMember[]> {

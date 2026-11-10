@@ -33,3 +33,16 @@ export type Appointment = {
 };
 
 export type TeamMember = { id: string; name: string };
+
+/** An event on a team member's connected Google Calendar (not one ServiceFlow added), shown read-only. */
+export type CalendarEvent = {
+  userId: string;
+  personName: string;
+  /** The connected Google account. */
+  calendar: string | null;
+  title: string | null;
+  location: string | null;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+};

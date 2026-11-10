@@ -68,10 +68,13 @@ export default function PrivacyPage() {
             does not change or delete events it did not create.
           </li>
           <li>
-            <strong>Reads when the user is busy.</strong> For users who take appointment bookings, ServiceFlow checks
-            the events on their primary calendar for about the next three weeks and stores only the start and end time of each
-            busy period. It does not store event titles, descriptions, attendees or locations. These busy times are used
-            only to avoid suggesting appointment times that overlap the user&apos;s other commitments.
+            <strong>Reads the user&apos;s other events.</strong> For users who take appointment bookings, ServiceFlow
+            reads the events on their primary calendar from about five weeks back to about two months ahead and stores
+            each event&apos;s start and end time, title, location and whether it lasts all day. It does not store
+            descriptions or attendees. ServiceFlow uses these events only to avoid suggesting appointment times that
+            overlap them, and to show them as read-only entries on the Appointments calendar to the user&apos;s
+            company&apos;s managers, so the team can see bookings made in other tools. It refreshes them about every
+            10 minutes and replaces the previous copy each time.
           </li>
           <li>
             <strong>Records the Google account email</strong> the user connected, so they can see which calendar is in
@@ -93,7 +96,7 @@ export default function PrivacyPage() {
         </p>
         <p>
           A user can disconnect at any time in Settings › Calendar. ServiceFlow then removes the events it added, deletes
-          the busy times right away and the stored token once those events are removed, and stops accessing the
+          the copied events right away and the stored token once those events are removed, and stops accessing the
           calendar. Access can also be revoked from{" "}
           <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">
             your Google account permissions
@@ -127,7 +130,7 @@ export default function PrivacyPage() {
           Company records are kept while the company uses ServiceFlow and deleted on the company&apos;s request.
           Users can delete their account in the mobile apps or by emailing us; we then remove their sign-in, devices and
           location history, and time entries and photos stay with the company&apos;s project records under &quot;Deleted
-          user&quot;. Google Calendar data (the token, busy times and records of the events ServiceFlow added) is deleted
+          user&quot;. Google Calendar data (the token, copied events and records of the events ServiceFlow added) is deleted
           when the calendar is disconnected or the account is deleted. If you delete your account without disconnecting
           first, events ServiceFlow already added stay on your calendar for you to delete.
         </p>

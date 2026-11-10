@@ -4,7 +4,7 @@ import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { getReminderRules } from "@/lib/actions/reminders";
 import { APPOINTMENT_KINDS, isAppointmentKind } from "@/lib/appointment-types";
 import { requireStaff } from "@/lib/auth";
-import { getActiveTeam, getAppointments } from "@/lib/appointments";
+import { getActiveTeam, getAppointments, getCalendarEvents } from "@/lib/appointments";
 import { dayKey } from "@/lib/format";
 import { sendsConfirmation } from "@/lib/reminder-types";
 import { createClient } from "@/lib/supabase/server";
@@ -31,9 +31,10 @@ export default async function AppointmentsPage({
   const rangeStart = new Date(`${addDays(first, -1)}T00:00:00Z`);
   const rangeEnd = new Date(`${addDays(first, days + 1)}T00:00:00Z`);
   const supabase = await createClient();
-  const [, appointments, team, rules, calendar, project] = await Promise.all([
+  const [, appointments, events, team, rules, calendar, project] = await Promise.all([
     requireStaff(),
     getAppointments(rangeStart, rangeEnd),
+    getCalendarEvents(rangeStart, rangeEnd),
     getActiveTeam(),
     getReminderRules(),
     getMyCalendarConnection(),
@@ -51,6 +52,7 @@ export default async function AppointmentsPage({
       kind={isAppointmentKind(query.type) ? query.type : ""}
       user={query.user ?? ""}
       appointments={appointments}
+      events={events}
       team={team}
       confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
       calendar={calendar}

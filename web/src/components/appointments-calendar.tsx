@@ -13,6 +13,7 @@ import {
   type Appointment,
   type AppointmentKind,
   type AppointmentStatus,
+  type CalendarEvent,
   type TeamMember,
 } from "@/lib/appointment-types";
 import {
@@ -38,6 +39,9 @@ import { Button, Field, Input, Select, StatusText, Textarea, cn, type TagTone } 
 import { dealHref } from "@/lib/pipeline-types";
 
 export type AppointmentsView = "month" | "3day";
+
+/** An appointment, or an event from a connected Google Calendar shown in its place (read-only). */
+type Item = Appointment & { event?: CalendarEvent };
 
 type Draft = {
   isNew: boolean;
@@ -110,7 +114,8 @@ const lengthLabel = (minutes: number) =>
     .join(" ");
 
 /** "9 – 10 AM", "9:30 – 10:30 AM", or "11:30 AM – 12:30 PM" across noon. */
-function timeRange(item: Appointment): string {
+function timeRange(item: Item): string {
+  if (item.event?.allDay) return "All day";
   const clock = (minutes: number) => ({
     time: `${Math.floor(minutes / 60) % 12 || 12}${minutes % 60 ? `:${pad(minutes % 60)}` : ""}`,
     period: minutes < 720 ? "AM" : "PM",
@@ -122,7 +127,7 @@ function timeRange(item: Appointment): string {
     : `${start.time} ${start.period} – ${end.time} ${end.period}`;
 }
 
-const label = (item: Appointment) => `${item.projectName ?? "Project"} — ${item.title}`;
+const label = (item: Item) => (item.event ? item.title : `${item.projectName ?? "Project"} — ${item.title}`);
 
 /** The deal's customer details, shown and corrected on the appointment form. */
 type CustomerFields = Pick<DealCustomer, "name" | "phone" | "email">;
@@ -134,7 +139,11 @@ const CUSTOMER_INPUTS = [
 ] as const;
 const customerFields = ({ name, phone, email }: CustomerFields): CustomerFields => ({ name, phone, email });
 
-function describe(item: Appointment): string {
+function describe(item: Item): string {
+  if (item.event) {
+    const { personName, calendar, location } = item.event;
+    return `${timeRange(item)} · ${item.title}${location ? ` · ${location}` : ""} · ${personName}'s Google Calendar${calendar ? ` (${calendar})` : ""}`;
+  }
   const status = item.status === "cancelled" ? " · Cancelled" : item.status === "completed" ? " · Done" : "";
   return `${timeRange(item)} · ${label(item)} · ${appointmentKindLabel(item.kind)}${item.assigneeName ? ` · ${item.assigneeName}` : ""}${status}`;
 }
@@ -155,12 +164,28 @@ function AppointmentButton({
   style,
   children,
 }: {
-  item: Appointment;
+  item: Item;
   onOpen: (item: Appointment) => void;
   className: string;
   style?: CSSProperties;
   children: ReactNode;
 }) {
+  // Google Calendar events are shown, not edited here.
+  if (item.event) {
+    return (
+      <div
+        title={describe(item)}
+        onClick={(event) => event.stopPropagation()}
+        className={cn(
+          "cursor-default rounded-[5px] border border-dashed border-[var(--color-border-strong)] text-left text-xs",
+          className,
+        )}
+        style={{ ...tintStyle(KIND_TINTS.other), ...style }}
+      >
+        {children}
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -196,7 +221,7 @@ function MonthView({
 }: {
   month: string;
   today: string;
-  items: Appointment[];
+  items: Item[];
   dayHref: (day: string) => string;
   onNew: (day: string) => void;
   onOpen: (item: Appointment) => void;
@@ -220,7 +245,7 @@ function MonthView({
   const room = rowHeight - DAY_NUMBER_HEIGHT - 4;
   const fits = Math.max(1, Math.floor((room + CHIP_GAP) / (CHIP_HEIGHT + CHIP_GAP)));
   const fitsBesideMore = Math.max(0, Math.floor((room - MORE_HEIGHT) / (CHIP_HEIGHT + CHIP_GAP)));
-  const byDay = new Map<string, Appointment[]>();
+  const byDay = new Map<string, Item[]>();
   for (const item of items) {
     const day = wall(item.startsAt).day;
     byDay.set(day, [...(byDay.get(day) ?? []), item]);
@@ -267,12 +292,14 @@ function MonthView({
   );
 }
 
-type Block = { item: Appointment; from: number; to: number; lane: number; lanes: number };
+type Block = { item: Item; from: number; to: number; lane: number; lanes: number };
 
 /** A day's appointments as minute ranges, overlapping ones side by side. */
-function layoutDay(day: string, items: Appointment[]): Block[] {
+function layoutDay(day: string, items: Item[]): Block[] {
   const blocks: Block[] = [];
   for (const item of items) {
+    // All-day Google events would fill the column; the month view shows them.
+    if (item.event?.allDay) continue;
     const start = wall(item.startsAt);
     const end = wall(item.endsAt);
     if (start.day > day || end.day < day) continue;
@@ -313,7 +340,7 @@ function DaysView({
 }: {
   start: string;
   today: string;
-  items: Appointment[];
+  items: Item[];
   onNew: (day: string, minutes: number) => void;
   onOpen: (item: Appointment) => void;
 }) {
@@ -752,6 +779,7 @@ export function AppointmentsCalendar({
   kind: initialKind,
   user: initialUser,
   appointments,
+  events,
   team,
   confirmationKinds,
   calendar,
@@ -769,6 +797,8 @@ export function AppointmentsCalendar({
   /** Assignee filter; empty for everyone. */
   user: string;
   appointments: Appointment[];
+  /** Events on the team's connected Google Calendars, such as estimates booked elsewhere. */
+  events: CalendarEvent[];
   team: TeamMember[];
   /** Types an enabled confirmation is set up for. */
   confirmationKinds: AppointmentKind[];
@@ -797,7 +827,31 @@ export function AppointmentsCalendar({
   const shift = (delta: number) =>
     view === "3day" ? href({ view, start: addDays(start, delta * 3) }) : href({ view, month: addMonths(month, delta) });
 
-  const items = appointments.filter((item) => (!kind || item.kind === kind) && (!user || item.assignedTo === user));
+  // Google events have no type, so a type filter hides them.
+  const fromGoogle: Item[] = kind
+    ? []
+    : events
+        .filter((event) => !user || event.userId === user)
+        .map((event, index) => ({
+          id: `google-${index}-${event.startsAt}`,
+          projectId: "",
+          projectName: null,
+          projectAddress: event.location,
+          title: event.title ?? "Busy",
+          kind: "other",
+          startsAt: event.startsAt,
+          endsAt: event.endsAt,
+          assignedTo: event.userId,
+          assigneeName: event.personName,
+          location: event.location,
+          notes: null,
+          status: "scheduled",
+          event,
+        }));
+  const items: Item[] = [
+    ...appointments.filter((item) => (!kind || item.kind === kind) && (!user || item.assignedTo === user)),
+    ...fromGoogle,
+  ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
   const open = (item: Appointment) => {
     const starts = wall(item.startsAt);
     setDraft({
