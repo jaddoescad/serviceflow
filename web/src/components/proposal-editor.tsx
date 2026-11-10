@@ -301,6 +301,8 @@ function Lines({
   items,
   group,
   packages,
+  catalog,
+  fresh,
   readOnly,
   dragging,
   target,
@@ -314,6 +316,9 @@ function Lines({
   items: LineItem[];
   group: Group;
   packages: ProposalPackage[];
+  catalog: CatalogItem[];
+  /** The line just added, whose name takes the cursor. */
+  fresh: string | null;
   readOnly: boolean;
   /** The line being dragged, and where it would land. */
   dragging: string | null;
@@ -366,13 +371,11 @@ function Lines({
               </>
             ) : (
               <>
-                <input
-                  aria-label="Item name"
-                  placeholder="Item name"
-                  maxLength={200}
-                  value={item.name}
-                  onChange={(event) => onUpdate(item.id, { name: event.target.value })}
-                  className={cn(CELL, "h-8 text-[15px] font-semibold text-[var(--color-heading)]")}
+                <ItemNameField
+                  item={item}
+                  catalog={catalog}
+                  autoFocus={fresh === item.id}
+                  onUpdate={(patch) => onUpdate(item.id, patch)}
                 />
                 {packages.length && !isAddOn(item) ? (
                   <select
@@ -490,109 +493,109 @@ function Lines({
 }
 
 /**
- * "+ Add product": the company's saved products and services (Proposals ›
- * Catalog), searched by name. Picking one adds it as a line.
+ * A line's name. Typing in it lists the company's saved products; choosing one
+ * fills in the name, description and price, and anything else typed is kept as is.
  */
-function ProductPicker({
+function ItemNameField({
+  item,
   catalog,
-  className,
-  onPick,
+  autoFocus,
+  onUpdate,
 }: {
+  item: LineItem;
   catalog: CatalogItem[];
-  className?: string;
-  onPick: (product: CatalogItem) => void;
+  autoFocus: boolean;
+  onUpdate: (patch: Partial<LineItem>) => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
+  const listId = useId();
   const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent ? event.key === "Escape" : !root.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", close);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", close);
-    };
-  }, [open]);
-  const words = search.trim().toLowerCase();
-  const shown = words ? catalog.filter((product) => product.name.toLowerCase().includes(words)) : catalog;
+  const [active, setActive] = useState(0);
+  const words = item.name.trim().toLowerCase();
+  const shown = open
+    ? catalog.filter((product) => product.name.toLowerCase().includes(words)).slice(0, 50)
+    : [];
+  const pick = (product: CatalogItem) => {
+    onUpdate({
+      name: product.name,
+      description: product.description,
+      ...(product.unitPriceCents ? { unitPriceCents: product.unitPriceCents } : null),
+    });
+    setOpen(false);
+  };
   return (
-    <div ref={root} className="relative inline-block">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          setSearch("");
-          setOpen(!open);
+    <div className="relative">
+      <input
+        role="combobox"
+        aria-label="Item name"
+        aria-expanded={shown.length > 0}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        autoComplete="off"
+        autoFocus={autoFocus}
+        placeholder={catalog.length ? "Choose a product or type a name" : "Item name"}
+        maxLength={200}
+        value={item.name}
+        onFocus={() => {
+          if (!item.name) setOpen(true);
         }}
-        className={className}
-      >
-        + Add product
-      </button>
-      {open ? (
-        <div
-          role="dialog"
-          aria-label="Add a product"
-          className="absolute left-0 top-full z-30 mt-1 w-[min(22rem,calc(100vw-3rem))] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-pop)]"
+        onBlur={() => setOpen(false)}
+        onChange={(event) => {
+          onUpdate({ name: event.target.value });
+          setActive(0);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) setOpen(true);
+          if (!shown.length) return;
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((active + (event.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length);
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            pick(shown[Math.min(active, shown.length - 1)]);
+          } else if (event.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        className={cn(CELL, "h-8 text-[15px] font-semibold text-[var(--color-heading)]")}
+      />
+      {shown.length ? (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label="Products"
+          // Keeps the field focused, so a click on a product is not lost to its blur.
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute left-0 top-full z-30 mt-1 max-h-72 w-[min(26rem,calc(100vw-3rem))] overflow-y-auto rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-pop)]"
         >
-          {catalog.length ? (
-            <>
-              <div className="border-b border-[var(--color-border)] p-2">
-                <input
-                  autoFocus
-                  aria-label="Search products"
-                  placeholder="Search products"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="h-8 w-full rounded-[var(--radius-control)] border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 text-[13px] outline-none placeholder:text-[var(--color-faint)] focus:border-[var(--color-brand)] focus:shadow-[var(--focus-ring)]"
-                />
-              </div>
-              <ul className="max-h-72 overflow-y-auto p-1">
-                {shown.map((product) => (
-                  <li key={product.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onPick(product);
-                        setOpen(false);
-                      }}
-                      className="flex w-full items-start gap-3 rounded-[var(--radius-control)] px-2.5 py-2 text-left outline-none hover:bg-[var(--color-hover)] focus-visible:bg-[var(--color-hover)]"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-[var(--color-heading)]">{product.name}</span>
-                        {product.description ? (
-                          <span className="block truncate text-xs text-[var(--color-muted)]">
-                            {itemDescriptionPlain(product.description)}
-                          </span>
-                        ) : null}
-                      </span>
-                      {product.unitPriceCents ? (
-                        <span className="shrink-0 text-[13px] tabular-nums text-[var(--color-heading)]">
-                          {fmtCents(product.unitPriceCents)}
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-                {shown.length ? null : <li className="px-2.5 py-3 text-[13px] text-[var(--color-muted)]">No product by that name.</li>}
-              </ul>
-            </>
-          ) : (
-            <p className="px-3 py-3 text-[13px] text-[var(--color-muted)]">
-              You have no products yet. Save the items you quote often and add them here in one click.
-            </p>
-          )}
-          <div className="border-t border-[var(--color-border)] px-3 py-2 text-xs">
-            <Link href="/proposals/catalog" className="font-medium text-[var(--color-brand-strong)] hover:underline">
-              Manage products
-            </Link>
-          </div>
-        </div>
+          {shown.map((product, index) => (
+            <li
+              key={product.id}
+              role="option"
+              aria-selected={index === active}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => pick(product)}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-[var(--radius-control)] px-2.5 py-2",
+                index === active && "bg-[var(--color-hover)]",
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-[var(--color-heading)]">{product.name}</span>
+                {product.description ? (
+                  <span className="block truncate text-xs text-[var(--color-muted)]">
+                    {itemDescriptionPlain(product.description)}
+                  </span>
+                ) : null}
+              </span>
+              {product.unitPriceCents ? (
+                <span className="shrink-0 text-[13px] tabular-nums text-[var(--color-heading)]">
+                  {fmtCents(product.unitPriceCents)}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );
@@ -745,7 +748,15 @@ export function ProposalEditor({
       dropItem();
     },
   });
+  const [fresh, setFresh] = useState<string | null>(null);
+  const addItem = (init?: Parameters<typeof newLineItem>[0]) => {
+    const item = newLineItem(init);
+    setFresh(item.id);
+    setItems([...body.items, item]);
+  };
   const lineProps = {
+    catalog,
+    fresh,
     readOnly,
     dragging,
     target,
@@ -938,20 +949,11 @@ export function ProposalEditor({
             {readOnly ? null : (
               <button
                 type="button"
-                onClick={() => setItems([...body.items, newLineItem()])}
+                onClick={() => addItem()}
                 className={cn(ADD_LINK, "text-[var(--color-brand-strong)]")}
               >
                 + Add item
               </button>
-            )}
-            {readOnly ? null : (
-              <ProductPicker
-                catalog={catalog}
-                className={cn(ADD_LINK, "text-[var(--color-brand-strong)]")}
-                onPick={({ name, description, unitPriceCents }) =>
-                  setItems([...body.items, newLineItem({ name, description, unitPriceCents })])
-                }
-              />
             )}
           </div>
 
@@ -971,23 +973,11 @@ export function ProposalEditor({
               {readOnly ? null : (
                 <button
                   type="button"
-                  onClick={() => setItems([...body.items, newLineItem({ optional: true, selected: false })])}
+                  onClick={() => addItem({ optional: true, selected: false })}
                   className={cn(ADD_LINK, "mt-1 text-[var(--color-warn)]")}
                 >
                   + Add optional item
                 </button>
-              )}
-              {readOnly ? null : (
-                <ProductPicker
-                  catalog={catalog}
-                  className={cn(ADD_LINK, "mt-1 text-[var(--color-warn)]")}
-                  onPick={({ name, description, unitPriceCents }) =>
-                    setItems([
-                      ...body.items,
-                      newLineItem({ name, description, unitPriceCents, optional: true, selected: false }),
-                    ])
-                  }
-                />
               )}
             </div>
           ) : null}
