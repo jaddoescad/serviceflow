@@ -62,19 +62,14 @@ Deno.serve(async (req) => {
       const documentLink = message.documentPath ? `${appUrl}${message.documentPath}` : proposalLink;
       const fill = (text: string) =>
         text.replaceAll("{{proposal_link}}", proposalLink).replaceAll("{{document_link}}", documentLink).trim();
-      const unsubscribe = `${appUrl}/u/${message.id}`;
-      // Messages staff send one customer (a reply, or a proposal, change order
-      // or invoice) read like a normal message, with no opt-out footer;
-      // automated drips and reminders keep it.
-      const footer = message.kind === "drip" || message.kind === "reminder";
       // A sent document's email shows its link as a button.
       const button = message.kind === "document" && message.documentPath
         ? { url: documentLink, label: `View ${DOCUMENT_NOUNS[message.documentPath.split("/")[1]] ?? "document"}` }
         : undefined;
       outcome =
         message.channel === "email"
-          ? await sendEmail(message, fill(message.subject ?? ""), fill(message.body), unsubscribe, footer, button)
-          : await sendText(message, fill(message.body), unsubscribe, footer);
+          ? await sendEmail(message, fill(message.subject ?? ""), fill(message.body), button)
+          : await sendText(message, fill(message.body));
     } catch (reason) {
       outcome = { status: "failed", error: reason instanceof Error ? reason.message : String(reason) };
     }
@@ -91,16 +86,14 @@ Deno.serve(async (req) => {
   return json({ claimed: messages.length, ...counts });
 });
 
-async function sendText(message: Claimed, body: string, unsubscribe: string, footer: boolean): Promise<Outcome> {
+async function sendText(message: Claimed, body: string): Promise<Outcome> {
   if (!message.quoApiKey || !message.quoFrom) {
     return { status: "skipped", error: "Connect Quo in Settings to send texts." };
   }
   const to = toE164(message.to);
   if (!to) return { status: "skipped", error: "Customer has no valid mobile number." };
 
-  const content = [body, ...message.attachments.map((photo) => photo.url), footer ? `Opt out: ${unsubscribe}` : ""]
-    .filter(Boolean)
-    .join("\n\n");
+  const content = [body, ...message.attachments.map((photo) => photo.url)].join("\n\n");
   const response = await fetch("https://api.quo.com/v1/messages", {
     method: "POST",
     headers: { Authorization: message.quoApiKey, "Content-Type": "application/json" },

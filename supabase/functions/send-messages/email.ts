@@ -13,8 +13,6 @@ export async function sendEmail(
   message: EmailMessage,
   subject: string,
   body: string,
-  unsubscribe: string,
-  footer: boolean,
   button?: { url: string; label: string },
 ): Promise<Outcome> {
   const relayUrl = Deno.env.get("CLOUDFLARE_EMAIL_URL");
@@ -24,13 +22,12 @@ export async function sendEmail(
 
   const inboundDomain = Deno.env.get("INBOUND_EMAIL_DOMAIN")?.trim().replace(/^@/, "");
   const replyTo = inboundDomain ? `reply+${message.id.replaceAll("-", "")}@${inboundDomain}` : message.replyTo;
-  const headers: Record<string, string> = { "List-Unsubscribe": `<${unsubscribe}>` };
+  const headers: Record<string, string> = {};
   if (message.inReplyTo) {
     headers["In-Reply-To"] = message.inReplyTo;
     headers["References"] = message.inReplyTo;
   }
-  const text = footer ? `${body}\n\n—\nUnsubscribe: ${unsubscribe}` : body;
-  const html = renderHtml(message.companyName, body, footer ? unsubscribe : null, button);
+  const html = renderHtml(message.companyName, body, button);
   const attachments = await loadAttachments(message.attachments ?? []);
   const response = await fetch(relayUrl, {
     method: "POST",
@@ -39,7 +36,7 @@ export async function sendEmail(
       companyName: message.companyName,
       to: message.to,
       subject: subject || message.companyName,
-      text,
+      text: body,
       html,
       replyTo: replyTo ?? undefined,
       headers,
@@ -111,7 +108,6 @@ const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial
 export function renderHtml(
   companyName: string,
   body: string,
-  unsubscribe: string | null,
   button?: { url: string; label: string },
 ): string {
   const paragraphs = body
@@ -127,11 +123,8 @@ export function renderHtml(
         : `<p style="margin:0 0 16px">${linkify(escapeHtml(block)).replace(/\n/g, "<br>")}</p>`,
     )
     .join("");
-  const optOut = unsubscribe
-    ? `<p style="margin:20px 0 0;font-size:12px;color:#8a94a6"><a href="${escapeHtml(unsubscribe)}" style="color:#8a94a6">Unsubscribe</a></p>`
-    : "";
   if (!button) {
-    return `<div style="font-family:${FONT};font-size:15px;line-height:1.55;color:#26303f">${paragraphs}${optOut}</div>`;
+    return `<div style="font-family:${FONT};font-size:15px;line-height:1.55;color:#26303f">${paragraphs}</div>`;
   }
   return (
     `<div style="margin:0;padding:32px 16px;background:#f3f4f6">` +
@@ -139,7 +132,6 @@ export function renderHtml(
     `<tr><td style="padding:22px 32px;border-bottom:1px solid #eef0f3;font-family:${FONT};font-size:17px;font-weight:600;color:#111827">${escapeHtml(companyName)}</td></tr>` +
     `<tr><td style="padding:28px 32px 12px;font-family:${FONT};font-size:15px;line-height:1.6;color:#26303f">${paragraphs}</td></tr>` +
     `</table>` +
-    (optOut ? `<div style="max-width:560px;margin:0 auto;text-align:center;font-family:${FONT}">${optOut}</div>` : "") +
     `</div>`
   );
 }
