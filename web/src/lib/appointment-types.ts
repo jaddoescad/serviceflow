@@ -40,6 +40,8 @@ export type CalendarEvent = {
   personName: string;
   /** The connected Google account. */
   calendar: string | null;
+  /** A shared calendar whose events block everyone's suggested times. */
+  shared: boolean;
   title: string | null;
   location: string | null;
   startsAt: string;

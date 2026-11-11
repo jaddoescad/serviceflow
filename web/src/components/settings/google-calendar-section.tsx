@@ -57,8 +57,8 @@ export function GoogleCalendarSection({
   );
   const [pending, startTransition] = useTransition();
   const saved = connection.connected
-    ? { appointments: connection.syncAppointments, jobs: connection.syncJobs }
-    : { appointments: false, jobs: false };
+    ? { appointments: connection.syncAppointments, jobs: connection.syncJobs, shared: connection.blocksEveryone }
+    : { appointments: false, jobs: false, shared: false };
   const [sync, setOptimisticSync] = useOptimistic(saved);
 
   // Drop the one-time ?calendar= flag so a reload doesn't repeat it.
@@ -66,7 +66,7 @@ export function GoogleCalendarSection({
     if (result) window.history.replaceState(null, "", settingsHref("calendar"));
   }, [result]);
 
-  function toggle(next: { appointments: boolean; jobs: boolean }) {
+  function toggle(next: { appointments: boolean; jobs: boolean; shared: boolean }) {
     startTransition(async () => {
       setOptimisticSync(next);
       setStatus({});
@@ -98,7 +98,7 @@ export function GoogleCalendarSection({
     <SettingsSection
       id="calendar"
       title="Google Calendar"
-      description="Puts your appointments, and the job schedule if you choose, on your own Google Calendar."
+      description="Puts the appointments you see in ServiceFlow, and the job schedule if you choose, on your own Google Calendar."
       footer={
         <>
           <SaveStatus error={status.error} message={status.message} />
@@ -136,8 +136,9 @@ export function GoogleCalendarSection({
             <ul className="mt-3 divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
               {(
                 [
-                  ["appointments", "My appointments"],
+                  ["appointments", "Appointments"],
                   ["jobs", "Job schedule"],
+                  ["shared", "Its events block everyone's suggested times"],
                 ] as const
               ).map(([key, label]) => (
                 <li key={key} className="flex h-10 items-center justify-between gap-3 text-[13px] text-[var(--color-text)]">

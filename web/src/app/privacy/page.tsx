@@ -63,16 +63,17 @@ export default function PrivacyPage() {
         </p>
         <ul>
           <li>
-            <strong>Adds, updates and removes events</strong> for the ServiceFlow appointments assigned to that user and,
-            if they turn it on, their company&apos;s job schedule (title, time, address and notes), and only for those. It
+            <strong>Adds, updates and removes events</strong> for the ServiceFlow appointments that user can see
+            (owners, admins and managers see all of their company&apos;s appointments; others see the ones assigned to
+            them) and, if they turn it on, their company&apos;s job schedule (title, time, address and notes), and only for those. It
             does not change or delete events it did not create.
           </li>
           <li>
-            <strong>Reads the user&apos;s other events.</strong> For users who take appointment bookings, ServiceFlow
-            reads the events on their primary calendar from about five weeks back to about two months ahead and stores
+            <strong>Reads the user&apos;s other events.</strong> For users who take appointment bookings, and for a
+            calendar a manager marks as shared, ServiceFlow reads the events on their primary calendar from about five weeks back to about two months ahead and stores
             each event&apos;s start and end time, title, location and whether it lasts all day. It does not store
             descriptions or attendees. ServiceFlow uses these events only to avoid suggesting appointment times that
-            overlap them, and to show them as read-only entries on the Appointments calendar to the user&apos;s
+            overlap them (a shared calendar&apos;s events count for everyone who takes bookings), and to show them as read-only entries on the Appointments calendar to the user&apos;s
             company&apos;s managers, so the team can see bookings made in other tools. It refreshes them about every
             10 minutes and replaces the previous copy each time.
           </li>

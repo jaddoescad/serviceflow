@@ -11,6 +11,8 @@ export type CalendarConnection =
       status: "connected" | "error" | "disconnecting";
       syncAppointments: boolean;
       syncJobs: boolean;
+      /** This calendar's other events block everyone's suggested times (a shared company calendar). */
+      blocksEveryone: boolean;
       lastError: string | null;
       pending: number;
     };
@@ -19,10 +21,10 @@ export async function getMyCalendarConnection(): Promise<CalendarConnection> {
   return staffRead<CalendarConnection>("get_my_calendar_connection");
 }
 
-export async function setMyCalendarSync(input: { appointments: boolean; jobs: boolean }) {
+export async function setMyCalendarSync(input: { appointments: boolean; jobs: boolean; shared: boolean }) {
   return staffWrite(
     "set_my_calendar_sync",
-    { requested_appointments: input.appointments, requested_jobs: input.jobs },
+    { requested_appointments: input.appointments, requested_jobs: input.jobs, requested_blocks_everyone: input.shared },
     ["/settings"],
   );
 }

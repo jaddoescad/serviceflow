@@ -134,6 +134,10 @@ function startTime(item: Item): string {
   return `${Math.floor(minutes / 60) % 12 || 12}${minutes % 60 ? `:${pad(minutes % 60)}` : ""} ${minutes < 720 ? "AM" : "PM"}`;
 }
 
+/** "Shared calendar (info@…)" or "Scott's Google Calendar (…)". */
+const calendarName = ({ shared, personName, calendar }: CalendarEvent) =>
+  `${shared ? "Shared calendar" : `${personName}'s Google Calendar`}${calendar ? ` (${calendar})` : ""}`;
+
 const label = (item: Item) => (item.event ? item.title : `${item.projectName ?? "Project"} — ${item.title}`);
 
 /** The deal's customer details, shown and corrected on the appointment form. */
@@ -148,8 +152,8 @@ const customerFields = ({ name, phone, email }: CustomerFields): CustomerFields 
 
 function describe(item: Item): string {
   if (item.event) {
-    const { personName, calendar, location } = item.event;
-    return `${timeRange(item)} · ${item.title}${location ? ` · ${location}` : ""} · ${personName}'s Google Calendar${calendar ? ` (${calendar})` : ""}`;
+    const { location } = item.event;
+    return `${timeRange(item)} · ${item.title}${location ? ` · ${location}` : ""} · ${calendarName(item.event)}`;
   }
   const status = item.status === "cancelled" ? " · Cancelled" : item.status === "completed" ? " · Done" : "";
   return `${timeRange(item)} · ${label(item)} · ${appointmentKindLabel(item.kind)}${item.assigneeName ? ` · ${item.assigneeName}` : ""}${status}`;
@@ -428,7 +432,7 @@ function CalendarEventDialog({ item, onClose }: { item: Item; onClose: () => voi
     };
   }, [name]);
   if (!item.event) return null;
-  const { personName, calendar, location } = item.event;
+  const { location } = item.event;
   const row = "grid grid-cols-[5.5rem_minmax(0,1fr)] gap-3";
   const key = "text-[var(--color-muted)]";
   return (
@@ -449,9 +453,7 @@ function CalendarEventDialog({ item, onClose }: { item: Item; onClose: () => voi
         ) : null}
         <div className={row}>
           <span className={key}>Calendar</span>
-          <span>
-            {personName}&apos;s Google Calendar{calendar ? ` (${calendar})` : ""}
-          </span>
+          <span>{calendarName(item.event)}</span>
         </div>
         <div className={row}>
           <span className={key}>Deal</span>
@@ -901,7 +903,8 @@ export function AppointmentsCalendar({
   const fromGoogle: Item[] = kind
     ? []
     : events
-        .filter((event) => !user || event.userId === user)
+        // A shared calendar's events concern whoever is filtered for.
+        .filter((event) => !user || event.shared || event.userId === user)
         .map((event, index) => ({
           id: `google-${index}-${event.startsAt}`,
           projectId: "",
