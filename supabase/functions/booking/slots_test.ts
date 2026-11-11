@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { instant } from "../_shared/zoned.ts";
-import { type Context, openTimes, openWindows, type Travel } from "./slots.ts";
+import { type Context, dayPlans, openTimes, openWindows, type Travel } from "./slots.ts";
 
 const zone = "America/Toronto";
 // Tuesday, November 3, 2026 (Eastern Standard Time).
@@ -165,4 +165,33 @@ Deno.test("an opening this week comes before an empty day later on", () => {
   ]);
   assert.equal(clock(windows[0].suggested.start), "12:00 PM");
   assert.equal(windows[0].suggested.driveBefore, 50);
+});
+
+Deno.test("a drawn day has its visits once each and hour blocks back to back", () => {
+  const context: Context = {
+    ...base,
+    people: [{ ...scott, hours: [{ day: 2, start: "09:00", end: "17:00" }] }],
+    appointments: [
+      { userId: "scott", startsAt: iso(14), endsAt: iso(15), location: "next door", title: "Laura" },
+      // The same booking from the shared calendar, and one after hours.
+      { userId: "scott", startsAt: iso(14), endsAt: iso(15), location: "Next  Door", title: "Laura" },
+      { userId: "scott", startsAt: iso(18), endsAt: iso(19), location: "far", title: "Evening" },
+    ],
+  };
+  const travel: Travel = (from, to) => (from === "next door" || to === "next door" ? 5 : 30);
+  const open = [{ day, times: openTimes(context, day, 60, "1 Main St", 0, travel) }];
+  const windows = openWindows(open, { days: [], window: "any" }, zone, 30);
+  const [plan, ...rest] = dayPlans(context, windows, 60);
+  assert.equal(rest.length, 0);
+  assert.equal(clock(plan.open), "9:00 AM");
+  assert.equal(clock(plan.close), "5:00 PM");
+  assert.deepEqual(plan.visits.map((item) => [item.title, clock(item.start)]), [["Laura", "2:00 PM"]]);
+  // 9–1 before the visit (the drive to it fits after 12–1), and 3:30 after it.
+  assert.deepEqual(plan.blocks.map((block) => [clock(block.start), block.before, block.after]), [
+    ["9:00 AM", null, 0],
+    ["10:00 AM", null, 0],
+    ["11:00 AM", null, 0],
+    ["12:00 PM", null, 0],
+    ["3:30 PM", 0, null],
+  ]);
 });

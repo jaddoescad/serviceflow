@@ -44,11 +44,48 @@ export type OpenWindow = {
   after: NearbyVisit | null;
 };
 
+/** A drive, from Google or the company's fallback minutes (then no distance). */
+export type Drive = { minutes: number; meters: number | null };
+
+/** A visit already on an opened day. */
+export type DayVisit = {
+  start: string;
+  end: string;
+  /** The deal or job, or the calendar event's title. */
+  title: string | null;
+  address: string | null;
+  /** The drive on to the next visit; null for the last one. */
+  next: Drive | null;
+};
+
+/** An open block one appointment long, with the drive from the visit before it and to the one after (indexes into the day's visits). */
+export type DayBlock = {
+  start: string;
+  end: string;
+  before: (Drive & { visit: number }) | null;
+  after: (Drive & { visit: number }) | null;
+};
+
+/** One person's day with room for the appointment, as the dialog draws it. */
+export type DrawnDay = {
+  /** YYYY-MM-DD in company time. */
+  date: string;
+  userId: string;
+  name: string | null;
+  /** Their hours that day. */
+  open: string;
+  close: string;
+  visits: DayVisit[];
+  blocks: DayBlock[];
+};
+
 export type SuggestedTimes = {
   timezone: string;
   minutes: number;
   /** Best first: closest to the person's other visits, then the earliest. */
   windows: OpenWindow[];
+  /** Days with open blocks, best first. */
+  days: DrawnDay[];
   /** Whether drive times come from Google. */
   driveTimes: boolean;
   fallbackDriveMinutes: number;

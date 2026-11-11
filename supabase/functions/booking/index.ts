@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { addDays, isDay, wall } from "../_shared/zoned.ts";
-import { addressKey, type Booked, type Candidate, type Context, openTimes, openWindows, type Preference } from "./slots.ts";
+import { addressKey, type Booked, type Candidate, type Context, dayPlans, openTimes, openWindows, type Preference } from "./slots.ts";
 
 // Suggested times for the appointment dialog. A manager (Bearer JWT) sends
 //   {"address", "minutes", "userId"?, "appointmentId"?, "days"?: ["2026-11-03"],
@@ -10,7 +10,8 @@ import { addressKey, type Booked, type Candidate, type Context, openTimes, openW
 // each person's hours minus their appointments, Google busy times, the break
 // between visits and the drive to and from each one. The reply groups them
 // into each person's free stretches, ranked against the request (see
-// openWindows). Drive times and distances come from Google's Routes API
+// openWindows). `days` draws each day with open blocks: the visits in it with
+// the drive between them, and blocks one appointment long. Drive times and distances come from Google's Routes API
 // (GOOGLE_MAPS_API_KEY) and are cached; without it, the company's fallback
 // drive time. Deploy with --no-verify-jwt.
 
@@ -20,6 +21,7 @@ type Distances = (from: string | null, to: string | null) => { minutes: number; 
 
 const SEARCH_DAYS = 21;
 const MAX_WINDOWS = 24;
+const MAX_DAYS = 14;
 const MAX_DESTINATIONS = 100;
 const ROUTES = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -80,6 +82,7 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
     timezone: zone,
     minutes,
     windows: [] as Record<string, unknown>[],
+    days: [] as Record<string, unknown>[],
     // Read by the site deployed before free stretches; remove once the new panel is live.
     best: [] as Record<string, unknown>[],
     other: [] as Record<string, unknown>[],
@@ -88,13 +91,24 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
   };
   if (!context.people.length) return { ...reply, reason: "no_hours" };
 
-  const distances = await travelTimes(admin, address, context.appointments.map((item) => item.location), context.travelMinutes);
-  const travel = (a: string | null, b: string | null) => distances(a, b).minutes;
+  const locations = context.appointments.map((item) => item.location);
+  const nearby = await travelTimes(admin, address, locations, context.travelMinutes, []);
+  const travel = (a: string | null, b: string | null) => nearby(a, b).minutes;
   const open = [];
   for (let day = from; day <= to; day = addDays(day, 1)) {
     open.push({ day, times: openTimes(context, day, minutes, address, Date.now(), travel) });
   }
-  const windows = openWindows(open, preference, zone, context.travelMinutes).slice(0, MAX_WINDOWS);
+  const ranked = openWindows(open, preference, zone, context.travelMinutes);
+  const windows = ranked.slice(0, MAX_WINDOWS);
+  // The drawn days, and the drive between each visit and the next in them.
+  const plans = dayPlans(context, ranked, minutes).slice(0, MAX_DAYS);
+  const legs = plans.flatMap((plan) =>
+    plan.visits.slice(1).flatMap((item, index) => {
+      const from = plan.visits[index].location;
+      return from && item.location ? [[from, item.location] as [string, string]] : [];
+    }),
+  );
+  const distances = legs.length ? await travelTimes(admin, address, locations, context.travelMinutes, legs) : nearby;
   const names = new Map(context.people.map((person) => [person.id, person.name]));
   const iso = (ms: number) => new Date(ms).toISOString();
   // The visit just before the stretch (when it ends) and the one just after it (when it starts), that day.
@@ -136,46 +150,90 @@ async function suggest(admin: SupabaseClient, org: string, body: Record<string, 
       nearby: near ? { ...near, side: described[index].before ? "before" : "after" } : null,
     };
   });
-  return { ...reply, windows: described, best: legacy };
+  const drive = (from: string | null, to: string | null) => {
+    if (!from || !to) return null;
+    const leg = distances(from, to);
+    return { minutes: leg.minutes, meters: leg.meters };
+  };
+  const drawn = plans.map((plan) => ({
+    date: plan.day,
+    userId: plan.userId,
+    name: names.get(plan.userId) ?? null,
+    open: iso(plan.open),
+    close: iso(plan.close),
+    visits: plan.visits.map((item, index) => ({
+      start: iso(item.start),
+      end: iso(item.end),
+      title: item.title,
+      address: item.location,
+      // The drive on to the next visit; null for the last one.
+      next: index + 1 < plan.visits.length ? drive(item.location, plan.visits[index + 1].location) : null,
+    })),
+    blocks: plan.blocks.map((block) => ({
+      start: iso(block.start),
+      end: iso(block.end),
+      before: block.before === null ? null : { visit: block.before, ...(drive(plan.visits[block.before].location, address) ?? { minutes: context.travelMinutes, meters: null }) },
+      after: block.after === null ? null : { visit: block.after, ...(drive(address, plan.visits[block.after].location) ?? { minutes: context.travelMinutes, meters: null }) },
+    })),
+  }));
+  return { ...reply, windows: described, best: legacy, days: drawn };
 }
 
 /**
  * Drive minutes and metres between `address` and the appointments'
- * addresses: cached, else from Google, else the company's fallback minutes.
- * Same address: no drive. Driving is taken to be the same both ways.
+ * addresses, and between each pair in `legs`: cached, else from Google, else
+ * the company's fallback minutes. Same address: no drive. Driving is taken to
+ * be the same both ways.
  */
 async function travelTimes(
   admin: SupabaseClient,
   address: string | null,
   locations: (string | null)[],
   fallback: number,
+  legs: [string, string][],
 ): Promise<Distances> {
   const known = new Map<string, { seconds: number; meters: number | null }>();
   const pair = (a: string, b: string) => (a < b ? `${a}\n${b}` : `${b}\n${a}`);
-  const origin = address ? addressKey(address) : null;
-  const others = new Map<string, string>();
-  for (const location of locations) {
-    if (location && addressKey(location) !== origin) others.set(addressKey(location), location);
+  const spelled = new Map<string, string>();
+  const wanted = new Map<string, [string, string]>();
+  const want = (from: string, to: string) => {
+    const a = addressKey(from);
+    const b = addressKey(to);
+    if (a === b) return;
+    spelled.set(a, from);
+    spelled.set(b, to);
+    if (!wanted.has(pair(a, b))) wanted.set(pair(a, b), [a, b]);
+  };
+  if (address) {
+    for (const location of locations) if (location) want(address, location);
   }
+  for (const [from, to] of legs) want(from, to);
 
-  if (address && origin && others.size) {
-    const keys = [...others.keys()].slice(0, MAX_DESTINATIONS);
+  const pairs = [...wanted.values()].slice(0, MAX_DESTINATIONS * 2);
+  if (pairs.length) {
     const cached = await rpc<{ from: string; to: string; seconds: number; meters: number | null }[]>(
       admin,
       "cached_travel_times",
-      { requested_pairs: keys.flatMap((key) => [{ from_key: origin, to_key: key }, { from_key: key, to_key: origin }]) },
+      { requested_pairs: pairs.flatMap(([a, b]) => [{ from_key: a, to_key: b }, { from_key: b, to_key: a }]) },
     );
     for (const row of cached) known.set(pair(row.from, row.to), { seconds: row.seconds, meters: row.meters });
-    const missing = keys.filter((key) => !known.has(pair(origin, key)));
     const apiKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
+    const missing = pairs.filter(([a, b]) => !known.has(pair(a, b)));
     if (missing.length && apiKey) {
-      const fetched = await routeMatrix(apiKey, address, missing.map((key) => others.get(key)!));
-      const rows = missing.flatMap((key) => {
-        const route = fetched.get(others.get(key)!);
-        if (!route) return [];
-        known.set(pair(origin, key), route);
-        return [{ from_key: origin, to_key: key, seconds: route.seconds, meters: route.meters }];
-      });
+      // One request per starting address.
+      const byOrigin = new Map<string, string[]>();
+      for (const [a, b] of missing) byOrigin.set(a, [...(byOrigin.get(a) ?? []), b]);
+      const results = await Promise.all(
+        [...byOrigin].slice(0, 40).map(async ([origin, keys]) => {
+          const fetched = await routeMatrix(apiKey, spelled.get(origin)!, keys.map((key) => spelled.get(key)!));
+          return keys.flatMap((key) => {
+            const route = fetched.get(spelled.get(key)!);
+            return route ? [{ from_key: origin, to_key: key, seconds: route.seconds, meters: route.meters }] : [];
+          });
+        }),
+      );
+      const rows = results.flat();
+      for (const row of rows) known.set(pair(row.from_key, row.to_key), { seconds: row.seconds, meters: row.meters });
       if (rows.length) await rpc(admin, "save_travel_times", { requested_rows: rows });
     }
   }

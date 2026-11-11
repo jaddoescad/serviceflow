@@ -7,7 +7,7 @@ import { instant, wall, weekday } from "../_shared/zoned.ts";
 export type Hours = { day: number; start: string; end: string };
 export type Person = { id: string; name: string; hours: Hours[]; maxPerDay: number | null };
 /** A visit nobody is assigned to (`userId` null) is on everyone's day: whoever takes it drives there. */
-export type Booked = { userId: string | null; startsAt: string; endsAt: string; location: string | null };
+export type Booked = { userId: string | null; startsAt: string; endsAt: string; location: string | null; title?: string | null };
 export type Busy = { userId: string; startsAt: string; endsAt: string };
 
 export type Context = {
@@ -207,4 +207,69 @@ export function openWindows(
       a.starts[0].start - b.starts[0].start ||
       near(a) - near(b),
   );
+}
+
+/** A visit on a drawn day. */
+export type PlanVisit = { start: number; end: number; title: string | null; location: string | null };
+
+/** A pickable block: one appointment long, with the visits just before and after it that day (indexes into `visits`). */
+export type PlanBlock = { start: number; end: number; before: number | null; after: number | null };
+
+/** One person's day as the dialog draws it: their hours, visits, and the open blocks between them. */
+export type DayPlan = { day: string; userId: string; open: number; close: number; visits: PlanVisit[]; blocks: PlanBlock[] };
+
+/**
+ * Each day and person with open stretches, in the order of their best stretch:
+ * their working hours that day, the visits inside them (one per time and
+ * address), and blocks one appointment long, back to back from the start of
+ * each stretch.
+ */
+export function dayPlans(context: Context, windows: Window[], minutes: number): DayPlan[] {
+  const zone = context.timezone;
+  const length = minutes * 60_000;
+  const groups = new Map<string, Window[]>();
+  for (const window of windows) {
+    const key = `${window.day}|${window.userId}`;
+    groups.set(key, [...(groups.get(key) ?? []), window]);
+  }
+  const plans: DayPlan[] = [];
+  for (const group of groups.values()) {
+    const { day, userId } = group[0];
+    const person = context.people.find((item) => item.id === userId);
+    const hours = person?.hours.filter((item) => item.day === weekday(day)) ?? [];
+    if (!hours.length) continue;
+    const open = Math.min(...hours.map((item) => instant(day, toMinutes(item.start), zone)));
+    const close = Math.max(...hours.map((item) => instant(day, toMinutes(item.end), zone)));
+    const seen = new Set<string>();
+    const visits: PlanVisit[] = context.appointments
+      .filter((item) => item.userId === userId || item.userId === null)
+      .map((item) => ({
+        start: Date.parse(item.startsAt),
+        end: Date.parse(item.endsAt),
+        title: item.title?.trim() || null,
+        location: item.location?.trim() || null,
+      }))
+      .filter((item) => item.start < close && item.end > open)
+      .sort((a, b) => a.start - b.start || a.end - b.end)
+      .filter((item) => {
+        const key = `${item.start}|${item.end}|${item.location ? addressKey(item.location) : ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const blocks: PlanBlock[] = [];
+    const starts = group.flatMap((window) => window.starts).sort((a, b) => a.start - b.start);
+    let free = -Infinity;
+    for (const candidate of starts) {
+      if (candidate.start < free) continue;
+      const start = candidate.start;
+      const end = start + length;
+      free = end;
+      const before = visits.reduce<number | null>((found, item, index) => (item.end <= start ? index : found), null);
+      const after = visits.findIndex((item) => item.start >= end);
+      blocks.push({ start, end, before, after: after === -1 ? null : after });
+    }
+    plans.push({ day, userId, open, close, visits, blocks });
+  }
+  return plans;
 }

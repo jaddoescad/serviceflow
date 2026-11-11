@@ -1,26 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { listAppointments } from "@/lib/actions/appointments";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { suggestTimes } from "@/lib/actions/booking";
-import { appointmentKindLabel, type Appointment } from "@/lib/appointment-types";
-import type { NearbyVisit, OpenWindow, SuggestedTimes } from "@/lib/booking-types";
+import type { DayBlock, DrawnDay, SuggestedTimes } from "@/lib/booking-types";
 import { Spinner, Tag, cn } from "./ui";
 import { settingsHref } from "@/lib/settings-pages";
 
 type Search = { address: string; minutes: number; userId: string | null; appointmentId: string | null };
 
-/** Times listed before "Show more times". */
+/** Days listed before "Show more days". */
 const SHOWN = 5;
 /** A new location or length searches once typing pauses this long. */
 const SEARCH_DELAY_MS = 600;
+/** Height of a minute in an opened day. */
+const PX_PER_MINUTE = 1.15;
+/** Room above the first hour line for its label. */
+const TOP = 8;
+/** Shortest drive band, so its label fits. */
+const MIN_BAND = 22;
 
-const UP = "M12 19V5M5 12l7-7 7 7";
-const DOWN = "M12 5v14M19 12l-7 7-7-7";
-const DASH = "M5 12h14";
 const OPEN = "m18 15-6-6-6 6";
 const CLOSED = "m6 9 6 6 6-6";
+const CAR =
+  "M5 17H4a1 1 0 0 1-1-1v-4l2-5h11l3 5h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1M7.5 15.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zM16.5 15.2a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6z";
 
 /** A YYYY-MM-DD day's parts; the date is read as UTC so no zone shifts it. */
 const dayPart = (day: string, options: Intl.DateTimeFormatOptions) =>
@@ -38,24 +41,6 @@ function timeRange(start: string | number, end: string | number, timeZone: strin
     : `${startClock} ${startPeriod} – ${endClock} ${endPeriod}`;
 }
 
-/** An instant's YYYY-MM-DD in the company's zone. */
-const dayOf = (at: string, timeZone: string) =>
-  new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(at));
-
-/** "30 min", "1 hr", "3 hr 30 min". */
-function duration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (!hours) return `${rest} min`;
-  return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
-}
-
-const minutesBetween = (from: string | number, to: string | number) =>
-  Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000);
-
-/** Short drives green, up to half an hour amber, longer red. */
-const driveTone = (minutes: number) => (minutes <= 15 ? "green" : minutes <= 30 ? "yellow" : "red");
-
 /** "104 Stonewood Dr, Carleton Place" from "104 Stonewood Dr, Carleton Place ON K7C 3P2". */
 const place = (address: string) =>
   address
@@ -65,138 +50,140 @@ const place = (address: string) =>
     .filter(Boolean)
     .join(", ");
 
-/** "50 min drive · 42 km". */
+/** "16 min drive · 16 km". */
 const driveLabel = (minutes: number, meters: number | null) =>
   `${minutes} min drive${meters === null ? "" : ` · ${Math.max(1, Math.round(meters / 1000))} km`}`;
 
-/** One line about the visit before or after a time: how long after or before it, where it is, and the drive. */
-function VisitLine({ icon, gap, visit, side }: { icon: string; gap: number; visit: NearbyVisit; side: "after" | "before" }) {
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-3 w-3 shrink-0 text-[var(--color-muted)]"
-      >
-        <path d={icon} />
-      </svg>
-      <span className="min-w-0 truncate text-[var(--color-text)]">
-        {gap > 0 ? duration(gap) : "Right"} {side} visit at {place(visit.address)}
-      </span>
-      <Tag tone={driveTone(visit.minutes)}>{driveLabel(visit.minutes, visit.meters)}</Tag>
-    </span>
-  );
-}
+/** Short drives green, up to half an hour amber, longer red. */
+const driveTone = (minutes: number) => (minutes <= 15 ? "green" : minutes <= 30 ? "yellow" : "red");
 
-/** One line about what comes before or after a time, with its drive. */
-function Line({ icon, drive, children }: { icon: string; drive?: number; children: ReactNode }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 text-xs">
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="h-3 w-3 shrink-0 text-[var(--color-muted)]"
-      >
-        <path d={icon} />
-      </svg>
-      <span className={cn("truncate", drive === undefined ? "text-[var(--color-muted)]" : "text-[var(--color-text)]")}>
-        {children}
-      </span>
-      {drive === undefined ? null : <Tag tone={driveTone(drive)}>{drive} min drive</Tag>}
-    </span>
-  );
-}
+/** A block's longer drive, in or out; null on a day with no other visits. */
+const blockDrive = (block: DayBlock) => {
+  const drives = [block.before, block.after].filter((drive) => drive !== null);
+  return drives.length ? Math.max(...drives.map((drive) => drive.minutes)) : null;
+};
 
-/** An opened day: its visits in order with this appointment slotted in, and the gaps between them. */
-function DayAgenda({
-  visits,
-  start,
-  end,
-  before,
-  after,
+/** The block to show on a closed day: the least driving, then the earliest. */
+const bestBlock = (day: DrawnDay) =>
+  day.blocks.reduce((best, block) => ((blockDrive(block) ?? 0) < (blockDrive(best) ?? 0) ? block : best), day.blocks[0]);
+
+const ms = (at: string) => new Date(at).getTime();
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+type Band = { key: string; at: number; minutes: number; meters: number | null };
+
+/**
+ * An opened day drawn to scale over the person's hours: their visits in grey,
+ * the drive between one place and the next as a striped band as long as the
+ * drive, and the open blocks to pick.
+ */
+function DayDrawing({
+  day,
   timezone,
+  isPicked,
+  onPick,
 }: {
-  visits: Appointment[];
-  start: number;
-  end: number;
-  before: NearbyVisit | null;
-  after: NearbyVisit | null;
+  day: DrawnDay;
   timezone: string;
+  isPicked: (block: DayBlock) => boolean;
+  onPick: (block: DayBlock) => void;
 }) {
-  const items = [
-    ...visits.map((visit) => ({ key: visit.id, start: Date.parse(visit.startsAt), end: Date.parse(visit.endsAt), visit })),
-    { key: "this", start, end, visit: null },
-  ].sort((a, b) => a.start - b.start);
+  const open = ms(day.open);
+  const close = ms(day.close);
+  const y = (at: number) => TOP + Math.round(((Math.min(Math.max(at, open), close) - open) / 60_000) * PX_PER_MINUTE);
+  const hours: number[] = [];
+  for (let at = open; at <= close; at += 3_600_000) hours.push(at);
+
+  // A drive after each visit: to the next visit, or to the first open block
+  // after it; and from the last open block before a visit to that visit.
+  const bands: Band[] = [];
+  day.visits.forEach((visit, index) => {
+    const block = day.blocks.find((item) => item.before?.visit === index);
+    if (block?.before) bands.push({ key: `v${index}`, at: ms(visit.end), minutes: block.before.minutes, meters: block.before.meters });
+    else if (visit.next) bands.push({ key: `v${index}`, at: ms(visit.end), minutes: visit.next.minutes, meters: visit.next.meters });
+  });
+  day.blocks.forEach((block, index) => {
+    const following = day.blocks[index + 1];
+    if (block.after && following?.after?.visit !== block.after.visit) {
+      bands.push({ key: `b${index}`, at: ms(block.end), minutes: block.after.minutes, meters: block.after.meters });
+    }
+  });
+
   return (
-    <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 border-t border-[var(--color-border)] px-3 pb-3.5 pt-3">
-      {items.map((item, index) => {
-        const next = items[index + 1];
-        // The drive only matters next to this appointment.
-        const drive = !next ? undefined : !item.visit ? after?.minutes : !next.visit ? before?.minutes : undefined;
-        const gap = next ? minutesBetween(item.end, next.start) : 0;
-        return (
-          <Fragment key={item.key}>
-            <span
-              className={cn(
-                "pt-2 text-xs tabular-nums",
-                item.visit ? "text-[var(--color-muted)]" : "font-semibold text-[var(--color-brand-strong)]",
-              )}
-            >
-              {clock(item.start, timezone)}
+    <div className="border-t border-[var(--color-border)] px-3 pb-4 pt-3">
+      <div className="relative" style={{ height: y(close) + TOP }}>
+        {hours.map((at) => (
+          <div key={at} className="absolute inset-x-0 border-t border-[var(--color-border)]" style={{ top: y(at) }}>
+            <span className="absolute -top-2 left-0 w-12 text-[11px] tabular-nums text-[var(--color-muted)]">
+              {clock(at, timezone).replace(":00", "")}
             </span>
-            {item.visit ? (
-              <div className="min-w-0 rounded-[var(--radius-control)] bg-[var(--color-hover)] px-2.5 py-1.5">
-                <span className="block truncate font-semibold text-[var(--color-heading)]">
-                  {item.visit.projectName ?? item.visit.title} · {appointmentKindLabel(item.visit.kind)}
-                </span>
-                <span className="block truncate text-xs text-[var(--color-muted)]">
-                  {timeRange(item.start, item.end, timezone)} · {item.visit.assigneeName ?? "Unassigned"}
-                </span>
-              </div>
-            ) : (
-              <div className="min-w-0 rounded-[var(--radius-control)] border border-[var(--color-brand)] bg-[var(--color-surface)] px-2.5 py-1.5">
-                <span className="block font-semibold text-[var(--color-heading)]">This appointment</span>
-                <span className="block text-xs text-[var(--color-brand-strong)]">{timeRange(item.start, item.end, timezone)}</span>
-              </div>
-            )}
-            {next ? (
-              <>
-                <span />
-                <span
-                  className={cn(
-                    "ml-2.5 flex items-center gap-2 border-l-2 border-dotted border-[var(--color-border-strong)] py-1.5 pl-3 text-xs",
-                    drive === undefined ? "text-[var(--color-muted)]" : "font-semibold text-[var(--color-text)]",
-                  )}
-                >
-                  {gap > 0 ? `${duration(gap)} gap` : "Back to back"}
-                  {drive === undefined ? null : <Tag tone={driveTone(drive)}>{drive} min drive</Tag>}
-                </span>
-              </>
-            ) : null}
-          </Fragment>
-        );
-      })}
+          </div>
+        ))}
+        {bands
+          .filter((band) => band.minutes > 0)
+          .map((band) => (
+            <div
+              key={band.key}
+              className="absolute left-14 right-0 flex items-center rounded-[var(--radius-control)] pl-2.5"
+              style={{
+                top: y(band.at) + 1,
+                height: Math.max(MIN_BAND, y(band.at + band.minutes * 60_000) - y(band.at)),
+                background: "repeating-linear-gradient(135deg, var(--color-surface-2) 0 6px, var(--color-selected) 6px 12px)",
+              }}
+            >
+              <span className="flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 py-px text-xs font-semibold text-[var(--color-text)]">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 text-[var(--color-muted)]">
+                  <path d={CAR} />
+                </svg>
+                {driveLabel(band.minutes, band.meters)}
+              </span>
+            </div>
+          ))}
+        {day.visits.map((visit, index) => (
+          <div
+            key={`${visit.start}-${index}`}
+            className="absolute left-14 right-0 overflow-hidden rounded-[var(--radius-control)] border-l-4 border-[var(--color-faint)] bg-[var(--color-hover)] px-3 py-1.5"
+            style={{ top: y(ms(visit.start)) + 1, height: Math.max(MIN_BAND, y(ms(visit.end)) - y(ms(visit.start)) - 2) }}
+          >
+            <span className="block truncate text-sm font-semibold text-[var(--color-heading)]">{visit.title ?? "Busy"}</span>
+            <span className="block truncate text-xs text-[var(--color-muted)]">
+              {timeRange(visit.start, visit.end, timezone)}
+              {visit.address ? ` · ${place(visit.address)}` : ""}
+            </span>
+          </div>
+        ))}
+        {day.blocks.map((block) => {
+          const picked = isPicked(block);
+          return (
+            <button
+              key={block.start}
+              type="button"
+              aria-pressed={picked}
+              onClick={() => onPick(block)}
+              className={cn(
+                "absolute left-14 right-0 flex items-center justify-between gap-3 rounded-[var(--radius-control)] px-3 text-left outline-none focus-visible:shadow-[var(--focus-ring)]",
+                picked
+                  ? "border border-[var(--color-brand)] bg-[var(--color-brand)] text-[var(--color-brand-ink)] shadow-[0_2px_8px_rgba(47,107,255,0.3)]"
+                  : "border-[1.5px] border-dashed border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] hover:bg-[var(--color-surface)]",
+              )}
+              style={{ top: y(ms(block.start)) + 2, height: y(ms(block.end)) - y(ms(block.start)) - 4 }}
+            >
+              <span className="text-sm font-semibold">{picked ? "This appointment" : "Open"}</span>
+              <span className="text-xs tabular-nums">{timeRange(block.start, block.end, timezone)}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 /**
- * The appointment dialog's suggested times: the free stretches of the person
- * it's assigned to (or anyone who takes appointments) over the next two weeks,
- * closest to their other visits first. Each shows its start and the gap and
- * drive to the visits before and after it. Picking one fills in the date and
- * start, and the person when the times are split between several, and opens
- * that day's schedule.
+ * The appointment dialog's suggested times: the days the person it's assigned
+ * to (or anyone who takes appointments) has room over the next two weeks, best
+ * first. Opening a day draws it to scale: the visits already in it, the drive
+ * between each, and open blocks one appointment long. Picking a block fills in
+ * the date and start, and the person when the days are split between several.
  */
 export function SuggestTimes({
   search,
@@ -216,9 +203,7 @@ export function SuggestTimes({
   // With who it was for: picking a time for anyone sets the person.
   const [result, setResult] = useState<(SuggestedTimes & { forUser: string | null }) | null>(null);
   const [error, setError] = useState("");
-  // The opened stretch, and each opened day's appointments as they load.
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [dayVisits, setDayVisits] = useState<Record<string, Appointment[] | "error">>({});
   const [, startTransition] = useTransition();
   // Only the latest search's times are shown.
   const latest = useRef(0);
@@ -250,19 +235,6 @@ export function SuggestTimes({
     });
   }
 
-  async function loadDay(day: string, timezone: string) {
-    // A day either side covers any zone; the visits are then cut to the company's day.
-    const midnight = Date.parse(`${day}T00:00:00Z`);
-    const found = await listAppointments({
-      from: new Date(midnight - 86_400_000).toISOString(),
-      to: new Date(midnight + 2 * 86_400_000).toISOString(),
-    }).catch(() => null);
-    setDayVisits((current) => ({
-      ...current,
-      [day]: found ? found.filter((visit) => dayOf(visit.startsAt, timezone) === day) : "error",
-    }));
-  }
-
   if (!open) {
     return (
       <button
@@ -275,82 +247,59 @@ export function SuggestTimes({
     );
   }
 
-  // Names only when the stretches are split between people. Picking a time
-  // found for anyone sets who goes, even when only one person takes appointments.
-  const named = !result?.forUser && new Set(result?.windows.map((stretch) => stretch.userId)).size > 1;
-  const pickedBy = (stretch: OpenWindow) => (result?.forUser ? null : stretch.userId);
-  const isPicked = (stretch: OpenWindow) =>
-    chosen !== null && (!chosen.userId || chosen.userId === stretch.userId) && stretch.starts.includes(chosen.start);
+  const days = result?.days ?? [];
+  // Names only when the days are split between people. Picking a time found
+  // for anyone sets who goes, even when only one person takes appointments.
+  const named = !result?.forUser && new Set(days.map((day) => day.userId)).size > 1;
+  const isPicked = (day: DrawnDay, block: DayBlock) =>
+    chosen !== null && (!chosen.userId || chosen.userId === day.userId) && ms(chosen.start) === ms(block.start);
 
-  const row = (stretch: OpenWindow, timezone: string, minutes: number) => {
-    const key = `${stretch.start}-${stretch.userId}`;
-    const picked = isPicked(stretch);
+  const row = (day: DrawnDay, timezone: string) => {
+    const key = `${day.date}-${day.userId}`;
     const opened = expanded === key;
-    const start = picked ? chosen!.start : stretch.suggested;
-    const end = new Date(start).getTime() + minutes * 60_000;
-    const { before, after } = stretch;
-    const day = dayPart(stretch.date, { weekday: "short", month: "short", day: "numeric" });
-    // The same visits the times were worked out around.
-    const loaded = dayVisits[stretch.date];
-    const visits =
-      loaded && loaded !== "error"
-        ? loaded.filter(
-            (visit) =>
-              visit.status === "scheduled" &&
-              visit.id !== search.appointmentId &&
-              (visit.assignedTo === stretch.userId || visit.assignedTo === null),
-          )
-        : null;
+    const picked = day.blocks.find((block) => isPicked(day, block));
+    const shownBlock = picked ?? bestBlock(day);
+    const drive = blockDrive(shownBlock);
+    const label = dayPart(day.date, { weekday: "short", month: "short", day: "numeric" });
+    const summary = `${day.visits.length ? `${plural(day.visits.length, "visit")} booked` : "Nothing booked"} · ${plural(day.blocks.length, "open block")}`;
     return (
       <li
         key={key}
         className={cn(
-          "rounded-[var(--radius)] border transition-colors",
+          "rounded-[var(--radius)] border bg-[var(--color-surface)] transition-colors",
           picked
-            ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] shadow-[0_0_0_1px_var(--color-brand)]"
-            : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:border-[var(--color-border-strong)]",
+            ? "border-[var(--color-brand)] shadow-[0_0_0_1px_var(--color-brand)]"
+            : opened
+              ? "border-[var(--color-border-strong)]"
+              : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]",
         )}
       >
         <button
           type="button"
-          aria-pressed={picked}
           aria-expanded={opened}
-          onClick={() => {
-            onPick({ start, userId: pickedBy(stretch) });
-            setExpanded(opened ? null : key);
-            if (!opened && !loaded) void loadDay(stretch.date, timezone);
-          }}
-          className="flex w-full items-center gap-3.5 rounded-[var(--radius)] px-3 py-2.5 text-left outline-none focus-visible:shadow-[var(--focus-ring)]"
+          onClick={() => setExpanded(opened ? null : key)}
+          className="flex min-h-12 w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-left outline-none focus-visible:shadow-[var(--focus-ring)]"
         >
-          <span className="w-[92px] shrink-0">
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold text-[var(--color-heading)]">
+              {named && day.name ? `${label} · ${day.name}` : label}
+            </span>
+            <span className="block truncate text-xs text-[var(--color-muted)]">{summary}</span>
+          </span>
+          <span className="flex shrink-0 flex-col items-end gap-1">
             <span
               className={cn(
-                "block truncate text-xs",
-                picked ? "text-[var(--color-brand-strong)]" : "text-[var(--color-muted)]",
+                "text-sm font-semibold tabular-nums",
+                picked ? "text-[var(--color-brand-strong)]" : "text-[var(--color-heading)]",
               )}
             >
-              {named && stretch.name ? `${day} · ${stretch.name}` : day}
+              {picked ? "Picked " : ""}
+              {clock(shownBlock.start, timezone)}
             </span>
-            <span className="block text-base font-semibold tabular-nums text-[var(--color-heading)]">
-              {clock(start, timezone)}
-            </span>
-          </span>
-          <span className="min-w-0 flex-1 space-y-1.5">
-            {before || after ? (
-              <>
-                {before ? (
-                  <VisitLine icon={UP} gap={minutesBetween(before.at, start)} visit={before} side="after" />
-                ) : (
-                  <Line icon={UP}>First visit of the day</Line>
-                )}
-                {after ? (
-                  <VisitLine icon={DOWN} gap={minutesBetween(end, after.at)} visit={after} side="before" />
-                ) : (
-                  <Line icon={DOWN}>Free until {clock(stretch.end, timezone)}</Line>
-                )}
-              </>
+            {drive === null ? (
+              <Tag tone="gray">No other visits</Tag>
             ) : (
-              <Line icon={DASH}>No other visits that day</Line>
+              <Tag tone={driveTone(drive)}>{drive} min drive</Tag>
             )}
           </span>
           <svg
@@ -366,31 +315,19 @@ export function SuggestTimes({
             <path d={opened ? OPEN : CLOSED} />
           </svg>
         </button>
-        {!opened ? null : loaded === "error" ? (
-          <p role="alert" className="border-t border-[var(--color-border)] px-3 py-2.5 text-xs text-[var(--color-bad)]">
-            {"This day's visits couldn't load."}
-          </p>
-        ) : visits ? (
-          <DayAgenda
-            visits={visits}
-            start={new Date(start).getTime()}
-            end={end}
-            before={before}
-            after={after}
+        {opened ? (
+          <DayDrawing
+            day={day}
             timezone={timezone}
+            isPicked={(block) => isPicked(day, block)}
+            onPick={(block) => onPick({ start: block.start, userId: result?.forUser ? null : day.userId })}
           />
-        ) : (
-          <p className="flex items-center gap-2 border-t border-[var(--color-border)] px-3 py-2.5 text-xs text-[var(--color-muted)]">
-            <Spinner className="h-3.5 w-3.5" />
-            Loading the day…
-          </p>
-        )}
+        ) : null}
       </li>
     );
   };
 
-  const windows = result?.windows ?? [];
-  const shown = showAll ? windows : windows.slice(0, SHOWN);
+  const shown = showAll ? days : days.slice(0, SHOWN);
   return (
     <div>
       <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">When</span>
@@ -410,18 +347,18 @@ export function SuggestTimes({
         </p>
       ) : result ? (
         <div className="space-y-2">
-          {windows.length ? (
-            <ul className="space-y-2">{shown.map((stretch) => row(stretch, result.timezone, result.minutes))}</ul>
+          {days.length ? (
+            <ul className="space-y-2">{shown.map((day) => row(day, result.timezone))}</ul>
           ) : (
             <p className="text-[13px] text-[var(--color-muted)]">Nothing open in the next two weeks.</p>
           )}
-          {windows.length > shown.length ? (
+          {days.length > shown.length ? (
             <button
               type="button"
               className="text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
               onClick={() => setShowAll(true)}
             >
-              Show more times
+              Show more days
             </button>
           ) : null}
           {result.driveTimes ? null : (
