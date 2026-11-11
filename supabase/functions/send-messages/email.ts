@@ -15,6 +15,7 @@ export async function sendEmail(
   body: string,
   unsubscribe: string,
   footer: boolean,
+  button?: { url: string; label: string },
 ): Promise<Outcome> {
   const relayUrl = Deno.env.get("CLOUDFLARE_EMAIL_URL");
   const relaySecret = Deno.env.get("CLOUDFLARE_EMAIL_SECRET");
@@ -29,13 +30,7 @@ export async function sendEmail(
     headers["References"] = message.inReplyTo;
   }
   const text = footer ? `${body}\n\n—\nUnsubscribe: ${unsubscribe}` : body;
-  const html =
-    `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#26303f">` +
-    `${escapeHtml(body).replace(/\n/g, "<br>")}` +
-    (footer
-      ? `<p style="margin-top:32px;font-size:12px;color:#6b7688"><a href="${unsubscribe}" style="color:#6b7688">Unsubscribe</a></p>`
-      : "") +
-    `</div>`;
+  const html = renderHtml(message.companyName, body, footer ? unsubscribe : null, button);
   const attachments = await loadAttachments(message.attachments ?? []);
   const response = await fetch(relayUrl, {
     method: "POST",
@@ -104,6 +99,64 @@ async function loadAttachments(photos: EmailMessage["attachments"]) {
     });
   }
   return attachments;
+}
+
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+
+/**
+ * The message as written, one paragraph per blank-line-separated block, with
+ * links clickable. A document's email sits on a card under the company's name,
+ * and the paragraph that is just its link becomes a button.
+ */
+export function renderHtml(
+  companyName: string,
+  body: string,
+  unsubscribe: string | null,
+  button?: { url: string; label: string },
+): string {
+  const paragraphs = body
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) =>
+      button && isLinkTo(block, button.url)
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 20px"><tr>` +
+          `<td style="border-radius:8px;background:#1f2937">` +
+          `<a href="${escapeHtml(button.url)}" style="display:inline-block;padding:13px 24px;font-family:${FONT};font-size:15px;font-weight:600;line-height:1;color:#ffffff;text-decoration:none;border-radius:8px">${escapeHtml(button.label)}</a>` +
+          `</td></tr></table>`
+        : `<p style="margin:0 0 16px">${linkify(escapeHtml(block)).replace(/\n/g, "<br>")}</p>`,
+    )
+    .join("");
+  const optOut = unsubscribe
+    ? `<p style="margin:20px 0 0;font-size:12px;color:#8a94a6"><a href="${escapeHtml(unsubscribe)}" style="color:#8a94a6">Unsubscribe</a></p>`
+    : "";
+  if (!button) {
+    return `<div style="font-family:${FONT};font-size:15px;line-height:1.55;color:#26303f">${paragraphs}${optOut}</div>`;
+  }
+  return (
+    `<div style="margin:0;padding:32px 16px;background:#f3f4f6">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px">` +
+    `<tr><td style="padding:22px 32px;border-bottom:1px solid #eef0f3;font-family:${FONT};font-size:17px;font-weight:600;color:#111827">${escapeHtml(companyName)}</td></tr>` +
+    `<tr><td style="padding:28px 32px 12px;font-family:${FONT};font-size:15px;line-height:1.6;color:#26303f">${paragraphs}</td></tr>` +
+    `</table>` +
+    (optOut ? `<div style="max-width:560px;margin:0 auto;text-align:center;font-family:${FONT}">${optOut}</div>` : "") +
+    `</div>`
+  );
+}
+
+/** A paragraph that is only a link to the document, on whichever domain it was written. */
+function isLinkTo(block: string, url: string): boolean {
+  if (!/^https?:\/\/\S+$/.test(block)) return false;
+  try {
+    return new URL(block).pathname === new URL(url).pathname;
+  } catch {
+    return false;
+  }
+}
+
+/** Makes http(s) links in already-escaped text clickable. */
+function linkify(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)'"&]/g, (url) => `<a href="${url}" style="color:#2563eb">${url}</a>`);
 }
 
 function escapeHtml(value: string): string {

@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { sendEmail, type EmailMessage } from "./email.ts";
+import { renderHtml, sendEmail, type EmailMessage } from "./email.ts";
 
 const message: EmailMessage = { id: "01234567-89ab-cdef-0123-456789abcdef", to: "customer@example.com", companyName: "Test & company", replyTo: "office@example.com", inReplyTo: "<thread@example.com>", attachments: [] };
 const unsubscribe = "https://serviceflow-admin.vercel.app/u/test";
@@ -72,4 +72,20 @@ Deno.test("provider errors and malformed success cannot mark mail as sent", asyn
       assertEquals((await sendEmail(message, "Test", "Hi", unsubscribe, false)).status, "failed");
     }, async () => response);
   }
+});
+Deno.test("a sent document's link becomes a button under the company name", () => {
+  const link = "https://serviceflowapp.com/p/abc123";
+  const html = renderHtml("Test & company", `Hi Jane,\n\nYour proposal is ready.\n\n${link}\n\nThanks,\nTest`, null, { url: link, label: "View proposal" });
+  assertStringIncludes(html, ">Test &amp; company</td>");
+  assertStringIncludes(html, `<a href="${link}" style="display:inline-block`);
+  assertStringIncludes(html, ">View proposal</a>");
+  assertStringIncludes(html, "<p style=\"margin:0 0 16px\">Thanks,<br>Test</p>");
+  assertEquals(html.includes(`>${link}</a>`), false);
+  assertEquals(html.includes("Unsubscribe"), false);
+  const older = renderHtml("Co", "https://serviceflow-admin.vercel.app/p/abc123", null, { url: link, label: "View proposal" });
+  assertStringIncludes(older, `<a href="${link}" style="display:inline-block`);
+});
+Deno.test("links in a plain message are clickable", () => {
+  const html = renderHtml("Co", "See https://example.com/a?b=1&c=2.", null);
+  assertStringIncludes(html, `<a href="https://example.com/a?b=1&amp;c=2" style="color:#2563eb">https://example.com/a?b=1&amp;c=2</a>.`);
 });

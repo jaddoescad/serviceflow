@@ -6,6 +6,7 @@ import { sendDocument } from "@/lib/actions/documents";
 import type { DocumentKind } from "@/lib/proposal-types";
 import { ProjectModal } from "./project-profile-panel";
 import { MailIcon, PhoneIcon } from "./pipeline-ui";
+import { showToast } from "./toast";
 import { Button, Field, Input, Select, Textarea, buttonClassName } from "./ui";
 
 // Dialog layout: 13px body with p-5, then a hairline footer with
@@ -60,9 +61,9 @@ const DELIVERY_LABELS: Record<Delivery, string> = {
 };
 
 const NEXT_STEP: Record<DocumentKind, string> = {
-  proposal: "review it and accept it online",
-  change_order: "review and sign it online",
-  invoice: "see what's owing",
+  proposal: "review and accept it",
+  change_order: "review and sign it",
+  invoice: "view it",
 };
 
 export type SendRecipient = { name: string | null; email: string | null; phone: string | null };
@@ -71,7 +72,10 @@ function firstName(name: string | null | undefined): string {
   return name?.trim().split(/\s+/)[0] || "{{first_name}}";
 }
 
-/** Default messages, written out with what's known so they read as sent. */
+/**
+ * Default messages, written out with what's known so they read as sent. The
+ * link sits on its own line: the email shows it as a button.
+ */
 function defaultMessages(
   kind: DocumentKind,
   noun: string,
@@ -82,15 +86,19 @@ function defaultMessages(
   const hi = `Hi ${firstName(customer?.name)}`;
   const from = company?.name || "{{company}}";
   const call = company?.phone ? ` or call us at ${company.phone}` : "";
+  const thanks = kind === "proposal" ? `Thanks for considering ${from}! ` : "";
   return {
     subject: `Your ${noun} from ${from}`,
     email:
       `${hi},\n\n` +
-      `Thank you for considering ${from}. Your ${noun} is ready — you can ${NEXT_STEP[kind]} here:\n\n` +
+      `${thanks}Your ${noun} is ready. You can ${NEXT_STEP[kind]} here:\n\n` +
       `${link}\n\n` +
-      `If you have any questions, just reply to this email${call}.\n\n` +
+      `Any questions, just reply to this email${call}.\n\n` +
       `Thanks,\n${from}`,
-    sms: `${hi}, it's ${from}. Here's your ${noun}: ${link}`,
+    sms:
+      kind === "proposal"
+        ? `${hi}, thanks for considering ${from}! Your proposal is ready. You can review and accept it here:\n${link}`
+        : `${hi}, your ${noun} from ${from} is ready. You can ${NEXT_STEP[kind]} here:\n${link}`,
   };
 }
 
@@ -173,7 +181,8 @@ export function SendDocumentDialog({
   const [subject, setSubject] = useState(defaults.subject);
   const [emailBody, setEmailBody] = useState(defaults.email);
   const [smsBody, setSmsBody] = useState(defaults.sms);
-  const [sent, setSent] = useState<{ link: string; note: string; copied: boolean } | null>(null);
+  // Only shown after copying a link, or when one of the two messages failed.
+  const [sent, setSent] = useState<{ link: string | null; note: string; copied: boolean } | null>(null);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
@@ -198,19 +207,23 @@ export function SendDocumentDialog({
         setError(result.error ?? "Could not send.");
         return;
       }
-      const link = `${window.location.origin}${path}/${result.token}`;
-      const copied = linkOnly && (await copyText(link));
-      const queued =
-        result.sent.length === 2 ? "Email and text queued." : result.sent[0] === "email" ? "Email queued." : "Text queued.";
-      const note = result.error
-        ? `${queued} The ${result.sent.includes("email") ? "text" : "email"} wasn't sent: ${result.error}`
-        : linkOnly
-          ? copied
-            ? "Link copied. Share it with your customer."
-            : "Share this link with your customer."
-          : queued;
-      setSent({ link, copied, note });
       router.refresh();
+      const link = `${window.location.origin}${path}/${result.token}`;
+      if (linkOnly) {
+        const copied = await copyText(link);
+        setSent({ link, copied, note: copied ? "Link copied. Share it with your customer." : "Share this link with your customer." });
+        return;
+      }
+      const how = result.sent.length === 2 ? "by email and text" : result.sent[0] === "email" ? "by email" : "by text";
+      const to = customer?.name?.trim().split(/\s+/)[0];
+      const done = `${noun[0].toUpperCase()}${noun.slice(1)} sent${to ? ` to ${to}` : ""} ${how}.`;
+      if (result.error) {
+        const failed = result.sent.includes("email") ? "text" : "email";
+        setSent({ link: null, copied: false, note: `${done} The ${failed} wasn't sent: ${result.error}` });
+        return;
+      }
+      showToast(done);
+      onClose();
     });
   }
 
@@ -219,7 +232,7 @@ export function SendDocumentDialog({
       <ProjectModal title={title} onClose={onClose}>
         <div className="space-y-2 p-5 text-[13px]">
           <p className="text-[var(--color-muted)]">{sent.note}</p>
-          <CopyLink link={sent.link} copied={sent.copied} />
+          {sent.link ? <CopyLink link={sent.link} copied={sent.copied} /> : null}
         </div>
         <DialogFooter>
           <Button type="button" onClick={onClose}>

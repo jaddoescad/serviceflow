@@ -6,6 +6,7 @@ import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 import { MobileNav, Nav, SidebarHeader } from "@/components/nav";
 import { NavigationPendingProvider, PendingPage } from "@/components/navigation-pending";
 import { NewLeadToast } from "@/components/new-lead-toast";
+import { Toast } from "@/components/toast";
 import { SignOutButton } from "@/components/sign-out";
 import { ProjectUploadProvider } from "@/components/project-upload-provider";
 import { UnreadInboxProvider } from "@/components/unread-inbox";
@@ -75,6 +76,7 @@ export default async function AppLayout({
             </main>
           </div>
           <NewLeadToast />
+          <Toast />
         </NavigationPendingProvider>
       </UnreadInboxProvider>
     </ProjectUploadProvider>

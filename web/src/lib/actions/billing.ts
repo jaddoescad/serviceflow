@@ -103,7 +103,7 @@ export async function declinePublicChangeOrder(input: { token: string; reason: s
 
 /** What the customer's Pay button offers; null when the company doesn't take cards online. */
 export async function getPublicPaymentOptions(token: string): Promise<PublicPaymentOptions | null> {
-  if (!onlinePaymentsAvailable() || typeof token !== "string" || token.length < 24) return null;
+  if (!onlinePaymentsAvailable() || typeof token !== "string" || token.length < 12) return null;
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("get_public_payment_options", { requested_token: token });
   if (error) return null;

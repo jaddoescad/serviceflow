@@ -31,6 +31,8 @@ type Outcome = { status: "sent" | "failed" | "skipped"; error?: string; provider
 
 const BATCH_SIZE = 50;
 
+const DOCUMENT_NOUNS: Record<string, string> = { p: "proposal", co: "change order", i: "invoice" };
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -46,7 +48,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const appUrl = (Deno.env.get("APP_URL") ?? "https://serviceflow-admin.vercel.app").replace(/\/+$/, "");
+  const appUrl = (Deno.env.get("APP_URL") ?? "https://serviceflowapp.com").replace(/\/+$/, "");
 
   const { data, error } = await supabase.rpc("claim_outbound_messages", { batch_size: BATCH_SIZE });
   if (error) return json({ error: error.message }, 500);
@@ -61,12 +63,17 @@ Deno.serve(async (req) => {
       const fill = (text: string) =>
         text.replaceAll("{{proposal_link}}", proposalLink).replaceAll("{{document_link}}", documentLink).trim();
       const unsubscribe = `${appUrl}/u/${message.id}`;
-      // Messages staff write to one customer read like a normal reply, with
-      // no opt-out footer; automated ones keep it.
-      const footer = message.kind !== "manual";
+      // Messages staff send one customer (a reply, or a proposal, change order
+      // or invoice) read like a normal message, with no opt-out footer;
+      // automated drips and reminders keep it.
+      const footer = message.kind === "drip" || message.kind === "reminder";
+      // A sent document's email shows its link as a button.
+      const button = message.kind === "document" && message.documentPath
+        ? { url: documentLink, label: `View ${DOCUMENT_NOUNS[message.documentPath.split("/")[1]] ?? "document"}` }
+        : undefined;
       outcome =
         message.channel === "email"
-          ? await sendEmail(message, fill(message.subject ?? ""), fill(message.body), unsubscribe, footer)
+          ? await sendEmail(message, fill(message.subject ?? ""), fill(message.body), unsubscribe, footer, button)
           : await sendText(message, fill(message.body), unsubscribe, footer);
     } catch (reason) {
       outcome = { status: "failed", error: reason instanceof Error ? reason.message : String(reason) };
