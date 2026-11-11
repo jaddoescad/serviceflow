@@ -26,25 +26,21 @@ Deno.test("starts before the earliest allowed time are left out", () => {
   assert.deepEqual(starts(times), ["11:30 AM", "12:00 PM"]);
 });
 
-Deno.test("an appointment blocks its own time; a start too close to drive is offered as tight", () => {
+Deno.test("an appointment blocks its time plus the drive to and from it", () => {
   const context = {
     ...base,
     appointments: [{ userId: "scott", startsAt: iso(10), endsAt: iso(11), location: "9 Elm St" }],
   };
-  // 20 minutes each way: 9:30 and 11:00 are offered, short of the drive.
+  // 20 minutes each way: free until 9:40, from 11:20 (next half hour 11:30).
   const times = openTimes(context, day, 30, "1 Main St", 0, flat(20));
-  assert.deepEqual(starts(times), ["9:00 AM", "9:30 AM", "11:00 AM", "11:30 AM", "12:00 PM", "12:30 PM"]);
+  assert.deepEqual(starts(times), ["9:00 AM", "11:30 AM", "12:00 PM", "12:30 PM"]);
   const [after] = times.get(at(11, 30))!;
   assert.equal(after.driveBefore, 20);
   assert.equal(after.beforeEnd, at(11));
   assert.equal(after.driveAfter, null);
-  assert.equal(after.shortfall, 0);
-  assert.equal(times.get(at(11))![0].shortfall, 20);
-  assert.equal(times.get(at(9, 30))![0].shortfall, 20);
   const [before] = times.get(at(9))!;
   assert.equal(before.driveAfter, 20);
   assert.equal(before.afterStart, at(10));
-  assert.equal(before.shortfall, 0);
 });
 
 Deno.test("the break between appointments applies to Google busy times too", () => {
@@ -78,11 +74,8 @@ Deno.test("the person with the shortest drive comes first", () => {
   const travel: Travel = (from, to) => (from === "far" || to === "far" ? 45 : 5);
   const times = openTimes(context, day, 60, "1 Main St", 0, travel);
   assert.deepEqual(times.get(at(11))!.map((candidate) => candidate.userId), ["jad", "scott"]);
-  // Only Jad is back in time for 10:30; Scott is offered too, 15 minutes short.
-  assert.deepEqual(times.get(at(10, 30))!.map((candidate) => [candidate.userId, candidate.shortfall]), [
-    ["jad", 0],
-    ["scott", 15],
-  ]);
+  // Only Jad is back in time for 10:30.
+  assert.deepEqual(times.get(at(10, 30))!.map((candidate) => candidate.userId), ["jad"]);
 });
 
 Deno.test("a visit nobody is assigned to counts for everyone", () => {
@@ -120,13 +113,13 @@ Deno.test("free time comes as stretches around visits, asked-for ones first", ()
   const travel: Travel = (from, to) => (from === "next door" || to === "next door" ? 5 : 30);
   const open = [day, "2026-11-04"].map((date) => ({ day: date, times: openTimes(context, date, 60, "1 Main St", 0, travel) }));
   const windows = openWindows(open, { days: [day], window: "afternoon" }, zone, 30);
-  // Tuesday: free until the 2 PM visit, and again after it.
+  // Tuesday: free until the drive to the 2 PM visit, and again after it.
   assert.deepEqual(windows.map((window) => [window.day === day ? "Tue" : "Wed", span(window)]), [
-    ["Tue", "9:00 AM–2:00 PM"],
-    ["Tue", "3:00 PM–5:00 PM"],
+    ["Tue", "9:00 AM–1:30 PM"],
+    ["Tue", "3:30 PM–5:00 PM"],
     ["Wed", "9:00 AM–5:00 PM"],
   ]);
-  // Before a visit, the afternoon start closest to it that leaves the drive; after one, the first after the drive.
+  // Before a visit, the afternoon start closest to it; after one, right after it.
   assert.equal(clock(windows[0].suggested.start), "12:30 PM");
   assert.equal(clock(windows[1].suggested.start), "3:30 PM");
   assert.equal(clock(windows[2].suggested.start), "12:00 PM");
@@ -156,23 +149,20 @@ Deno.test("each person gets their own stretches", () => {
   ]);
 });
 
-Deno.test("a day with tight openings comes before a free day later on", () => {
+Deno.test("an opening this week comes before an empty day later on", () => {
   const context = {
     ...base,
-    people: [{ ...scott, hours: [{ day: 2, start: "10:00", end: "14:00" }, { day: 3, start: "10:00", end: "14:00" }] }],
-    appointments: [
-      { userId: "scott", startsAt: iso(10), endsAt: iso(11), location: "far" },
-      { userId: "scott", startsAt: iso(13, 15), endsAt: iso(14, 15), location: "far" },
-    ],
+    people: [{ ...scott, hours: [{ day: 2, start: "10:00", end: "15:00" }, { day: 3, start: "10:00", end: "15:00" }] }],
+    appointments: [{ userId: "scott", startsAt: iso(10), endsAt: iso(11), location: "far" }],
   };
   const travel: Travel = (from, to) => (from === "far" || to === "far" ? 50 : 30);
   const open = [day, "2026-11-04"].map((date) => ({ day: date, times: openTimes(context, date, 60, "1 Main St", 0, travel) }));
   const windows = openWindows(open, { days: [], window: "any" }, zone, 30);
+  // Tuesday: free once the 50-minute drive from the 10 AM visit fits.
   assert.deepEqual(windows.map((window) => [window.day === day ? "Tue" : "Wed", span(window)]), [
-    ["Tue", "11:00 AM–1:00 PM"],
-    ["Wed", "10:00 AM–2:00 PM"],
+    ["Tue", "12:00 PM–3:00 PM"],
+    ["Wed", "10:00 AM–3:00 PM"],
   ]);
-  // Nothing leaves both 50-minute drives; 11:30 comes closest (20 + 5 minutes short).
-  assert.equal(clock(windows[0].suggested.start), "11:30 AM");
-  assert.equal(windows[0].suggested.shortfall, 25);
+  assert.equal(clock(windows[0].suggested.start), "12:00 PM");
+  assert.equal(windows[0].suggested.driveBefore, 50);
 });

@@ -69,9 +69,8 @@ const place = (address: string) =>
 const driveLabel = (minutes: number, meters: number | null) =>
   `${minutes} min drive${meters === null ? "" : ` · ${Math.max(1, Math.round(meters / 1000))} km`}`;
 
-/** One line about the visit before or after a time: the gap, where it is and the drive; red when the drive doesn't fit the gap. */
+/** One line about the visit before or after a time: how long after or before it, where it is, and the drive. */
 function VisitLine({ icon, gap, visit, side }: { icon: string; gap: number; visit: NearbyVisit; side: "after" | "before" }) {
-  const short = visit.minutes - gap;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
       <svg
@@ -89,8 +88,7 @@ function VisitLine({ icon, gap, visit, side }: { icon: string; gap: number; visi
       <span className="min-w-0 truncate text-[var(--color-text)]">
         {gap > 0 ? duration(gap) : "Right"} {side} visit at {place(visit.address)}
       </span>
-      <Tag tone={short > 0 ? "red" : driveTone(visit.minutes)}>{driveLabel(visit.minutes, visit.meters)}</Tag>
-      {short > 0 ? <span className="font-medium text-[var(--color-bad)]">{duration(short)} short to drive</span> : null}
+      <Tag tone={driveTone(visit.minutes)}>{driveLabel(visit.minutes, visit.meters)}</Tag>
     </span>
   );
 }
@@ -277,10 +275,10 @@ export function SuggestTimes({
     );
   }
 
-  // Names only when the stretches are split between people; only then does
-  // picking one set who goes.
+  // Names only when the stretches are split between people. Picking a time
+  // found for anyone sets who goes, even when only one person takes appointments.
   const named = !result?.forUser && new Set(result?.windows.map((stretch) => stretch.userId)).size > 1;
-  const pickedBy = (stretch: OpenWindow) => (named ? stretch.userId : null);
+  const pickedBy = (stretch: OpenWindow) => (result?.forUser ? null : stretch.userId);
   const isPicked = (stretch: OpenWindow) =>
     chosen !== null && (!chosen.userId || chosen.userId === stretch.userId) && stretch.starts.includes(chosen.start);
 
