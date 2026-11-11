@@ -1,8 +1,10 @@
 import { instant, wall, weekday } from "../_shared/zoned.ts";
 
 // Open times: each person's hours on the day, minus their appointments and
-// Google busy times. Between two appointments there is the break plus the
-// drive from one address to the other. Pure, so it can be tested.
+// Google busy times (and the break around them). The drive to and from the
+// visits either side doesn't hide a time: each start says how many minutes
+// it is short of the drive, so a tight opening is still offered and shown as
+// tight. Pure, so it can be tested.
 
 export type Hours = { day: number; start: string; end: string };
 export type Person = { id: string; name: string; hours: Hours[]; maxPerDay: number | null };
@@ -36,6 +38,8 @@ export type Candidate = {
   afterStart: number | null;
   /** Their appointments that day. */
   dayCount: number;
+  /** Minutes missing to drive from the visit before and to the visit after; 0 when both drives fit. */
+  shortfall: number;
 };
 
 export const STEP_MINUTES = 30;
@@ -91,7 +95,7 @@ export function openTimes(
         if (end > close) break;
         if (start < earliest) continue;
         const clear =
-          drives.every((item) => item.end + buffer + item.to <= start || end + buffer + item.from <= item.start) &&
+          drives.every((item) => item.end + buffer <= start || end + buffer <= item.start) &&
           busy.every((item) => item.end + buffer <= start || end + buffer <= item.start);
         if (!clear) continue;
         const before = drives
@@ -111,6 +115,11 @@ export function openTimes(
           beforeEnd: before?.end ?? null,
           afterStart: after?.start ?? null,
           dayCount,
+          shortfall: Math.round(
+            ((before ? Math.max(0, before.end + buffer + before.to - start) : 0) +
+              (after ? Math.max(0, end + buffer + after.from - after.start) : 0)) /
+              60_000,
+          ),
         };
         byStart.set(start, [...(byStart.get(start) ?? []), candidate]);
       }
@@ -119,7 +128,7 @@ export function openTimes(
 
   const driving = (candidate: Candidate) => (candidate.driveBefore ?? 0) + (candidate.driveAfter ?? 0);
   for (const candidates of byStart.values()) {
-    candidates.sort((a, b) => driving(a) - driving(b) || a.dayCount - b.dayCount);
+    candidates.sort((a, b) => a.shortfall - b.shortfall || driving(a) - driving(b) || a.dayCount - b.dayCount);
   }
   return new Map([...byStart].sort((a, b) => a[0] - b[0]));
 }
@@ -140,8 +149,9 @@ export type Window = {
   userId: string;
   /** Every start in it, in order. */
   starts: Candidate[];
-  /** The start to offer: right after the visit before, else right before the
-   * visit after, else the first; in the asked-for part of the day when it can be. */
+  /** The start to offer: the one closest to the drives fitting, then right after
+   * the visit before, else right before the visit after, else the first; in the
+   * asked-for part of the day when it can be. */
   suggested: Candidate;
   matchesDay: boolean;
   /** Some start in it is in the asked-for part of the day. */
@@ -154,9 +164,10 @@ const dayNumber = (day: string) => Date.parse(`${day}T00:00:00Z`) / 86_400_000;
 
 /**
  * Each person's free stretches, ranked against what the customer asked for:
- * on an asked-for day and part of the day first, closest to the person's
- * other visits first (a stretch next to none counts as `fallbackDrive`),
- * then the nearest other days, then the earliest.
+ * on an asked-for day and part of the day first, then the nearest other
+ * days, then by date and time, so a tight opening this week comes before
+ * an empty day next week. Between people at the same time, the one closest
+ * to their other visits (a stretch next to none counts as `fallbackDrive`).
  */
 export function openWindows(
   open: { day: string; times: Map<number, Candidate[]> }[],
@@ -188,7 +199,10 @@ export function openWindows(
       for (const starts of runs) {
         const fitting = starts.filter(inPart);
         const pool = fitting.length ? fitting : starts;
-        const suggested = starts[0].driveBefore !== null || starts.at(-1)!.driveAfter === null ? pool[0] : pool.at(-1)!;
+        const least = Math.min(...pool.map((candidate) => candidate.shortfall));
+        const roomy = pool.filter((candidate) => candidate.shortfall === least);
+        const suggested =
+          starts[0].driveBefore !== null || starts.at(-1)!.driveAfter === null ? roomy[0] : roomy.at(-1)!;
         windows.push({ day, userId, starts, suggested, matchesDay: daysAway === 0, matchesTime: fitting.length > 0, daysAway });
       }
     }
@@ -203,7 +217,7 @@ export function openWindows(
       Number(fits(b)) - Number(fits(a)) ||
       Math.abs(a.daysAway) - Math.abs(b.daysAway) ||
       Number(b.matchesTime) - Number(a.matchesTime) ||
-      near(a) - near(b) ||
-      a.starts[0].start - b.starts[0].start,
+      a.starts[0].start - b.starts[0].start ||
+      near(a) - near(b),
   );
 }

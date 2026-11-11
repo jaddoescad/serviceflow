@@ -56,6 +56,45 @@ const minutesBetween = (from: string | number, to: string | number) =>
 /** Short drives green, up to half an hour amber, longer red. */
 const driveTone = (minutes: number) => (minutes <= 15 ? "green" : minutes <= 30 ? "yellow" : "red");
 
+/** "104 Stonewood Dr, Carleton Place" from "104 Stonewood Dr, Carleton Place ON K7C 3P2". */
+const place = (address: string) =>
+  address
+    .split(",")
+    .slice(0, 2)
+    .map((part) => part.replace(/\s+[A-Z]{2}(\s+[A-Z]\d[A-Z]\s?\d[A-Z]\d)?\s*$/, "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+/** "50 min drive · 42 km". */
+const driveLabel = (minutes: number, meters: number | null) =>
+  `${minutes} min drive${meters === null ? "" : ` · ${Math.max(1, Math.round(meters / 1000))} km`}`;
+
+/** One line about the visit before or after a time: the gap, where it is and the drive; red when the drive doesn't fit the gap. */
+function VisitLine({ icon, gap, visit, side }: { icon: string; gap: number; visit: NearbyVisit; side: "after" | "before" }) {
+  const short = visit.minutes - gap;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-3 w-3 shrink-0 text-[var(--color-muted)]"
+      >
+        <path d={icon} />
+      </svg>
+      <span className="min-w-0 truncate text-[var(--color-text)]">
+        {gap > 0 ? duration(gap) : "Right"} {side} visit at {place(visit.address)}
+      </span>
+      <Tag tone={short > 0 ? "red" : driveTone(visit.minutes)}>{driveLabel(visit.minutes, visit.meters)}</Tag>
+      {short > 0 ? <span className="font-medium text-[var(--color-bad)]">{duration(short)} short to drive</span> : null}
+    </span>
+  );
+}
+
 /** One line about what comes before or after a time, with its drive. */
 function Line({ icon, drive, children }: { icon: string; drive?: number; children: ReactNode }) {
   return (
@@ -302,16 +341,12 @@ export function SuggestTimes({
             {before || after ? (
               <>
                 {before ? (
-                  <Line icon={UP} drive={before.minutes}>
-                    {duration(minutesBetween(before.at, start))} after previous visit
-                  </Line>
+                  <VisitLine icon={UP} gap={minutesBetween(before.at, start)} visit={before} side="after" />
                 ) : (
                   <Line icon={UP}>First visit of the day</Line>
                 )}
                 {after ? (
-                  <Line icon={DOWN} drive={after.minutes}>
-                    {duration(minutesBetween(end, after.at))} before next visit
-                  </Line>
+                  <VisitLine icon={DOWN} gap={minutesBetween(end, after.at)} visit={after} side="before" />
                 ) : (
                   <Line icon={DOWN}>Free until {clock(stretch.end, timezone)}</Line>
                 )}
