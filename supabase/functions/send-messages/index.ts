@@ -1,9 +1,10 @@
+import { sendEmail } from "./email.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 // Delivers queued customer messages (drips, appointment and job reminders,
 // and messages staff send with a proposal, change order or invoice, or as a
-// reply). Runs every minute from pg_cron. Email goes through Resend from
-// EMAIL_FROM; texts go through each company's own Quo number and API key,
+// reply). Runs every minute from pg_cron. Email goes through the authenticated Cloudflare
+// email relay; texts go through each company's own Quo number and API key,
 // saved in Settings. When INBOUND_EMAIL_DOMAIN is set, customers' email
 // replies go to reply+<message id>@ that domain and land in the inbox. Photos
 // staff attach are emailed as attachments; Quo's API can't send picture
@@ -83,54 +84,6 @@ Deno.serve(async (req) => {
   return json({ claimed: messages.length, ...counts });
 });
 
-async function sendEmail(
-  message: Claimed,
-  subject: string,
-  body: string,
-  unsubscribe: string,
-  footer: boolean,
-): Promise<Outcome> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("EMAIL_FROM");
-  if (!apiKey || !from) return { status: "skipped", error: "Email sending isn't set up yet." };
-  if (!message.to) return { status: "skipped", error: "Customer has no email address." };
-
-  const inboundDomain = Deno.env.get("INBOUND_EMAIL_DOMAIN")?.trim().replace(/^@/, "");
-  const replyTo = inboundDomain ? `reply+${message.id.replaceAll("-", "")}@${inboundDomain}` : message.replyTo;
-  const headers: Record<string, string> = { "List-Unsubscribe": `<${unsubscribe}>` };
-  if (message.inReplyTo) {
-    headers["In-Reply-To"] = message.inReplyTo;
-    headers["References"] = message.inReplyTo;
-  }
-  const text = footer ? `${body}\n\n—\nUnsubscribe: ${unsubscribe}` : body;
-  const html =
-    `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.5;color:#26303f">` +
-    `${escapeHtml(body).replace(/\n/g, "<br>")}` +
-    (footer
-      ? `<p style="margin-top:32px;font-size:12px;color:#6b7688"><a href="${unsubscribe}" style="color:#6b7688">Unsubscribe</a></p>`
-      : "") +
-    `</div>`;
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: `${message.companyName.replace(/[<>"]/g, "")} <${from}>`,
-      to: [message.to],
-      subject: subject || message.companyName,
-      text,
-      html,
-      reply_to: replyTo ?? undefined,
-      headers,
-      attachments: message.attachments.length
-        ? message.attachments.map((photo, index) => ({ path: photo.url, filename: photo.name ?? `photo-${index + 1}.jpg` }))
-        : undefined,
-    }),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) return { status: "failed", error: result?.message ?? `Resend ${response.status}` };
-  return { status: "sent", providerId: result?.id };
-}
-
 async function sendText(message: Claimed, body: string, unsubscribe: string, footer: boolean): Promise<Outcome> {
   if (!message.quoApiKey || !message.quoFrom) {
     return { status: "skipped", error: "Connect Quo in Settings to send texts." };
@@ -160,10 +113,6 @@ function toE164(value: string | null): string | null {
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return null;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function json(body: unknown, status = 200): Response {

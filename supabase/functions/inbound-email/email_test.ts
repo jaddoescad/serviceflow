@@ -3,7 +3,6 @@ import {
   emailAddress,
   findReplyToken,
   htmlToText,
-  parseDeliveryEvent,
   parseInboundEmail,
   stripQuotedReply,
 } from "./email.ts";
@@ -34,29 +33,11 @@ Deno.test("Postmark inbound JSON", () => {
   ]);
 });
 
-Deno.test("Resend email.received events carry only metadata", () => {
-  const email = parseInboundEmail({
-    type: "email.received",
-    data: { email_id: "re_1", from: "Jane <jane@example.com>", to: [`Reply+${token.toUpperCase()}@IN.example.com`], subject: "Re: Hi", message_id: "<m@x>" },
-  });
-  assertEquals(email?.resendEmailId, "re_1");
-  assertEquals(findReplyToken(email!.recipients, "in.example.com"), token);
-});
-
 Deno.test("generic JSON and form fields", () => {
   const email = parseInboundEmail({ from: "jane@example.com", to: `office@example.com, reply+${token}@in.example.com`, subject: "Hi", text: "Hello" });
   assertEquals(email?.recipients, ["office@example.com", `reply+${token}@in.example.com`]);
   assertEquals(findReplyToken(email!.recipients, "other.example.com"), null);
   assertEquals(parseInboundEmail({ subject: "no sender" }), null);
-});
-
-Deno.test("delivery reports", () => {
-  assertEquals(parseDeliveryEvent({ type: "email.bounced", data: { email_id: "re_2", bounce: { message: "Mailbox full" } } }), {
-    providerId: "re_2",
-    event: "bounced",
-    detail: "Mailbox full",
-  });
-  assertEquals(parseDeliveryEvent({ type: "email.opened", data: { email_id: "re_2" } }), null);
 });
 
 Deno.test("addresses", () => {

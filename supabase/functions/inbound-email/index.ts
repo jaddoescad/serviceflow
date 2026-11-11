@@ -1,21 +1,15 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import {
   type EmailAttachment,
-  type ParsedEmail,
   findReplyToken,
   htmlToText,
-  parseDeliveryEvent,
   parseInboundEmail,
   stripQuotedReply,
 } from "./email.ts";
 
-// Receives customers' email replies. Customer emails go out with Reply-To
-// reply+<message id>@INBOUND_EMAIL_DOMAIN; the inbound provider (Resend
-// inbound, Postmark, or anything posting {from, to, subject, text, html})
-// posts each reply here, and it lands in that customer's conversation.
-// Resend delivery webhooks (delivered, bounced, complained) can post here too.
-// The URL carries INBOUND_EMAIL_TOKEN; Resend's svix signature is also
-// checked when INBOUND_EMAIL_SIGNING_SECRET is set.
+// Receives customer replies from a provider posting complete JSON or form data.
+// The URL carries INBOUND_EMAIL_TOKEN. Replies are matched by the address
+// reply+<message id>@INBOUND_EMAIL_DOMAIN.
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 // Small inline images are signature logos and icons, not the customer's photos.
@@ -40,10 +34,6 @@ Deno.serve(async (req) => {
     payload = await formPayload(await req.formData());
   } else {
     const raw = await req.text();
-    const signingSecret = Deno.env.get("INBOUND_EMAIL_SIGNING_SECRET");
-    if (signingSecret && !(await verifySvix(raw, req.headers, signingSecret))) {
-      return json({ error: "Invalid signature" }, 401);
-    }
     try {
       payload = JSON.parse(raw);
     } catch {
@@ -55,18 +45,7 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const delivery = parseDeliveryEvent(payload);
-  if (delivery) {
-    const { error } = await supabase.rpc("record_message_delivery", {
-      requested_provider_id: delivery.providerId,
-      requested_event: delivery.event,
-      requested_detail: delivery.detail,
-    });
-    if (error) return json({ error: error.message }, 500);
-    return json({ delivery: delivery.event });
-  }
-
-  let email = parseInboundEmail(payload);
+  const email = parseInboundEmail(payload);
   if (!email) return json({ ignored: "Not an email." });
   const replyToken = findReplyToken(email.recipients, domain);
   // Acknowledged so the provider stops retrying; there is nowhere to put it.
@@ -76,7 +55,6 @@ Deno.serve(async (req) => {
   if (orgError) return json({ error: orgError.message }, 500);
   if (!orgId) return json({ ignored: "Unknown reply address." });
 
-  if (email.resendEmailId) email = await withResendContent(email);
   if (email.messageId && (await alreadyStored(supabase, orgId, email.messageId))) {
     return json({ duplicate: true });
   }
@@ -104,27 +82,6 @@ Deno.serve(async (req) => {
   }
   return json(data ?? {});
 });
-
-/** Resend's webhook has no body; fetch it and the attachment links. */
-async function withResendContent(email: ParsedEmail): Promise<ParsedEmail> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  if (!apiKey) return email;
-  const headers = { Authorization: `Bearer ${apiKey}` };
-  const base = `https://api.resend.com/emails/receiving/${encodeURIComponent(email.resendEmailId!)}`;
-  const [content, files] = await Promise.all([
-    fetch(base, { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-    fetch(`${base}/attachments`, { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-  ]);
-  const fetched = content ? parseInboundEmail({ type: "email.received", data: content }) : null;
-  const listed = parseInboundEmail({ type: "email.received", data: { from: email.from, attachments: files?.data ?? [] } });
-  return {
-    ...email,
-    text: fetched?.text ?? email.text,
-    html: fetched?.html ?? email.html,
-    messageId: email.messageId ?? fetched?.messageId ?? null,
-    attachments: listed?.attachments.length ? listed.attachments : email.attachments,
-  };
-}
 
 async function alreadyStored(supabase: SupabaseClient, orgId: string, messageId: string): Promise<boolean> {
   const { data } = await supabase
@@ -181,22 +138,6 @@ async function formPayload(form: FormData): Promise<Record<string, unknown>> {
     }
   }
   return { ...fields, attachments };
-}
-
-/** Resend signs webhooks with svix: base64 HMAC-SHA256 of "id.timestamp.body". */
-async function verifySvix(raw: string, headers: Headers, secret: string): Promise<boolean> {
-  const id = headers.get("svix-id");
-  const timestamp = headers.get("svix-timestamp");
-  const signatures = headers.get("svix-signature");
-  if (!id || !timestamp || !signatures) return false;
-  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
-  const keyBytes = Uint8Array.from(atob(secret.replace(/^whsec_/, "")), (char) => char.charCodeAt(0));
-  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${id}.${timestamp}.${raw}`)));
-  let binary = "";
-  for (const byte of digest) binary += String.fromCharCode(byte);
-  const expected = btoa(binary);
-  return signatures.split(" ").some((entry) => timingSafeEqual(entry.split(",")[1] ?? "", expected));
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

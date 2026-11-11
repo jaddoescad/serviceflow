@@ -1,6 +1,4 @@
-// Parsing for inbound email webhooks: Postmark inbound JSON, Resend
-// "email.received" events and plain {from, to, subject, text, html} JSON or
-// form posts (SendGrid/Mailgun style).
+// Parsing for complete inbound email JSON or form posts.
 
 export type EmailAttachment = {
   name: string;
@@ -24,11 +22,7 @@ export type ParsedEmail = {
   messageId: string | null;
   receivedAt: string | null;
   attachments: EmailAttachment[];
-  /** Resend sends only metadata; the body is fetched with this id. */
-  resendEmailId: string | null;
 };
-
-export type DeliveryEvent = { providerId: string; event: "delivered" | "bounced" | "failed" | "complained"; detail: string | null };
 
 type Json = Record<string, unknown>;
 
@@ -90,46 +84,9 @@ function attachmentsOf(value: unknown): EmailAttachment[] {
   });
 }
 
-/** Delivery reports for email we sent (Resend webhooks), or null. */
-export function parseDeliveryEvent(payload: unknown): DeliveryEvent | null {
-  const event = asObject(payload);
-  const data = asObject(event?.data);
-  const providerId = asString(data?.email_id);
-  const type = asString(event?.type);
-  if (!providerId || !type) return null;
-  const kinds: Record<string, DeliveryEvent["event"]> = {
-    "email.delivered": "delivered",
-    "email.bounced": "bounced",
-    "email.failed": "failed",
-    "email.complained": "complained",
-  };
-  if (!kinds[type]) return null;
-  const bounce = asObject(data?.bounce);
-  const failed = asObject(data?.failed);
-  return { providerId, event: kinds[type], detail: asString(bounce?.message) ?? asString(failed?.reason) ?? null };
-}
-
 export function parseInboundEmail(payload: unknown): ParsedEmail | null {
   const root = asObject(payload);
   if (!root) return null;
-
-  // Resend: {type: "email.received", data: {email_id, from, to, subject, ...}}
-  if (root.type === "email.received") {
-    const data = asObject(root.data);
-    if (!data) return null;
-    return {
-      from: emailAddress(asString(data.from)),
-      recipients: [...addresses(data.to), ...addresses(data.cc), ...addresses(data.bcc)],
-      subject: asString(data.subject),
-      text: asString(data.text),
-      strippedText: null,
-      html: asString(data.html),
-      messageId: asString(data.message_id),
-      receivedAt: validDate(asString(data.created_at)),
-      attachments: attachmentsOf(data.attachments),
-      resendEmailId: asString(data.email_id),
-    };
-  }
 
   // Postmark inbound.
   if ("FromFull" in root || "TextBody" in root || "HtmlBody" in root) {
@@ -149,7 +106,6 @@ export function parseInboundEmail(payload: unknown): ParsedEmail | null {
       messageId: header(root.Headers, "Message-ID") ?? (asString(root.MessageID) ? `<${root.MessageID}>` : null),
       receivedAt: validDate(asString(root.Date)),
       attachments: attachmentsOf(root.Attachments),
-      resendEmailId: null,
     };
   }
 
@@ -170,7 +126,6 @@ export function parseInboundEmail(payload: unknown): ParsedEmail | null {
     messageId: asString(root.message_id ?? root.messageId ?? root["Message-Id"]) ?? header(root.headers, "Message-ID"),
     receivedAt: validDate(asString(root.date ?? root.Date)),
     attachments: attachmentsOf(root.attachments),
-    resendEmailId: null,
   };
 }
 

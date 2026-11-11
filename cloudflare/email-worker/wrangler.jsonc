@@ -1,0 +1,14 @@
+{
+  "name": "serviceflow-email",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-10",
+  "account_id": "db8c567871fd5f7697613b1313acdfbd",
+  "workers_dev": true,
+  "vars": {
+    "EMAIL_FROM": "notifications@serviceflowapp.com"
+  },
+  "send_email": [{
+    "name": "EMAIL",
+    "allowed_sender_addresses": ["notifications@serviceflowapp.com"]
+  }]
+}

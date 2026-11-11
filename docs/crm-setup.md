@@ -6,12 +6,34 @@ and Google Calendar changes wait in the sync queue.
 
 ## Email (drips, reminders, confirmations, documents)
 
-Supabase → Edge Functions → Secrets (project `bwbckdkouqghdadpkjvn`):
+Email delivery uses the authenticated `cloudflare/email-worker` Worker and
+Cloudflare Email Sending. The sender is `notifications@serviceflowapp.com`;
+the display name and Reply-To come from each company's messaging settings.
 
-- `RESEND_API_KEY` — Resend API key.
-- `EMAIL_FROM` — a sender on a domain verified in Resend, e.g. `hello@example.com`.
+Before activating production:
 
-Customers' replies go to the reply-to address in Settings → Messaging.
+1. Onboard `serviceflowapp.com` to Cloudflare DNS, preserving its website,
+   verification records and existing mail forwarding. Enable Email Sending and
+   verify its SPF, DKIM and DMARC records. Domain registration can remain at
+   Namecheap. DNS hosting must be Cloudflare for Email Sending.
+2. Deploy the Worker with `EMAIL_RELAY_SECRET` set to a random secret. Its
+   `EMAIL_FROM` and binding restrict mail to the configured sender.
+3. Set these Supabase Edge Function secrets (project `bwbckdkouqghdadpkjvn`):
+   - `CLOUDFLARE_EMAIL_URL` — the Worker's HTTPS `/send` endpoint.
+   - `CLOUDFLARE_EMAIL_SECRET` — the same value as `EMAIL_RELAY_SECRET`.
+4. Deploy `send-messages` and `inbound-email` with JWT verification disabled;
+   both authenticate their server-to-server requests themselves.
+5. Send an authorized test email before enabling normal delivery. Keep the
+   relay secret server-side; never use a `NEXT_PUBLIC_` variable.
+
+There is no Resend dependency. Replies go to the company's Reply-To address
+unless a separate inbound email integration is enabled below. Cloudflare
+acceptance is recorded as sent with its message ID; later delivery/bounce
+callbacks are not configured. Attachments are encoded as base64, with a
+17 MiB combined source-file limit to leave room under the 25 MiB MIME limit.
+
+See [the email Worker](../cloudflare/email-worker/README.md) for deployment and
+verification commands.
 
 ## Texts (Quo)
 
@@ -85,22 +107,20 @@ are marked delivered.
 
 ### Email replies (once, for every company)
 
-1. Choose a receiving domain, e.g. `in.example.com`, and set up inbound mail for
-   it at Resend (Receiving) or Postmark (Inbound). Any provider that posts JSON
-   or a form with `from`, `to`, `subject`, `text`/`html` also works.
-2. Supabase → Edge Functions → Secrets:
-   - `INBOUND_EMAIL_DOMAIN`: the receiving domain.
-   - `INBOUND_EMAIL_TOKEN`: a long random string.
-   - `INBOUND_EMAIL_SIGNING_SECRET` (optional, Resend): the webhook's `whsec_…`
-     secret; svix signatures are then required.
-   - Resend inbound also uses `RESEND_API_KEY` to fetch each message's body.
-3. Point the provider's inbound webhook at
+The current sender setup uses each company's existing Reply-To mailbox. An
+in-app inbox for email replies requires a separate inbound integration:
+
+1. Choose a receiving domain, e.g. `in.example.com`, and an inbound service
+   that posts complete JSON or form fields (`from`, `to`, `subject`,
+   `text`/`html`, and optional base64 attachments). A Cloudflare Email Worker
+   can parse MIME and forward this format, but that inbound Worker is not part
+   of the outbound sender.
+2. Set Supabase secrets `INBOUND_EMAIL_DOMAIN` and `INBOUND_EMAIL_TOKEN`
+   (a long random secret).
+3. Point the trusted inbound integration at
    `https://bwbckdkouqghdadpkjvn.supabase.co/functions/v1/inbound-email?token=<INBOUND_EMAIL_TOKEN>`.
-   With Resend, subscribe to `email.received`; adding `email.delivered`,
-   `email.bounced` and `email.complained` to the same URL shows delivery and
-   bounces in Inbox › Sent (a spam complaint opts the customer out of email).
-4. Vercel: set `INBOUND_EMAIL_DOMAIN` to the same value so Settings shows email
-   replies as on.
+4. Set `INBOUND_EMAIL_DOMAIN` in Vercel to the same value so Settings shows
+   email replies as on. Do not set it until receiving and forwarding work.
 
 Customer emails then go out with Reply-To `reply+<message id>@<domain>`, so a
 reply threads to that customer and deal even from another address; quoted
