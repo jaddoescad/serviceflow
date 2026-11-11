@@ -128,15 +128,15 @@ function DayDrawing({
               style={{
                 top: y(band.at) + 1,
                 height: Math.max(MIN_BAND, y(band.at + band.minutes * 60_000) - y(band.at)),
-                background: "repeating-linear-gradient(135deg, var(--color-surface-2) 0 6px, var(--color-selected) 6px 12px)",
+                background: `repeating-linear-gradient(135deg, var(--color-surface-2) 0 6px, var(--tag-${driveTone(band.minutes)}-bg) 6px 12px)`,
               }}
             >
-              <span className="flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 py-px text-xs font-semibold text-[var(--color-text)]">
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5 text-[var(--color-muted)]">
+              <Tag tone={driveTone(band.minutes)} className="gap-1.5 font-semibold ring-2 ring-[var(--color-surface)]">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
                   <path d={CAR} />
                 </svg>
                 {driveLabel(band.minutes, band.meters)}
-              </span>
+              </Tag>
             </div>
           ))}
         {day.visits.map((visit, index) => (
