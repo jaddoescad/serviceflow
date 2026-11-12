@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { LiveRefresh } from "@/components/live-refresh";
 import { PipelineView } from "@/components/pipeline-board";
 import { getBookingMessages } from "@/lib/actions/reminders";
+import { getAppointmentTeam } from "@/lib/appointments";
 import { getHomeOrgId, requireStaff } from "@/lib/auth";
 import { getCustomerListOptions } from "@/lib/contacts";
 import { getNewLeadIds, getPipelineBoard, getPipelineViews } from "@/lib/pipeline";
@@ -19,7 +20,7 @@ export default async function PipelinePage({
 }) {
   const [{ pipeline }, query] = await Promise.all([params, searchParams]);
   if (!isPipelineKey(pipeline)) notFound();
-  const [profile, board, labels, savedViews, options, messages, orgId, newIds] = await Promise.all([
+  const [profile, board, labels, savedViews, options, messages, orgId, newIds, bookingTeam] = await Promise.all([
     requireStaff(),
     getPipelineBoard(pipeline),
     getProjectLabels(),
@@ -29,6 +30,7 @@ export default async function PipelinePage({
     pipeline === "sales" ? getBookingMessages() : { rules: [], companyName: "" },
     getHomeOrgId(),
     pipeline === "sales" ? getNewLeadIds() : [],
+    pipeline === "sales" ? getAppointmentTeam() : [],
   ]);
   return (
     <>
@@ -41,6 +43,7 @@ export default async function PipelinePage({
         savedViews={savedViews}
         userId={profile.user_id}
         team={options.team}
+        bookingTeam={bookingTeam}
         messages={messages}
         viewId={query.v ?? null}
         view={query.view === "list" ? "list" : "board"}

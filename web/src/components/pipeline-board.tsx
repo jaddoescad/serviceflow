@@ -193,6 +193,7 @@ export function PipelineView({
   savedViews,
   userId,
   team,
+  bookingTeam,
   messages,
   viewId: initialViewId,
   view: initialMode,
@@ -204,6 +205,8 @@ export function PipelineView({
   savedViews: SavedPipelineView[];
   userId: string;
   team: TeamOption[];
+  /** Who estimates can be booked with. */
+  bookingTeam: TeamOption[];
   /** The confirmations and reminders booking an estimate can send. */
   messages: BookingMessages;
   viewId: string | null;
@@ -704,7 +707,7 @@ export function PipelineView({
           project={{ id: bookingCard.id, name: bookingCard.name, address: bookingCard.address ?? "" }}
           assignedTo={bookingCard.salespersonId ?? ""}
           today={today}
-          team={team}
+          team={bookingTeam}
           messages={messages}
           onClose={() => setBookingCard(null)}
         />

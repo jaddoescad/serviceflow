@@ -56,6 +56,8 @@ type Draft = {
   start: string;
   minutes: number;
   assignedTo: string;
+  /** Kept so an appointment of someone no longer taking appointments still shows who has it. */
+  assigneeName: string;
   location: string;
   notes: string;
   status: AppointmentStatus;
@@ -563,6 +565,10 @@ function AppointmentDialog({
   const [pending, startTransition] = useTransition();
   const isNew = initial.isNew;
   const patch = (next: Partial<Draft>) => setDraft((current) => ({ ...current, ...next }));
+  const people =
+    initial.assignedTo && !team.some((member) => member.id === initial.assignedTo)
+      ? [...team, { id: initial.assignedTo, name: initial.assigneeName || "Current assignee" }]
+      : team;
   // The customer hears about a booking or a move, not other edits.
   const confirmable =
     draft.status !== "completed" &&
@@ -850,7 +856,7 @@ function AppointmentDialog({
                 <option value="" disabled>
                   Choose someone
                 </option>
-                {team.map((member) => (
+                {people.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
                   </option>
@@ -993,6 +999,7 @@ const newDraft = (day: string, minutes: number, kind: AppointmentKind, assignedT
   start: inputTime(minutes),
   minutes: 60,
   assignedTo,
+  assigneeName: "",
   location: project?.address ?? "",
   notes: "",
   status: "scheduled",
@@ -1016,7 +1023,10 @@ export function BookAppointmentDialog({
   messages: BookingMessages;
   onClose: () => void;
 }) {
-  const [draft] = useState(() => newDraft(addDays(today, 1), 9 * 60, "estimate", assignedTo, project));
+  // The deal's salesperson, when they take appointments.
+  const [draft] = useState(() =>
+    newDraft(addDays(today, 1), 9 * 60, "estimate", team.some((member) => member.id === assignedTo) ? assignedTo : "", project),
+  );
   return <AppointmentDialog draft={draft} team={team} messages={messages} onClose={onClose} />;
 }
 
@@ -1124,6 +1134,7 @@ export function AppointmentsCalendar({
       start: inputTime(starts.minutes),
       minutes: Math.round((Date.parse(item.endsAt) - Date.parse(item.startsAt)) / 60_000),
       assignedTo: item.assignedTo ?? "",
+      assigneeName: item.assigneeName ?? "",
       location: item.location ?? "",
       notes: item.notes ?? "",
       status: item.status,

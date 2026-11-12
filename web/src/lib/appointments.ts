@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Appointment, CalendarEvent, TeamMember } from "@/lib/appointment-types";
+import { getBookingSettings } from "@/lib/actions/booking";
 
 export async function getAppointments(start: Date, end: Date): Promise<Appointment[]> {
   const supabase = await createClient();
@@ -23,6 +24,13 @@ export async function getCalendarEvents(start: Date, end: Date): Promise<Calenda
     return [];
   }
   return (data ?? []) as CalendarEvent[];
+}
+
+/** Who appointments go to: the people who take appointments (Settings › Availability), or everyone while nobody is set. */
+export async function getAppointmentTeam(): Promise<TeamMember[]> {
+  const [team, settings] = await Promise.all([getActiveTeam(), getBookingSettings().catch(() => null)]);
+  const takes = new Set(settings?.people.filter((person) => person.takesBookings).map((person) => person.id));
+  return takes.size ? team.filter((member) => takes.has(member.id)) : team;
 }
 
 export async function getActiveTeam(): Promise<TeamMember[]> {

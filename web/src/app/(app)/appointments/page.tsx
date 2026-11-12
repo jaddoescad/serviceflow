@@ -4,7 +4,7 @@ import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { getBookingMessages } from "@/lib/actions/reminders";
 import { isAppointmentKind } from "@/lib/appointment-types";
 import { requireStaff } from "@/lib/auth";
-import { getActiveTeam, getAppointments, getCalendarEvents } from "@/lib/appointments";
+import { getAppointmentTeam, getAppointments, getCalendarEvents } from "@/lib/appointments";
 import { dayKey } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
@@ -34,7 +34,7 @@ export default async function AppointmentsPage({
     requireStaff(),
     getAppointments(rangeStart, rangeEnd),
     getCalendarEvents(rangeStart, rangeEnd),
-    getActiveTeam(),
+    getAppointmentTeam(),
     getBookingMessages(),
     getMyCalendarConnection(),
     query.new
