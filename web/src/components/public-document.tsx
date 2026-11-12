@@ -1137,7 +1137,7 @@ function SignableBody({
               className="text-[#15803d]"
             />
           ) : null}
-          <TotalLine label={t.tax(doc.taxRatePercent)} value={t.money(totals.taxCents)} />
+          <TotalLine label={t.tax(items.some((item) => item.taxRatePercent != null) ? null : doc.taxRatePercent)} value={t.money(totals.taxCents)} />
         </dl>
         <div className="mt-4 flex items-end justify-between gap-4 border-t border-[var(--color-border)] pt-4">
           <div className="text-[15px] font-semibold text-[var(--color-heading)]">{totalLabel}</div>
@@ -1631,7 +1631,7 @@ function InvoiceBody({ doc, token, t }: { doc: PublicDocument; token: string; t:
           <LineRows items={doc.items.filter(isIncluded)} t={t} />
           <dl className="public-document-totals ml-auto mt-8 w-full max-w-xs space-y-2 border-t border-[var(--color-border)] pt-4 text-[14px] text-[var(--color-text)]">
             <TotalLine label={t.invoiceAmount} value={t.money(doc.subtotalCents)} />
-            <TotalLine label={t.tax(doc.taxRatePercent)} value={t.money(doc.taxCents)} />
+            <TotalLine label={t.tax(doc.items.some((item) => item.taxRatePercent != null) ? null : doc.taxRatePercent)} value={t.money(doc.taxCents)} />
             <TotalLine
               label={t.total}
               value={t.money(doc.totalCents)}

@@ -104,7 +104,7 @@ const en = {
   lineItemsTotal: "Line items",
   optionalUpgrades: "Optional upgrades",
   discount: (percent: number | null) => (percent != null ? `Discount (${percent}%)` : "Discount"),
-  tax: (rate: number) => `Tax (${rate}%)`,
+  tax: (rate: number | null) => (rate == null ? "Tax" : `Tax (${rate}%)`),
   depositToStart: (percent: number | null) => `Deposit to start${percent != null ? ` (${percent}%)` : ""}`,
   projectTotal: "Project total",
   balanceAtCompletion: "Balance at completion",

@@ -329,7 +329,7 @@ export function DocumentTotals({
     <dl>
       <TotalRow label="Subtotal" cents={totals.subtotalCents} />
       <TotalRow
-        label={`Tax (${taxRatePercent}%)`}
+        label={items.some((item) => item.taxRatePercent != null) ? "Tax" : `Tax (${taxRatePercent}%)`}
         cents={totals.taxCents}
       />
       <TotalRow label="Total" cents={totals.totalCents} variant="total" />

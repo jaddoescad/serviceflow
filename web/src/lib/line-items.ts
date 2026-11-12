@@ -8,6 +8,8 @@ export type LineItem = {
   /** Optional items count only when the customer selects them. */
   optional: boolean;
   selected: boolean;
+  /** Imported line-specific tax rate; absent items use document-level tax. */
+  taxRatePercent?: number;
   /**
    * A proposal package (Good / Better / Best) the line belongs to. Package
    * lines are stored as optional and are selected only in the chosen package.
@@ -77,7 +79,14 @@ export function documentTotals(
       ? discount.cents
       : roundHalfAway((subtotalCents * (discount.percent ?? 0)) / 100);
   const discountCents = Math.max(0, Math.min(subtotalCents, requested));
-  const taxCents = roundHalfAway(((subtotalCents - discountCents) * taxRatePercent) / 100);
+  const included = items.filter(isIncluded);
+  const usesLineTax = items.some((item) => item.taxRatePercent != null);
+  const taxCents = usesLineTax
+    ? included.reduce((sum, item) => {
+        const taxable = lineTotalCents(item) * (subtotalCents > 0 ? (subtotalCents - discountCents) / subtotalCents : 1);
+        return sum + roundHalfAway((taxable * (item.taxRatePercent ?? taxRatePercent)) / 100);
+      }, 0)
+    : roundHalfAway(((subtotalCents - discountCents) * taxRatePercent) / 100);
   return { subtotalCents, discountCents, taxCents, totalCents: subtotalCents - discountCents + taxCents };
 }
 
@@ -87,8 +96,12 @@ export function lineItemTotals(items: LineItem[], taxRatePercent: number): LineI
   return { subtotalCents, taxCents, totalCents };
 }
 
+/** Imported proposals can explicitly preserve the absence of a package selection. */
+export const UNSELECTED_PACKAGE_ID = "__unselected__";
+
 /** The requested package when it exists, else the first one. Mirrors private.chosen_package. */
 export function chosenPackageId(packages: ProposalPackage[], requested: string | null | undefined): string | null {
+  if (requested === UNSELECTED_PACKAGE_ID && packages.length > 0) return UNSELECTED_PACKAGE_ID;
   return packages.find((item) => item.id === requested)?.id ?? packages[0]?.id ?? null;
 }
 
@@ -156,6 +169,9 @@ export function reviveLineItems(raw: unknown): LineItem[] {
         unitPriceCents: Number(item.unitPriceCents ?? 0) || 0,
         optional,
         selected: optional ? item.selected === true : true,
+        ...(typeof item.taxRatePercent === "number" && Number.isFinite(item.taxRatePercent)
+          ? { taxRatePercent: item.taxRatePercent }
+          : {}),
         ...(packageId ? { packageId } : {}),
       },
     ];

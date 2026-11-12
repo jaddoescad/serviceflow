@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   chosenPackageId,
+  UNSELECTED_PACKAGE_ID,
   depositCents,
   documentTotals,
   lineItemTotals,
@@ -22,6 +23,28 @@ const item = (overrides) => ({
   ...overrides,
 });
 
+test("imported packages can remain unselected without changing existing defaults", () => {
+  const packages = [{ id: "bronze", name: "Bronze", description: "" }, { id: "silver", name: "Silver", description: "" }];
+  const items = [item({ unitPriceCents: 736600, packageId: "bronze" }), item({ unitPriceCents: 750789, packageId: "silver" })];
+  const chosen = chosenPackageId(packages, UNSELECTED_PACKAGE_ID);
+  assert.equal(chosen, UNSELECTED_PACKAGE_ID);
+  assert.equal(documentTotals(syncPackageItems(items, packages, chosen), 13).totalCents, 0);
+  assert.equal(chosenPackageId(packages, null), "bronze");
+  assert.equal(chosenPackageId([], UNSELECTED_PACKAGE_ID), null);
+});
+
+test("Dr Alain's unselected packages retain their source totals when chosen", () => {
+  const packages = [{ id: "bronze", name: "Bronze", description: "" }, { id: "silver", name: "Silver", description: "" }];
+  const items = [
+    ...[101400, 441900, 95700, 97600].map((unitPriceCents) => item({ unitPriceCents, packageId: "bronze", taxRatePercent: 13 })),
+    ...[101400, 491000, 106400, 108500, -56511].map((unitPriceCents) => item({ unitPriceCents, packageId: "silver", taxRatePercent: 13 })),
+  ];
+  const totalFor = (selection) => documentTotals(syncPackageItems(items, packages, selection), 13).totalCents;
+  assert.equal(totalFor(UNSELECTED_PACKAGE_ID), 0);
+  assert.equal(totalFor("bronze"), 832358);
+  assert.equal(totalFor("silver"), 848392);
+});
+
 test("totals match the database: optional items count only when selected", () => {
   const items = [
     item({ unitPriceCents: 150000 }),
@@ -37,6 +60,67 @@ test("totals match the database: optional items count only when selected", () =>
 test("halves round away from zero like Postgres", () => {
   assert.equal(lineItemTotals([item({ quantity: 0.5, unitPriceCents: 5 })], 0).subtotalCents, 3);
   assert.equal(lineItemTotals([item({ quantity: 0.5, unitPriceCents: -5 })], 0).subtotalCents, -3);
+});
+
+test("imported line tax preserves an untaxed discount and optional choices", () => {
+  const items = reviveLineItems([
+    item({ unitPriceCents: 60000, taxRatePercent: 13 }),
+    item({ unitPriceCents: 190000, taxRatePercent: 13 }),
+    item({ unitPriceCents: -20000, taxRatePercent: 0 }),
+    item({ unitPriceCents: 7500, taxRatePercent: 0, optional: true, selected: false }),
+  ]);
+  assert.deepEqual(documentTotals(items, 13), {
+    subtotalCents: 230000, discountCents: 0, taxCents: 32500, totalCents: 262500,
+  });
+  items[3].selected = true;
+  assert.equal(documentTotals(items, 13).totalCents, 270000);
+});
+
+test("imported tax is rounded per line and ordinary documents retain subtotal rounding", () => {
+  const amounts = [34999, 7500, 55000, 7500, 35000, 9998, 34998, 7498];
+  const ordinary = amounts.map((unitPriceCents) => item({ unitPriceCents }));
+  const imported = ordinary.map((line) => ({ ...line, taxRatePercent: 13 }));
+  assert.equal(documentTotals(ordinary, 13).taxCents, 25024);
+  assert.equal(documentTotals(imported, 13).taxCents, 25025);
+});
+
+test("Joseph Jolly's untaxed wallpaper does not increase tax on the doors", () => {
+  const lines = [
+    item({ unitPriceCents: 15000, taxRatePercent: 13 }),
+    item({ unitPriceCents: 150000, taxRatePercent: 0 }),
+  ];
+  assert.deepEqual(documentTotals(lines, 13), {
+    subtotalCents: 165000, discountCents: 0, taxCents: 1950, totalCents: 166950,
+  });
+});
+
+test("items without an explicit rate use the document tax rate", () => {
+  const lines = [item({ unitPriceCents: 10000 }), item({ unitPriceCents: 20000, taxRatePercent: 0 })];
+  assert.equal(documentTotals(lines, 13).taxCents, 1300);
+});
+
+test("selected imported options use their own tax rate", () => {
+  const lines = [
+    item({ unitPriceCents: 68700, taxRatePercent: 13 }),
+    item({ unitPriceCents: 73500, taxRatePercent: 0, optional: true, selected: false }),
+  ];
+  assert.equal(documentTotals(lines, 13).totalCents, 77631);
+  lines[1].selected = true;
+  assert.equal(documentTotals(lines, 13).totalCents, 151131);
+});
+
+test("imported line rounding reproduces Katie Wakeman proposal", () => {
+  const lines = [
+    item({ unitPriceCents: 240500, taxRatePercent: 13 }),
+    item({ unitPriceCents: 58500, taxRatePercent: 13 }),
+    item({ unitPriceCents: -14950, taxRatePercent: 13 }),
+  ];
+  assert.deepEqual(documentTotals(lines, 13), {
+    subtotalCents: 284050,
+    discountCents: 0,
+    taxCents: 36926,
+    totalCents: 320976,
+  });
 });
 
 test("deposit is a fixed amount or a percent of the total", () => {
