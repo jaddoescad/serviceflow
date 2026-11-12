@@ -502,11 +502,11 @@ function AppointmentDialog({
   const [results, setResults] = useState<{ id: string; name: string; address: string | null }[]>([]);
   const [loadedCustomer, setLoadedCustomer] = useState<CustomerLoad | null>(null);
   const [fields, setFields] = useState<CustomerFields>({ name: "", phone: "", email: "" });
+  // Booking for someone not in ServiceFlow yet: Save adds them and a deal first.
+  const [newCustomer, setNewCustomer] = useState(false);
   // Kept across retries so a second press doesn't add a second customer or deal.
   const newIds = useRef({ contact: crypto.randomUUID(), deal: crypto.randomUUID() });
   const customer = loadedCustomer?.projectId === draft.projectId ? loadedCustomer : null;
-  // No deal picked: the details typed in are a new customer, added with a deal on Save.
-  const newCustomer = !draft.projectId;
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
   const isNew = initial.isNew;
@@ -528,7 +528,7 @@ function AppointmentDialog({
       : null;
 
   useEffect(() => {
-    if (draft.projectId || !query.trim()) {
+    if (draft.projectId || newCustomer || !query.trim()) {
       setResults([]);
       return;
     }
@@ -540,7 +540,7 @@ function AppointmentDialog({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, draft.projectId]);
+  }, [query, draft.projectId, newCustomer]);
 
   useEffect(() => {
     const projectId = draft.projectId;
@@ -559,11 +559,19 @@ function AppointmentDialog({
     };
   }, [draft.projectId]);
 
+  function startNewCustomer() {
+    // What was typed in the search starts whichever field it looks like.
+    const typed = query.trim();
+    const kind = typed.includes("@") ? "email" : /^[\d\s()+.-]{7,}$/.test(typed) ? "phone" : "name";
+    setFields({ name: "", phone: "", email: "", [kind]: typed });
+    setNewCustomer(true);
+  }
+
   function submit(status: AppointmentStatus) {
     startTransition(async () => {
       setError("");
       let projectId = draft.projectId;
-      if (!projectId) {
+      if (newCustomer && !projectId) {
         const name = fields.name.trim();
         const address = draft.location.trim();
         const contact = await createContact({
@@ -587,6 +595,7 @@ function AppointmentDialog({
         }
         projectId = deal.id;
         // From here on it's an existing deal, so a retry books it without adding anyone again.
+        setNewCustomer(false);
         patch({ projectId, projectName: name });
       }
       // Corrections save first, so a confirmation goes to the right phone and email.
@@ -652,14 +661,25 @@ function AppointmentDialog({
                   <button
                     type="button"
                     className="shrink-0 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]"
-                    onClick={() => {
-                      patch({ projectId: "", projectName: "" });
-                      setFields({ name: "", phone: "", email: "" });
-                    }}
+                    onClick={() => patch({ projectId: "", projectName: "" })}
                   >
                     Change
                   </button>
                 ) : null}
+              </div>
+            </div>
+          ) : newCustomer ? (
+            <div>
+              <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Deal or job</span>
+              <div className="flex h-8 items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5">
+                <span className="truncate text-[13px] font-medium text-[var(--color-heading)]">New customer</span>
+                <button
+                  type="button"
+                  className="shrink-0 text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]"
+                  onClick={() => setNewCustomer(false)}
+                >
+                  Change
+                </button>
               </div>
             </div>
           ) : (
@@ -673,7 +693,7 @@ function AppointmentDialog({
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </Field>
-              {results.length ? (
+              {results.length || query.trim() ? (
                 <div className="mt-1 max-h-48 overflow-y-auto rounded-[var(--radius)] bg-[var(--color-surface)] py-1 shadow-[var(--shadow-pop)]">
                   {results.map((result) => (
                     <button
@@ -690,11 +710,26 @@ function AppointmentDialog({
                       ) : null}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={startNewCustomer}
+                    className="block w-full px-2.5 py-1.5 text-left text-[13px] font-medium text-[var(--color-brand-strong)] hover:bg-[var(--color-hover)]"
+                  >
+                    + New customer
+                  </button>
                 </div>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  onClick={startNewCustomer}
+                  className="mt-1.5 text-xs font-medium text-[var(--color-brand-strong)] hover:underline"
+                >
+                  + New customer
+                </button>
+              )}
             </div>
           )}
-          {!newCustomer && customer && !customer.saved && !customer.error ? null : !newCustomer && customer?.error ? (
+          {!newCustomer && (!draft.projectId || (customer && !customer.saved && !customer.error)) ? null : !newCustomer && customer?.error ? (
             <p role="alert" className="text-[13px] text-[var(--color-bad)]">
               {customer.error}
             </p>
@@ -823,7 +858,7 @@ function AppointmentDialog({
             <Button type="button" variant="secondary" disabled={pending} onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || (!draft.projectId && !newCustomer)}>
               {pending ? "Saving…" : draft.status === "cancelled" ? "Reschedule" : "Save"}
             </Button>
           </div>
