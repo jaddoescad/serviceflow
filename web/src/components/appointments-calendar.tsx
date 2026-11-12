@@ -841,8 +841,15 @@ function AppointmentDialog({
               </Select>
             </Field>
             <Field label="Assigned to">
-              <Select value={draft.assignedTo} onChange={(event) => patch({ assignedTo: event.target.value })} className="w-full">
-                <option value="">Unassigned</option>
+              <Select
+                required
+                value={draft.assignedTo}
+                onChange={(event) => patch({ assignedTo: event.target.value })}
+                className={cn("w-full", !draft.assignedTo && "text-[var(--color-faint)]")}
+              >
+                <option value="" disabled>
+                  Choose someone
+                </option>
                 {team.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
