@@ -144,12 +144,25 @@ const label = (item: Item) => (item.event ? item.title : `${item.projectName ?? 
 /** The deal's customer details, shown and corrected on the appointment form. */
 type CustomerFields = Pick<DealCustomer, "name" | "phone" | "email">;
 type CustomerLoad = { projectId: string; saved: DealCustomer | null; error?: string };
+/** The form splits the customer's one stored name into first and last. */
+type CustomerForm = { first: string; last: string; phone: string; email: string };
 const CUSTOMER_INPUTS = [
-  { key: "name", label: "Name", type: "text", maxLength: 160, required: true },
+  { key: "first", label: "First name", type: "text", maxLength: 80, required: true },
+  { key: "last", label: "Last name", type: "text", maxLength: 80, required: false },
   { key: "phone", label: "Phone", type: "tel", maxLength: 60, required: false },
   { key: "email", label: "Email", type: "email", maxLength: 320, required: false },
 ] as const;
-const customerFields = ({ name, phone, email }: CustomerFields): CustomerFields => ({ name, phone, email });
+const EMPTY_CUSTOMER: CustomerForm = { first: "", last: "", phone: "", email: "" };
+function splitName(name: string): Pick<CustomerForm, "first" | "last"> {
+  const [first = "", ...rest] = name.trim().split(/\s+/);
+  return { first, last: rest.join(" ") };
+}
+const toForm = ({ name, phone, email }: CustomerFields): CustomerForm => ({ ...splitName(name), phone, email });
+const fromForm = ({ first, last, phone, email }: CustomerForm): CustomerFields => ({
+  name: [first.trim(), last.trim()].filter(Boolean).join(" "),
+  phone: phone.trim(),
+  email: email.trim(),
+});
 
 function describe(item: Item): string {
   if (item.event) {
@@ -501,7 +514,7 @@ function AppointmentDialog({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ id: string; name: string; address: string | null }[]>([]);
   const [loadedCustomer, setLoadedCustomer] = useState<CustomerLoad | null>(null);
-  const [fields, setFields] = useState<CustomerFields>({ name: "", phone: "", email: "" });
+  const [fields, setFields] = useState<CustomerForm>(EMPTY_CUSTOMER);
   // Booking for someone not in ServiceFlow yet: Save adds them and a deal first.
   const [newCustomer, setNewCustomer] = useState(false);
   // Kept across retries so a second press doesn't add a second customer or deal.
@@ -550,7 +563,7 @@ function AppointmentDialog({
       (saved) => {
         if (cancelled) return;
         setLoadedCustomer({ projectId, saved });
-        if (saved) setFields(customerFields(saved));
+        if (saved) setFields(toForm(saved));
       },
       () => !cancelled && setLoadedCustomer({ projectId, saved: null, error: "Could not load the customer's details." }),
     );
@@ -562,8 +575,9 @@ function AppointmentDialog({
   function startNewCustomer() {
     // What was typed in the search starts whichever field it looks like.
     const typed = query.trim();
-    const kind = typed.includes("@") ? "email" : /^[\d\s()+.-]{7,}$/.test(typed) ? "phone" : "name";
-    setFields({ name: "", phone: "", email: "", [kind]: typed });
+    if (typed.includes("@")) setFields({ ...EMPTY_CUSTOMER, email: typed });
+    else if (/^[\d\s()+.-]{7,}$/.test(typed)) setFields({ ...EMPTY_CUSTOMER, phone: typed });
+    else setFields({ ...EMPTY_CUSTOMER, ...splitName(typed) });
     setNewCustomer(true);
   }
 
@@ -572,7 +586,7 @@ function AppointmentDialog({
       setError("");
       let projectId = draft.projectId;
       if (newCustomer && !projectId) {
-        const name = fields.name.trim();
+        const { name } = fromForm(fields);
         const address = draft.location.trim();
         const contact = await createContact({
           id: newIds.current.contact,
@@ -600,8 +614,8 @@ function AppointmentDialog({
       }
       // Corrections save first, so a confirmation goes to the right phone and email.
       const saved = customer?.saved;
-      const edited = customerFields({ name: fields.name.trim(), phone: fields.phone.trim(), email: fields.email.trim() });
-      if (saved && CUSTOMER_INPUTS.some(({ key }) => edited[key] !== saved[key].trim())) {
+      const edited = fromForm(fields);
+      if (saved && (["name", "phone", "email"] as const).some((key) => edited[key] !== saved[key].trim())) {
         const result = await updateCustomer({ ...edited, id: saved.id, address: saved.address, expectedUpdatedAt: saved.updatedAt }).catch(
           () => ({ error: "Could not save the customer's details. Try again." }),
         );
@@ -734,7 +748,7 @@ function AppointmentDialog({
               {customer.error}
             </p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_minmax(0,1.4fr)]">
+            <div className="grid gap-3 sm:grid-cols-2">
               {CUSTOMER_INPUTS.map(({ key, label, ...input }) => (
                 <Field key={key} label={label}>
                   <Input
