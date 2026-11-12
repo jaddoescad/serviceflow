@@ -6,6 +6,7 @@ import { CompanyDocuments } from "@/components/settings/company-documents";
 import { CompanyProfileForm } from "@/components/settings/company-profile-form";
 import { CrewsSettings } from "@/components/settings/crews-settings";
 import { DocumentTemplates } from "@/components/settings/document-templates";
+import { TaskTemplates } from "@/components/settings/task-templates";
 import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
@@ -20,6 +21,7 @@ import { getBookingSettings } from "@/lib/actions/booking";
 import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { getCrewSettings } from "@/lib/actions/crews";
 import { getDocumentTemplates } from "@/lib/actions/document-templates";
+import { getTaskTemplates } from "@/lib/actions/task-templates";
 import { getLeadIntakeSettings } from "@/lib/actions/lead-intake";
 import { getMessagingSettings, getReviewSettings } from "@/lib/actions/messaging";
 import { getCompanyDocuments, getLabourBudgetSettings } from "@/lib/actions/settings";
@@ -84,10 +86,15 @@ async function ProposalPage() {
 }
 
 async function Templates() {
-  const [templates, { company, isManager }] = await Promise.all([managerOnly(getDocumentTemplates), loadCompanySettings()]);
+  const [templates, taskTemplates, { company, isManager }] = await Promise.all([
+    managerOnly(getDocumentTemplates),
+    managerOnly(getTaskTemplates),
+    loadCompanySettings(),
+  ]);
   return templates ? (
     <>
       <DocumentTemplates templates={templates} />
+      <TaskTemplates templates={taskTemplates ?? []} />
       <ProposalDetailForm field="terms" page={company.proposalPage} canManage={isManager} />
     </>
   ) : (

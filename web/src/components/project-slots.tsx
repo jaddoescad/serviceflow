@@ -4,6 +4,7 @@ import { ProjectOverviewPanel } from "@/components/project-detail";
 import { ProjectTasksPanel } from "@/components/project-tasks";
 import { ProjectDocumentsPanel } from "@/components/project-documents";
 import { getProjectDocuments } from "@/lib/project-documents";
+import { getTaskTemplates } from "@/lib/actions/task-templates";
 import { requireMember } from "@/lib/auth";
 
 export async function OverviewSlot({ projectId }: { projectId: string }) {
@@ -21,12 +22,13 @@ export async function OverviewSlot({ projectId }: { projectId: string }) {
 export async function TasksSlot({ projectId }: { projectId: string }) {
   const data = await getProjectTasks(projectId);
   if (!data) notFound();
+  const templates = data.canManage ? await getTaskTemplates() : [];
   return (
     <ProjectTasksPanel
       projectId={projectId}
-      projectName={data.name}
       taskProgress={data.taskProgress}
       canManage={data.canManage}
+      templates={templates}
     />
   );
 }

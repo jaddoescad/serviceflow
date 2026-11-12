@@ -6,20 +6,21 @@ import { useState, useTransition } from "react";
 import { Badge, Button, Card, Field, Input } from "@/components/ui";
 import { fmtDate, fmtHours, fmtTime } from "@/lib/format";
 import { addProjectTask, removeProjectTask, updateProjectTask } from "@/lib/actions/tasks";
+import { applyTaskTemplate, type TaskTemplate } from "@/lib/actions/task-templates";
 import type { ProjectTaskProgress } from "@/lib/metrics";
 
-type DialogState = { mode: "add" } | { mode: "edit"; task: ProjectTaskProgress } | null;
+type DialogState = { mode: "add" } | { mode: "edit"; task: ProjectTaskProgress } | { mode: "template" } | null;
 
 export function ProjectTasksPanel({
   projectId,
-  projectName,
   taskProgress,
   canManage,
+  templates,
 }: {
   projectId: string;
-  projectName: string;
   taskProgress: ProjectTaskProgress[];
   canManage: boolean;
+  templates: TaskTemplate[];
 }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -28,7 +29,7 @@ export function ProjectTasksPanel({
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const totalBudgeted = taskProgress.reduce((sum, task) => sum + task.budgetedHours, 0);
-  const calculatorHref = `/jobs/${encodeURIComponent(projectId)}/calculator?name=${encodeURIComponent(projectName)}`;
+  const nextSortOrder = taskProgress.reduce((max, task) => Math.max(max, task.sortOrder), 0) + 1;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, done?: () => void) {
     setError(null);
@@ -65,12 +66,9 @@ export function ProjectTasksPanel({
           </div>
           {canManage ? (
             <div className="flex items-center gap-2">
-              <Link
-                href={calculatorHref}
-                className="inline-flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-              >
-                Transfer from calculator
-              </Link>
+              <Button size="sm" variant="secondary" onClick={() => setDialog({ mode: "template" })} disabled={pending}>
+                Add from template
+              </Button>
               <Button size="sm" onClick={() => setDialog({ mode: "add" })} disabled={pending}>
                 + Add task
               </Button>
@@ -87,15 +85,6 @@ export function ProjectTasksPanel({
         {taskProgress.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-[var(--color-muted)]">
             <p>No tasks yet.</p>
-            {canManage ? (
-              <p className="mt-1">
-                Add one above, or build the job in the{" "}
-                <Link href={calculatorHref} className="font-medium text-[var(--color-brand-strong)] hover:underline">
-                  calculator
-                </Link>{" "}
-                and transfer it to tasks.
-              </p>
-            ) : null}
           </div>
         ) : (
           <div>
@@ -197,7 +186,19 @@ export function ProjectTasksPanel({
         )}
       </Card>
 
-      {dialog ? (
+      {dialog?.mode === "template" ? (
+        <TemplateDialog
+          templates={templates}
+          pending={pending}
+          onClose={() => setDialog(null)}
+          onApply={(templateId) =>
+            run(
+              () => applyTaskTemplate({ projectId, templateId }),
+              () => setDialog(null),
+            )
+          }
+        />
+      ) : dialog ? (
         <TaskDialog
           key={dialog.mode === "edit" ? dialog.task.id : "add"}
           initial={dialog.mode === "edit" ? dialog.task : null}
@@ -207,8 +208,8 @@ export function ProjectTasksPanel({
             run(
               () =>
                 dialog.mode === "edit"
-                  ? updateProjectTask({ projectId, taskId: dialog.task.id, ...values })
-                  : addProjectTask({ projectId, ...values }),
+                  ? updateProjectTask({ projectId, taskId: dialog.task.id, sortOrder: dialog.task.sortOrder, ...values })
+                  : addProjectTask({ projectId, sortOrder: nextSortOrder, ...values }),
               () => setDialog(null),
             )
           }
@@ -287,6 +288,89 @@ function TaskDialog({
             <Button disabled={pending || !valid} onClick={submit}>
               {pending ? "Saving…" : initial ? "Save task" : "Add task"}
             </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/** Pick one of the company's task templates and add its tasks to this job. */
+function TemplateDialog({
+  templates,
+  pending,
+  onClose,
+  onApply,
+}: {
+  templates: TaskTemplate[];
+  pending: boolean;
+  onClose: () => void;
+  onApply: (templateId: string) => void;
+}) {
+  const [selectedId, setSelectedId] = useState(templates[0]?.id ?? "");
+  const selected = templates.find((template) => template.id === selectedId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md p-5">
+        <div onClick={(e) => e.stopPropagation()}>
+          <h3 className="mb-4 text-sm font-semibold">Add from template</h3>
+          {templates.length ? (
+            <div role="radiogroup" aria-label="Task template" className="max-h-80 space-y-2 overflow-y-auto">
+              {templates.map((template) => {
+                const active = template.id === selectedId;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setSelectedId(template.id)}
+                    className={`block w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                      active
+                        ? "border-[var(--color-heading)] bg-[var(--color-surface-2)]"
+                        : "border-[var(--color-border)] hover:bg-[var(--color-row-hover)]"
+                    }`}
+                  >
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-sm font-medium text-[var(--color-heading)]">{template.name}</span>
+                      <span className="shrink-0 text-xs text-[var(--color-muted)]">
+                        {template.tasks.length} {template.tasks.length === 1 ? "task" : "tasks"}
+                      </span>
+                    </span>
+                    {active && template.tasks.length ? (
+                      <ul className="mt-1.5 space-y-0.5 text-xs text-[var(--color-muted)]">
+                        {template.tasks.map((task, index) => (
+                          <li key={index} className="truncate">
+                            {task.title}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--color-muted)]">
+              No task templates yet. Create one in{" "}
+              <Link href="/settings/templates" className="font-medium text-[var(--color-brand-strong)] hover:underline">
+                Settings › Templates
+              </Link>
+              .
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            {templates.length ? (
+              <Button disabled={pending || !selected?.tasks.length} onClick={() => selected && onApply(selected.id)}>
+                {pending
+                  ? "Adding…"
+                  : `Add ${selected?.tasks.length ?? 0} ${selected?.tasks.length === 1 ? "task" : "tasks"}`}
+              </Button>
+            ) : null}
           </div>
         </div>
       </Card>

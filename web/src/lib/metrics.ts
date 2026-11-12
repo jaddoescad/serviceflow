@@ -129,6 +129,7 @@ export type ProjectTaskProgress = {
   completedAt: string | null;
   completedByName: string | null;
   budgetedHours: number;
+  sortOrder: number;
 };
 
 export type EmployeeRollup = {
@@ -468,6 +469,7 @@ export function projectTaskProgress(
       completedAt: task.completed_at ?? null,
       completedByName: task.completed_by ? nameByUserId.get(task.completed_by) ?? "Painter" : null,
       budgetedHours: Math.max(0, task.budgeted_hours ?? 0),
+      sortOrder: task.sort_order ?? 0,
     });
   }
   return byProject;

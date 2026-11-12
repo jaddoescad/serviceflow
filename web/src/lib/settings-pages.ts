@@ -4,7 +4,7 @@ export const SETTINGS_PAGES = [
   { id: "team", label: "Team & crews", sections: ["team", "crews"] },
   { id: "branding", label: "Branding & documents", sections: ["branding", "documents"] },
   { id: "proposal-page", label: "Customer proposal page", sections: ["proposal-page"] },
-  { id: "templates", label: "Document templates", sections: ["templates"] },
+  { id: "templates", label: "Templates", sections: ["templates", "task-templates"] },
   { id: "messaging", label: "Messaging & reviews", sections: ["quo", "email", "reviews"] },
   { id: "booking", label: "Leads & booking", sections: ["lead-intake", "availability"] },
   { id: "payments", label: "Online payments", sections: ["payments"] },

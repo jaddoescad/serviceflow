@@ -20,12 +20,13 @@ function validateTaskInput(input: { title: string; budgetedHours: number | null 
   return null;
 }
 
-/** Add a manual painter task. It survives calculator re-publishes. */
+/** Add a painter task by hand, at the position the list passes in. */
 export async function addProjectTask(input: {
   projectId: string;
   title: string;
   notes?: string | null;
   budgetedHours: number | null;
+  sortOrder: number;
 }): Promise<ActionResult> {
   const invalid = validateTaskInput(input);
   if (invalid) return { ok: false, error: invalid };
@@ -39,7 +40,7 @@ export async function addProjectTask(input: {
     requested_notes: input.notes?.trim() || null,
     requested_budget_minutes:
       input.budgetedHours == null ? null : Math.round(input.budgetedHours * 60),
-    requested_sort_order: 0,
+    requested_sort_order: input.sortOrder,
   });
   if (error) return { ok: false, error: error.message };
 
@@ -47,13 +48,14 @@ export async function addProjectTask(input: {
   return { ok: true };
 }
 
-/** Update a painter task's title, notes, and budgeted hours. */
+/** Update a painter task's title, notes, and budgeted hours; it keeps its place in the list. */
 export async function updateProjectTask(input: {
   projectId: string;
   taskId: string;
   title: string;
   notes?: string | null;
   budgetedHours: number | null;
+  sortOrder: number;
 }): Promise<ActionResult> {
   const invalid = validateTaskInput(input);
   if (invalid) return { ok: false, error: invalid };
@@ -67,7 +69,7 @@ export async function updateProjectTask(input: {
     requested_notes: input.notes?.trim() || null,
     requested_budget_minutes:
       input.budgetedHours == null ? null : Math.round(input.budgetedHours * 60),
-    requested_sort_order: 0,
+    requested_sort_order: input.sortOrder,
   });
   if (error) return { ok: false, error: error.message };
 
