@@ -1,7 +1,7 @@
 "use server";
 
 import { requireStaff } from "@/lib/auth";
-import type { ReminderRule, ReminderTarget, ReminderTrigger } from "@/lib/reminder-types";
+import type { BookingMessages, ReminderRule, ReminderTarget, ReminderTrigger } from "@/lib/reminder-types";
 import type { AppointmentKind } from "@/lib/appointment-types";
 import type { MessageChannel } from "@/lib/messaging-types";
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +12,16 @@ const PATHS = ["/drips", "/appointments", "/schedule"];
 
 /** The company's confirmations first, then reminders furthest ahead first. */
 export async function getReminderRules(): Promise<ReminderRule[]> {
+  return (await loadRules()).rules;
+}
+
+/** The appointment confirmations and reminders that are on, for the booking form's checkboxes. */
+export async function getBookingMessages(): Promise<BookingMessages> {
+  const { rules, companyName } = await loadRules();
+  return { rules: rules.filter((rule) => rule.target === "appointment" && rule.enabled), companyName };
+}
+
+async function loadRules(): Promise<{ rules: ReminderRule[]; companyName: string }> {
   await requireStaff();
   const supabase = await createClient();
   // Managers of several companies read every one's rules; the web admin acts in its home company.
@@ -19,13 +29,14 @@ export async function getReminderRules(): Promise<ReminderRule[]> {
     supabase.rpc("get_home_company"),
     supabase
       .from("reminder_rules")
-      .select("id,org_id,target,appointment_kind,trigger,offset_minutes,channel,subject,body,is_enabled")
+      .select("id,org_id,target,appointment_kind,trigger,offset_minutes,channel,subject,body,is_enabled,checked_by_default")
       .order("created_at"),
   ]);
   if (home.error) throw new Error(`get_home_company: ${home.error.message}`);
   if (rules.error) throw new Error(`reminder_rules: ${rules.error.message}`);
-  const company = (home.data as { id: string } | null)?.id;
-  return (rules.data ?? [])
+  const homeCompany = home.data as { id: string; name: string } | null;
+  const company = homeCompany?.id;
+  const list: ReminderRule[] = (rules.data ?? [])
     .filter((row) => row.org_id === company)
     .map((row) => ({
       id: row.id,
@@ -37,8 +48,10 @@ export async function getReminderRules(): Promise<ReminderRule[]> {
       subject: row.subject,
       body: row.body,
       enabled: row.is_enabled,
+      checkedByDefault: row.checked_by_default,
     }))
     .sort((a, b) => (a.trigger === b.trigger ? b.offsetMinutes - a.offsetMinutes : a.trigger === "confirmation" ? -1 : 1));
+  return { rules: list, companyName: homeCompany?.name ?? "" };
 }
 
 export async function saveReminderRule(input: {
@@ -51,6 +64,7 @@ export async function saveReminderRule(input: {
   subject: string;
   body: string;
   enabled: boolean;
+  checkedByDefault: boolean;
 }) {
   if (!input.body.trim()) return { ok: false, error: "Write a message to send." };
   if (input.channel === "email" && !input.subject.trim()) return { ok: false, error: "Add a subject." };
@@ -66,6 +80,7 @@ export async function saveReminderRule(input: {
       requested_subject: input.subject,
       requested_body: input.body,
       requested_enabled: input.enabled,
+      requested_checked_by_default: input.checkedByDefault,
     },
     PATHS,
   );

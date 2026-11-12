@@ -23,8 +23,10 @@ export async function saveAppointment(input: {
   location: string;
   notes: string;
   status: AppointmentStatus;
-  /** Queue the customer's confirmation, when booking or moving it. */
+  /** Queue the ticked confirmations, when booking or moving it. */
   notify: boolean;
+  /** The confirmations and reminders ticked on the form. */
+  messageRuleIds: string[];
 }): Promise<{ ok: boolean; error?: string }> {
   await requireStaff();
   const supabase = await createClient();
@@ -40,6 +42,7 @@ export async function saveAppointment(input: {
     requested_status: input.status,
     requested_kind: input.kind,
     requested_notify: input.notify,
+    requested_message_rule_ids: input.messageRuleIds,
   });
   if (error) return { ok: false, error: error.message };
   revalidatePath("/appointments");

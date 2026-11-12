@@ -1,12 +1,11 @@
 import { AppointmentsCalendar } from "@/components/appointments-calendar";
 import { addDays, isDay, isMonth, monthWeeks } from "@/components/calendar-month-grid";
 import { getMyCalendarConnection } from "@/lib/actions/calendar";
-import { getReminderRules } from "@/lib/actions/reminders";
-import { APPOINTMENT_KINDS, isAppointmentKind } from "@/lib/appointment-types";
+import { getBookingMessages } from "@/lib/actions/reminders";
+import { isAppointmentKind } from "@/lib/appointment-types";
 import { requireStaff } from "@/lib/auth";
 import { getActiveTeam, getAppointments, getCalendarEvents } from "@/lib/appointments";
 import { dayKey } from "@/lib/format";
-import { sendsConfirmation } from "@/lib/reminder-types";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -31,12 +30,12 @@ export default async function AppointmentsPage({
   const rangeStart = new Date(`${addDays(first, -1)}T00:00:00Z`);
   const rangeEnd = new Date(`${addDays(first, days + 1)}T00:00:00Z`);
   const supabase = await createClient();
-  const [, appointments, events, team, rules, calendar, project] = await Promise.all([
+  const [, appointments, events, team, messages, calendar, project] = await Promise.all([
     requireStaff(),
     getAppointments(rangeStart, rangeEnd),
     getCalendarEvents(rangeStart, rangeEnd),
     getActiveTeam(),
-    getReminderRules(),
+    getBookingMessages(),
     getMyCalendarConnection(),
     query.new
       ? supabase.from("project_directory").select("id,name,address").eq("id", query.new).maybeSingle()
@@ -54,7 +53,7 @@ export default async function AppointmentsPage({
       appointments={appointments}
       events={events}
       team={team}
-      confirmationKinds={APPOINTMENT_KINDS.map(({ id }) => id).filter((kind) => sendsConfirmation(rules, "appointment", kind))}
+      messages={messages}
       calendar={calendar}
       newFor={target ? { id: target.id, name: target.name, address: target.address ?? "" } : null}
     />

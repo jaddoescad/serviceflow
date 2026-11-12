@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { AppointmentKind } from "@/lib/appointment-types";
+import type { BookingMessages } from "@/lib/reminder-types";
 import type { TeamOption } from "@/lib/crm-types";
 import { setDealDripsPaused } from "@/lib/actions/messaging";
 import { getArchivedCards, setDealArchived } from "@/lib/actions/pipeline";
@@ -193,7 +193,7 @@ export function PipelineView({
   savedViews,
   userId,
   team,
-  confirmationKinds,
+  messages,
   viewId: initialViewId,
   view: initialMode,
 }: {
@@ -204,8 +204,8 @@ export function PipelineView({
   savedViews: SavedPipelineView[];
   userId: string;
   team: TeamOption[];
-  /** Appointment types booking can confirm to the customer. */
-  confirmationKinds: AppointmentKind[];
+  /** The confirmations and reminders booking an estimate can send. */
+  messages: BookingMessages;
   viewId: string | null;
   view: PipelineViewMode;
 }) {
@@ -705,7 +705,7 @@ export function PipelineView({
           assignedTo={bookingCard.salespersonId ?? ""}
           today={today}
           team={team}
-          confirmationKinds={confirmationKinds}
+          messages={messages}
           onClose={() => setBookingCard(null)}
         />
       ) : null}

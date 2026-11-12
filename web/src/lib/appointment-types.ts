@@ -30,6 +30,8 @@ export type Appointment = {
   location: string | null;
   notes: string | null;
   status: AppointmentStatus;
+  /** Reminder rules ticked when it was booked; null if booked before there was a choice (all of them). */
+  messageRuleIds: string[] | null;
 };
 
 export type TeamMember = { id: string; name: string };

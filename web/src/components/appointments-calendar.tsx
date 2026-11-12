@@ -22,7 +22,6 @@ import {
   CalendarFilter,
   CalendarHeader,
   CalendarMonthGrid,
-  ConfirmationOption,
   DAY_NUMBER_HEIGHT,
   GUTTER,
   addDays,
@@ -38,6 +37,8 @@ import { GoogleCalendarStatusLink } from "./settings/google-calendar-section";
 import { SuggestTimes } from "./suggest-times";
 import { Button, Field, Input, Select, StatusText, Textarea, cn, type TagTone } from "./ui";
 import { dealHref } from "@/lib/pipeline-types";
+import { REMINDERS_HREF, type BookingMessages, type ReminderRule } from "@/lib/reminder-types";
+import { delayLabel } from "./drips-editor";
 
 export type AppointmentsView = "month" | "3day";
 
@@ -58,7 +59,8 @@ type Draft = {
   location: string;
   notes: string;
   status: AppointmentStatus;
-  notify: boolean;
+  /** Ticked confirmations and reminders; null means its defaults (new) or every one (booked before the choice). */
+  messageRuleIds: string[] | null;
 };
 
 /** A new appointment's title follows its type until someone writes their own. */
@@ -497,16 +499,53 @@ function CalendarEventDialog({ item, onClose }: { item: Item; onClose: () => voi
   );
 }
 
+const KIND_WORDS: Record<AppointmentKind, string> = {
+  estimate: "estimate",
+  walkthrough: "walkthrough",
+  punch_out: "punch-out",
+  quality_control: "quality check",
+  other: "appointment",
+};
+
+/** "Text confirmation", "Email reminder · 1 day before". */
+function messageLabel(rule: ReminderRule): string {
+  const channel = rule.channel === "sms" ? "Text" : "Email";
+  return rule.trigger === "confirmation"
+    ? `${channel} confirmation`
+    : `${channel} reminder · ${delayLabel(rule.offsetMinutes)} before`;
+}
+
+const previewDate = new Intl.DateTimeFormat("en-US", { timeZone: "America/Toronto", weekday: "long", month: "long", day: "numeric" });
+const previewTime = new Intl.DateTimeFormat("en-US", { timeZone: "America/Toronto", hour: "numeric", minute: "2-digit" });
+
+/** The message as this customer would get it, filled the way the server fills it. */
+function messagePreview(
+  rule: ReminderRule,
+  context: { firstName: string; company: string; kind: AppointmentKind; starts: Date | null; rescheduled: boolean },
+): string {
+  const values: Record<string, string> = {
+    first_name: context.firstName || "there",
+    company: context.company,
+    appointment_type: KIND_WORDS[context.kind],
+    date: context.starts ? previewDate.format(context.starts) : "{{date}}",
+    end_date: context.starts ? previewDate.format(context.starts) : "{{end_date}}",
+    time: context.starts ? previewTime.format(context.starts) : "{{time}}",
+    scheduled_or_rescheduled: context.rescheduled ? "rescheduled" : "scheduled",
+  };
+  const fill = (text: string) => text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => values[key] ?? match);
+  const body = fill(rule.body);
+  return rule.channel === "email" && rule.subject ? `${fill(rule.subject)} — ${body}` : body;
+}
+
 function AppointmentDialog({
   draft: initial,
   team,
-  confirmationKinds,
+  messages,
   onClose,
 }: {
   draft: Draft;
   team: TeamMember[];
-  /** Types an enabled confirmation is set up for. */
-  confirmationKinds: AppointmentKind[];
+  messages: BookingMessages;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -533,7 +572,24 @@ function AppointmentDialog({
       draft.start !== initial.start ||
       draft.minutes !== initial.minutes ||
       draft.kind !== initial.kind);
-  const canConfirm = confirmable && confirmationKinds.includes(draft.kind);
+  // Every rule's tick is kept, so switching type and back doesn't lose one.
+  const [ticked, setTicked] = useState<Set<string>>(
+    () =>
+      new Set(
+        initial.messageRuleIds ??
+          messages.rules.filter((rule) => !initial.isNew || rule.checkedByDefault).map((rule) => rule.id),
+      ),
+  );
+  const applicable = messages.rules
+    .filter((rule) => rule.appointmentKind === null || rule.appointmentKind === draft.kind)
+    .sort(
+      (a, b) =>
+        Number(a.trigger === "reminder") - Number(b.trigger === "reminder") ||
+        b.offsetMinutes - a.offsetMinutes ||
+        Number(a.channel === "email") - Number(b.channel === "email"),
+    );
+  // Confirmations only go out when booking or moving it; reminders follow it while it's scheduled.
+  const offered = draft.status === "completed" ? [] : applicable.filter((rule) => rule.trigger === "reminder" || confirmable);
   const [startHour, startMinute] = draft.start.split(":").map(Number);
   const chosen =
     draft.date && Number.isFinite(startHour)
@@ -640,7 +696,11 @@ function AppointmentDialog({
         location: draft.location,
         notes: draft.notes,
         status,
-        notify: canConfirm && draft.notify && status === "scheduled",
+        notify:
+          confirmable &&
+          status === "scheduled" &&
+          applicable.some((rule) => rule.trigger === "confirmation" && ticked.has(rule.id)),
+        messageRuleIds: applicable.filter((rule) => ticked.has(rule.id)).map((rule) => rule.id).sort(),
       });
       if (!result.ok) setError(result.error ?? "Could not save the appointment.");
       else {
@@ -844,12 +904,43 @@ function AppointmentDialog({
           <Field label="Notes">
             <Textarea rows={3} maxLength={4000} value={draft.notes} onChange={(event) => patch({ notes: event.target.value })} />
           </Field>
-          {confirmable ? (
-            <ConfirmationOption
-              available={canConfirm}
-              checked={draft.notify}
-              onChange={(notify) => patch({ notify })}
-            />
+          {offered.length ? (
+            <fieldset className="space-y-2.5">
+              <legend className="mb-1.5 text-xs font-medium text-[var(--color-muted)]">Customer messages</legend>
+              {offered.map((rule) => (
+                <label key={rule.id} className="flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={ticked.has(rule.id)}
+                    onChange={(event) =>
+                      setTicked((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(rule.id);
+                        else next.delete(rule.id);
+                        return next;
+                      })
+                    }
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-brand)]"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] text-[var(--color-text)]">{messageLabel(rule)}</span>
+                    <span className="line-clamp-2 text-xs leading-4 text-[var(--color-muted)]">
+                      {messagePreview(rule, {
+                        firstName: fields.first.trim(),
+                        company: messages.companyName,
+                        kind: draft.kind,
+                        starts: draft.date && Number.isFinite(startHour) ? instant(draft.date, startHour * 60 + startMinute) : null,
+                        rescheduled: !isNew && (draft.date !== initial.date || draft.start !== initial.start),
+                      })}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          ) : draft.status !== "completed" && !messages.rules.length ? (
+            <Link href={REMINDERS_HREF} className="inline-block text-xs text-[var(--color-muted)] hover:text-[var(--color-heading)]">
+              Set up customer confirmations and reminders
+            </Link>
           ) : null}
           {error ? <p role="alert" className="text-[13px] text-[var(--color-bad)]">{error}</p> : null}
         </div>
@@ -898,7 +989,7 @@ const newDraft = (day: string, minutes: number, kind: AppointmentKind, assignedT
   location: project?.address ?? "",
   notes: "",
   status: "scheduled",
-  notify: true,
+  messageRuleIds: null,
 });
 
 /** Booking a deal's estimate from outside the calendar (the sales pipeline), on the same form. */
@@ -907,7 +998,7 @@ export function BookAppointmentDialog({
   assignedTo,
   today,
   team,
-  confirmationKinds,
+  messages,
   onClose,
 }: {
   project: BookingProject;
@@ -915,12 +1006,11 @@ export function BookAppointmentDialog({
   /** Today in Ottawa, YYYY-MM-DD. */
   today: string;
   team: TeamMember[];
-  /** Types an enabled confirmation is set up for. */
-  confirmationKinds: AppointmentKind[];
+  messages: BookingMessages;
   onClose: () => void;
 }) {
   const [draft] = useState(() => newDraft(addDays(today, 1), 9 * 60, "estimate", assignedTo, project));
-  return <AppointmentDialog draft={draft} team={team} confirmationKinds={confirmationKinds} onClose={onClose} />;
+  return <AppointmentDialog draft={draft} team={team} messages={messages} onClose={onClose} />;
 }
 
 /**
@@ -937,7 +1027,7 @@ export function AppointmentsCalendar({
   appointments,
   events,
   team,
-  confirmationKinds,
+  messages,
   calendar,
   newFor,
 }: {
@@ -956,8 +1046,7 @@ export function AppointmentsCalendar({
   /** Events on the team's connected Google Calendars, such as estimates booked elsewhere. */
   events: CalendarEvent[];
   team: TeamMember[];
-  /** Types an enabled confirmation is set up for. */
-  confirmationKinds: AppointmentKind[];
+  messages: BookingMessages;
   calendar: CalendarConnection;
   newFor: BookingProject | null;
 }) {
@@ -1003,6 +1092,7 @@ export function AppointmentsCalendar({
           location: event.location,
           notes: null,
           status: "scheduled",
+          messageRuleIds: null,
           event,
         }));
   const items: Item[] = [
@@ -1030,7 +1120,7 @@ export function AppointmentsCalendar({
       location: item.location ?? "",
       notes: item.notes ?? "",
       status: item.status,
-      notify: true,
+      messageRuleIds: item.messageRuleIds,
     });
   };
 
@@ -1096,7 +1186,7 @@ export function AppointmentsCalendar({
           key={draft.id}
           draft={draft}
           team={team}
-          confirmationKinds={confirmationKinds}
+          messages={messages}
           onClose={() => {
             setDraft(null);
             if (newFor) router.replace(here());

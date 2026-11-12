@@ -17,7 +17,12 @@ export type ReminderRule = {
   subject: string | null;
   body: string;
   enabled: boolean;
+  /** Appointments: whether its checkbox starts ticked on the booking form. */
+  checkedByDefault: boolean;
 };
+
+/** What the booking form offers: the appointment rules that are on, and the company name their previews fill in. */
+export type BookingMessages = { rules: ReminderRule[]; companyName: string };
 
 /** Where confirmations and reminders are set up. */
 export const REMINDERS_HREF = "/drips?view=reminders";

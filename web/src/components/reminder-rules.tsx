@@ -70,7 +70,11 @@ function defaultMessage(target: ReminderTarget, trigger: ReminderTrigger): { sub
 function describe(rule: ReminderRule): string {
   const when = rule.trigger === "confirmation" ? "When scheduled or rescheduled" : `${delayLabel(rule.offsetMinutes)} before`;
   if (rule.target === "job") return when;
-  return `${when} · ${rule.appointmentKind ? appointmentKindLabel(rule.appointmentKind) : "All types"}`;
+  return [
+    when,
+    rule.appointmentKind ? appointmentKindLabel(rule.appointmentKind) : "All types",
+    ...(rule.checkedByDefault ? [] : ["Unticked by default"]),
+  ].join(" · ");
 }
 
 function RuleForm({
@@ -90,6 +94,7 @@ function RuleForm({
   const [trigger, setTrigger] = useState<ReminderTrigger>(rule?.trigger ?? defaultTrigger);
   const delay = useDelay(rule?.trigger === "reminder" ? rule.offsetMinutes : 1440);
   const [kind, setKind] = useState<AppointmentKind | "">(rule?.appointmentKind ?? "");
+  const [checkedByDefault, setCheckedByDefault] = useState(rule?.checkedByDefault ?? true);
   const [message, setMessage] = useState<MessageDraft>({
     channel: rule?.channel ?? "email",
     ...(rule ? { subject: rule.subject ?? "", body: rule.body } : defaultMessage(target, defaultTrigger)),
@@ -119,6 +124,7 @@ function RuleForm({
             subject: message.channel === "email" ? message.subject : "",
             body: message.body,
             enabled: rule?.enabled ?? true,
+            checkedByDefault,
           });
           if (!result.ok) {
             setError(result.error ?? "Could not save the message.");
@@ -166,6 +172,17 @@ function RuleForm({
         ) : null}
         <ChannelField value={message.channel} onChange={(channel) => setMessage((current) => ({ ...current, channel }))} />
       </div>
+      {target === "appointment" ? (
+        <label className="flex w-fit items-center gap-2 text-[13px] text-[var(--color-text)]">
+          <input
+            type="checkbox"
+            checked={checkedByDefault}
+            onChange={(event) => setCheckedByDefault(event.target.checked)}
+            className="h-4 w-4 accent-[var(--color-brand)]"
+          />
+          Ticked by default when booking
+        </label>
+      ) : null}
       <MessageFields
         message={message}
         onChange={(next) => setMessage((current) => ({ ...current, ...next }))}
