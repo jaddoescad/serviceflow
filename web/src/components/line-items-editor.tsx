@@ -153,6 +153,19 @@ export function LineItemsEditor({
                     </>
                   )}
                   <div className="flex flex-wrap items-center gap-x-1">
+                  {readOnly ? (
+                    item.taxRatePercent === 0 ? <span className="mt-1 px-2 text-xs text-[var(--color-muted)]">Untaxed</span> : null
+                  ) : (
+                    <label className="mt-1 inline-flex h-6 items-center gap-1.5 px-2 text-xs text-[var(--color-muted)]">
+                      <input
+                        type="checkbox"
+                        aria-label={`Taxable: ${item.name || "item"}`}
+                        checked={item.taxRatePercent !== 0}
+                        onChange={(event) => update(item.id, { taxRatePercent: event.target.checked ? undefined : 0 })}
+                      />
+                      Taxable
+                    </label>
+                  )}
                   {packages.length ? (
                     readOnly ? (
                       item.packageId ? (

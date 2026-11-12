@@ -363,6 +363,7 @@ function Lines({
             {readOnly ? (
               <>
                 <div className="px-2 text-[15px] font-semibold leading-8 text-[var(--color-heading)]">{item.name}</div>
+                {item.taxRatePercent === 0 ? <p className="px-2 text-xs text-[var(--color-muted)]">Untaxed</p> : null}
                 {isAddOn(item) ? (
                   <p className="mt-1 px-2 text-xs text-[var(--color-muted)]">{item.selected ? "Chosen" : "Not chosen"}</p>
                 ) : null}
@@ -375,6 +376,15 @@ function Lines({
                   autoFocus={fresh === item.id}
                   onUpdate={(patch) => onUpdate(item.id, patch)}
                 />
+                <label className="mt-1 inline-flex h-6 items-center gap-1.5 px-2 text-xs text-[var(--color-muted)]">
+                  <input
+                    type="checkbox"
+                    aria-label={`Taxable: ${item.name || "item"}`}
+                    checked={item.taxRatePercent !== 0}
+                    onChange={(event) => onUpdate(item.id, { taxRatePercent: event.target.checked ? undefined : 0 })}
+                  />
+                  Taxable
+                </label>
                 {packages.length && !isAddOn(item) ? (
                   <select
                     aria-label="Package"
