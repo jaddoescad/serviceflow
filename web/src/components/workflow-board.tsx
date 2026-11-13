@@ -887,8 +887,8 @@ function CardDialog({
                         <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Not a lead")}>
                           Move to Not a lead
                         </Button>
-                        <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Handled")}>
-                          I handled it
+                        <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Dealt with")}>
+                          Close card
                         </Button>
                       </>
                     )}
