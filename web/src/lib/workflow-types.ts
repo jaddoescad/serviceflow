@@ -5,11 +5,13 @@ import type { DrawnDay } from "@/lib/booking-types";
 // estimate, and the AI's suggestion for each (see the migration
 // appointment_workflows and lib/actions/workflows.ts).
 
-export type WorkflowStage = "new" | "waiting" | "needs_you" | "booked" | "closed";
-export type WorkflowKind = "lead" | "missed_call" | "voicemail" | "call" | "text";
+export type WorkflowStage = "communication" | "new" | "waiting" | "needs_you" | "booked" | "closed";
+export type WorkflowKind = "lead" | "missed_call" | "voicemail" | "call" | "text" | "email";
 export type SuggestionAction = "text" | "book" | "wait" | "needs_you" | "close";
 
 export const WORKFLOW_STAGES: { id: WorkflowStage; name: string; tone: TagTone }[] = [
+  // Everything that comes in; the AI moves what can be booked to New.
+  { id: "communication", name: "Communication", tone: "purple" },
   { id: "new", name: "New", tone: "blue" },
   { id: "waiting", name: "Waiting on them", tone: "gray" },
   { id: "needs_you", name: "Needs you", tone: "yellow" },
@@ -23,6 +25,7 @@ export const WORKFLOW_KINDS: Record<WorkflowKind, string> = {
   voicemail: "Voicemail",
   call: "Call",
   text: "Text",
+  email: "Email",
 };
 
 /** An open time someone with a connected calendar could do. */

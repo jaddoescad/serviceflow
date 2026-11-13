@@ -50,7 +50,9 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
   // One at a time, so a burst of calls doesn't fan out.
   useEffect(() => {
     if (running.current) return;
-    const next = cards.find((card) => card.stage === "new" && !card.suggestion && !tried.current.has(card.id));
+    const next = cards.find(
+      (card) => (card.stage === "new" || card.stage === "communication") && !card.suggestion && !tried.current.has(card.id),
+    );
     if (!next || tried.current.size >= MAX_AUTO) return;
     running.current = true;
     tried.current.add(next.id);
@@ -157,14 +159,18 @@ function BoardCard({
         {card.address ? ` · ${card.address.split(",")[0]}` : ""}
       </p>
       {line ? <p className="mt-1.5 line-clamp-2 text-xs leading-[17px] text-[var(--color-text)]">{line}</p> : null}
-      {card.stage === "new" ? (
+      {card.stage === "new" || card.stage === "communication" ? (
         <div className="mt-2 flex items-center gap-1.5 text-xs">
           {thinking ? (
             <span className="flex items-center gap-1.5 text-[var(--color-muted)]">
               <Spinner className="h-3 w-3" /> Thinking…
             </span>
           ) : card.suggestion ? (
-            <Tag tone="blue">{card.suggestion.action === "book" ? "Ready to book" : "Suggestion ready"}</Tag>
+            card.suggestion.action === "close" ? (
+              <Tag tone="gray">Not a lead</Tag>
+            ) : (
+              <Tag tone="blue">{card.suggestion.action === "book" ? "Ready to book" : "Suggestion ready"}</Tag>
+            )
           ) : failed ? (
             <span className="truncate text-[var(--tag-red-text)]" title={failed}>
               Couldn&apos;t suggest
