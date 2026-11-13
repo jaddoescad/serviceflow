@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { saveAvailability } from "@/lib/actions/booking";
 import { saveWorkflowSettings } from "@/lib/actions/workflows";
 import type { CalendarConnection } from "@/lib/actions/calendar";
 import type { BookingPerson } from "@/lib/booking-types";
@@ -143,8 +144,21 @@ function Salespeople({
   myCalendar: CalendarConnection;
   calendarFailed: boolean;
 }) {
+  const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState("");
+  const [error, setError] = useState("");
+  const [removing, startRemoving] = useTransition();
+
+  // Keeps their hours, in case they're added back.
+  function remove(person: BookingPerson) {
+    setError("");
+    startRemoving(async () => {
+      const result = await saveAvailability({ userId: person.id, takesBookings: false, hours: person.hours, maxPerDay: person.maxPerDay });
+      if (!result.ok) setError(result.error ?? "Couldn't remove them.");
+      else router.refresh();
+    });
+  }
   const calendars = new Map(settings.people.map((person) => [person.id, person]));
   const selling = team.filter((person) => person.takesBookings);
   const others = team.filter((person) => !person.takesBookings);
@@ -156,6 +170,11 @@ function Salespeople({
       title="Salespeople"
       description="The AI only offers times for these people, within their hours, when their Google Calendar shows them free."
     >
+      {error ? (
+        <p role="alert" className="mb-3 text-[13px] text-[var(--color-bad)]">
+          {error}
+        </p>
+      ) : null}
       {calendarFailed ? (
         <p role="alert" className="mb-3 text-[13px] text-[var(--color-bad)]">
           Google Calendar wasn&apos;t connected. Try again.
@@ -192,9 +211,14 @@ function Salespeople({
                   </span>
                 )}
                 {editing === person.id ? null : (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(person.id)}>
-                    Hours
-                  </Button>
+                  <span className="flex items-center gap-1">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(person.id)}>
+                      Edit hours
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" disabled={removing} onClick={() => remove(person)}>
+                      Remove
+                    </Button>
+                  </span>
                 )}
               </div>
               {editing === person.id ? <PersonHours person={person} onDone={() => setEditing(null)} /> : null}
