@@ -87,6 +87,13 @@ export const NAV_ICONS: Record<string, ReactNode> = {
       <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z" />
     </Icon>
   ),
+  "/workflows": (
+    <Icon>
+      <rect x="3" y="4" width="5" height="16" rx="1.5" />
+      <rect x="10" y="4" width="5" height="11" rx="1.5" />
+      <rect x="17" y="4" width="4" height="7" rx="1.5" />
+    </Icon>
+  ),
   "/appointments": (
     <Icon>
       <rect x="3" y="5" width="18" height="16" rx="2" />

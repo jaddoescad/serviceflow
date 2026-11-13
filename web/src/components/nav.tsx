@@ -41,6 +41,7 @@ const GROUPS: { title?: string; links: NavLink[] }[] = [
       { href: "/contacts", label: "Customers" },
       { href: "/pipeline/sales", label: "Sales Pipeline" },
       { href: "/appointments", label: "Appointments" },
+      { href: "/workflows", label: "Appointment workflows" },
       { href: "/proposals", label: "Proposals" },
     ],
   },
