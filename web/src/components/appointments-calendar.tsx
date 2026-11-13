@@ -850,22 +850,43 @@ function AppointmentDialog({
               </Select>
             </Field>
             <Field label="Assigned to">
-              <Select
-                required
-                value={draft.assignedTo}
-                onChange={(event) => {
-                  patch({ assignedTo: event.target.value });
-                  setTimesFor(event.target.value);
-                }}
-                className={cn("w-full", !draft.assignedTo && "text-[var(--color-faint)]")}
-              >
-                <option value="">Choose someone</option>
-                {people.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </Select>
+              <span className="relative block">
+                <Select
+                  required
+                  value={draft.assignedTo}
+                  onChange={(event) => {
+                    patch({ assignedTo: event.target.value });
+                    setTimesFor(event.target.value);
+                  }}
+                  className={cn("w-full", !draft.assignedTo && "text-[var(--color-faint)]")}
+                  // Room for the clear button beside the arrow.
+                  style={draft.assignedTo ? { paddingRight: 56 } : undefined}
+                >
+                  <option value="">Choose someone</option>
+                  {people.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </Select>
+                {draft.assignedTo ? (
+                  <button
+                    type="button"
+                    aria-label="Clear who it's with"
+                    title="Clear"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      patch({ assignedTo: "" });
+                      setTimesFor("");
+                    }}
+                    className="absolute right-7 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-[var(--color-muted)] hover:bg-[var(--color-hover)] hover:text-[var(--color-heading)]"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="h-3.5 w-3.5">
+                      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
+                    </svg>
+                  </button>
+                ) : null}
+              </span>
             </Field>
           </div>
           <Field label="Title">
