@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
       }
       case "call-notes": {
         const apiKey = (await connection(admin, orgId)).apiKey;
-        const callIds = (Array.isArray(body.callIds) ? body.callIds : []).map(text).filter((id): id is string => Boolean(id)).slice(0, 5);
+        const callIds = (Array.isArray(body.callIds) ? body.callIds : []).map(text).filter((id: string | null): id is string => Boolean(id)).slice(0, 5);
         if (!apiKey || !callIds.length) return json({ saved: 0 });
         let saved = 0;
         for (const callId of callIds) {
