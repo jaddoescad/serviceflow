@@ -41,15 +41,12 @@ export function GoogleCalendarSection({
   connection,
   configured,
   result,
-  from,
 }: {
   connection: CalendarConnection;
   /** GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set. */
   configured: boolean;
   /** Outcome passed back by the OAuth callback. */
   result: "connected" | "error" | null;
-  /** Connecting from Appointment workflows returns there. */
-  from?: "workflows";
 }) {
   const [status, setStatus] = useState<{ error?: string; message?: string }>(
     result === "connected"
@@ -88,7 +85,7 @@ export function GoogleCalendarSection({
 
   const connect = (label: string, variant: "primary" | "secondary") =>
     configured ? (
-      <a href={from ? `${CONNECT_URL}?from=${from}` : CONNECT_URL} className={buttonClassName({ variant })}>
+      <a href={CONNECT_URL} className={buttonClassName({ variant })}>
         {label}
       </a>
     ) : (

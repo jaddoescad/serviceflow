@@ -3,14 +3,34 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { saveWorkflowSettings } from "@/lib/actions/workflows";
+import type { CalendarConnection } from "@/lib/actions/calendar";
+import type { BookingPerson } from "@/lib/booking-types";
 import type { WorkflowSettings, WorkflowSkill } from "@/lib/workflow-types";
+import { PersonHours, hoursSummary } from "./settings/availability-settings";
 import { SaveStatus, SettingsSection } from "./settings/settings-section";
-import { Button, Field, Input, Select, Tag, Textarea } from "./ui";
+import { Button, Field, Input, Select, Tag, Textarea, buttonClassName } from "./ui";
 
 const LENGTHS = [30, 45, 60, 90, 120];
+// Google sends you back to this tab.
+const CONNECT_URL = "/api/google-calendar/connect?from=workflows";
 
-/** Appointment workflows › Settings: who can be booked, the prompt and skills, the visit length. */
-export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings }) {
+/** Appointment workflows › Settings: the salespeople it books, the prompt and skills, the visit length. */
+export function WorkflowSettingsForm({
+  settings,
+  team,
+  me,
+  myCalendar,
+  calendarFailed,
+}: {
+  settings: WorkflowSettings;
+  /** Everyone, with their hours (get_booking_settings). */
+  team: BookingPerson[];
+  /** The signed-in person. */
+  me: string;
+  myCalendar: CalendarConnection;
+  /** Google came back without connecting. */
+  calendarFailed: boolean;
+}) {
   const router = useRouter();
   const [prompt, setPrompt] = useState(settings.prompt);
   const [skills, setSkills] = useState<WorkflowSkill[]>(settings.skills);
@@ -31,33 +51,7 @@ export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings 
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <SettingsSection
-        id="calendars"
-        title="Calendars"
-        description="Times are only offered for people who take appointments (Availability above) and have connected their own Google Calendar."
-      >
-        {settings.people.length ? (
-          <ul className="divide-y divide-[var(--color-border)]">
-            {settings.people.map((person) => (
-              <li key={person.id} className="flex items-center gap-3 py-2 text-[13px]">
-                <span className="min-w-0 flex-1 truncate font-medium text-[var(--color-heading)]">{person.name}</span>
-                {person.connected ? (
-                  <>
-                    <span className="truncate text-[var(--color-muted)]">{person.calendar}</span>
-                    <Tag tone="green">Connected</Tag>
-                  </>
-                ) : person.calendarError ? (
-                  <Tag tone="red">Calendar error</Tag>
-                ) : (
-                  <Tag tone="yellow">Not connected</Tag>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-[13px] text-[var(--color-muted)]">Nobody takes appointments yet. Turn it on in Availability above.</p>
-        )}
-      </SettingsSection>
+      <Salespeople settings={settings} team={team} me={me} myCalendar={myCalendar} calendarFailed={calendarFailed} />
 
       <SettingsSection
         id="prompt"
@@ -84,11 +78,7 @@ export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings 
                     <Input value={skill.title} maxLength={80} onChange={(event) => editSkill(index, { title: event.target.value })} />
                   </Field>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setSkills((current) => current.filter((_, at) => at !== index))}
-                >
+                <Button type="button" variant="ghost" onClick={() => setSkills((current) => current.filter((_, at) => at !== index))}>
                   Remove
                 </Button>
               </div>
@@ -132,5 +122,114 @@ export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings 
         </Select>
       </SettingsSection>
     </div>
+  );
+}
+
+/**
+ * The people the AI books: their hours, and their own Google Calendar (busy
+ * times come from it). You connect your own calendar here; everyone else
+ * connects theirs when signed in.
+ */
+function Salespeople({
+  settings,
+  team,
+  me,
+  myCalendar,
+  calendarFailed,
+}: {
+  settings: WorkflowSettings;
+  team: BookingPerson[];
+  me: string;
+  myCalendar: CalendarConnection;
+  calendarFailed: boolean;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState("");
+  const calendars = new Map(settings.people.map((person) => [person.id, person]));
+  const selling = team.filter((person) => person.takesBookings);
+  const others = team.filter((person) => !person.takesBookings);
+  const added = others.find((person) => person.id === adding);
+
+  return (
+    <SettingsSection
+      id="salespeople"
+      title="Salespeople"
+      description="The AI only offers times for these people, within their hours, when their Google Calendar shows them free."
+    >
+      {calendarFailed ? (
+        <p role="alert" className="mb-3 text-[13px] text-[var(--color-bad)]">
+          Google Calendar wasn&apos;t connected. Try again.
+        </p>
+      ) : null}
+      <ul className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+        {selling.map((person) => {
+          const calendar = calendars.get(person.id);
+          const mine = person.id === me;
+          return (
+            <li key={person.id}>
+              <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium text-[var(--color-heading)]">
+                    {person.name}
+                    {mine ? <span className="font-normal text-[var(--color-muted)]"> (you)</span> : null}
+                  </div>
+                  <div className="truncate text-xs text-[var(--color-muted)]">{hoursSummary(person.hours) || "No hours set"}</div>
+                </div>
+                {calendar?.connected ? (
+                  <span className="flex min-w-0 items-center gap-2 text-xs text-[var(--color-muted)]">
+                    <span className="truncate">{calendar.calendar}</span>
+                    <Tag tone="green">Calendar connected</Tag>
+                  </span>
+                ) : calendar?.calendarError ? (
+                  <Tag tone="red">Calendar needs reconnecting</Tag>
+                ) : mine ? (
+                  <a href={CONNECT_URL} className={buttonClassName({ variant: "secondary", size: "sm" })}>
+                    Connect my calendar
+                  </a>
+                ) : (
+                  <span title="They connect it when they sign in, in Appointment workflows › Settings.">
+                    <Tag tone="yellow">No calendar yet</Tag>
+                  </span>
+                )}
+                {editing === person.id ? null : (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(person.id)}>
+                    Hours
+                  </Button>
+                )}
+              </div>
+              {editing === person.id ? <PersonHours person={person} onDone={() => setEditing(null)} /> : null}
+            </li>
+          );
+        })}
+        {!selling.length ? (
+          <li className="py-3 text-[13px] text-[var(--color-muted)]">Nobody yet. Add the people who go out to estimates.</li>
+        ) : null}
+      </ul>
+
+      {added ? (
+        <div className="mt-3">
+          <p className="mb-2 text-[13px] font-medium text-[var(--color-heading)]">{added.name}</p>
+          <PersonHours person={{ ...added, takesBookings: true }} onDone={() => setAdding("")} />
+        </div>
+      ) : others.length ? (
+        <div className="mt-3">
+          <Select aria-label="Add salesperson" value="" onChange={(event) => setAdding(event.target.value)}>
+            <option value="">Add salesperson…</option>
+            {others.map((person) => (
+              <option key={person.id} value={person.id}>
+                {person.name}
+                {person.id === me ? " (you)" : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      ) : null}
+
+      {myCalendar.connected && !selling.some((person) => person.id === me) ? (
+        <p className="mt-3 text-xs text-[var(--color-muted)]">
+          Your calendar ({myCalendar.googleEmail}) is connected, but you aren&apos;t a salesperson, so it isn&apos;t used.
+        </p>
+      ) : null}
+    </SettingsSection>
   );
 }

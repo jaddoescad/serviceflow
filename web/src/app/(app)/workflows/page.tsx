@@ -1,7 +1,5 @@
 import { AppointmentsCalendar } from "@/components/appointments-calendar";
 import { LiveRefresh } from "@/components/live-refresh";
-import { AvailabilitySettings } from "@/components/settings/availability-settings";
-import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
 import { FilterPills } from "@/components/table-ui";
 import { WorkflowBoard } from "@/components/workflow-board";
 import { WorkflowSettingsForm } from "@/components/workflow-settings";
@@ -41,7 +39,7 @@ export default async function WorkflowsPage({ searchParams }: { searchParams: Pr
     return <AppointmentsCalendar {...data} newFor={null} basePath="/workflows?tab=calendar" title={TITLE} tabs={tabs} />;
   }
 
-  const [, orgId] = await Promise.all([requireStaff(), getHomeOrgId()]);
+  const [profile, orgId] = await Promise.all([requireStaff(), getHomeOrgId()]);
   const [cards, settings, myCalendar, booking] = await Promise.all([
     tab === "board" ? staffRead<WorkflowCardSummary[]>("workflow_board") : null,
     staffRead<WorkflowSettings>("get_workflow_settings"),
@@ -61,19 +59,13 @@ export default async function WorkflowsPage({ searchParams }: { searchParams: Pr
         <WorkflowBoard cards={cards ?? []} calendarsConnected={connected} />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-[var(--gutter)] py-6">
-          {/* Your own calendar and everyone's hours first: times come from them. */}
-          <div className="mx-auto mb-4 flex max-w-3xl flex-col gap-4">
-            {myCalendar ? (
-              <GoogleCalendarSection
-                connection={myCalendar}
-                configured={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
-                result={query.calendar === "connected" || query.calendar === "error" ? query.calendar : null}
-                from="workflows"
-              />
-            ) : null}
-            {booking ? <AvailabilitySettings settings={booking} /> : null}
-          </div>
-          <WorkflowSettingsForm settings={settings} />
+          <WorkflowSettingsForm
+            settings={settings}
+            team={booking?.people ?? []}
+            me={profile.user_id}
+            myCalendar={myCalendar ?? { connected: false }}
+            calendarFailed={query.calendar === "error"}
+          />
         </div>
       )}
     </div>

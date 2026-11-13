@@ -67,9 +67,9 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
     <div className="flex min-h-0 flex-1 flex-col">
       {calendarsConnected === 0 ? (
         <p className="border-b border-[var(--tag-yellow-border,var(--color-border))] bg-[var(--tag-yellow-bg)] px-[var(--gutter)] py-2 text-[13px] text-[var(--tag-yellow-text)]">
-          No salesperson has connected their calendar, so no times can be offered.{" "}
+          No salesperson has a connected calendar, so the AI can&apos;t offer times.{" "}
           <Link href="/workflows?tab=settings" className="font-medium underline underline-offset-2">
-            See who
+            Set up salespeople
           </Link>
         </p>
       ) : null}

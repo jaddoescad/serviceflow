@@ -41,7 +41,8 @@ export function hoursSummary(hours: WeeklyHours[]): string {
     .join(", ");
 }
 
-function PersonHours({ person, onDone }: { person: BookingPerson; onDone: () => void }) {
+/** One person's hours, edited in place (also Appointment workflows' Salespeople). */
+export function PersonHours({ person, onDone }: { person: BookingPerson; onDone: () => void }) {
   const router = useRouter();
   const [takes, setTakes] = useState(person.takesBookings);
   const [hours, setHours] = useState<WeeklyHours[]>(person.hours.length ? person.hours : WORK_WEEK);
