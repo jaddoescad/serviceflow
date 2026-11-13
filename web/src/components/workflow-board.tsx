@@ -488,10 +488,6 @@ function AiChat({
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-heading)]">
-        <Spark className="text-[var(--color-brand-strong)]" />
-        AI assistant
-      </h3>
       <div className="flex min-h-24 flex-1 flex-col gap-2.5 overflow-y-auto">
         {lines.length ? null : (
           <p className="mt-auto text-[13px] leading-5 text-[var(--color-muted)]">
@@ -565,10 +561,11 @@ function AiChat({
 }
 
 /**
- * A card, opened, in three columns: the customer (or the day of a time you
- * clicked) on the left, everything that happened with them in the middle with
- * the AI's suggestion to approve underneath, and the chat with the AI on the
- * right, which is how the suggestion gets changed.
+ * A card, opened, in three columns: the customer on the left, everything that
+ * happened with them in the middle with the AI's suggestion to approve
+ * underneath, and on the right the day of a time in that suggestion. The chat
+ * with the AI, which is how the suggestion gets changed, opens from the Ask AI
+ * button in the corner.
  */
 function CardDialog({
   summary,
@@ -585,6 +582,7 @@ function CardDialog({
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
   const [chat, setChat] = useState<ChatLine[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
   // The text is the AI's, with its {{t1}} placeholders; nobody types to the customer, they pick.
   const [slots, setSlots] = useState<Record<string, WorkflowTime>>({});
   const [bookTime, setBookTime] = useState<WorkflowTime | null>(null);
@@ -597,7 +595,8 @@ function CardDialog({
     setSlots(Object.fromEntries((next?.times ?? []).map((time) => [time.id, time])));
     setBookTime(next?.book ?? next?.options[0] ?? null);
     setLead(next?.lead ?? emptyLead);
-    setFocus(null);
+    // The first offered time's day shows straight away.
+    setFocus(next?.action === "book" ? "book" : next?.action === "text" ? (next.times[0]?.id ?? null) : null);
   }
 
   useEffect(() => {
@@ -722,56 +721,42 @@ function CardDialog({
         role="dialog"
         aria-modal="true"
         aria-label={summary.name}
-        className="grid h-[min(840px,calc(100dvh-2rem))] w-full max-w-[1340px] grid-cols-1 overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-[var(--shadow-pop)] lg:grid-cols-[280px_minmax(0,1fr)_380px] lg:overflow-hidden"
+        className="relative grid h-[min(840px,calc(100dvh-2rem))] w-full max-w-[1340px] grid-cols-1 overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-[var(--shadow-pop)] lg:grid-cols-[270px_minmax(0,1fr)_400px] lg:overflow-hidden"
       >
         <aside className="order-2 flex min-h-0 flex-col overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 lg:order-none lg:border-r lg:border-t-0">
-          {focused && suggestion && card ? (
-            <TimePanel
-              time={focused}
-              suggestion={suggestion}
-              minutes={card.settings.minutes}
-              timezone={card.timezone}
-              onUse={pickTime}
-              onBack={() => setFocus(null)}
-            />
-          ) : (
-            <div className="flex flex-1 flex-col gap-5">
-              <div>
-                <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Customer</h3>
-                <Detail label="Phone">{card?.phone ?? "—"}</Detail>
-                {card?.email ? <Detail label="Email">{card.email}</Detail> : null}
-                <Detail label="Address">{card?.address ?? lead.address ?? "Not yet"}</Detail>
-                {lead.request ? <Detail label="Wants">{lead.request}</Detail> : null}
-                <Detail label="Came in">{cameIn(summary)}</Detail>
-              </div>
-              {card?.appointments.length ? (
-                <div>
-                  <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Booked</h3>
-                  {card.appointments.map((appointment) => (
-                    <p key={appointment.startsAt} className="text-[13px] text-[var(--color-heading)]">
-                      {fmtDateTime(appointment.startsAt)}
-                      {appointment.with ? ` with ${appointment.with}` : ""}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-              {suggestion?.noTimes ? (
-                <p className="text-[12.5px] text-[var(--color-muted)]">No times to offer: {suggestion.noTimes.toLowerCase()}</p>
-              ) : null}
-              <div className="mt-auto flex flex-col gap-1.5">
-                {summary.leadId ? (
-                  <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
-                    Open deal
-                  </Link>
-                ) : null}
-                {summary.stage === "closed" ? (
-                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("new")}>
-                    Reopen
-                  </Button>
-                ) : null}
-              </div>
+          <div className="flex flex-1 flex-col gap-5">
+            <div>
+              <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Customer</h3>
+              <Detail label="Phone">{card?.phone ?? "—"}</Detail>
+              {card?.email ? <Detail label="Email">{card.email}</Detail> : null}
+              <Detail label="Address">{card?.address ?? lead.address ?? "Not yet"}</Detail>
+              {lead.request ? <Detail label="Wants">{lead.request}</Detail> : null}
+              <Detail label="Came in">{cameIn(summary)}</Detail>
             </div>
-          )}
+            {card?.appointments.length ? (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Booked</h3>
+                {card.appointments.map((appointment) => (
+                  <p key={appointment.startsAt} className="text-[13px] text-[var(--color-heading)]">
+                    {fmtDateTime(appointment.startsAt)}
+                    {appointment.with ? ` with ${appointment.with}` : ""}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-auto flex flex-col gap-1.5">
+              {summary.leadId ? (
+                <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
+                  Open deal
+                </Link>
+              ) : null}
+              {summary.stage === "closed" ? (
+                <Button type="button" variant="secondary" disabled={pending} onClick={() => move("new")}>
+                  Reopen
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </aside>
 
         <div className="order-1 flex min-h-0 flex-col lg:order-none">
@@ -915,9 +900,78 @@ function CardDialog({
           </div>
         </div>
 
-        <aside className="order-3 flex min-h-80 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 lg:order-none lg:min-h-0 lg:border-l lg:border-t-0">
-          <AiChat lines={chat} booking={step === "text" || step === "book" || step === "wait"} asking={asking} disabled={!card || !open} onSend={say} />
+        <aside className="order-3 flex min-h-0 flex-col overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 pb-20 lg:order-none lg:border-l lg:border-t-0">
+          {focused && suggestion && card ? (
+            <TimePanel
+              time={focused}
+              suggestion={suggestion}
+              minutes={card.settings.minutes}
+              timezone={card.timezone}
+              onUse={pickTime}
+              onBack={() => setFocus(null)}
+            />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xs font-semibold text-[var(--color-muted)]">Times</h3>
+              {step === "text" && Object.keys(slots).length ? (
+                <ul className="flex flex-col gap-1.5">
+                  {Object.entries(slots).map(([id, time]) => (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        onClick={() => setFocus(id)}
+                        className="w-full rounded-[9px] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 text-left outline-none hover:border-[var(--color-border-strong)] focus-visible:shadow-[var(--focus-ring)]"
+                      >
+                        <span className="block text-[13px] font-semibold text-[var(--color-heading)]">
+                          {time.label} <span className="font-normal text-[var(--color-muted)]">· {time.person}</span>
+                        </span>
+                        <span className="block text-xs text-[var(--color-good)]">{time.near ?? "See the day"}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[13px] leading-5 text-[var(--color-muted)]">
+                  {suggestion?.noTimes
+                    ? `No times to offer: ${suggestion.noTimes.toLowerCase()}`
+                    : "When the AI offers a time, its day shows here: the other visits, the drive, and other times to use."}
+                </p>
+              )}
+            </div>
+          )}
         </aside>
+
+        {chatOpen ? (
+          <div className="absolute bottom-4 right-4 z-10 flex h-[min(500px,calc(100%-2rem))] w-[min(380px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] shadow-[var(--shadow-pop)]">
+            <div className="flex items-center gap-2 bg-[var(--color-brand)] px-3.5 py-2.5 text-[14px] font-semibold text-[var(--color-brand-ink)]">
+              <Spark />
+              AI assistant
+              <button
+                type="button"
+                onClick={() => setChatOpen(false)}
+                aria-label="Minimize the AI assistant"
+                className="ml-auto flex h-6 w-6 items-center justify-center rounded-md outline-none hover:bg-white/15 focus-visible:bg-white/15"
+              >
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="h-4 w-4">
+                  <path d="M5 10h10" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col p-3.5">
+              <AiChat lines={chat} booking={step === "text" || step === "book" || step === "wait"} asking={asking} disabled={!card || !open} onSend={say} />
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="absolute bottom-4 right-4 z-10 flex h-12 items-center gap-2 rounded-full bg-[var(--color-brand)] pl-3.5 pr-4 text-[14px] font-semibold text-[var(--color-brand-ink)] shadow-[0_8px_24px_rgba(47,107,255,0.4)] outline-none hover:brightness-110 focus-visible:shadow-[var(--focus-ring)]"
+          >
+            <Spark className="h-[18px] w-[18px]" />
+            Ask AI
+            {chat.length ? <span className="h-2 w-2 rounded-full bg-white/80" aria-hidden="true" /> : null}
+          </button>
+        )}
       </section>
     </div>
   );
