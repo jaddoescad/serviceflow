@@ -169,7 +169,7 @@ function BoardCard({
             </span>
           ) : card.suggestion ? (
             card.suggestion.action === "close" ? (
-              <Tag tone="gray">Not a lead</Tag>
+              <Tag tone="gray">Nothing to book</Tag>
             ) : (
               <Tag tone="blue">{card.suggestion.action === "book" ? "Ready to book" : "Suggestion ready"}</Tag>
             )
@@ -791,7 +791,7 @@ function CardDialog({
           : step === "wait"
             ? "AI suggests waiting on them"
             : step === "close"
-              ? "AI says this isn't a lead"
+              ? "AI says there's nothing to book"
               : step === "needs_you"
                 ? "AI stopped: it needs you"
                 : "No suggestion yet";
@@ -952,8 +952,8 @@ function CardDialog({
                 {open ? (
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {step === "close" ? (
-                      <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => sure(`Move ${summary.name} to Not a lead?`, () => moveWorkflowCard(summary.id, "closed", suggestion.reason || "Not a lead"))}>
-                        Move to Not a lead
+                      <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => sure(`Close ${summary.name}'s card?`, () => moveWorkflowCard(summary.id, "closed", suggestion.reason || "Nothing to book"))}>
+                        Close card
                       </Button>
                     ) : step === "wait" ? (
                       <>
