@@ -22,8 +22,10 @@ import { staffRead, staffWrite, type ActionResult } from "./rpc";
 // database (texting hours, STOP, two unanswered texts, a time still free).
 
 const PATHS = ["/workflows"];
-const MAX_OPTIONS = 8;
-const MAX_DAYS = 8;
+// Open times kept for the card to pick from; the AI is shown the closest few.
+const MAX_OPTIONS = 24;
+const AI_OPTIONS = 8;
+const MAX_DAYS = 14;
 
 /** Calls shorter than this have nothing worth transcribing. */
 const MIN_CALL_SECONDS = 15;
@@ -214,7 +216,7 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
       call_transcript: message.call?.transcript?.slice(0, 6000),
     })),
     booked: card.appointments,
-    open_times: options.map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
+    open_times: options.slice(0, AI_OPTIONS).map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
     no_times_because: noTimes,
     current_suggestion: card.suggestion
       ? {

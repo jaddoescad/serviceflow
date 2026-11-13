@@ -414,7 +414,8 @@ function TimePanel({
           ].sort((a, b) => a.start.localeCompare(b.start)),
         }
       : found;
-  const others = suggestion.options.filter((option) => option.startsAt !== time.startsAt || option.personId !== time.personId);
+  const isSelected = (option: WorkflowTime) => option.startsAt === time.startsAt && option.personId === time.personId;
+  const [shown, setShown] = useState(5);
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -483,28 +484,48 @@ function TimePanel({
           <p className="mt-2 text-[13px] text-[var(--color-muted)]">{time.near ?? "Nothing else on their day."}</p>
         )}
       </div>
-      {others.length ? (
+      {suggestion.options.length ? (
         <div>
-          <h4 className="mb-2 text-xs font-semibold text-[var(--color-muted)]">Use another time, closest first</h4>
+          <h4 className="mb-2 text-xs font-semibold text-[var(--color-muted)]">Open times, closest first</h4>
           <ul className="flex flex-col gap-1.5">
-            {others.map((option) => (
-              <li key={option.id}>
-                <button
-                  type="button"
-                  onClick={() => onUse(option)}
-                  className="flex w-full items-center gap-3 rounded-[9px] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 text-left outline-none hover:border-[var(--color-border-strong)] focus-visible:shadow-[var(--focus-ring)]"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px] font-semibold text-[var(--color-heading)]">
-                      {option.label} <span className="font-normal text-[var(--color-muted)]">· {option.person}</span>
+            {suggestion.options.slice(0, shown).map((option) => {
+              const selected = isSelected(option);
+              return (
+                <li key={option.id}>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => onUse(option)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-[9px] border px-2.5 py-2 text-left outline-none focus-visible:shadow-[var(--focus-ring)]",
+                      selected
+                        ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold text-[var(--color-heading)]">
+                        {option.label} <span className="font-normal text-[var(--color-muted)]">· {option.person}</span>
+                      </span>
+                      {option.near ? <span className="block text-xs text-[var(--color-good)]">{option.near}</span> : null}
                     </span>
-                    {option.near ? <span className="block text-xs text-[var(--color-good)]">{option.near}</span> : null}
-                  </span>
-                  <span className="text-xs font-medium text-[var(--color-muted)]">Use</span>
-                </button>
-              </li>
-            ))}
+                    <span className={cn("text-xs font-medium", selected ? "text-[var(--color-brand-strong)]" : "text-[var(--color-muted)]")}>
+                      {selected ? "Selected" : "Use"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+          {suggestion.options.length > shown ? (
+            <button
+              type="button"
+              onClick={() => setShown((count) => count + 5)}
+              className="mt-2 w-full rounded-[9px] border border-dashed border-[var(--color-border-strong)] py-1.5 text-[12.5px] font-medium text-[var(--color-muted)] outline-none hover:text-[var(--color-heading)] focus-visible:shadow-[var(--focus-ring)]"
+            >
+              Show more ({suggestion.options.length - shown})
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
