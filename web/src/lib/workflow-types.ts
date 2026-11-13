@@ -104,6 +104,17 @@ export type WorkflowMessage = {
   /** Written by the AI and approved by `by`. */
   ai: boolean;
   at: string;
+  /** Quo's id for a call. */
+  callId: string | null;
+  /** A call: whether it was answered, and what Quo wrote about it once fetched (`notes` says it was looked for). */
+  call: {
+    answered: boolean;
+    seconds?: number;
+    notes?: "completed" | "absent" | "failed";
+    summary?: string[];
+    nextSteps?: string[];
+    transcript?: string;
+  } | null;
 };
 
 /** What the AI suggested and what a manager did on the card. */

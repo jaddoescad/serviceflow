@@ -278,9 +278,33 @@ function FeedRow({ item }: { item: FeedItem }) {
   const theirs = message.direction === "inbound";
   const voicemail = message.channel === "call" && message.text?.startsWith("Voicemail:");
   if (message.channel === "call" && !voicemail) {
+    const notes = message.call;
+    if (!notes?.summary?.length && !notes?.transcript) {
+      return (
+        <div className={pill}>
+          {message.text || "Call"} · {fmtTime(message.at)}
+          {notes?.answered && notes.notes && notes.notes !== "completed" ? " · no transcript from Quo" : ""}
+        </div>
+      );
+    }
     return (
-      <div className={pill}>
-        {message.text || "Call"} · {fmtTime(message.at)}
+      <div className="w-full max-w-[90%] self-center rounded-xl border border-[var(--color-border)] px-3 py-2 text-[13px] leading-5">
+        <div className="text-xs font-semibold text-[var(--color-muted)]">
+          {message.text || "Call"} · {fmtTime(message.at)}
+        </div>
+        {notes.summary?.length ? (
+          <ul className="mt-1 list-disc pl-4 text-[var(--color-heading)]">
+            {notes.summary.map((point, index) => (
+              <li key={index}>{point}</li>
+            ))}
+          </ul>
+        ) : null}
+        {notes.transcript ? (
+          <details className="mt-1" open={!notes.summary?.length}>
+            <summary className="cursor-pointer text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]">Transcript</summary>
+            <p className="mt-1 max-h-60 overflow-y-auto whitespace-pre-line text-[var(--color-text)]">{notes.transcript}</p>
+          </details>
+        ) : null}
       </div>
     );
   }

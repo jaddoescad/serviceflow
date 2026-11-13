@@ -13,8 +13,9 @@ import {
 // it from Settings with their own session: "lines" lists the numbers an API key
 // can use, "connect" saves the key and line and adds ServiceFlow's message and
 // call webhooks for that line to Quo, "sync" fetches what changed,
-// "disconnect" removes the webhooks, and "call-audio" gets a fresh link to a
-// call's recording or voicemail. Imports run in the background; pg_cron calls
+// "disconnect" removes the webhooks, "call-audio" gets a fresh link to a
+// call's recording or voicemail, and "call-notes" fetches and keeps answered
+// calls' summaries and transcripts (Appointment workflows reads them). Imports run in the background; pg_cron calls
 // it with the messages cron secret while one is still running.
 
 // Supabase's runtime keeps a request's background work alive after it answers.
@@ -129,6 +130,19 @@ Deno.serve(async (req) => {
         const callId = text(body.callId);
         if (!apiKey || !callId) return json({ error: "Connect Quo to play calls." }, 400);
         return json(await callAudio(admin, orgId, apiKey, callId));
+      }
+      case "call-notes": {
+        const apiKey = (await connection(admin, orgId)).apiKey;
+        const callIds = (Array.isArray(body.callIds) ? body.callIds : []).map(text).filter((id): id is string => Boolean(id)).slice(0, 5);
+        if (!apiKey || !callIds.length) return json({ saved: 0 });
+        let saved = 0;
+        for (const callId of callIds) {
+          const notes = await callNotes(apiKey, callId);
+          if (!notes) continue;
+          await rpc(admin, "quo_save_call_notes", { requested_org: orgId, requested_id: callId, requested_notes: notes });
+          saved++;
+        }
+        return json({ saved });
       }
       default:
         return json({ error: "Unknown action" }, 400);
@@ -305,6 +319,46 @@ async function callAudio(admin: SupabaseClient, orgId: string, apiKey: string, c
     if (notFound(reason)) return { url: null };
     throw reason;
   }
+}
+
+// What was said on a call --------------------------------------------------------
+
+type Dialogue = { content: string; userId: string | null };
+type Transcript = { status: string; dialogue: Dialogue[] | null };
+type Summary = { status: string; summary: string[] | null; nextSteps: string[] | null };
+
+/** Quo's answer for one call, or null where it has none or the plan doesn't include it. */
+async function quoNotes<T>(apiKey: string, path: string): Promise<T | null> {
+  try {
+    return (await quo<{ data?: T }>(apiKey, "GET", path)).data ?? null;
+  } catch (reason) {
+    if (reason instanceof QuoError && [400, 403, 404].includes(reason.status)) return null;
+    throw reason;
+  }
+}
+
+/**
+ * A call's summary and transcript ("Us: …" / "Them: …" lines). Null while Quo
+ * is still writing them, so it is asked again later; "absent" when there are none.
+ */
+async function callNotes(apiKey: string, callId: string) {
+  const id = encodeURIComponent(callId);
+  const [transcript, summary] = await Promise.all([
+    quoNotes<Transcript>(apiKey, `/call-transcripts/${id}`),
+    quoNotes<Summary>(apiKey, `/call-summaries/${id}`),
+  ]);
+  if (transcript?.status === "in-progress" || summary?.status === "in-progress") return null;
+  const lines = (transcript?.dialogue ?? [])
+    .filter((line) => line.content?.trim())
+    .map((line) => `${line.userId ? "Us" : "Them"}: ${line.content.trim()}`);
+  const points = (summary?.summary ?? []).filter(Boolean);
+  if (!lines.length && !points.length) return { status: transcript?.status === "failed" ? "failed" : "absent" };
+  return {
+    status: "completed",
+    transcript: lines.length ? lines.join("\n") : null,
+    summary: points.length ? points : null,
+    nextSteps: (summary?.nextSteps ?? []).filter(Boolean).length ? summary!.nextSteps : null,
+  };
 }
 
 // Quo --------------------------------------------------------------------------------

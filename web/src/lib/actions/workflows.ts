@@ -25,8 +25,24 @@ const PATHS = ["/workflows"];
 const MAX_OPTIONS = 8;
 const MAX_DAYS = 8;
 
+/** Calls shorter than this have nothing worth transcribing. */
+const MIN_CALL_SECONDS = 15;
+
+/**
+ * A card with everything about its contact. Answered calls whose summary and
+ * transcript haven't been fetched from Quo yet are fetched first (Quo writes
+ * them a minute or two after the call), so the card and the AI can read them.
+ */
 export async function getWorkflowCard(id: string): Promise<WorkflowCardDetail> {
-  return staffRead<WorkflowCardDetail>("workflow_card", { requested_card: id });
+  const read = () => staffRead<WorkflowCardDetail>("workflow_card", { requested_card: id });
+  const card = await read();
+  const callIds = card.messages
+    .filter((message) => message.callId && message.call?.answered && !message.call.notes && (message.call.seconds ?? 0) >= MIN_CALL_SECONDS)
+    .map((message) => message.callId!)
+    .slice(-5);
+  if (!callIds.length) return card;
+  const fetched = await callEdge<{ saved?: number }>("quo", { action: "call-notes", callIds }).catch(() => null);
+  return fetched?.saved ? read() : card;
 }
 
 type Window = {
@@ -156,6 +172,7 @@ Your only job is getting an estimate booked. Pick one action:
 - "close": not a painting lead (a supplier, spam, a wrong number, a robocall), or they wrote STOP or said they're not interested. Say why in reason.
 
 Rules:
+- Calls we answered or made may have call_summary and call_transcript: read them. What was agreed on a call counts like a text. A call with neither means you don't know what was said: if it matters for the next step, choose "needs_you" and say so.
 - Never invent times, prices or promises. Only offer times from open_times. If they asked for a day or part of the day that open_times doesn't have, still pick your best action and set want_times (days as YYYY-MM-DD in the company's time zone, part_of_day).
 - Texts are short, warm and plain: no emojis, no links, under 320 characters. Don't repeat what we already said.
 - lead: what they've told us so far (name, street address with city, email, what they want painted); null when unknown.
@@ -180,6 +197,9 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
       type: message.channel,
       at: message.at,
       text: message.text,
+      call_summary: message.call?.summary,
+      call_next_steps: message.call?.nextSteps,
+      call_transcript: message.call?.transcript?.slice(0, 6000),
     })),
     booked: card.appointments,
     open_times: options.map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
