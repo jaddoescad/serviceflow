@@ -350,6 +350,26 @@ export async function chatWorkflowAI(
   }
 }
 
+/**
+ * One day's openings for a card, for picking a time by hand: each connected
+ * salesperson's visits, drives and open blocks on `date` (YYYY-MM-DD, up to
+ * four weeks out). Empty when nobody has room that day.
+ */
+export async function getWorkflowDay(id: string, date: string, address: string | null): Promise<ActionResult & { days?: DrawnDay[] }> {
+  await requireStaff();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Pick a day." };
+  try {
+    const card = await staffRead<WorkflowCardDetail>("workflow_card", { requested_card: id });
+    const where = card.address ?? clean(address);
+    if (!where) return { ok: false, error: "Add their address first: the drive depends on it." };
+    const allowed = new Set(card.people.filter((person) => person.connected).map((person) => person.id));
+    const reply = await callEdge<{ days?: DrawnDay[] }>("booking", { address: where, minutes: card.settings.minutes, days: [date], window: "any" });
+    return { ok: true, days: (reply.days ?? []).filter((day) => day.date === date && allowed.has(day.userId)) };
+  } catch (reason) {
+    return { ok: false, error: reason instanceof Error ? reason.message : "That day couldn't load." };
+  }
+}
+
 const leadArgs = (lead: WorkflowLeadFields) => ({
   requested_name: clean(lead.name),
   requested_address: clean(lead.address),

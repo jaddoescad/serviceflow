@@ -7,10 +7,12 @@ import {
   approveBooking,
   approveText,
   chatWorkflowAI,
+  getWorkflowDay,
   getWorkflowCard,
   moveWorkflowCard,
   suggestNext,
 } from "@/lib/actions/workflows";
+import type { DrawnDay } from "@/lib/booking-types";
 import { dayKey, fmtDate, fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
 import {
   WORKFLOW_KINDS,
@@ -361,6 +363,8 @@ function FeedRow({ item }: { item: FeedItem }) {
 
 /** One time's day, drawn like the appointment dialog, and other times to use instead. */
 function TimePanel({
+  cardId,
+  address,
   time,
   suggestion,
   minutes,
@@ -368,6 +372,9 @@ function TimePanel({
   onUse,
   onBack,
 }: {
+  cardId: string;
+  /** The address typed on the card, when the customer has none saved yet. */
+  address: string | null;
   time: WorkflowTime;
   suggestion: WorkflowSuggestion;
   minutes: number;
@@ -376,7 +383,20 @@ function TimePanel({
   onBack: () => void;
 }) {
   const date = new Date(time.startsAt).toLocaleDateString("en-CA", { timeZone: timezone });
-  const found = (suggestion.days ?? []).find((day) => day.userId === time.personId && day.date === date);
+  // Any day the customer asks for, up to four weeks out, loaded when picked.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: timezone });
+  const last = new Date(Date.now() + 28 * 86_400_000).toLocaleDateString("en-CA", { timeZone: timezone });
+  const [other, setOther] = useState<{ date: string; days: DrawnDay[]; error?: string } | null>(null);
+  const [loadingDay, setLoadingDay] = useState(false);
+  function pickDay(day: string) {
+    if (!day) return setOther(null);
+    setLoadingDay(true);
+    getWorkflowDay(cardId, day, address).then((result) => {
+      setLoadingDay(false);
+      setOther({ date: day, days: result.days ?? [], error: result.ok ? undefined : (result.error ?? "That day couldn't load.") });
+    });
+  }
+  const found = [...(suggestion.days ?? []), ...(other?.days ?? [])].find((day) => day.userId === time.personId && day.date === date);
   // The offered start may sit between the drawn blocks; draw it too.
   const day =
     found && !found.blocks.some((block) => block.start === time.startsAt)
@@ -413,6 +433,53 @@ function TimePanel({
         ) : (
           <p className="mt-2 text-[13px] text-[var(--color-muted)]">{time.near ?? "Nothing else on their day."}</p>
         )}
+      </div>
+      <div>
+        <label className="flex items-center justify-between gap-3 text-xs font-semibold text-[var(--color-muted)]">
+          Pick any day
+          <Input
+            type="date"
+            min={today}
+            max={last}
+            value={other?.date ?? ""}
+            onChange={(event) => pickDay(event.target.value)}
+            className="w-40"
+          />
+        </label>
+        {loadingDay ? (
+          <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
+            <Spinner className="h-3.5 w-3.5" /> Loading that day…
+          </p>
+        ) : other?.error ? (
+          <p className="mt-2 text-[13px] text-[var(--color-bad)]">{other.error}</p>
+        ) : other && !other.days.length ? (
+          <p className="mt-2 text-[13px] text-[var(--color-muted)]">Nobody has an opening on {fmtDate(other.date)}.</p>
+        ) : other && other.date !== date ? (
+          other.days.map((choice) => (
+            <div key={choice.userId} className="mt-2">
+              <p className="text-[13px] font-semibold text-[var(--color-heading)]">
+                {fmtDate(other.date)} <span className="font-normal text-[var(--color-muted)]">with {choice.name}</span>
+              </p>
+              <div className="-mx-3">
+                <DayDrawing
+                  day={choice}
+                  timezone={timezone}
+                  isPicked={() => false}
+                  onPick={(block) =>
+                    onUse({
+                      ...time,
+                      personId: choice.userId,
+                      person: choice.name ?? time.person,
+                      startsAt: block.start,
+                      label: workflowTimeLabel(block.start, timezone),
+                      near: null,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          ))
+        ) : null}
       </div>
       {others.length ? (
         <div>
@@ -925,6 +992,8 @@ function CardDialog({
         <aside className="order-3 flex min-h-0 flex-col overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 pb-20 lg:order-none lg:border-l lg:border-t-0">
           {focused && suggestion && card ? (
             <TimePanel
+              cardId={summary.id}
+              address={lead.address}
               time={focused}
               suggestion={suggestion}
               minutes={card.settings.minutes}
