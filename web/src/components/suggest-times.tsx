@@ -209,9 +209,8 @@ export function SuggestTimes({
   const latest = useRef(0);
   const address = search.address.trim();
 
-  // Times for anyone already cover whoever gets picked, so only a person
-  // chosen while their own times are shown searches again.
-  const userKey = result && result.forUser === null ? null : search.userId;
+  // The dialog changes `userId` only when someone is chosen by hand, never by picking a time.
+  const userKey = search.userId;
   const searchKey = JSON.stringify([address, search.minutes, search.appointmentId, userKey]);
   useEffect(() => {
     latest.current += 1;
@@ -247,10 +246,19 @@ export function SuggestTimes({
     );
   }
 
-  const days = result?.days ?? [];
-  // Names only when the days are split between people. Picking a time found
-  // for anyone sets who goes, even when only one person takes appointments.
-  const named = !result?.forUser && new Set(days.map((day) => day.userId)).size > 1;
+  // With nobody chosen, each day is one row: whoever's closest that day (the
+  // least driving to and from their other visits; a day with none counts as
+  // the usual drive). The row names them, and picking a time books them.
+  const named = !result?.forUser;
+  const closeness = (day: DrawnDay) => blockDrive(bestBlock(day)) ?? result?.fallbackDriveMinutes ?? 30;
+  const closest = new Map<string, DrawnDay>();
+  if (named) {
+    for (const day of result?.days ?? []) {
+      const current = closest.get(day.date);
+      if (!current || closeness(day) < closeness(current)) closest.set(day.date, day);
+    }
+  }
+  const days = (result?.days ?? []).filter((day) => !named || closest.get(day.date) === day);
   const isPicked = (day: DrawnDay, block: DayBlock) =>
     chosen !== null && (!chosen.userId || chosen.userId === day.userId) && ms(chosen.start) === ms(block.start);
 

@@ -552,6 +552,9 @@ function AppointmentDialog({
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(initial);
+  // Whose times to suggest: only a person chosen in "Assigned to" narrows them;
+  // one filled in by picking a time leaves the list as it is.
+  const [timesFor, setTimesFor] = useState(initial.assignedTo);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ id: string; name: string; address: string | null }[]>([]);
   const [loadedCustomer, setLoadedCustomer] = useState<CustomerLoad | null>(null);
@@ -850,12 +853,13 @@ function AppointmentDialog({
               <Select
                 required
                 value={draft.assignedTo}
-                onChange={(event) => patch({ assignedTo: event.target.value })}
+                onChange={(event) => {
+                  patch({ assignedTo: event.target.value });
+                  setTimesFor(event.target.value);
+                }}
                 className={cn("w-full", !draft.assignedTo && "text-[var(--color-faint)]")}
               >
-                <option value="" disabled>
-                  Choose someone
-                </option>
+                <option value="">Choose someone</option>
                 {people.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
@@ -882,11 +886,12 @@ function AppointmentDialog({
             <AddressInput maxLength={500} value={draft.location} onChange={(location) => patch({ location })} />
           </Field>
           {draft.status === "completed" ? null : (
+            // Nobody chosen: each day offers whoever's closest, named in its row.
             <SuggestTimes
               search={{
                 address: draft.location,
                 minutes: draft.minutes,
-                userId: draft.assignedTo || null,
+                userId: timesFor || null,
                 appointmentId: isNew ? null : draft.id,
               }}
               startOpen={isNew}
