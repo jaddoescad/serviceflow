@@ -1073,6 +1073,9 @@ export function AppointmentsCalendar({
   messages,
   calendar,
   newFor,
+  basePath = "/appointments",
+  title = "Appointments",
+  tabs,
 }: {
   view: AppointmentsView;
   /** Shown month, YYYY-MM (month view). */
@@ -1092,6 +1095,11 @@ export function AppointmentsCalendar({
   messages: BookingMessages;
   calendar: CalendarConnection;
   newFor: BookingProject | null;
+  /** Where the calendar lives; its views and filters are query params on it. */
+  basePath?: string;
+  title?: string;
+  /** Shown before the header's buttons (Appointment workflows' tabs). */
+  tabs?: ReactNode;
 }) {
   const router = useRouter();
   const [kind, setKind] = useState(initialKind);
@@ -1108,7 +1116,7 @@ export function AppointmentsCalendar({
     } else params.set("month", target.month);
     if (filters.kind) params.set("type", filters.kind);
     if (filters.user) params.set("user", filters.user);
-    return `/appointments?${params}`;
+    return `${basePath}${basePath.includes("?") ? "&" : "?"}${params}`;
   };
   const here = (filters?: Filters) => (view === "3day" ? href({ view, start }, filters) : href({ view, month }, filters));
   const dayHref = (day: string) => href({ view: "3day", start: day });
@@ -1171,9 +1179,10 @@ export function AppointmentsCalendar({
   return (
     <div className="page-fill">
       <CalendarHeader
-        title="Appointments"
+        title={title}
         action={
           <>
+            {tabs}
             <GoogleCalendarStatusLink connection={calendar} />
             <Button onClick={() => setDraft(blank(view === "3day" ? start : addDays(today, 1)))}>+ New Appointment</Button>
           </>
