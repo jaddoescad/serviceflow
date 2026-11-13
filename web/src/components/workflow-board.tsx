@@ -173,6 +173,60 @@ function BoardCard({
 
 const emptyLead: WorkflowLeadFields = { name: null, address: null, email: null, request: null };
 
+type Step = WorkflowSuggestion["action"];
+
+/** The conversation so far, newest at the bottom. */
+function Thread({ card }: { card: WorkflowCardDetail }) {
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [card]);
+  if (!card.notes.length && !card.messages.length) {
+    return <p className="text-[13px] text-[var(--color-faint)]">Nothing said yet.</p>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {card.notes.map((note, index) => (
+        <div key={`note-${index}`} className="rounded-[var(--radius-control)] border border-[var(--color-border)] px-3 py-2 text-[13px] leading-5">
+          <div className="text-[11px] text-[var(--color-faint)]">Their request</div>
+          <div className="whitespace-pre-line text-[var(--color-heading)]">{note}</div>
+        </div>
+      ))}
+      {card.messages.map((item, index) => {
+        const theirs = item.direction === "inbound";
+        return (
+          <div key={index} className={cn("flex max-w-[85%] flex-col", theirs ? "items-start" : "items-end self-end")}>
+            <div
+              className={cn(
+                "whitespace-pre-line rounded-[10px] px-3 py-1.5 text-[13px] leading-5",
+                theirs
+                  ? "bg-[var(--color-surface-2)] text-[var(--color-heading)]"
+                  : "bg-[var(--color-brand-soft)] text-[var(--color-heading)]",
+              )}
+            >
+              {item.text || "—"}
+            </div>
+            <span className="mt-0.5 px-1 text-[11px] text-[var(--color-faint)]">{fmtDateTime(item.at)}</span>
+          </div>
+        );
+      })}
+      <div ref={end} />
+    </div>
+  );
+}
+
+/** A quiet text button for the alternatives. */
+function Quiet({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="text-[13px] font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)] disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
 function CardDialog({
   summary,
   onClose,
@@ -187,15 +241,15 @@ function CardDialog({
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
-  // The step being approved, editable.
-  const [mode, setMode] = useState<"text" | "book">("text");
+  // The step being approved: the AI's, or another the manager picks.
+  const [step, setStep] = useState<Step | null>(null);
   const [message, setMessage] = useState("");
   const [timeId, setTimeId] = useState("");
   const [lead, setLead] = useState<WorkflowLeadFields>(emptyLead);
 
   function take(next: WorkflowSuggestion | null) {
     setSuggestion(next);
-    setMode(next?.action === "book" ? "book" : "text");
+    setStep(next?.action ?? null);
     setMessage(next?.message ?? "");
     setTimeId(next?.book?.id ?? next?.options[0]?.id ?? "");
     setLead(next?.lead ?? emptyLead);
@@ -238,94 +292,67 @@ function CardDialog({
   const options = suggestion?.options ?? [];
   const chosen = options.find((option) => option.id === timeId) ?? null;
   const needsLead = card ? !card.leadId : false;
+  const leadMissing = needsLead && (!lead.name?.trim() || !lead.address?.trim());
   const setField = (field: keyof WorkflowLeadFields) => (event: React.ChangeEvent<HTMLInputElement>) =>
     setLead((current) => ({ ...current, [field]: event.target.value }));
+  const close = () => run(() => moveWorkflowCard(summary.id, "closed", step === "close" ? suggestion?.reason : undefined));
+  const open = summary.stage === "new" || summary.stage === "waiting";
+
+  const leadFields = (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <Field label="Name">
+        <Input value={lead.name ?? ""} onChange={setField("name")} />
+      </Field>
+      <Field label="Address">
+        <Input value={lead.address ?? ""} onChange={setField("address")} />
+      </Field>
+    </div>
+  );
 
   return (
     <ProjectModal
       title={summary.name}
-      subtitle={[cameIn(summary), card?.phone, card?.address].filter(Boolean).join(" · ")}
+      subtitle={[cameIn(summary), card?.phone !== summary.name ? card?.phone : null, card?.address].filter(Boolean).join(" · ")}
       onClose={onClose}
       wide
     >
-      <div className="grid min-h-0 gap-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <section aria-label="What happened" className="max-h-[60vh] overflow-y-auto border-b border-[var(--color-border)] px-5 py-4 md:border-b-0 md:border-r">
-          {!card ? (
+      <div className="grid min-h-0 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <section aria-label="Conversation" className="max-h-[62vh] overflow-y-auto border-b border-[var(--color-border)] px-5 py-4 md:border-b-0 md:border-r">
+          {card ? (
+            <Thread card={card} />
+          ) : (
             <p className="flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
               <Spinner className="h-3.5 w-3.5" /> Loading…
             </p>
-          ) : (
-            <ol className="flex flex-col gap-2.5">
-              {card.notes.map((note, index) => (
-                <li key={`note-${index}`} className="text-[13px] leading-5 text-[var(--color-text)]">
-                  <span className="block text-[11px] text-[var(--color-faint)]">Their request</span>
-                  <span className="whitespace-pre-line">{note}</span>
-                </li>
-              ))}
-              {card.messages.map((item, index) => (
-                <li key={index} className="text-[13px] leading-5">
-                  <span className="block text-[11px] text-[var(--color-faint)]">
-                    {item.direction === "inbound" ? "Them" : "Us"} · {fmtDateTime(item.at)}
-                  </span>
-                  <span className={cn("whitespace-pre-line", item.direction === "inbound" ? "text-[var(--color-heading)]" : "text-[var(--color-muted)]")}>
-                    {item.text || "—"}
-                  </span>
-                </li>
-              ))}
-              {!card.notes.length && !card.messages.length ? (
-                <li className="text-[13px] text-[var(--color-faint)]">Nothing said yet.</li>
-              ) : null}
-            </ol>
           )}
         </section>
 
         <section aria-label="Next step" className="flex flex-col gap-3 px-5 py-4">
-          <div className="flex items-center gap-2">
-            <h3 className="mr-auto text-[13px] font-semibold text-[var(--color-heading)]">Suggested next step</h3>
-            <Button type="button" variant="ghost" size="sm" onClick={askAgain} disabled={asking || !card}>
-              {asking ? <Spinner className="h-3 w-3" /> : null}
-              {suggestion ? "Suggest again" : "Suggest"}
-            </Button>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[13px] font-semibold text-[var(--color-heading)]">Next step</h3>
+            <Quiet onClick={askAgain} disabled={asking || !card}>
+              {asking ? "Thinking…" : suggestion ? "Suggest again" : "Suggest"}
+            </Quiet>
           </div>
 
-          {!suggestion ? (
+          {!step ? (
             <p className="text-[13px] text-[var(--color-muted)]">{asking ? "Thinking…" : "No suggestion yet."}</p>
-          ) : suggestion.action === "needs_you" || suggestion.action === "close" ? (
+          ) : step === "close" || step === "needs_you" ? (
             <div className="rounded-[var(--radius-control)] bg-[var(--color-surface-2)] px-3 py-2.5 text-[13px]">
-              <p className="font-medium text-[var(--color-heading)]">
-                {suggestion.action === "needs_you" ? "Needs you" : "Close it"}
-              </p>
-              <p className="mt-0.5 text-[var(--color-text)]">{suggestion.reason}</p>
+              <div className="font-medium text-[var(--color-heading)]">{step === "close" ? "Close it" : "Needs you"}</div>
+              {suggestion?.reason ? <div className="mt-0.5 text-[var(--color-text)]">{suggestion.reason}</div> : null}
             </div>
-          ) : null}
-
-          {suggestion ? (
+          ) : step === "text" ? (
             <>
-              <div className="flex gap-1">
-                {(["text", "book"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setMode(value)}
-                    aria-pressed={mode === value}
-                    className={cn(
-                      "h-7 rounded-[5px] px-2.5 text-[13px] font-medium",
-                      mode === value
-                        ? "bg-[var(--color-surface-2)] text-[var(--color-heading)]"
-                        : "text-[var(--color-muted)] hover:text-[var(--color-heading)]",
-                    )}
-                  >
-                    {value === "text" ? "Text" : "Book"}
-                  </button>
-                ))}
-              </div>
-
-              {mode === "text" ? (
-                <Field label="Text">
-                  <Textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={5} maxLength={1000} />
-                </Field>
-              ) : options.length ? (
-                <Field label="Time">
+              <Field label="Text to send">
+                <Textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={6} maxLength={1000} />
+              </Field>
+              {needsLead && (lead.name || lead.address) ? leadFields : null}
+            </>
+          ) : (
+            <>
+              {options.length ? (
+                <Field label="Estimate">
                   <Select value={timeId} onChange={(event) => setTimeId(event.target.value)} className="w-full">
                     {options.map((option) => (
                       <option key={option.id} value={option.id}>
@@ -336,20 +363,17 @@ function CardDialog({
                   </Select>
                 </Field>
               ) : (
-                <p className="text-[13px] text-[var(--color-muted)]">No times to book: {(suggestion.noTimes ?? "none open").toLowerCase()}</p>
+                <p className="text-[13px] text-[var(--color-muted)]">No open times: {(suggestion?.noTimes ?? "none found").toLowerCase()}</p>
               )}
-
-              {needsLead && (mode === "book" || lead.name || lead.address) ? (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Field label="Name">
-                    <Input value={lead.name ?? ""} onChange={setField("name")} />
-                  </Field>
-                  <Field label="Address">
-                    <Input value={lead.address ?? ""} onChange={setField("address")} />
-                  </Field>
-                </div>
-              ) : null}
+              {needsLead ? leadFields : null}
             </>
+          )}
+
+          {suggestion ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {step !== "text" ? <Quiet onClick={() => setStep("text")}>Write a text instead</Quiet> : null}
+              {step !== "book" && options.length ? <Quiet onClick={() => setStep("book")}>Book a time instead</Quiet> : null}
+            </div>
           ) : null}
 
           {error ? (
@@ -361,52 +385,50 @@ function CardDialog({
       </div>
 
       <ModalFooter>
-        {summary.leadId ? (
-          <Link href={`/deals/${summary.leadId}`} className="mr-auto text-[13px] font-medium text-[var(--color-link,var(--color-brand))] hover:underline">
-            Open deal
-          </Link>
-        ) : (
-          <span className="mr-auto" />
-        )}
-        {summary.stage === "closed" ? (
-          <Button type="button" variant="ghost" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "new"))}>
-            Reopen
+        <div className="mr-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          {summary.leadId ? (
+            <Link href={`/deals/${summary.leadId}`} className="text-[13px] font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]">
+              Open deal
+            </Link>
+          ) : null}
+          {open && step !== "needs_you" ? (
+            <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "needs_you"))}>
+              Move to Needs you
+            </Quiet>
+          ) : null}
+          {summary.stage === "closed" ? (
+            <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "new"))}>
+              Reopen
+            </Quiet>
+          ) : step !== "close" ? (
+            <Quiet disabled={pending} onClick={close}>
+              Close card
+            </Quiet>
+          ) : null}
+        </div>
+        {step === "text" ? (
+          <Button type="button" disabled={pending || !message.trim()} onClick={() => run(() => approveText(summary.id, message, lead))}>
+            {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
+            Send text
           </Button>
-        ) : (
+        ) : step === "book" ? (
           <Button
             type="button"
-            variant={suggestion?.action === "close" ? "primary" : "ghost"}
-            disabled={pending}
-            onClick={() => run(() => moveWorkflowCard(summary.id, "closed", suggestion?.action === "close" ? suggestion.reason : undefined))}
-          >
-            Close
-          </Button>
-        )}
-        {summary.stage !== "needs_you" && summary.stage !== "closed" ? (
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={pending}
-            onClick={() => run(() => moveWorkflowCard(summary.id, "needs_you", suggestion?.action === "needs_you" ? suggestion.reason : undefined))}
-          >
-            Needs you
-          </Button>
-        ) : null}
-        {suggestion && mode === "book" ? (
-          <Button
-            type="button"
-            disabled={pending || !chosen || (needsLead && (!lead.name?.trim() || !lead.address?.trim()))}
+            disabled={pending || !chosen || leadMissing}
             onClick={() => chosen && run(() => approveBooking(summary.id, chosen, lead))}
           >
             {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
-            Approve and book
+            Book estimate
           </Button>
-        ) : suggestion && mode === "text" ? (
-          <Button type="button" disabled={pending || !message.trim()} onClick={() => run(() => approveText(summary.id, message, lead))}>
-            {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
-            Approve and send
+        ) : step === "close" && summary.stage !== "closed" ? (
+          <Button type="button" disabled={pending} onClick={close}>
+            Close card
           </Button>
-        ) : null}
+        ) : (
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Done
+          </Button>
+        )}
       </ModalFooter>
     </ProjectModal>
   );
