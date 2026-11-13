@@ -3,14 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type {
-  WorkflowCardDetail,
-  WorkflowLeadFields,
-  WorkflowSkill,
-  WorkflowStage,
-  WorkflowSuggestion,
-  WorkflowTime,
+import {
+  workflowTimeLabel,
+  type WorkflowCardDetail,
+  type WorkflowLeadFields,
+  type WorkflowSkill,
+  type WorkflowStage,
+  type WorkflowSuggestion,
+  type WorkflowTime,
 } from "@/lib/workflow-types";
+import type { DrawnDay } from "@/lib/booking-types";
 import { callEdge } from "./edge";
 import { staffRead, staffWrite, type ActionResult } from "./rpc";
 
@@ -21,6 +23,7 @@ import { staffRead, staffWrite, type ActionResult } from "./rpc";
 
 const PATHS = ["/workflows"];
 const MAX_OPTIONS = 8;
+const MAX_DAYS = 8;
 
 export async function getWorkflowCard(id: string): Promise<WorkflowCardDetail> {
   return staffRead<WorkflowCardDetail>("workflow_card", { requested_card: id });
@@ -36,16 +39,9 @@ type Window = {
 
 type Preference = { days: string[]; partOfDay: "any" | "morning" | "afternoon" };
 
-function slotLabel(iso: string, zone: string) {
-  return new Date(iso).toLocaleString("en-US", {
-    timeZone: zone,
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+
+/** YYYY-MM-DD in the company's time zone. */
+const dayOf = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: zone });
 
 const street = (address: string) => address.split(",")[0].trim();
 
@@ -54,22 +50,24 @@ async function openTimes(
   card: WorkflowCardDetail,
   address: string | null,
   preference: Preference | null,
-): Promise<{ options: WorkflowTime[]; noTimes: string | null }> {
+): Promise<{ options: WorkflowTime[]; noTimes: string | null; days: DrawnDay[] }> {
   const connected = card.people.filter((person) => person.connected);
-  if (!card.people.length) return { options: [], noTimes: "Nobody takes appointments yet." };
-  if (!connected.length) return { options: [], noTimes: "No salesperson has connected their calendar." };
-  if (!address) return { options: [], noTimes: "No address yet." };
+  if (!card.people.length) return { options: [], days: [], noTimes: "Nobody takes appointments yet." };
+  if (!connected.length) return { options: [], days: [], noTimes: "No salesperson has connected their calendar." };
+  if (!address) return { options: [], days: [], noTimes: "No address yet." };
   let windows: Window[];
+  let days: DrawnDay[];
   try {
-    const reply = await callEdge<{ windows?: Window[] }>("booking", {
+    const reply = await callEdge<{ windows?: Window[]; days?: DrawnDay[] }>("booking", {
       address,
       minutes: card.settings.minutes,
       days: preference?.days ?? [],
       window: preference?.partOfDay ?? "any",
     });
     windows = reply.windows ?? [];
+    days = reply.days ?? [];
   } catch {
-    return { options: [], noTimes: "Open times couldn't load." };
+    return { options: [], days: [], noTimes: "Open times couldn't load." };
   }
   const allowed = new Set(connected.map((person) => person.id));
   const seen = new Set<string>();
@@ -84,12 +82,18 @@ async function openTimes(
       personId: window.userId,
       person: window.name ?? "",
       startsAt: window.suggested,
-      label: slotLabel(window.suggested, card.timezone),
+      label: workflowTimeLabel(window.suggested, card.timezone),
       near: near ? `${near.minutes} min from ${street(near.address)}` : null,
     });
     if (options.length >= MAX_OPTIONS) break;
   }
-  return { options, noTimes: options.length ? null : "No open times in the next three weeks." };
+  // The offered times' days first, so each can be drawn.
+  const offered = new Set(options.map((option) => `${option.personId}:${dayOf(option.startsAt, card.timezone)}`));
+  const drawn = days
+    .filter((day) => allowed.has(day.userId))
+    .sort((a, b) => Number(offered.has(`${b.userId}:${b.date}`)) - Number(offered.has(`${a.userId}:${a.date}`)))
+    .slice(0, MAX_DAYS);
+  return { options, days: drawn, noTimes: options.length ? null : "No open times in the next three weeks." };
 }
 
 type Raw = {
@@ -146,7 +150,7 @@ function instructions(card: WorkflowCardDetail) {
   return `You help a painting company's office book on-site estimates. Something came in: a lead form, a missed call, a voicemail, or a text. Suggest the ONE next step. A manager reviews it and approves it; nothing is sent without them.
 
 Your only job is getting an estimate booked. Pick one action:
-- "text": a text to send them. Reply to a missed call or voicemail, ask what they need painted, their name and the address, answer a simple question about booking, or offer times. To offer times, offer two from open_times: put their ids in time_ids and write each time in the message the way its label says it.
+- "text": a text to send them. Reply to a missed call or voicemail, ask what they need painted, their name and the address, answer a simple question about booking, or offer times. To offer times, offer two from open_times: put their ids in time_ids, and in the message write each one as its id in double braces, like "Would {{t1}} or {{t3}} work for a free estimate?". Never write the day or time out yourself; the braces become "Tuesday, Nov 17 at 10:30 AM".
 - "book": they agreed to one of open_times. Put its id in book_time_id and write nothing in message. For someone with no lead yet, fill lead.name and lead.address.
 - "needs_you": anything outside booking an estimate: prices or quotes, questions about a job or an appointment they already have, rescheduling or cancelling, complaints, asking for a person, anything you're unsure of, or when times are needed but there are none. Say why in reason, in a few words for the manager.
 - "close": not a painting lead (a supplier, spam, a wrong number, a robocall), or they wrote STOP or said they're not interested. Say why in reason.
@@ -226,16 +230,30 @@ export async function suggestNext(id: string): Promise<ActionResult & { suggesti
 
     const byId = new Map(times.options.map((time) => [time.id, time]));
     const lead = { name: clean(raw.lead.name), address: clean(raw.lead.address), email: clean(raw.lead.email), request: clean(raw.lead.request) };
+    // Every {{t1}} in the text is a real open time; a made-up one becomes plain words.
+    const offered = new Set<string>();
+    const message =
+      raw.action === "text"
+        ? raw.message
+            .trim()
+            .slice(0, 1000)
+            .replace(/\{\{\s*(t\d+)\s*\}\}/g, (_, timeId: string) => {
+              if (!byId.has(timeId)) return "a time that works for you";
+              offered.add(timeId);
+              return `{{${timeId}}}`;
+            })
+        : "";
     let suggestion: WorkflowSuggestion = {
       action: raw.action,
       summary: raw.summary.trim().slice(0, 160),
       reason: raw.reason.trim().slice(0, 300),
-      message: raw.action === "text" ? raw.message.trim().slice(0, 1000) : "",
-      times: raw.time_ids.flatMap((timeId) => byId.get(timeId) ?? []),
+      message,
+      times: [...offered].flatMap((timeId) => byId.get(timeId) ?? []),
       book: raw.book_time_id ? byId.get(raw.book_time_id) ?? null : null,
       lead,
       options: times.options,
       noTimes: times.noTimes,
+      days: times.days,
     };
     if (suggestion.action === "book" && !suggestion.book) {
       suggestion = { ...suggestion, action: "needs_you", reason: "They picked a time, but it isn't open any more." };

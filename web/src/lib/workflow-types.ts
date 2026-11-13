@@ -1,4 +1,5 @@
 import type { TagTone } from "@/components/ui";
+import type { DrawnDay } from "@/lib/booking-types";
 
 // Appointment workflows: the board of things that could become a booked
 // estimate, and the AI's suggestion for each (see the migration
@@ -45,6 +46,7 @@ export type WorkflowSuggestion = {
   action: SuggestionAction;
   summary: string;
   reason: string;
+  /** The text to send; each offered time is a {{t1}}-style placeholder for one of `times`. */
   message: string;
   /** The times the message offers. */
   times: WorkflowTime[];
@@ -55,6 +57,8 @@ export type WorkflowSuggestion = {
   options: WorkflowTime[];
   /** Why there were no times to offer. */
   noTimes: string | null;
+  /** The days those times are in, drawn like the appointment dialog: visits, drives, open blocks. */
+  days: DrawnDay[];
 };
 
 export type WorkflowCardSummary = {
@@ -94,6 +98,19 @@ export type WorkflowMessage = {
   direction: "inbound" | "outbound";
   channel: string;
   text: string | null;
+  subject: string | null;
+  /** Who sent it, for ours. */
+  by: string | null;
+  /** Written by the AI and approved by `by`. */
+  ai: boolean;
+  at: string;
+};
+
+/** What the AI suggested and what a manager did on the card. */
+export type WorkflowEvent = {
+  kind: "suggested" | "needs_you" | "sent" | "booked" | "taken" | "closed" | "reopened";
+  summary: string | null;
+  by: string | null;
   at: string;
 };
 
@@ -115,9 +132,19 @@ export type WorkflowCardDetail = {
   now: string;
   notes: string[];
   messages: WorkflowMessage[];
+  events: WorkflowEvent[];
+  createdAt: string;
   appointments: { startsAt: string; with: string | null }[];
   settings: { prompt: string; skills: WorkflowSkill[]; minutes: number };
   people: WorkflowPerson[];
   suggestion: WorkflowSuggestion | null;
   suggestedAt: string | null;
 };
+
+/** "Tuesday, Nov 17 at 10:30 AM" in the company's time zone: how a time reads in a text and on the card. */
+export function workflowTimeLabel(iso: string, timeZone: string): string {
+  const at = new Date(iso);
+  const day = at.toLocaleDateString("en-US", { timeZone, weekday: "long", month: "short", day: "numeric" });
+  const time = at.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+  return `${day} at ${time}`;
+}

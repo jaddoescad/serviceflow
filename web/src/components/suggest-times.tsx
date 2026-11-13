@@ -75,9 +75,10 @@ type Band = { key: string; at: number; minutes: number; meters: number | null };
 /**
  * An opened day drawn to scale over the person's hours: their visits in grey,
  * the drive between one place and the next as a striped band as long as the
- * drive, and the open blocks to pick.
+ * drive, and the open blocks to pick. Appointment workflows draws a suggested
+ * time's day with it too.
  */
-function DayDrawing({
+export function DayDrawing({
   day,
   timezone,
   isPicked,
