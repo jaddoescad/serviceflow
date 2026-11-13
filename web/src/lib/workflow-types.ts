@@ -7,7 +7,7 @@ import type { DrawnDay } from "@/lib/booking-types";
 
 export type WorkflowStage = "new" | "waiting" | "needs_you" | "booked" | "closed";
 export type WorkflowKind = "lead" | "missed_call" | "voicemail" | "call" | "text";
-export type SuggestionAction = "text" | "book" | "needs_you" | "close";
+export type SuggestionAction = "text" | "book" | "wait" | "needs_you" | "close";
 
 export const WORKFLOW_STAGES: { id: WorkflowStage; name: string; tone: TagTone }[] = [
   { id: "new", name: "New", tone: "blue" },

@@ -25,7 +25,7 @@ import {
 } from "@/lib/workflow-types";
 import { Dot } from "./pipeline-ui";
 import { DayDrawing } from "./suggest-times";
-import { Button, Field, Input, Spinner, TAG_DOT, Tag, Textarea, buttonClassName, cn } from "./ui";
+import { Button, Field, Input, Spinner, TAG_DOT, Tag, buttonClassName, cn } from "./ui";
 
 const MAX_AUTO = 5;
 
@@ -216,7 +216,7 @@ const EVENT_TEXT: Record<WorkflowEvent["kind"], (event: WorkflowEvent) => string
   booked: (event) => `${event.by ?? "Someone"} booked ${event.summary ?? "an estimate"}`,
   taken: (event) => `${event.by ?? "Someone"} took it over${event.summary ? `: ${event.summary}` : ""}`,
   closed: (event) => `${event.by ?? "Someone"} closed it${event.summary ? `: ${event.summary}` : ""}`,
-  reopened: (event) => `${event.by ?? "Someone"} reopened it`,
+  reopened: (event) => `${event.by ?? "Someone"} ${event.summary ? `moved it: ${event.summary}` : "reopened it"}`,
 };
 
 /**
@@ -464,11 +464,9 @@ function CardDialog({
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
   const [step, setStep] = useState<Step | null>(null);
-  // The text keeps its {{t1}} placeholders until it is edited by hand (`plain`).
+  // The text is the AI's, with its {{t1}} placeholders; nobody types here, they pick.
   const [slots, setSlots] = useState<Record<string, WorkflowTime>>({});
-  const [plain, setPlain] = useState<string | null>(null);
   const [bookTime, setBookTime] = useState<WorkflowTime | null>(null);
-  const [reply, setReply] = useState("");
   const [lead, setLead] = useState<WorkflowLeadFields>(emptyLead);
   /** The time shown on the right: a slot's id, or "book". */
   const [focus, setFocus] = useState<string | null>(null);
@@ -477,7 +475,6 @@ function CardDialog({
     setSuggestion(next);
     setStep(next?.action ?? null);
     setSlots(Object.fromEntries((next?.times ?? []).map((time) => [time.id, time])));
-    setPlain(null);
     setBookTime(next?.book ?? next?.options[0] ?? null);
     setLead(next?.lead ?? emptyLead);
     setFocus(next?.action === "book" ? "book" : null);
@@ -526,7 +523,7 @@ function CardDialog({
   }
 
   const template = suggestion?.message ?? "";
-  const text = plain ?? template.replace(SLOT, (whole, id: string) => slots[id]?.label ?? whole);
+  const text = template.replace(SLOT, (whole, id: string) => slots[id]?.label ?? whole);
   const focused = focus === "book" ? bookTime : focus ? (slots[focus] ?? null) : null;
   const needsLead = card ? !card.leadId : false;
   const leadMissing = needsLead && (!lead.name?.trim() || !lead.address?.trim());
@@ -552,7 +549,9 @@ function CardDialog({
 
   const quietLinks = (
     <>
-      {step !== "text" && suggestion ? <Quiet onClick={() => { setStep("text"); setFocus(null); }}>Write a text</Quiet> : null}
+      {step !== "text" && suggestion?.message ? (
+        <Quiet onClick={() => { setStep("text"); setFocus(null); }}>Use the AI&apos;s text</Quiet>
+      ) : null}
       {step !== "book" && suggestion?.options.length ? (
         <Quiet onClick={() => { setStep("book"); setFocus("book"); }}>Book a time</Quiet>
       ) : null}
@@ -656,7 +655,7 @@ function CardDialog({
             ) : (
               <p className="text-[13px] text-[var(--color-text)]">
                 <b className="font-semibold text-[var(--tag-yellow-text)]">
-                  {step === "close" ? "AI suggests closing it" : "Needs you"}
+                  {step === "close" ? "AI suggests closing it" : step === "wait" ? "AI suggests waiting on them" : "Needs you"}
                   {suggestion?.reason ? `: ${suggestion.reason}` : ""}.
                 </b>{" "}
                 {step === "needs_you" ? "Nothing was sent." : ""}
@@ -665,40 +664,33 @@ function CardDialog({
 
             {step === "text" ? (
               <>
-                {plain === null ? (
-                  <div className="rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2.5 text-[14px] leading-8 text-[var(--color-heading)]">
-                    {template.split(SLOT).map((part, index) =>
-                      index % 2 ? (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => setFocus(focus === part ? null : part)}
-                          aria-pressed={focus === part}
-                          className={cn(
-                            "mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 align-baseline text-[13.5px] font-semibold leading-6 outline-none focus-visible:shadow-[var(--focus-ring)]",
-                            focus === part
-                              ? "border-[var(--color-brand)] bg-[var(--color-brand)] text-[var(--color-brand-ink)]"
-                              : "border-transparent bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] hover:border-[var(--color-brand)]",
-                          )}
-                        >
-                          {slots[part]?.label ?? "a time"}
-                          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" className="h-2.5 w-2.5">
-                            <path d="M5 8l5 5 5-5" />
-                          </svg>
-                        </button>
-                      ) : (
-                        <span key={index} className="whitespace-pre-line">{part}</span>
-                      ),
-                    )}
-                  </div>
-                ) : (
-                  <Textarea value={plain} onChange={(event) => setPlain(event.target.value)} rows={4} maxLength={1000} className="text-[14px]" />
-                )}
+                <div className="rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2.5 text-[14px] leading-8 text-[var(--color-heading)]">
+                  {template.split(SLOT).map((part, index) =>
+                    index % 2 ? (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setFocus(focus === part ? null : part)}
+                        aria-pressed={focus === part}
+                        className={cn(
+                          "mx-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 align-baseline text-[13.5px] font-semibold leading-6 outline-none focus-visible:shadow-[var(--focus-ring)]",
+                          focus === part
+                            ? "border-[var(--color-brand)] bg-[var(--color-brand)] text-[var(--color-brand-ink)]"
+                            : "border-transparent bg-[var(--color-brand-soft)] text-[var(--color-brand-strong)] hover:border-[var(--color-brand)]",
+                        )}
+                      >
+                        {slots[part]?.label ?? "a time"}
+                        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" className="h-2.5 w-2.5">
+                          <path d="M5 8l5 5 5-5" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <span key={index} className="whitespace-pre-line">{part}</span>
+                    ),
+                  )}
+                </div>
                 {needsLead && (lead.name || lead.address) ? leadFields : null}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {plain === null ? (
-                    <Quiet onClick={() => { setPlain(text); setFocus(null); }}>Edit text</Quiet>
-                  ) : null}
                   {quietLinks}
                   {primary("Send", !text.trim(), () => approveText(summary.id, text, lead))}
                 </div>
@@ -728,26 +720,33 @@ function CardDialog({
                 </div>
               </>
             ) : (
-              <>
-                {open ? (
-                  <Textarea
-                    value={reply}
-                    onChange={(event) => setReply(event.target.value)}
-                    rows={2}
-                    maxLength={1000}
-                    placeholder={`Reply to ${summary.name}…`}
-                    className="min-h-0 text-[14px]"
-                  />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" onClick={askAgain} disabled={asking || !card}>
+                  {asking ? <Spinner className="h-3.5 w-3.5" /> : <Spark />}
+                  Ask AI again
+                </Button>
+                {open && card?.phone ? (
+                  <a href={`tel:${card.phone}`} className={buttonClassName({ variant: "secondary" })}>
+                    Call
+                  </a>
                 ) : null}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {quietLinks}
-                  {step === "close" && !reply.trim()
-                    ? primary("Close card", !open, () => moveWorkflowCard(summary.id, "closed", suggestion?.reason))
-                    : open
-                      ? primary("Send", !reply.trim(), () => approveText(summary.id, reply, emptyLead))
-                      : null}
-                </div>
-              </>
+                {open && summary.stage !== "waiting" && step !== "wait" ? (
+                  <Button type="button" variant="secondary" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "waiting", "Waiting on them"))}>
+                    Waiting on them
+                  </Button>
+                ) : null}
+                {open && step !== "close" ? (
+                  <Button type="button" variant="secondary" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "closed", "Handled"))}>
+                    Handled
+                  </Button>
+                ) : null}
+                {quietLinks}
+                {step === "close" && open
+                  ? primary("Close card", false, () => moveWorkflowCard(summary.id, "closed", suggestion?.reason))
+                  : step === "wait" && open && summary.stage !== "waiting"
+                    ? primary("Move to Waiting", false, () => moveWorkflowCard(summary.id, "waiting", suggestion?.reason || "Waiting on them"))
+                    : null}
+              </div>
             )}
 
             {error ? (
@@ -778,7 +777,7 @@ function CardDialog({
                 {lead.request ? <Detail label="Wants">{lead.request}</Detail> : null}
                 <Detail label="Came in">{cameIn(summary)}</Detail>
               </div>
-              {step === "text" && plain === null && Object.keys(slots).length ? (
+              {step === "text" && Object.keys(slots).length ? (
                 <div>
                   <h3 className="mb-2 text-xs font-semibold text-[var(--color-muted)]">Times in the text</h3>
                   <ul className="flex flex-col gap-1.5">

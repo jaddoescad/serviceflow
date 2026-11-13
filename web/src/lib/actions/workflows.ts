@@ -129,7 +129,7 @@ const SCHEMA = {
   additionalProperties: false,
   required: ["action", "summary", "reason", "message", "time_ids", "book_time_id", "lead", "want_times"],
   properties: {
-    action: { type: "string", enum: ["text", "book", "needs_you", "close"] },
+    action: { type: "string", enum: ["text", "book", "wait", "needs_you", "close"] },
     summary: { type: "string" },
     reason: { type: "string" },
     message: { type: "string" },
@@ -168,6 +168,7 @@ function instructions(card: WorkflowCardDetail) {
 Your only job is getting an estimate booked. Pick one action:
 - "text": a text to send them. Reply to a missed call or voicemail, ask what they need painted, their name and the address, answer a simple question about booking, or offer times. To offer times, offer two from open_times: put their ids in time_ids, and in the message write each one as its id in double braces, like "Would {{t1}} or {{t3}} work for a free estimate?". Never write the day or time out yourself; the braces become "Tuesday, Nov 17 at 10:30 AM".
 - "book": they agreed to one of open_times. Put its id in book_time_id and write nothing in message. For someone with no lead yet, fill lead.name and lead.address.
+- "wait": nothing to send right now, because the next move was agreed and it isn't a text from us: they said they will email photos or details, they will call back, or on a call we said we would check and get back to them. Say what we are waiting for in reason.
 - "needs_you": anything outside booking an estimate: prices or quotes, questions about a job or an appointment they already have, rescheduling or cancelling, complaints, asking for a person, anything you're unsure of, or when times are needed but there are none. Say why in reason, in a few words for the manager.
 - "close": not a painting lead (a supplier, spam, a wrong number, a robocall), or they wrote STOP or said they're not interested. Say why in reason.
 
@@ -239,7 +240,7 @@ export async function suggestNext(id: string): Promise<ActionResult & { suggesti
     // Once more with the address they gave, or the days they asked for.
     const found = !card.address ? clean(raw.lead.address) : null;
     const wanted = raw.want_times && (raw.want_times.days.length || raw.want_times.part_of_day !== "any");
-    if ((found && raw.action !== "needs_you" && raw.action !== "close") || wanted) {
+    if ((found && (raw.action === "text" || raw.action === "book")) || wanted) {
       times = await openTimes(
         card,
         card.address ?? found,
