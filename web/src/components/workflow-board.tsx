@@ -447,7 +447,9 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 
 type ChatLine = { from: "you" | "ai"; text: string };
 
-const STARTERS = ["Summarize this lead", "What do we still need to book?", "Why this suggestion?"];
+/** Questions to start from; booking ones only while there is something to book. */
+const starters = (booking: boolean) =>
+  booking ? ["Summarize this", "What do we still need to book?", "Why this suggestion?"] : ["Summarize this", "Why this suggestion?"];
 
 /**
  * The manager's chat with the AI about one card: questions get answers, and
@@ -456,11 +458,14 @@ const STARTERS = ["Summarize this lead", "What do we still need to book?", "Why 
  */
 function AiChat({
   lines,
+  booking,
   asking,
   disabled,
   onSend,
 }: {
   lines: ChatLine[];
+  /** The suggestion is about booking (a text, a time, waiting on them). */
+  booking: boolean;
   asking: boolean;
   disabled: boolean;
   onSend: (text: string) => void;
@@ -484,7 +489,7 @@ function AiChat({
       <div className="flex min-h-24 flex-1 flex-col gap-2.5 overflow-y-auto">
         {lines.length ? null : (
           <p className="mt-auto text-[13px] leading-5 text-[var(--color-muted)]">
-            Ask about this lead, or tell the AI what to do instead. It changes the suggestion; you still approve it.
+            Ask about this, or tell the AI what to do instead. It changes the suggestion; you still approve it.
           </p>
         )}
         {lines.map((line, index) =>
@@ -510,7 +515,7 @@ function AiChat({
       </div>
       {lines.length ? null : (
         <div className="flex flex-wrap gap-1.5">
-          {STARTERS.map((starter) => (
+          {starters(booking).map((starter) => (
             <button
               key={starter}
               type="button"
@@ -695,7 +700,7 @@ function CardDialog({
           : step === "wait"
             ? "AI suggests waiting on them"
             : step === "close"
-              ? "AI suggests closing it"
+              ? "AI says this isn't a lead"
               : step === "needs_you"
                 ? "AI stopped: it needs you"
                 : "No suggestion yet";
@@ -752,21 +757,6 @@ function CardDialog({
                   <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
                     Open deal
                   </Link>
-                ) : null}
-                {open && summary.stage !== "waiting" ? (
-                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("waiting", "Waiting on them")}>
-                    Move to Waiting on them
-                  </Button>
-                ) : null}
-                {open ? (
-                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("closed", "Handled")}>
-                    Handled
-                  </Button>
-                ) : null}
-                {open ? (
-                  <Button type="button" variant="danger" disabled={pending} onClick={() => move("closed", "Not a lead")}>
-                    Not a lead
-                  </Button>
                 ) : null}
                 {summary.stage === "closed" ? (
                   <Button type="button" variant="secondary" disabled={pending} onClick={() => move("new")}>
@@ -880,13 +870,30 @@ function CardDialog({
               <>
                 <p className="text-[14px] leading-5 text-[var(--color-heading)]">
                   {suggestion.reason || suggestion.summary}
-                  {step === "needs_you" ? " Nothing was sent. Tell the AI what to do, on the right." : ""}
+                  {step === "needs_you" ? " Nothing was sent." : ""}
                 </p>
-                {step === "wait" && open && summary.stage !== "waiting"
-                  ? primary("Move to Waiting", false, () => moveWorkflowCard(summary.id, "waiting", suggestion.reason || "Waiting on them"))
-                  : step === "close" && open
-                    ? primary("Close card", false, () => moveWorkflowCard(summary.id, "closed", suggestion.reason))
-                    : null}
+                {open ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {step === "close" ? (
+                      <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => move("closed", suggestion.reason || "Not a lead")}>
+                        Move to Not a lead
+                      </Button>
+                    ) : step === "wait" ? (
+                      <Button type="button" className="h-9 px-4" disabled={pending || summary.stage === "waiting"} onClick={() => move("waiting", suggestion.reason || "Waiting on them")}>
+                        Move to Waiting on them
+                      </Button>
+                    ) : (
+                      <>
+                        <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Not a lead")}>
+                          Move to Not a lead
+                        </Button>
+                        <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Handled")}>
+                          I handled it
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
               </>
             ) : (
               <Button type="button" variant="secondary" className="self-start" disabled={asking || !card} onClick={retry}>
@@ -903,7 +910,7 @@ function CardDialog({
         </div>
 
         <aside className="order-3 flex min-h-80 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 lg:order-none lg:min-h-0 lg:border-l lg:border-t-0">
-          <AiChat lines={chat} asking={asking} disabled={!card || !open} onSend={say} />
+          <AiChat lines={chat} booking={step === "text" || step === "book" || step === "wait"} asking={asking} disabled={!card || !open} onSend={say} />
         </aside>
       </section>
     </div>
