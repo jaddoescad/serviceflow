@@ -225,7 +225,10 @@ const EVENT_TEXT: Record<WorkflowEvent["kind"], (event: WorkflowEvent) => string
  */
 function Activity({ card }: { card: WorkflowCardDetail }) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [card]);
+  // Braces: scrollIntoView returns a promise in newer Chrome, and an effect may only return a clean-up.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [card]);
 
   // Empty until the workflow_activity migration is applied.
   const events = (card.events ?? []).filter(
@@ -453,7 +456,9 @@ function CardDialog({
   }, [summary.id]);
 
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [onClose]);
