@@ -14,7 +14,7 @@ const TITLE = "Appointment workflows";
 
 /**
  * Sales › Appointment workflows: the board (default), ?tab=calendar for the
- * team's appointments and calendars, ?tab=settings for the prompt, skills
+ * team's appointments and calendars by month, ?tab=settings for the prompt, skills
  * and calendars.
  */
 export default async function WorkflowsPage({ searchParams }: { searchParams: Promise<CalendarQuery & { tab?: string }> }) {
@@ -33,7 +33,7 @@ export default async function WorkflowsPage({ searchParams }: { searchParams: Pr
   );
 
   if (tab === "calendar") {
-    const [, data] = await Promise.all([requireStaff(), getAppointmentsCalendarData(query, "3day")]);
+    const [, data] = await Promise.all([requireStaff(), getAppointmentsCalendarData(query)]);
     return <AppointmentsCalendar {...data} newFor={null} basePath="/workflows?tab=calendar" title={TITLE} tabs={tabs} />;
   }
 
