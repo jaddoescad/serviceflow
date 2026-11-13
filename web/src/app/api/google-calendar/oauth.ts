@@ -11,6 +11,8 @@ import { settingsHref } from "@/lib/settings-pages";
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.owned";
 
 const STATE_COOKIE = "sf_google_calendar_state";
+// Where to land afterwards when connecting from somewhere other than Settings.
+const RETURN_COOKIE = "sf_google_calendar_return";
 const COOKIE_PATH = "/api/google-calendar";
 
 export function googleCredentials(): { clientId: string; clientSecret: string } | null {
@@ -24,8 +26,11 @@ export function redirectUri(request: NextRequest): string {
   return `${request.nextUrl.origin}/api/google-calendar/callback`;
 }
 
-/** Back to the Google Calendar section of Settings with the outcome. */
+/** Back to the Google Calendar section of Settings (or Appointment workflows' settings) with the outcome. */
 export function settingsUrl(request: NextRequest, outcome: "connected" | "error"): URL {
+  if (request.cookies.get(RETURN_COOKIE)?.value === "workflows") {
+    return new URL(`/workflows?tab=settings&calendar=${outcome}`, request.nextUrl.origin);
+  }
   const [path, hash] = settingsHref("calendar").split("#");
   return new URL(`${path}?calendar=${outcome}#${hash}`, request.nextUrl.origin);
 }
@@ -34,12 +39,14 @@ export function readState(request: NextRequest): string | undefined {
   return request.cookies.get(STATE_COOKIE)?.value;
 }
 
-export function setState(request: NextRequest, response: NextResponse, state: string | null) {
-  response.cookies.set(STATE_COOKIE, state ?? "", {
+/** The OAuth state, and where to return (null clears both). */
+export function setState(request: NextRequest, response: NextResponse, state: string | null, back: "workflows" | null = null) {
+  const options = {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "lax" as const,
     secure: request.nextUrl.protocol === "https:",
     path: COOKIE_PATH,
-    maxAge: state ? 600 : 0,
-  });
+  };
+  response.cookies.set(STATE_COOKIE, state ?? "", { ...options, maxAge: state ? 600 : 0 });
+  response.cookies.set(RETURN_COOKIE, state && back ? back : "", { ...options, maxAge: state && back ? 600 : 0 });
 }

@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireStaff } from "@/lib/auth";
 import { CALENDAR_SCOPE, googleCredentials, redirectUri, setState, settingsUrl } from "../oauth";
 
-/** Sends the signed-in person to Google to let ServiceFlow manage their calendar events. */
+/** Sends the signed-in person to Google to let ServiceFlow manage their calendar events.
+ * ?from=workflows comes back to Appointment workflows' settings. */
 export async function GET(request: NextRequest) {
   await requireStaff();
   const credentials = googleCredentials();
@@ -23,6 +24,6 @@ export async function GET(request: NextRequest) {
   }).toString();
 
   const response = NextResponse.redirect(google);
-  setState(request, response, state);
+  setState(request, response, state, request.nextUrl.searchParams.get("from") === "workflows" ? "workflows" : null);
   return response;
 }

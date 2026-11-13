@@ -1,8 +1,12 @@
 import { AppointmentsCalendar } from "@/components/appointments-calendar";
 import { LiveRefresh } from "@/components/live-refresh";
+import { AvailabilitySettings } from "@/components/settings/availability-settings";
+import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
 import { FilterPills } from "@/components/table-ui";
 import { WorkflowBoard } from "@/components/workflow-board";
 import { WorkflowSettingsForm } from "@/components/workflow-settings";
+import { getBookingSettings } from "@/lib/actions/booking";
+import { getMyCalendarConnection } from "@/lib/actions/calendar";
 import { staffRead } from "@/lib/actions/rpc";
 import { getAppointmentsCalendarData, type CalendarQuery } from "@/lib/appointments-calendar-data";
 import { getHomeOrgId, requireStaff } from "@/lib/auth";
@@ -17,7 +21,7 @@ const TITLE = "Appointment workflows";
  * team's appointments and calendars by month, ?tab=settings for the prompt, skills
  * and calendars.
  */
-export default async function WorkflowsPage({ searchParams }: { searchParams: Promise<CalendarQuery & { tab?: string }> }) {
+export default async function WorkflowsPage({ searchParams }: { searchParams: Promise<CalendarQuery & { tab?: string; calendar?: string }> }) {
   const query = await searchParams;
   const tab = query.tab === "settings" || query.tab === "calendar" ? query.tab : "board";
   const tabs = (
@@ -38,9 +42,11 @@ export default async function WorkflowsPage({ searchParams }: { searchParams: Pr
   }
 
   const [, orgId] = await Promise.all([requireStaff(), getHomeOrgId()]);
-  const [cards, settings] = await Promise.all([
+  const [cards, settings, myCalendar, booking] = await Promise.all([
     tab === "board" ? staffRead<WorkflowCardSummary[]>("workflow_board") : null,
     staffRead<WorkflowSettings>("get_workflow_settings"),
+    tab === "settings" ? getMyCalendarConnection() : null,
+    tab === "settings" ? getBookingSettings() : null,
   ]);
   const connected = settings.people.filter((person) => person.connected).length;
 
@@ -55,6 +61,18 @@ export default async function WorkflowsPage({ searchParams }: { searchParams: Pr
         <WorkflowBoard cards={cards ?? []} calendarsConnected={connected} />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-[var(--gutter)] py-6">
+          {/* Your own calendar and everyone's hours first: times come from them. */}
+          <div className="mx-auto mb-4 flex max-w-3xl flex-col gap-4">
+            {myCalendar ? (
+              <GoogleCalendarSection
+                connection={myCalendar}
+                configured={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+                result={query.calendar === "connected" || query.calendar === "error" ? query.calendar : null}
+                from="workflows"
+              />
+            ) : null}
+            {booking ? <AvailabilitySettings settings={booking} /> : null}
+          </div>
           <WorkflowSettingsForm settings={settings} />
         </div>
       )}

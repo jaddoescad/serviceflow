@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { saveWorkflowSettings } from "@/lib/actions/workflows";
@@ -35,15 +34,7 @@ export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings 
       <SettingsSection
         id="calendars"
         title="Calendars"
-        description={
-          <>
-            Times are only offered for people whose calendar is connected. Each person connects their own in{" "}
-            <Link href="/settings/integrations#calendar" className="text-[var(--color-brand)] hover:underline">
-              Settings › Integrations
-            </Link>
-            .
-          </>
-        }
+        description="Times are only offered for people who take appointments (Availability above) and have connected their own Google Calendar."
       >
         {settings.people.length ? (
           <ul className="divide-y divide-[var(--color-border)]">
@@ -64,13 +55,7 @@ export function WorkflowSettingsForm({ settings }: { settings: WorkflowSettings 
             ))}
           </ul>
         ) : (
-          <p className="text-[13px] text-[var(--color-muted)]">
-            Nobody takes appointments yet. Choose who does in{" "}
-            <Link href="/settings/booking#availability" className="text-[var(--color-brand)] hover:underline">
-              Settings › Leads &amp; booking
-            </Link>
-            .
-          </p>
+          <p className="text-[13px] text-[var(--color-muted)]">Nobody takes appointments yet. Turn it on in Availability above.</p>
         )}
       </SettingsSection>
 
