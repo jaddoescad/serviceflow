@@ -688,11 +688,30 @@ function CardDialog({
     </div>
   );
 
-  const primary = (label: string, disabled: boolean, action: () => Promise<Result>) => (
-    <Button type="button" className="h-9 self-end px-4" disabled={pending || disabled} onClick={() => run(action)}>
-      {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
-      {label}
+  // Every action asks first: a text or a booking can't be taken back.
+  const sure = (question: string, action: () => Promise<Result>) => {
+    if (window.confirm(question)) run(action);
+  };
+  const closeCard = (
+    <Button
+      type="button"
+      variant="secondary"
+      className="h-9 px-4"
+      disabled={pending}
+      onClick={() => sure(`Close ${summary.name}'s card without doing anything?`, () => moveWorkflowCard(summary.id, "closed", "Closed without action"))}
+    >
+      Close card
     </Button>
+  );
+  /** The suggestion's button, with "Close card" beside it. */
+  const primary = (label: string, question: string, disabled: boolean, action: () => Promise<Result>) => (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {closeCard}
+      <Button type="button" className="h-9 px-4" disabled={pending || disabled} onClick={() => sure(question, action)}>
+        {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
+        {label}
+      </Button>
+    </div>
   );
 
   const heading =
@@ -834,7 +853,7 @@ function CardDialog({
                   )}
                 </div>
                 {needsLead && (lead.name || lead.address) ? leadFields : null}
-                {open ? primary("Send text", !text.trim(), () => approveText(summary.id, text, lead)) : null}
+                {open ? primary("Send text", `Send this text to ${summary.name}?`, !text.trim(), () => approveText(summary.id, text, lead)) : null}
               </>
             ) : step === "book" ? (
               <>
@@ -855,7 +874,7 @@ function CardDialog({
                   <p className="text-[13px] text-[var(--color-muted)]">No open times: {(suggestion?.noTimes ?? "none found").toLowerCase()}</p>
                 )}
                 {needsLead ? leadFields : null}
-                {open ? primary("Book estimate", !bookTime || leadMissing, () => approveBooking(summary.id, bookTime!, lead)) : null}
+                {open ? primary("Book estimate", `Book ${bookTime?.label ?? "this time"} with ${bookTime?.person ?? "them"}? ${summary.name} gets the confirmation.`, !bookTime || leadMissing, () => approveBooking(summary.id, bookTime!, lead)) : null}
               </>
             ) : suggestion ? (
               <>
@@ -866,19 +885,22 @@ function CardDialog({
                 {open ? (
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {step === "close" ? (
-                      <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => move("closed", suggestion.reason || "Not a lead")}>
+                      <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => sure(`Move ${summary.name} to Not a lead?`, () => moveWorkflowCard(summary.id, "closed", suggestion.reason || "Not a lead"))}>
                         Move to Not a lead
                       </Button>
                     ) : step === "wait" ? (
-                      <Button type="button" className="h-9 px-4" disabled={pending || summary.stage === "waiting"} onClick={() => move("waiting", suggestion.reason || "Waiting on them")}>
-                        Move to Waiting on them
-                      </Button>
+                      <>
+                        {closeCard}
+                        <Button type="button" className="h-9 px-4" disabled={pending || summary.stage === "waiting"} onClick={() => move("waiting", suggestion.reason || "Waiting on them")}>
+                          Move to Waiting on them
+                        </Button>
+                      </>
                     ) : (
                       <>
-                        <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Not a lead")}>
+                        <Button type="button" variant="danger" className="h-9 px-4" disabled={pending} onClick={() => sure(`Move ${summary.name} to Not a lead?`, () => moveWorkflowCard(summary.id, "closed", "Not a lead"))}>
                           Move to Not a lead
                         </Button>
-                        <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => move("closed", "Dealt with")}>
+                        <Button type="button" className="h-9 px-4" disabled={pending} onClick={() => sure(`Close ${summary.name}'s card?`, () => moveWorkflowCard(summary.id, "closed", "Dealt with"))}>
                           Close card
                         </Button>
                       </>
