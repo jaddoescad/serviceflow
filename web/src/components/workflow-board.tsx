@@ -389,13 +389,19 @@ function TimePanel({
   const [other, setOther] = useState<{ date: string; days: DrawnDay[]; error?: string } | null>(null);
   const [loadingDay, setLoadingDay] = useState(false);
   function pickDay(day: string) {
-    if (!day) return setOther(null);
+    if (!day || day === date) return setOther(null);
     setLoadingDay(true);
     getWorkflowDay(cardId, day, address).then((result) => {
       setLoadingDay(false);
       setOther({ date: day, days: result.days ?? [], error: result.ok ? undefined : (result.error ?? "That day couldn't load.") });
     });
   }
+  /** Looking at a day other than the picked time's. */
+  const browsing = other !== null && other.date !== date;
+  // Choosing a time elsewhere (the list below, the text) ends the browsing.
+  useEffect(() => {
+    setOther((current) => (current && current.date !== date ? null : current));
+  }, [time.startsAt, date]);
   const found = [...(suggestion.days ?? []), ...(other?.days ?? [])].find((day) => day.userId === time.personId && day.date === date);
   // The offered start may sit between the drawn blocks; draw it too.
   const day =
@@ -419,47 +425,30 @@ function TimePanel({
             <Quiet onClick={onBack}>Done</Quiet>
           </span>
         </div>
-        {day ? (
-          <div className="-mx-3 mt-2">
-            <DayDrawing
-              day={day}
-              timezone={timezone}
-              isPicked={(block) => block.start === time.startsAt}
-              onPick={(block) =>
-                onUse({ ...time, startsAt: block.start, label: workflowTimeLabel(block.start, timezone), near: null })
-              }
-            />
-          </div>
-        ) : (
-          <p className="mt-2 text-[13px] text-[var(--color-muted)]">{time.near ?? "Nothing else on their day."}</p>
-        )}
-      </div>
-      <div>
-        <label className="flex items-center justify-between gap-3 text-xs font-semibold text-[var(--color-muted)]">
-          Pick any day
+        <label className="mt-2 flex items-center justify-between gap-3 text-xs font-semibold text-[var(--color-muted)]">
+          Day
           <Input
             type="date"
             min={today}
             max={last}
-            value={other?.date ?? ""}
+            value={other?.date ?? date}
             onChange={(event) => pickDay(event.target.value)}
             className="w-40"
           />
         </label>
         {loadingDay ? (
-          <p className="mt-2 flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
+          <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
             <Spinner className="h-3.5 w-3.5" /> Loading that day…
           </p>
-        ) : other?.error ? (
-          <p className="mt-2 text-[13px] text-[var(--color-bad)]">{other.error}</p>
-        ) : other && !other.days.length ? (
-          <p className="mt-2 text-[13px] text-[var(--color-muted)]">Nobody has an opening on {fmtDate(other.date)}.</p>
-        ) : other && other.date !== date ? (
+        ) : browsing && other.error ? (
+          <p className="mt-3 text-[13px] text-[var(--color-bad)]">{other.error}</p>
+        ) : browsing && !other.days.length ? (
+          <p className="mt-3 text-[13px] text-[var(--color-muted)]">Nobody has an opening on {fmtDate(other.date)}.</p>
+        ) : browsing ? (
+          // Another day, nothing picked on it yet: one drawing per person with room.
           other.days.map((choice) => (
             <div key={choice.userId} className="mt-2">
-              <p className="text-[13px] font-semibold text-[var(--color-heading)]">
-                {fmtDate(other.date)} <span className="font-normal text-[var(--color-muted)]">with {choice.name}</span>
-              </p>
+              {other.days.length > 1 ? <p className="text-[13px] font-medium text-[var(--color-heading)]">{choice.name}</p> : null}
               <div className="-mx-3">
                 <DayDrawing
                   day={choice}
@@ -479,7 +468,20 @@ function TimePanel({
               </div>
             </div>
           ))
-        ) : null}
+        ) : day ? (
+          <div className="-mx-3 mt-2">
+            <DayDrawing
+              day={day}
+              timezone={timezone}
+              isPicked={(block) => block.start === time.startsAt}
+              onPick={(block) =>
+                onUse({ ...time, startsAt: block.start, label: workflowTimeLabel(block.start, timezone), near: null })
+              }
+            />
+          </div>
+        ) : (
+          <p className="mt-2 text-[13px] text-[var(--color-muted)]">{time.near ?? "Nothing else on their day."}</p>
+        )}
       </div>
       {others.length ? (
         <div>
