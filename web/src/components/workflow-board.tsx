@@ -263,6 +263,21 @@ function Activity({ card }: { card: WorkflowCardDetail }) {
   );
 }
 
+/** Plays a call's recording or voicemail; the link is fetched from Quo when play is pressed. */
+function CallAudio({ callId }: { callId: string }) {
+  const [missing, setMissing] = useState(false);
+  if (missing) return <p className="my-1 text-xs text-[var(--color-muted)]">No recording.</p>;
+  return (
+    <audio
+      controls
+      preload="none"
+      src={`/api/calls/${encodeURIComponent(callId)}/audio`}
+      onError={() => setMissing(true)}
+      className="my-1.5 h-9 w-full min-w-56"
+    />
+  );
+}
+
 function FeedRow({ item }: { item: FeedItem }) {
   const pill = "max-w-[90%] self-center rounded-xl bg-[var(--color-surface-2)] px-2.5 py-1 text-center text-xs text-[var(--color-muted)]";
   if (item.type === "note") {
@@ -279,7 +294,8 @@ function FeedRow({ item }: { item: FeedItem }) {
   const voicemail = message.channel === "call" && message.text?.startsWith("Voicemail:");
   if (message.channel === "call" && !voicemail) {
     const notes = message.call;
-    if (!notes?.summary?.length && !notes?.transcript) {
+    // An answered call has a recording to play, even before Quo has written anything about it.
+    if (!(notes?.answered && message.callId) && !notes?.summary?.length && !notes?.transcript) {
       return (
         <div className={pill}>
           {message.text || "Call"} · {fmtTime(message.at)}
@@ -291,7 +307,9 @@ function FeedRow({ item }: { item: FeedItem }) {
       <div className="w-full max-w-[90%] self-center rounded-xl border border-[var(--color-border)] px-3 py-2 text-[13px] leading-5">
         <div className="text-xs font-semibold text-[var(--color-muted)]">
           {message.text || "Call"} · {fmtTime(message.at)}
+          {notes.notes && notes.notes !== "completed" ? <span className="font-normal"> · no transcript from Quo</span> : null}
         </div>
+        {message.callId ? <CallAudio callId={message.callId} /> : null}
         {notes.summary?.length ? (
           <ul className="mt-1 list-disc pl-4 text-[var(--color-heading)]">
             {notes.summary.map((point, index) => (
@@ -299,7 +317,7 @@ function FeedRow({ item }: { item: FeedItem }) {
             ))}
           </ul>
         ) : null}
-        {notes.transcript ? (
+        {notes?.transcript ? (
           <details className="mt-1" open={!notes.summary?.length}>
             <summary className="cursor-pointer text-xs font-medium text-[var(--color-muted)] hover:text-[var(--color-heading)]">Transcript</summary>
             <p className="mt-1 max-h-60 overflow-y-auto whitespace-pre-line text-[var(--color-text)]">{notes.transcript}</p>
@@ -322,6 +340,7 @@ function FeedRow({ item }: { item: FeedItem }) {
         )}
       >
         {label ? <span className={cn("mb-0.5 block text-[11.5px] font-semibold", theirs ? "text-[var(--color-muted)]" : "opacity-80")}>{label}</span> : null}
+        {voicemail && message.callId ? <CallAudio callId={message.callId} /> : null}
         {body || "—"}
       </div>
       <span className="mt-0.5 px-1 text-[11px] text-[var(--color-faint)]">
