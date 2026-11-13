@@ -6,6 +6,7 @@ import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import {
   approveBooking,
   approveText,
+  chatWorkflowAI,
   getWorkflowCard,
   moveWorkflowCard,
   suggestNext,
@@ -444,10 +445,119 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
+type ChatLine = { from: "you" | "ai"; text: string };
+
+const STARTERS = ["Summarize this lead", "What do we still need to book?", "Why this suggestion?"];
+
 /**
- * A card, opened: the contact's whole activity on the left with the AI's next
- * step where you'd type, and on the right the customer, or the day of a time
- * you clicked (to check the drive around it, or use another).
+ * The manager's chat with the AI about one card: questions get answers, and
+ * instructions change the suggestion at the bottom of the card. Nothing said
+ * here goes to the customer.
+ */
+function AiChat({
+  lines,
+  asking,
+  disabled,
+  onSend,
+}: {
+  lines: ChatLine[];
+  asking: boolean;
+  disabled: boolean;
+  onSend: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [lines.length, asking]);
+  const send = (text: string) => {
+    if (!text.trim() || asking || disabled) return;
+    onSend(text.trim());
+    setDraft("");
+  };
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-heading)]">
+        <Spark className="text-[var(--color-brand-strong)]" />
+        AI assistant
+      </h3>
+      <div className="flex min-h-24 flex-1 flex-col gap-2.5 overflow-y-auto">
+        {lines.length ? null : (
+          <p className="mt-auto text-[13px] leading-5 text-[var(--color-muted)]">
+            Ask about this lead, or tell the AI what to do instead. It changes the suggestion; you still approve it.
+          </p>
+        )}
+        {lines.map((line, index) =>
+          line.from === "you" ? (
+            <div key={index} className="max-w-[85%] self-end whitespace-pre-line rounded-[14px_14px_4px_14px] bg-[var(--color-primary)] px-3 py-2 text-[13.5px] leading-5 text-[var(--color-primary-ink)]">
+              {line.text}
+            </div>
+          ) : (
+            <div key={index} className="flex max-w-[92%] gap-2 self-start">
+              <Spark className="mt-2.5 text-[var(--color-brand-strong)]" />
+              <div className="whitespace-pre-line rounded-[14px_14px_14px_4px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[13.5px] leading-5 text-[var(--color-heading)]">
+                {line.text}
+              </div>
+            </div>
+          ),
+        )}
+        {asking ? (
+          <p className="flex items-center gap-2 text-[13px] text-[var(--color-muted)]">
+            <Spinner className="h-3.5 w-3.5" /> Thinking…
+          </p>
+        ) : null}
+        <div ref={end} />
+      </div>
+      {lines.length ? null : (
+        <div className="flex flex-wrap gap-1.5">
+          {STARTERS.map((starter) => (
+            <button
+              key={starter}
+              type="button"
+              disabled={asking || disabled}
+              onClick={() => send(starter)}
+              className="rounded-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2.5 py-1 text-[12.5px] font-medium text-[var(--color-brand-strong)] outline-none hover:border-[var(--color-brand)] focus-visible:shadow-[var(--focus-ring)] disabled:opacity-50"
+            >
+              {starter}
+            </button>
+          ))}
+        </div>
+      )}
+      <form
+        className="flex items-center gap-2 rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] py-1.5 pl-3 pr-1.5 focus-within:border-[var(--color-brand)]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send(draft);
+        }}
+      >
+        <input
+          aria-label="Message the AI"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          maxLength={1000}
+          placeholder="Ask, or tell the AI what to do…"
+          className="min-w-0 flex-1 bg-transparent text-[13.5px] text-[var(--color-text)] outline-none placeholder:text-[var(--color-faint)]"
+        />
+        <button
+          type="submit"
+          aria-label="Send to the AI"
+          disabled={!draft.trim() || asking || disabled}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)] text-[var(--color-primary-ink)] outline-none focus-visible:shadow-[var(--focus-ring)] disabled:opacity-40"
+        >
+          <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+            <path d="M10 16V4M5 9l5-5 5 5" />
+          </svg>
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * A card, opened, in three columns: the customer (or the day of a time you
+ * clicked) on the left, everything that happened with them in the middle with
+ * the AI's suggestion to approve underneath, and the chat with the AI on the
+ * right, which is how the suggestion gets changed.
  */
 function CardDialog({
   summary,
@@ -463,21 +573,20 @@ function CardDialog({
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [step, setStep] = useState<Step | null>(null);
-  // The text is the AI's, with its {{t1}} placeholders; nobody types here, they pick.
+  const [chat, setChat] = useState<ChatLine[]>([]);
+  // The text is the AI's, with its {{t1}} placeholders; nobody types to the customer, they pick.
   const [slots, setSlots] = useState<Record<string, WorkflowTime>>({});
   const [bookTime, setBookTime] = useState<WorkflowTime | null>(null);
   const [lead, setLead] = useState<WorkflowLeadFields>(emptyLead);
-  /** The time shown on the right: a slot's id, or "book". */
+  /** The time shown on the left: a slot's id, or "book". */
   const [focus, setFocus] = useState<string | null>(null);
 
   function take(next: WorkflowSuggestion | null) {
     setSuggestion(next);
-    setStep(next?.action ?? null);
     setSlots(Object.fromEntries((next?.times ?? []).map((time) => [time.id, time])));
     setBookTime(next?.book ?? next?.options[0] ?? null);
     setLead(next?.lead ?? emptyLead);
-    setFocus(next?.action === "book" ? "book" : null);
+    setFocus(null);
   }
 
   useEffect(() => {
@@ -503,18 +612,33 @@ function CardDialog({
     return () => window.removeEventListener("keydown", keydown);
   }, [onClose]);
 
-  // What the manager tells the AI to do; the AI answers with a new suggestion to approve.
-  const [instruction, setInstruction] = useState("");
-  function askAgain() {
+  function say(text: string) {
+    const lines: ChatLine[] = [...chat, { from: "you", text }];
+    setChat(lines);
     setError("");
     setAsking(true);
-    suggestNext(summary.id, instruction).then((result) => {
+    chatWorkflowAI(summary.id, lines).then((result) => {
       setAsking(false);
-      if (!result.ok || !result.suggestion) setError(result.error ?? "The AI couldn't suggest anything.");
-      else {
-        take(result.suggestion);
-        setInstruction("");
+      if (!result.ok) {
+        setChat([...lines, { from: "ai", text: result.error ?? "I couldn't answer that. Try again." }]);
+        return;
       }
+      setChat([...lines, { from: "ai", text: result.answer || (result.suggestion ? "I updated the suggestion." : "Done.") }]);
+      if (result.suggestion) take(result.suggestion);
+    });
+  }
+
+  // A fresh suggestion from scratch, when this one is off.
+  const [retrying, setRetrying] = useState(false);
+  function retry() {
+    setError("");
+    setAsking(true);
+    setRetrying(true);
+    suggestNext(summary.id).then((result) => {
+      setAsking(false);
+      setRetrying(false);
+      if (!result.ok || !result.suggestion) setError(result.error ?? "The AI couldn't suggest anything.");
+      else take(result.suggestion);
     });
   }
 
@@ -527,6 +651,7 @@ function CardDialog({
     });
   }
 
+  const step: Step | null = suggestion?.action ?? null;
   const template = suggestion?.message ?? "";
   const text = template.replace(SLOT, (whole, id: string) => slots[id]?.label ?? whole);
   const focused = focus === "book" ? bookTime : focus ? (slots[focus] ?? null) : null;
@@ -540,6 +665,7 @@ function CardDialog({
   };
   const open = summary.stage !== "closed" && summary.stage !== "booked";
   const tag = WORKFLOW_STAGES.find((stage) => stage.id === summary.stage)!;
+  const move = (stage: "waiting" | "closed" | "new", reason?: string) => run(() => moveWorkflowCard(summary.id, stage, reason));
 
   const leadFields = (
     <div className="grid gap-2 sm:grid-cols-2">
@@ -552,38 +678,27 @@ function CardDialog({
     </div>
   );
 
-  const quietLinks = (
-    <>
-      {step !== "text" && suggestion?.message ? (
-        <Quiet onClick={() => { setStep("text"); setFocus(null); }}>Use the AI&apos;s text</Quiet>
-      ) : null}
-      {step !== "book" && suggestion?.options.length ? (
-        <Quiet onClick={() => { setStep("book"); setFocus("book"); }}>Book a time</Quiet>
-      ) : null}
-      {open ? (
-        <Button type="button" variant="danger" size="sm" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "closed", "Not a lead"))}>
-          Not a lead
-        </Button>
-      ) : null}
-      {open && summary.stage !== "needs_you" ? (
-        <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "needs_you"))}>
-          I&apos;ll handle it
-        </Quiet>
-      ) : null}
-      {summary.stage === "closed" ? (
-        <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "new"))}>
-          Reopen
-        </Quiet>
-      ) : null}
-    </>
-  );
-
   const primary = (label: string, disabled: boolean, action: () => Promise<Result>) => (
-    <Button type="button" className="ml-auto h-9 px-4" disabled={pending || disabled} onClick={() => run(action)}>
+    <Button type="button" className="h-9 self-end px-4" disabled={pending || disabled} onClick={() => run(action)}>
       {pending ? <Spinner className="h-3.5 w-3.5" /> : null}
       {label}
     </Button>
   );
+
+  const heading =
+    asking && !suggestion
+      ? "Thinking…"
+      : step === "text"
+        ? "AI suggests this text"
+        : step === "book"
+          ? "AI suggests booking it"
+          : step === "wait"
+            ? "AI suggests waiting on them"
+            : step === "close"
+              ? "AI suggests closing it"
+              : step === "needs_you"
+                ? "AI stopped: it needs you"
+                : "No suggestion yet";
 
   return (
     <div
@@ -596,9 +711,74 @@ function CardDialog({
         role="dialog"
         aria-modal="true"
         aria-label={summary.name}
-        className="grid h-[min(840px,calc(100dvh-2rem))] w-full max-w-[1080px] grid-cols-1 overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-[var(--shadow-pop)] md:grid-cols-[minmax(0,1fr)_400px] md:overflow-hidden"
+        className="grid h-[min(840px,calc(100dvh-2rem))] w-full max-w-[1340px] grid-cols-1 overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-[var(--shadow-pop)] lg:grid-cols-[280px_minmax(0,1fr)_380px] lg:overflow-hidden"
       >
-        <div className="flex min-h-0 flex-col">
+        <aside className="order-2 flex min-h-0 flex-col overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 lg:order-none lg:border-r lg:border-t-0">
+          {focused && suggestion && card ? (
+            <TimePanel
+              time={focused}
+              suggestion={suggestion}
+              minutes={card.settings.minutes}
+              timezone={card.timezone}
+              onUse={pickTime}
+              onBack={() => setFocus(null)}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col gap-5">
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Customer</h3>
+                <Detail label="Phone">{card?.phone ?? "—"}</Detail>
+                {card?.email ? <Detail label="Email">{card.email}</Detail> : null}
+                <Detail label="Address">{card?.address ?? lead.address ?? "Not yet"}</Detail>
+                {lead.request ? <Detail label="Wants">{lead.request}</Detail> : null}
+                <Detail label="Came in">{cameIn(summary)}</Detail>
+              </div>
+              {card?.appointments.length ? (
+                <div>
+                  <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Booked</h3>
+                  {card.appointments.map((appointment) => (
+                    <p key={appointment.startsAt} className="text-[13px] text-[var(--color-heading)]">
+                      {fmtDateTime(appointment.startsAt)}
+                      {appointment.with ? ` with ${appointment.with}` : ""}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+              {suggestion?.noTimes ? (
+                <p className="text-[12.5px] text-[var(--color-muted)]">No times to offer: {suggestion.noTimes.toLowerCase()}</p>
+              ) : null}
+              <div className="mt-auto flex flex-col gap-1.5">
+                {summary.leadId ? (
+                  <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
+                    Open deal
+                  </Link>
+                ) : null}
+                {open && summary.stage !== "waiting" ? (
+                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("waiting", "Waiting on them")}>
+                    Move to Waiting on them
+                  </Button>
+                ) : null}
+                {open ? (
+                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("closed", "Handled")}>
+                    Handled
+                  </Button>
+                ) : null}
+                {open ? (
+                  <Button type="button" variant="danger" disabled={pending} onClick={() => move("closed", "Not a lead")}>
+                    Not a lead
+                  </Button>
+                ) : null}
+                {summary.stage === "closed" ? (
+                  <Button type="button" variant="secondary" disabled={pending} onClick={() => move("new")}>
+                    Reopen
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        <div className="order-1 flex min-h-0 flex-col lg:order-none">
           <header className="flex items-center gap-3 border-b border-[var(--color-border)] px-5 py-3.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[15px] font-semibold text-[var(--color-text)]">
               {(summary.name.match(/[A-Za-z]/)?.[0] ?? "#").toUpperCase()}
@@ -608,17 +788,8 @@ function CardDialog({
                 <h2 className="truncate text-base font-semibold text-[var(--color-heading)]">{summary.name}</h2>
                 <Tag tone={tag.tone}>{tag.name}</Tag>
               </div>
-              <p className="truncate text-[12.5px] text-[var(--color-muted)]">
-                {[card?.phone !== summary.name ? card?.phone : null, card?.address, `came in as ${cameIn(summary).toLowerCase()}`]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
+              <p className="truncate text-[12.5px] text-[var(--color-muted)]">came in as {cameIn(summary).toLowerCase()}</p>
             </div>
-            {summary.leadId ? (
-              <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
-                Open deal
-              </Link>
-            ) : null}
             <button
               type="button"
               onClick={onClose}
@@ -641,26 +812,18 @@ function CardDialog({
             )}
           </div>
 
-          <div
-            className={cn(
-              "flex flex-col gap-2.5 border-t border-[var(--color-border)] px-5 pb-4 pt-3.5",
-              step === "needs_you" || step === "close" ? "bg-[var(--tag-yellow-bg)]" : "bg-[var(--color-brand-soft)]",
-            )}
-          >
-            {step === "text" || step === "book" || !step ? (
-              <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--color-brand-strong)]">
-                <Spark />
-                {asking ? "Thinking…" : step === "book" ? "AI suggests booking it" : step ? "AI suggests this reply" : "No suggestion yet"}
-              </div>
-            ) : (
-              <p className="text-[13px] text-[var(--color-text)]">
-                <b className="font-semibold text-[var(--tag-yellow-text)]">
-                  {step === "close" ? "AI suggests closing it" : step === "wait" ? "AI suggests waiting on them" : "Needs you"}
-                  {suggestion?.reason ? `: ${suggestion.reason}` : ""}.
-                </b>{" "}
-                {step === "needs_you" ? "Nothing was sent." : ""}
-              </p>
-            )}
+          <div className="flex flex-col gap-2.5 border-t border-[var(--color-border)] bg-[var(--color-brand-soft)] px-5 pb-4 pt-3.5">
+            <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--color-brand-strong)]">
+              <Spark />
+              {heading}
+              {open && card ? (
+                <span className="ml-auto">
+                  <Quiet onClick={retry} disabled={asking}>
+                    {retrying ? "Thinking…" : "Retry"}
+                  </Quiet>
+                </span>
+              ) : null}
+            </div>
 
             {step === "text" ? (
               <>
@@ -690,10 +853,7 @@ function CardDialog({
                   )}
                 </div>
                 {needsLead && (lead.name || lead.address) ? leadFields : null}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {quietLinks}
-                  {primary("Send", !text.trim(), () => approveText(summary.id, text, lead))}
-                </div>
+                {open ? primary("Send text", !text.trim(), () => approveText(summary.id, text, lead)) : null}
               </>
             ) : step === "book" ? (
               <>
@@ -714,63 +874,26 @@ function CardDialog({
                   <p className="text-[13px] text-[var(--color-muted)]">No open times: {(suggestion?.noTimes ?? "none found").toLowerCase()}</p>
                 )}
                 {needsLead ? leadFields : null}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {quietLinks}
-                  {primary("Book estimate", !bookTime || leadMissing, () => approveBooking(summary.id, bookTime!, lead))}
-                </div>
+                {open ? primary("Book estimate", !bookTime || leadMissing, () => approveBooking(summary.id, bookTime!, lead)) : null}
+              </>
+            ) : suggestion ? (
+              <>
+                <p className="text-[14px] leading-5 text-[var(--color-heading)]">
+                  {suggestion.reason || suggestion.summary}
+                  {step === "needs_you" ? " Nothing was sent. Tell the AI what to do, on the right." : ""}
+                </p>
+                {step === "wait" && open && summary.stage !== "waiting"
+                  ? primary("Move to Waiting", false, () => moveWorkflowCard(summary.id, "waiting", suggestion.reason || "Waiting on them"))
+                  : step === "close" && open
+                    ? primary("Close card", false, () => moveWorkflowCard(summary.id, "closed", suggestion.reason))
+                    : null}
               </>
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                {open && card?.phone ? (
-                  <a href={`tel:${card.phone}`} className={buttonClassName({ variant: "secondary" })}>
-                    Call
-                  </a>
-                ) : null}
-                {open && summary.stage !== "waiting" && step !== "wait" ? (
-                  <Button type="button" variant="secondary" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "waiting", "Waiting on them"))}>
-                    Waiting on them
-                  </Button>
-                ) : null}
-                {open && step !== "close" ? (
-                  <Button type="button" variant="secondary" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "closed", "Handled"))}>
-                    Handled
-                  </Button>
-                ) : null}
-                {quietLinks}
-                {step === "close" && open
-                  ? primary("Close card", false, () => moveWorkflowCard(summary.id, "closed", suggestion?.reason))
-                  : step === "wait" && open && summary.stage !== "waiting"
-                    ? primary("Move to Waiting", false, () => moveWorkflowCard(summary.id, "waiting", suggestion?.reason || "Waiting on them"))
-                    : null}
-              </div>
+              <Button type="button" variant="secondary" className="self-start" disabled={asking || !card} onClick={retry}>
+                Suggest a next step
+              </Button>
             )}
 
-            {(step === "text" || step === "book") && suggestion?.reason ? (
-              <p className="text-xs text-[var(--color-muted)]">AI: {suggestion.reason}</p>
-            ) : null}
-            {open ? (
-              <form
-                className="flex items-center gap-2 border-t border-[var(--color-border)] pt-2.5"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  askAgain();
-                }}
-              >
-                <Spark className="text-[var(--color-brand-strong)]" />
-                <Input
-                  aria-label="Tell the AI what to do"
-                  value={instruction}
-                  onChange={(event) => setInstruction(event.target.value)}
-                  maxLength={1000}
-                  placeholder="Tell the AI what to do instead. It answers with a new suggestion for you to approve."
-                  className="flex-1"
-                />
-                <Button type="submit" variant="secondary" disabled={asking || !card}>
-                  {asking ? <Spinner className="h-3.5 w-3.5" /> : null}
-                  {instruction.trim() ? "Ask AI" : suggestion ? "Suggest again" : "Suggest"}
-                </Button>
-              </form>
-            ) : null}
             {error ? (
               <p role="alert" className="text-[13px] text-[var(--color-bad)]">
                 {error}
@@ -779,52 +902,8 @@ function CardDialog({
           </div>
         </div>
 
-        <aside className="min-h-0 overflow-y-auto border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-[18px] md:border-l md:border-t-0">
-          {focused && suggestion && card ? (
-            <TimePanel
-              time={focused}
-              suggestion={suggestion}
-              minutes={card.settings.minutes}
-              timezone={card.timezone}
-              onUse={pickTime}
-              onBack={() => setFocus(null)}
-            />
-          ) : (
-            <div className="flex flex-col gap-5">
-              <div>
-                <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">Customer</h3>
-                <Detail label="Phone">{card?.phone ?? "—"}</Detail>
-                {card?.email ? <Detail label="Email">{card.email}</Detail> : null}
-                <Detail label="Address">{card?.address ?? lead.address ?? "Not yet"}</Detail>
-                {lead.request ? <Detail label="Wants">{lead.request}</Detail> : null}
-                <Detail label="Came in">{cameIn(summary)}</Detail>
-              </div>
-              {step === "text" && Object.keys(slots).length ? (
-                <div>
-                  <h3 className="mb-2 text-xs font-semibold text-[var(--color-muted)]">Times in the text</h3>
-                  <ul className="flex flex-col gap-1.5">
-                    {Object.entries(slots).map(([id, time]) => (
-                      <li key={id}>
-                        <button
-                          type="button"
-                          onClick={() => setFocus(id)}
-                          className="w-full rounded-[9px] border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 text-left outline-none hover:border-[var(--color-border-strong)] focus-visible:shadow-[var(--focus-ring)]"
-                        >
-                          <span className="block text-[13px] font-semibold text-[var(--color-heading)]">
-                            {time.label} <span className="font-normal text-[var(--color-muted)]">· {time.person}</span>
-                          </span>
-                          <span className="block text-xs text-[var(--color-good)]">{time.near ?? "See the day"}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {suggestion?.noTimes ? (
-                <p className="text-[12.5px] text-[var(--color-muted)]">No times to offer: {suggestion.noTimes.toLowerCase()}</p>
-              ) : null}
-            </div>
-          )}
+        <aside className="order-3 flex min-h-80 flex-col border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 lg:order-none lg:min-h-0 lg:border-l lg:border-t-0">
+          <AiChat lines={chat} asking={asking} disabled={!card || !open} onSend={say} />
         </aside>
       </section>
     </div>

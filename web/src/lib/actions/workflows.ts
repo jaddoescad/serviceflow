@@ -112,7 +112,12 @@ async function openTimes(
   return { options, days: drawn, noTimes: options.length ? null : "No open times in the next three weeks." };
 }
 
+/** A line of the manager's chat with the AI about a card. */
+export type WorkflowChatLine = { from: "you" | "ai"; text: string };
+
 type Raw = {
+  answer: string;
+  update_suggestion: boolean;
   action: WorkflowSuggestion["action"];
   summary: string;
   reason: string;
@@ -127,8 +132,10 @@ const nullableString = { type: ["string", "null"] };
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["action", "summary", "reason", "message", "time_ids", "book_time_id", "lead", "want_times"],
+  required: ["answer", "update_suggestion", "action", "summary", "reason", "message", "time_ids", "book_time_id", "lead", "want_times"],
   properties: {
+    answer: { type: "string" },
+    update_suggestion: { type: "boolean" },
     action: { type: "string", enum: ["text", "book", "wait", "needs_you", "close"] },
     summary: { type: "string" },
     reason: { type: "string" },
@@ -173,7 +180,7 @@ Your only job is getting an estimate booked. Pick one action:
 - "close": not a painting lead (a supplier, spam, a wrong number, a robocall), or they wrote STOP or said they're not interested. Say why in reason.
 
 Rules:
-- manager_instruction, when set, is the manager telling you what to do on this card: do it, as the action that fits (usually a text saying what they asked for, in your words). It can't make you invent a time or offer one that isn't in open_times; if it asks for that, choose "needs_you" and say why. In reason, answer the manager in a sentence.
+- manager_chat, when present, is the manager talking to you about this card; its last line is theirs. Reply in answer: short, plain, only from what is in this card, and say so when you don't know. A question (what did they say, what's missing, why this suggestion) gets an answer and update_suggestion false. An instruction ("offer mid-December", "ask for photos", "book Tuesday instead", "close it") or anything that should change current_suggestion gets update_suggestion true, the action fields filled with the new suggestion, and an answer saying what you changed. They can't make you invent a time or offer one that isn't in open_times: say so in answer and leave the suggestion. Without manager_chat, answer is "" and update_suggestion is true.
 - Calls we answered or made may have call_summary and call_transcript: read them. What was agreed on a call counts like a text. A call with neither means you don't know what was said: if it matters for the next step, choose "needs_you" and say so.
 - Never invent times, prices or promises. Only offer times from open_times. If they asked for a day or part of the day that open_times doesn't have, still pick your best action and set want_times (days as YYYY-MM-DD in the company's time zone, part_of_day).
 - Texts are short, warm and plain: no emojis, no links, under 320 characters. Don't repeat what we already said.
@@ -183,7 +190,7 @@ Rules:
 ${card.settings.prompt.trim() ? `\nThe company's instructions:\n${card.settings.prompt.trim()}\n` : ""}${skills ? `\nSkills:\n${skills}\n` : ""}`;
 }
 
-async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: string | null, note: string | null): Promise<Raw> {
+async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: string | null, chat: WorkflowChatLine[] | null): Promise<Raw> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("The AI isn't set up yet (OPENAI_API_KEY).");
   const context = {
@@ -206,7 +213,18 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     booked: card.appointments,
     open_times: options.map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
     no_times_because: noTimes,
-    manager_instruction: note,
+    current_suggestion: card.suggestion
+      ? {
+          action: card.suggestion.action,
+          summary: card.suggestion.summary,
+          reason: card.suggestion.reason,
+          // Times written out: {{t1}} ids are new on every call.
+          message: card.suggestion.message.replace(/\{\{(t\d+)\}\}/g, (whole, timeId: string) => card.suggestion!.times.find((time) => time.id === timeId)?.label ?? whole),
+          times: card.suggestion.times.map(({ label, person }) => ({ when: label, with: person })),
+          book: card.suggestion.book?.label ?? null,
+        }
+      : null,
+    manager_chat: chat?.map((line) => ({ from: line.from === "you" ? "manager" : "you", text: line.text })) ?? null,
   };
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -233,16 +251,13 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
 const clean = (value: string | null | undefined) => (value && value.trim() ? value.trim() : null);
 
 /**
- * Ask the AI for the next step on a card and save it. `instruction` is what
- * the manager told it to do instead ("offer mid-December", "ask for photos").
+ * The AI's next step for a card, not yet saved. With `chat`, it is answering
+ * the manager, and only changes the suggestion when they asked it to.
  */
-export async function suggestNext(id: string, instruction?: string): Promise<ActionResult & { suggestion?: WorkflowSuggestion }> {
-  await requireStaff();
-  const note = instruction?.trim().slice(0, 1000) || null;
-  try {
+async function decide(id: string, chat: WorkflowChatLine[] | null) {
     const card = await getWorkflowCard(id);
     let times = await openTimes(card, card.address, null);
-    let raw = await ask(card, times.options, times.noTimes, note);
+    let raw = await ask(card, times.options, times.noTimes, chat);
     // Once more with the address they gave, or the days they asked for.
     const found = !card.address ? clean(raw.lead.address) : null;
     const wanted = raw.want_times && (raw.want_times.days.length || raw.want_times.part_of_day !== "any");
@@ -252,7 +267,7 @@ export async function suggestNext(id: string, instruction?: string): Promise<Act
         card.address ?? found,
         wanted ? { days: raw.want_times!.days, partOfDay: raw.want_times!.part_of_day } : null,
       );
-      if (times.options.length) raw = await ask(card, times.options, times.noTimes, note);
+      if (times.options.length) raw = await ask(card, times.options, times.noTimes, chat);
     }
 
     const byId = new Map(times.options.map((time) => [time.id, time]));
@@ -288,16 +303,50 @@ export async function suggestNext(id: string, instruction?: string): Promise<Act
     if (suggestion.action === "text" && !suggestion.message) {
       suggestion = { ...suggestion, action: "needs_you", reason: "The AI didn't write a text." };
     }
-    const supabase = await createClient();
-    const { error } = await supabase.rpc("save_workflow_suggestion", {
-      requested_card: id,
-      requested_suggestion: suggestion,
-    });
-    if (error) return { ok: false, error: error.message };
-    revalidatePath("/workflows");
-    return { ok: true, suggestion };
+    return { answer: raw.answer.trim().slice(0, 2000), update: chat ? raw.update_suggestion : true, suggestion };
+}
+
+async function saveSuggestion(id: string, suggestion: WorkflowSuggestion): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_workflow_suggestion", { requested_card: id, requested_suggestion: suggestion });
+  revalidatePath("/workflows");
+  return error?.message ?? null;
+}
+
+/** Ask the AI for the next step on a card and save it. */
+export async function suggestNext(id: string): Promise<ActionResult & { suggestion?: WorkflowSuggestion }> {
+  await requireStaff();
+  try {
+    const { suggestion } = await decide(id, null);
+    const error = await saveSuggestion(id, suggestion);
+    return error ? { ok: false, error } : { ok: true, suggestion };
   } catch (reason) {
     return { ok: false, error: reason instanceof Error ? reason.message : "The AI couldn't suggest anything." };
+  }
+}
+
+/**
+ * The manager's chat with the AI about a card. It answers questions from what
+ * is on the card, and an instruction replaces the saved suggestion (returned,
+ * to approve as usual). Nothing here reaches the customer.
+ */
+export async function chatWorkflowAI(
+  id: string,
+  lines: WorkflowChatLine[],
+): Promise<ActionResult & { answer?: string; suggestion?: WorkflowSuggestion }> {
+  await requireStaff();
+  const chat = lines
+    .filter((line) => (line.from === "you" || line.from === "ai") && typeof line.text === "string" && line.text.trim())
+    .slice(-12)
+    .map((line) => ({ from: line.from, text: line.text.trim().slice(0, 1000) }));
+  if (!chat.length || chat[chat.length - 1].from !== "you") return { ok: false, error: "Ask the AI something." };
+  try {
+    const { answer, update, suggestion } = await decide(id, chat);
+    if (!update) return { ok: true, answer };
+    const error = await saveSuggestion(id, suggestion);
+    return error ? { ok: false, error } : { ok: true, answer, suggestion };
+  } catch (reason) {
+    return { ok: false, error: reason instanceof Error ? reason.message : "The AI couldn't answer." };
   }
 }
 
