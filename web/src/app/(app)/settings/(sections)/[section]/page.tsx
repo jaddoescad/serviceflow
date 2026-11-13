@@ -9,6 +9,7 @@ import { DocumentTemplates } from "@/components/settings/document-templates";
 import { TaskTemplates } from "@/components/settings/task-templates";
 import { GoogleCalendarSection } from "@/components/settings/google-calendar-section";
 import { LeadIntakeSettings } from "@/components/settings/lead-intake-settings";
+import { LeadAgentSettings } from "@/components/settings/lead-agent-settings";
 import { MessagingSettingsForm } from "@/components/settings/messaging-settings-form";
 import { PaymentsSettings } from "@/components/settings/payments-settings";
 import { ProposalDetailForm } from "@/components/settings/proposal-detail-form";
@@ -23,6 +24,7 @@ import { getCrewSettings } from "@/lib/actions/crews";
 import { getDocumentTemplates } from "@/lib/actions/document-templates";
 import { getTaskTemplates } from "@/lib/actions/task-templates";
 import { getLeadIntakeSettings } from "@/lib/actions/lead-intake";
+import { getLeadAgentSettings } from "@/lib/actions/lead-agent";
 import { getMessagingSettings, getReviewSettings } from "@/lib/actions/messaging";
 import { getCompanyDocuments, getLabourBudgetSettings } from "@/lib/actions/settings";
 import { requireStaff } from "@/lib/auth";
@@ -129,7 +131,11 @@ async function Payments() {
 }
 
 async function Integrations({ calendar: outcome }: { calendar?: string }) {
-  const [{ integrations }, calendar] = await Promise.all([loadCompanySettings(), getMyCalendarConnection()]);
+  const [{ integrations }, calendar, leadAgent] = await Promise.all([
+    loadCompanySettings(),
+    getMyCalendarConnection(),
+    managerOnly(getLeadAgentSettings),
+  ]);
   return (
     <>
       <IntegrationsSection integrations={integrations} />
@@ -138,6 +144,7 @@ async function Integrations({ calendar: outcome }: { calendar?: string }) {
         configured={Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
         result={outcome === "connected" || outcome === "error" ? outcome : null}
       />
+      {leadAgent ? <LeadAgentSettings settings={leadAgent} /> : null}
     </>
   );
 }

@@ -8,7 +8,7 @@ export const SETTINGS_PAGES = [
   { id: "messaging", label: "Messaging & reviews", sections: ["quo", "email", "reviews"] },
   { id: "booking", label: "Leads & booking", sections: ["lead-intake", "availability"] },
   { id: "payments", label: "Online payments", sections: ["payments"] },
-  { id: "integrations", label: "Integrations", sections: ["integrations", "calendar"] },
+  { id: "integrations", label: "Integrations", sections: ["integrations", "calendar", "lead-agent"] },
   { id: "account", label: "Your account", sections: ["account"] },
 ] as const;
 
