@@ -503,13 +503,18 @@ function CardDialog({
     return () => window.removeEventListener("keydown", keydown);
   }, [onClose]);
 
+  // What the manager tells the AI to do; the AI answers with a new suggestion to approve.
+  const [instruction, setInstruction] = useState("");
   function askAgain() {
     setError("");
     setAsking(true);
-    suggestNext(summary.id).then((result) => {
+    suggestNext(summary.id, instruction).then((result) => {
       setAsking(false);
       if (!result.ok || !result.suggestion) setError(result.error ?? "The AI couldn't suggest anything.");
-      else take(result.suggestion);
+      else {
+        take(result.suggestion);
+        setInstruction("");
+      }
     });
   }
 
@@ -556,9 +561,9 @@ function CardDialog({
         <Quiet onClick={() => { setStep("book"); setFocus("book"); }}>Book a time</Quiet>
       ) : null}
       {open ? (
-        <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "closed", "Not a lead"))}>
+        <Button type="button" variant="danger" size="sm" disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "closed", "Not a lead"))}>
           Not a lead
-        </Quiet>
+        </Button>
       ) : null}
       {open && summary.stage !== "needs_you" ? (
         <Quiet disabled={pending} onClick={() => run(() => moveWorkflowCard(summary.id, "needs_you"))}>
@@ -646,11 +651,6 @@ function CardDialog({
               <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--color-brand-strong)]">
                 <Spark />
                 {asking ? "Thinking…" : step === "book" ? "AI suggests booking it" : step ? "AI suggests this reply" : "No suggestion yet"}
-                <span className="ml-auto">
-                  <Quiet onClick={askAgain} disabled={asking || !card}>
-                    {suggestion ? "Suggest again" : "Suggest"}
-                  </Quiet>
-                </span>
               </div>
             ) : (
               <p className="text-[13px] text-[var(--color-text)]">
@@ -721,10 +721,6 @@ function CardDialog({
               </>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="secondary" onClick={askAgain} disabled={asking || !card}>
-                  {asking ? <Spinner className="h-3.5 w-3.5" /> : <Spark />}
-                  Ask AI again
-                </Button>
                 {open && card?.phone ? (
                   <a href={`tel:${card.phone}`} className={buttonClassName({ variant: "secondary" })}>
                     Call
@@ -749,6 +745,32 @@ function CardDialog({
               </div>
             )}
 
+            {(step === "text" || step === "book") && suggestion?.reason ? (
+              <p className="text-xs text-[var(--color-muted)]">AI: {suggestion.reason}</p>
+            ) : null}
+            {open ? (
+              <form
+                className="flex items-center gap-2 border-t border-[var(--color-border)] pt-2.5"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  askAgain();
+                }}
+              >
+                <Spark className="text-[var(--color-brand-strong)]" />
+                <Input
+                  aria-label="Tell the AI what to do"
+                  value={instruction}
+                  onChange={(event) => setInstruction(event.target.value)}
+                  maxLength={1000}
+                  placeholder="Tell the AI what to do instead. It answers with a new suggestion for you to approve."
+                  className="flex-1"
+                />
+                <Button type="submit" variant="secondary" disabled={asking || !card}>
+                  {asking ? <Spinner className="h-3.5 w-3.5" /> : null}
+                  {instruction.trim() ? "Ask AI" : suggestion ? "Suggest again" : "Suggest"}
+                </Button>
+              </form>
+            ) : null}
             {error ? (
               <p role="alert" className="text-[13px] text-[var(--color-bad)]">
                 {error}

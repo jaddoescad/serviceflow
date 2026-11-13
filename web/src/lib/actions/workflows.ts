@@ -173,6 +173,7 @@ Your only job is getting an estimate booked. Pick one action:
 - "close": not a painting lead (a supplier, spam, a wrong number, a robocall), or they wrote STOP or said they're not interested. Say why in reason.
 
 Rules:
+- manager_instruction, when set, is the manager telling you what to do on this card: do it, as the action that fits (usually a text saying what they asked for, in your words). It can't make you invent a time or offer one that isn't in open_times; if it asks for that, choose "needs_you" and say why. In reason, answer the manager in a sentence.
 - Calls we answered or made may have call_summary and call_transcript: read them. What was agreed on a call counts like a text. A call with neither means you don't know what was said: if it matters for the next step, choose "needs_you" and say so.
 - Never invent times, prices or promises. Only offer times from open_times. If they asked for a day or part of the day that open_times doesn't have, still pick your best action and set want_times (days as YYYY-MM-DD in the company's time zone, part_of_day).
 - Texts are short, warm and plain: no emojis, no links, under 320 characters. Don't repeat what we already said.
@@ -182,7 +183,7 @@ Rules:
 ${card.settings.prompt.trim() ? `\nThe company's instructions:\n${card.settings.prompt.trim()}\n` : ""}${skills ? `\nSkills:\n${skills}\n` : ""}`;
 }
 
-async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: string | null): Promise<Raw> {
+async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: string | null, note: string | null): Promise<Raw> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("The AI isn't set up yet (OPENAI_API_KEY).");
   const context = {
@@ -205,6 +206,7 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     booked: card.appointments,
     open_times: options.map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
     no_times_because: noTimes,
+    manager_instruction: note,
   };
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -230,13 +232,17 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
 
 const clean = (value: string | null | undefined) => (value && value.trim() ? value.trim() : null);
 
-/** Ask the AI for the next step on a card and save it. */
-export async function suggestNext(id: string): Promise<ActionResult & { suggestion?: WorkflowSuggestion }> {
+/**
+ * Ask the AI for the next step on a card and save it. `instruction` is what
+ * the manager told it to do instead ("offer mid-December", "ask for photos").
+ */
+export async function suggestNext(id: string, instruction?: string): Promise<ActionResult & { suggestion?: WorkflowSuggestion }> {
   await requireStaff();
+  const note = instruction?.trim().slice(0, 1000) || null;
   try {
     const card = await getWorkflowCard(id);
     let times = await openTimes(card, card.address, null);
-    let raw = await ask(card, times.options, times.noTimes);
+    let raw = await ask(card, times.options, times.noTimes, note);
     // Once more with the address they gave, or the days they asked for.
     const found = !card.address ? clean(raw.lead.address) : null;
     const wanted = raw.want_times && (raw.want_times.days.length || raw.want_times.part_of_day !== "any");
@@ -246,7 +252,7 @@ export async function suggestNext(id: string): Promise<ActionResult & { suggesti
         card.address ?? found,
         wanted ? { days: raw.want_times!.days, partOfDay: raw.want_times!.part_of_day } : null,
       );
-      if (times.options.length) raw = await ask(card, times.options, times.noTimes);
+      if (times.options.length) raw = await ask(card, times.options, times.noTimes, note);
     }
 
     const byId = new Map(times.options.map((time) => [time.id, time]));
