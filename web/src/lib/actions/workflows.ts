@@ -340,7 +340,8 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-5",
+      model: process.env.OPENAI_MODEL ?? "gpt-6.1-sol",
+      reasoning_effort: process.env.OPENAI_REASONING_EFFORT ?? "low",
       messages: [
         { role: "system", content: instructions(card) },
         { role: "user", content: JSON.stringify(context) },
