@@ -36,6 +36,35 @@ export type WorkflowTime = {
   startsAt: string;
   label: string;
   near: string | null;
+  /** When we texted them this exact time, if we did. */
+  offeredAt?: string | null;
+};
+
+/** A time an approved text offered them. */
+export type WorkflowOfferedTime = { personId: string; person: string | null; startsAt: string; sentAt: string };
+
+/** Everything this person has done with us, across all their deals. */
+export type WorkflowHistory = {
+  deals: { id: string; status: string; createdAt: string; address: string | null; thisCard: boolean }[];
+  proposals: {
+    dealId: string;
+    name: string | null;
+    status: string;
+    amountCents: number | null;
+    sentAt: string | null;
+    acceptedAt: string | null;
+    declinedAt: string | null;
+  }[];
+  jobs: {
+    id: string;
+    name: string | null;
+    status: string;
+    amountCents: number | null;
+    scheduledOn: string | null;
+    completedOn: string | null;
+    address: string | null;
+  }[];
+  pastVisits: { startsAt: string; status: string }[];
 };
 
 export type WorkflowLeadFields = {
@@ -148,7 +177,10 @@ export type WorkflowCardDetail = {
   messages: WorkflowMessage[];
   events: WorkflowEvent[];
   createdAt: string;
+  /** Scheduled visits on any of their deals. */
   appointments: { startsAt: string; with: string | null }[];
+  history: WorkflowHistory;
+  offered: WorkflowOfferedTime[];
   settings: { prompt: string; skills: WorkflowSkill[]; minutes: number };
   people: WorkflowPerson[];
   suggestion: WorkflowSuggestion | null;

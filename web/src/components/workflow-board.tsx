@@ -14,7 +14,7 @@ import {
   suggestNext,
 } from "@/lib/actions/workflows";
 import type { DrawnDay } from "@/lib/booking-types";
-import { dayKey, fmtDate, fmtDateTime, fmtRelativeTime, fmtTime } from "@/lib/format";
+import { dayKey, fmtDate, fmtDateTime, fmtMoney, fmtRelativeTime, fmtTime } from "@/lib/format";
 import {
   WORKFLOW_KINDS,
   WORKFLOW_STAGES,
@@ -32,6 +32,11 @@ import { DayDrawing } from "./suggest-times";
 import { Button, Field, Input, Spinner, TAG_DOT, Tag, buttonClassName, cn } from "./ui";
 
 const MAX_AUTO = 5;
+/** Wait this long after their last message, so the AI reads the whole thought, not half of it. */
+const QUIET_MS = 60_000;
+
+const wantsSuggestion = (card: WorkflowCardSummary) => (card.stage === "new" || card.stage === "communication") && !card.suggestion;
+const stillTyping = (card: WorkflowCardSummary, now: number) => now - new Date(card.activityAt).getTime() < QUIET_MS;
 
 function cameIn(card: Pick<WorkflowCardSummary, "kind" | "source">) {
   return card.kind === "lead" ? card.source?.trim() || "Lead" : WORKFLOW_KINDS[card.kind];
@@ -49,13 +54,26 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
   const [failed, setFailed] = useState<Record<string, string>>({});
   const tried = useRef(new Set<string>());
   const running = useRef(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Cards they're still writing in wait until a minute after their last
+  // message; then the board reloads (in case more came) and suggests.
+  useEffect(() => {
+    const waits = cards
+      .filter((card) => wantsSuggestion(card) && !tried.current.has(card.id) && stillTyping(card, now))
+      .map((card) => QUIET_MS - (now - new Date(card.activityAt).getTime()));
+    if (!waits.length) return;
+    const timer = setTimeout(() => {
+      setNow(Date.now());
+      router.refresh();
+    }, Math.min(...waits) + 1000);
+    return () => clearTimeout(timer);
+  }, [cards, now, router]);
 
   // One at a time, so a burst of calls doesn't fan out.
   useEffect(() => {
     if (running.current) return;
-    const next = cards.find(
-      (card) => (card.stage === "new" || card.stage === "communication") && !card.suggestion && !tried.current.has(card.id),
-    );
+    const next = cards.find((card) => wantsSuggestion(card) && !tried.current.has(card.id) && !stillTyping(card, Date.now()));
     if (!next || tried.current.size >= MAX_AUTO) return;
     running.current = true;
     tried.current.add(next.id);
@@ -69,7 +87,7 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
         setThinking(null);
         router.refresh();
       });
-  }, [cards, router]);
+  }, [cards, now, router]);
 
   const open = cards.find((card) => card.id === openId) ?? null;
 
@@ -100,6 +118,7 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
                       key={card.id}
                       card={card}
                       thinking={thinking === card.id}
+                      waiting={wantsSuggestion(card) && stillTyping(card, now)}
                       failed={failed[card.id]}
                       onOpen={() => setOpenId(card.id)}
                     />
@@ -131,11 +150,13 @@ export function WorkflowBoard({ cards, calendarsConnected }: { cards: WorkflowCa
 function BoardCard({
   card,
   thinking,
+  waiting,
   failed,
   onOpen,
 }: {
   card: WorkflowCardSummary;
   thinking: boolean;
+  waiting: boolean;
   failed?: string;
   onOpen: () => void;
 }) {
@@ -168,6 +189,8 @@ function BoardCard({
             <span className="flex items-center gap-1.5 text-[var(--color-muted)]">
               <Spinner className="h-3 w-3" /> Thinking…
             </span>
+          ) : waiting ? (
+            <span className="text-[var(--color-muted)]">Waiting for them to finish…</span>
           ) : card.suggestion ? (
             card.suggestion.action === "close" ? (
               <Tag tone="gray">Nothing to book</Tag>
@@ -658,6 +681,63 @@ function AiChat({
  * with the AI, which is how the suggestion gets changed, opens from the Ask AI
  * button in the corner.
  */
+const STATUS_WORDS: Record<string, string> = {
+  estimate_scheduled: "Estimate scheduled",
+  proposal_sent: "Proposal sent",
+};
+const statusWord = (status: string) => STATUS_WORDS[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
+
+/** What they've done with us before: the same history the AI reads. */
+function History({ history }: { history: WorkflowCardDetail["history"] | undefined }) {
+  if (!history) return null;
+  const otherDeals = history.deals.filter((deal) => !deal.thisCard);
+  if (!history.proposals.length && !history.jobs.length && !otherDeals.length && !history.pastVisits.length) {
+    return (
+      <div>
+        <h3 className="mb-1.5 text-xs font-semibold text-[var(--color-muted)]">History</h3>
+        <p className="text-[13px] text-[var(--color-muted)]">New to us</p>
+      </div>
+    );
+  }
+  const row = "flex items-baseline justify-between gap-2 text-[13px] leading-5";
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="mb-0.5 text-xs font-semibold text-[var(--color-muted)]">History</h3>
+      {history.jobs.map((job) => (
+        <p key={job.id} className={row}>
+          <span className="min-w-0 truncate text-[var(--color-heading)]">Job · {statusWord(job.status)}</span>
+          <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">
+            {job.completedOn ? fmtDate(job.completedOn) : job.scheduledOn ? fmtDate(job.scheduledOn) : job.amountCents ? fmtMoney(job.amountCents / 100) : ""}
+          </span>
+        </p>
+      ))}
+      {history.proposals.map((proposal, index) => (
+        <p key={`${proposal.dealId}-${index}`} className={row}>
+          <span className="min-w-0 truncate text-[var(--color-heading)]">
+            Proposal · {statusWord(proposal.status)}
+            {proposal.amountCents ? ` · ${fmtMoney(proposal.amountCents / 100)}` : ""}
+          </span>
+          <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">
+            {fmtDate(proposal.acceptedAt ?? proposal.declinedAt ?? proposal.sentAt)}
+          </span>
+        </p>
+      ))}
+      {history.pastVisits.map((visit) => (
+        <p key={visit.startsAt} className={row}>
+          <span className="min-w-0 truncate text-[var(--color-heading)]">Estimate · {statusWord(visit.status === "scheduled" ? "done" : visit.status)}</span>
+          <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">{fmtDate(visit.startsAt)}</span>
+        </p>
+      ))}
+      {otherDeals.map((deal) => (
+        <Link key={deal.id} href={`/deals/${deal.id}`} className={cn(row, "rounded hover:underline")}>
+          <span className="min-w-0 truncate text-[var(--color-heading)]">Deal · {statusWord(deal.status)}</span>
+          <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">{fmtDate(deal.createdAt)}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 // Debug, while testing: the owner's own phone (Jad Slim) gets a button to wipe its thread.
 const TEST_PHONE = "6137001531";
 const isTestPhone = (phone: string | null) => Boolean(phone && phone.replace(/\D/g, "").endsWith(TEST_PHONE));
@@ -759,6 +839,8 @@ function CardDialog({
   const step: Step | null = suggestion?.action ?? null;
   const template = suggestion?.message ?? "";
   const text = template.replace(SLOT, (whole, id: string) => slots[id]?.label ?? whole);
+  // The times this text offers, remembered so their reply books exactly one of them.
+  const offeredTimes = [...template.matchAll(SLOT)].flatMap((match) => slots[match[1]] ?? []);
   const focused = focus === "book" ? bookTime : focus ? (slots[focus] ?? null) : null;
   const needsLead = card ? !card.leadId : false;
   const leadMissing = needsLead && (!lead.name?.trim() || !lead.address?.trim());
@@ -858,6 +940,7 @@ function CardDialog({
                 ))}
               </div>
             ) : null}
+            {card ? <History history={card.history} /> : null}
             <div className="mt-auto flex flex-col gap-1.5">
               {summary.leadId ? (
                 <Link href={`/deals/${summary.leadId}`} className={buttonClassName({ variant: "secondary" })}>
@@ -958,7 +1041,7 @@ function CardDialog({
                   )}
                 </div>
                 {needsLead && (lead.name || lead.address) ? leadFields : null}
-                {open ? primary("Send text", `Send this text to ${summary.name}?`, !text.trim(), () => approveText(summary.id, text, lead)) : null}
+                {open ? primary("Send text", `Send this text to ${summary.name}?`, !text.trim(), () => approveText(summary.id, text, lead, offeredTimes)) : null}
               </>
             ) : step === "book" ? (
               <>

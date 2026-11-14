@@ -27,6 +27,11 @@ const MAX_OPTIONS = 24;
 const AI_OPTIONS = 8;
 const MAX_DAYS = 14;
 
+/** A proposal sent or accepted this recently means they're past the estimate. */
+const LIVE_PROPOSAL_DAYS = 120;
+
+const money = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-CA")}`;
+
 /** Calls shorter than this have nothing worth transcribing. */
 const MIN_CALL_SECONDS = 15;
 
@@ -114,6 +119,79 @@ async function openTimes(
   return { options, days: drawn, noTimes: options.length ? null : "No open times in the next three weeks." };
 }
 
+/**
+ * The times an approved text offered that are still free, so "Tuesday works"
+ * books exactly what we offered. Checked against the calendars again, since a
+ * day can fill up after the text went out.
+ */
+async function offeredStillOpen(card: WorkflowCardDetail, address: string | null): Promise<WorkflowTime[]> {
+  const now = Date.now();
+  const connected = new Set(card.people.filter((person) => person.connected).map((person) => person.id));
+  const offered = (card.offered ?? []).filter((time) => connected.has(time.personId) && new Date(time.startsAt).getTime() > now);
+  if (!offered.length || !address) return [];
+  let windows: { userId: string; starts?: string[]; before: Window["before"]; after: Window["after"] }[];
+  try {
+    const reply = await callEdge<{ windows?: typeof windows }>("booking", {
+      address,
+      minutes: card.settings.minutes,
+      days: [...new Set(offered.map((time) => dayOf(time.startsAt, card.timezone)))],
+      window: "any",
+    });
+    windows = reply.windows ?? [];
+  } catch {
+    return [];
+  }
+  return offered.flatMap((time) => {
+    const at = new Date(time.startsAt).getTime();
+    const window = windows.find((open) => open.userId === time.personId && (open.starts ?? []).some((start) => new Date(start).getTime() === at));
+    if (!window) return [];
+    const near = window.before ?? window.after;
+    return [
+      {
+        id: "",
+        personId: time.personId,
+        person: time.person ?? card.people.find((person) => person.id === time.personId)?.name ?? "",
+        startsAt: time.startsAt,
+        label: workflowTimeLabel(time.startsAt, card.timezone),
+        near: near ? `${near.minutes} min from ${street(near.address)}` : null,
+        offeredAt: time.sentAt,
+      },
+    ];
+  });
+}
+
+/** Open times with the ones we already offered first, numbered t1, t2… */
+async function loadTimes(card: WorkflowCardDetail, address: string | null, preference: Preference | null) {
+  const [times, offered] = await Promise.all([openTimes(card, address, preference), offeredStillOpen(card, address)]);
+  const same = (a: WorkflowTime, b: WorkflowTime) => a.personId === b.personId && new Date(a.startsAt).getTime() === new Date(b.startsAt).getTime();
+  const merged = [...offered, ...times.options.filter((option) => !offered.some((time) => same(time, option)))]
+    .slice(0, MAX_OPTIONS)
+    .map((time, index) => ({ ...time, id: `t${index + 1}` }));
+  return { ...times, options: merged, noTimes: merged.length ? null : times.noTimes };
+}
+
+/**
+ * Hard rules the AI's suggestion can't break: no estimate times for someone
+ * who already has an estimate coming, a job on the go, or a live proposal.
+ * Returns why, for Needs you; null when booking an estimate is fine.
+ */
+function bookingBlock(card: WorkflowCardDetail): string | null {
+  const now = Date.now();
+  const upcoming = card.appointments.find((visit) => new Date(visit.startsAt).getTime() > now);
+  if (upcoming) {
+    return `They already have an estimate ${workflowTimeLabel(upcoming.startsAt, card.timezone)}${upcoming.with ? ` with ${upcoming.with}` : ""}.`;
+  }
+  const job = card.history?.jobs.find((item) => item.status === "active" || item.status === "scheduled");
+  if (job) return `They have a job ${job.status === "scheduled" ? "scheduled" : "on the go"}${job.name ? ` (${job.name})` : ""}. Check before booking another estimate.`;
+  const recent = now - LIVE_PROPOSAL_DAYS * 86_400_000;
+  const proposal = card.history?.proposals.find((item) => {
+    const at = item.status === "accepted" ? item.acceptedAt : item.status === "sent" ? item.sentAt : null;
+    return at && new Date(at).getTime() > recent;
+  });
+  if (proposal) return `They have a proposal ${proposal.status}${proposal.amountCents ? ` (${money(proposal.amountCents)})` : ""}. Check before booking another estimate.`;
+  return null;
+}
+
 /** A line of the manager's chat with the AI about a card. */
 export type WorkflowChatLine = { from: "you" | "ai"; text: string };
 
@@ -178,6 +256,10 @@ Your only job is getting a first on-site estimate booked. Before anything else, 
 
 An estimate is scheduled only if it is in appointments_booked. Nothing else counts: not your own earlier suggestions, not a time we offered in a text. If they or we say an estimate is set but appointments_booked has no upcoming one, choose "needs_you" with reason "They say an estimate is set, but none is booked". Someone asking for another estimate or about another property is a new estimate to book, even if they had one before.
 
+history lists every deal, proposal, job and past visit this person has with us. Use it to answer "is there still an estimate to book": a proposal sent or accepted, or a job scheduled or on the go, means they're past the estimate unless they clearly ask about a different property or new work. A job completed a while ago and a new request means a repeat customer: book a new estimate. A deal with status "estimate_scheduled" but nothing in appointments_booked was booked outside ServiceFlow: choose "needs_you".
+
+times_we_offered are times a manager already texted them. When they agree to one ("Tuesday works", "the first one"), and it is still open (still_open_as gives its id in open_times), choose "book" with that id. If the one they picked is no longer open, offer two new ones and say the other filled up.
+
 Pick one action:
 - "text": a text to send them. Reply to a missed call or voicemail, ask what they need painted, their name and the address, answer a simple question about booking, or offer times. To offer times, offer two from open_times: put their ids in time_ids, and in the message write each one as its id in double braces, like "Would {{t1}} or {{t3}} work for a free estimate?". Never write the day or time out yourself; the braces become "Tuesday, Nov 17 at 10:30 AM".
 - "book": they agreed to one of open_times. Put its id in book_time_id and write nothing in message. For someone with no lead yet, fill lead.name and lead.address.
@@ -217,9 +299,26 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
       call_next_steps: message.call?.nextSteps,
       call_transcript: message.call?.transcript?.slice(0, 6000),
     })),
-    // Real appointments on the lead; the only proof an estimate is scheduled.
-    appointments_booked: card.appointments,
-    open_times: options.slice(0, AI_OPTIONS).map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
+    // Real appointments on any of their deals; the only proof an estimate is scheduled.
+    appointments_booked: card.appointments.map((visit) => ({
+      when: workflowTimeLabel(visit.startsAt, card.timezone),
+      with: visit.with,
+      upcoming: new Date(visit.startsAt).getTime() > Date.now(),
+    })),
+    history: describeHistory(card),
+    times_we_offered: (card.offered ?? []).map((time) => ({
+      when: workflowTimeLabel(time.startsAt, card.timezone),
+      with: time.person,
+      texted: workflowTimeLabel(time.sentAt, card.timezone),
+      still_open_as: options.find((option) => option.offeredAt && option.personId === time.personId && new Date(option.startsAt).getTime() === new Date(time.startsAt).getTime())?.id ?? null,
+    })),
+    open_times: options.slice(0, AI_OPTIONS).map(({ id, label, person, near, offeredAt }) => ({
+      id,
+      when: label,
+      with: person,
+      near,
+      ...(offeredAt ? { we_offered_it: true } : {}),
+    })),
     no_times_because: noTimes,
     // Only while the manager is chatting, so a fresh run after a new message
     // isn't swayed by a draft nobody approved.
@@ -241,7 +340,7 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+      model: process.env.OPENAI_MODEL ?? "gpt-5",
       messages: [
         { role: "system", content: instructions(card) },
         { role: "user", content: JSON.stringify(context) },
@@ -259,6 +358,33 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
   return JSON.parse(content) as Raw;
 }
 
+/** Their deals, proposals, jobs and past visits, in words the AI reads easily. */
+function describeHistory(card: WorkflowCardDetail) {
+  const history = card.history;
+  if (!history) return null;
+  const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: card.timezone, year: "numeric", month: "short", day: "numeric" }) : null);
+  return {
+    deals: history.deals.map((deal) => ({ status: deal.status, started: day(deal.createdAt), address: deal.address, this_card: deal.thisCard })),
+    proposals: history.proposals.map((proposal) => ({
+      name: proposal.name,
+      status: proposal.status,
+      amount: proposal.amountCents ? money(proposal.amountCents) : null,
+      sent: day(proposal.sentAt),
+      accepted: day(proposal.acceptedAt),
+      declined: day(proposal.declinedAt),
+    })),
+    jobs: history.jobs.map((job) => ({
+      name: job.name,
+      status: job.status,
+      amount: job.amountCents ? money(job.amountCents) : null,
+      scheduled: job.scheduledOn,
+      completed: job.completedOn,
+      address: job.address,
+    })),
+    past_visits: history.pastVisits.map((visit) => ({ when: day(visit.startsAt), status: visit.status })),
+  };
+}
+
 const clean = (value: string | null | undefined) => (value && value.trim() ? value.trim() : null);
 
 /**
@@ -267,13 +393,13 @@ const clean = (value: string | null | undefined) => (value && value.trim() ? val
  */
 async function decide(id: string, chat: WorkflowChatLine[] | null) {
     const card = await getWorkflowCard(id);
-    let times = await openTimes(card, card.address, null);
+    let times = await loadTimes(card, card.address, null);
     let raw = await ask(card, times.options, times.noTimes, chat);
     // Once more with the address they gave, or the days they asked for.
     const found = !card.address ? clean(raw.lead.address) : null;
     const wanted = raw.want_times && (raw.want_times.days.length || raw.want_times.part_of_day !== "any");
     if ((found && (raw.action === "text" || raw.action === "book")) || wanted) {
-      times = await openTimes(
+      times = await loadTimes(
         card,
         card.address ?? found,
         wanted ? { days: raw.want_times!.days, partOfDay: raw.want_times!.part_of_day } : null,
@@ -313,6 +439,11 @@ async function decide(id: string, chat: WorkflowChatLine[] | null) {
     }
     if (suggestion.action === "text" && !suggestion.message) {
       suggestion = { ...suggestion, action: "needs_you", reason: "The AI didn't write a text." };
+    }
+    // The hard rules. A manager telling it what to do in the chat overrides them.
+    const block = chat ? null : bookingBlock(card);
+    if (block && (suggestion.action === "book" || (suggestion.action === "text" && suggestion.times.length))) {
+      suggestion = { ...suggestion, action: "needs_you", summary: "Wanted to book an estimate; check first", reason: block };
     }
     return { answer: raw.answer.trim().slice(0, 2000), update: chat ? raw.update_suggestion : true, suggestion };
 }
@@ -388,9 +519,23 @@ const leadArgs = (lead: WorkflowLeadFields) => ({
   requested_request: clean(lead.request),
 });
 
-/** Send the approved text (making them a lead first when their name and address are known). */
-export async function approveText(id: string, message: string, lead: WorkflowLeadFields): Promise<ActionResult> {
-  return staffWrite("workflow_send_text", { requested_card: id, requested_body: message, ...leadArgs(lead) }, PATHS);
+/**
+ * Send the approved text (making them a lead first when their name and
+ * address are known), and remember the times it offered so their reply can
+ * be booked as exactly that time.
+ */
+export async function approveText(
+  id: string,
+  message: string,
+  lead: WorkflowLeadFields,
+  offered: Pick<WorkflowTime, "personId" | "person" | "startsAt">[] = [],
+): Promise<ActionResult> {
+  const sent = await staffWrite("workflow_send_text", { requested_card: id, requested_body: message, ...leadArgs(lead) }, PATHS);
+  if (!sent.ok) return sent;
+  const times = offered.slice(0, 6).map(({ personId, person, startsAt }) => ({ personId, person, startsAt }));
+  // The text went out either way; a miss here only loses the shortcut.
+  if (times.length) await staffWrite("workflow_save_offered", { requested_card: id, requested_offered: times }, PATHS).catch(() => null);
+  return sent;
 }
 
 /** Book the approved time. */
