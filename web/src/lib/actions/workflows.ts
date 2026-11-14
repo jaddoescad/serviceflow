@@ -263,6 +263,7 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     now: card.now,
     timezone: card.timezone,
     came_in_as: card.kind === "lead" ? `Lead (${card.source ?? "form"})` : card.kind.replace("_", " "),
+    trigger: describeTrigger(card),
     lead_exists: Boolean(card.leadId),
     lead_status: card.leadStatus,
     customer: { name: card.name, phone: card.phone, email: card.email, address: card.address },
@@ -335,6 +336,49 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
   const content = json?.choices?.[0]?.message?.content;
   if (!content) throw new Error("The AI gave no answer.");
   return JSON.parse(content) as Raw;
+}
+
+/**
+ * What just happened on the card, so the AI follows the right playbook in
+ * Settings: a new lead form, a missed call, a voicemail, a call we answered,
+ * a text or an email. Plain facts; the playbooks decide what to do with them.
+ */
+function describeTrigger(card: WorkflowCardDetail) {
+  const created = new Date(card.createdAt).getTime();
+  const inbound = card.messages.filter((message) => message.direction === "inbound");
+  const last = inbound.at(-1);
+  const isLeadForm = card.kind === "lead" && !inbound.some((message) => new Date(message.at).getTime() >= created);
+  const typeOf = (message: (typeof inbound)[number]) =>
+    message.channel === "call"
+      ? message.text?.startsWith("Voicemail:")
+        ? "voicemail"
+        : message.call?.answered
+          ? "answered_call"
+          : "missed_call"
+      : message.channel === "email"
+        ? "email"
+        : "text";
+  const type = isLeadForm || !last ? (card.kind === "lead" ? "lead_form" : card.kind) : typeOf(last);
+  const at = isLeadForm || !last ? card.createdAt : last.at;
+  // Missed calls back to back, with nothing from us in between.
+  let missedInARow = 0;
+  for (const message of [...card.messages].reverse()) {
+    if (message.direction === "outbound") break;
+    if (message.channel === "call" && typeOf(message) === "missed_call") missedInARow += 1;
+    else break;
+  }
+  const before = card.messages.filter((message) => new Date(message.at).getTime() < new Date(at).getTime());
+  const history = card.history;
+  return {
+    type,
+    at: workflowTimeLabel(at, card.timezone),
+    missed_calls_in_a_row: missedInARow,
+    // Nothing from them or us before this, and no other deals, proposals or jobs.
+    first_contact:
+      !before.length &&
+      !(history?.deals.some((deal) => !deal.thisCard) || history?.proposals.length || history?.jobs.length || history?.pastVisits.length),
+    we_texted_since: card.messages.some((message) => message.direction === "outbound" && new Date(message.at).getTime() > new Date(at).getTime()),
+  };
 }
 
 /** Their deals, proposals, jobs and past visits, in words the AI reads easily. */
