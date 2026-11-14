@@ -264,6 +264,7 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     timezone: card.timezone,
     came_in_as: card.kind === "lead" ? `Lead (${card.source ?? "form"})` : card.kind.replace("_", " "),
     trigger: describeTrigger(card),
+    estimate_minutes: card.settings.minutes,
     lead_exists: Boolean(card.leadId),
     lead_status: card.leadStatus,
     customer: { name: card.name, phone: card.phone, email: card.email, address: card.address },
