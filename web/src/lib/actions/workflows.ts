@@ -206,16 +206,18 @@ type Raw = {
   book_time_id: string | null;
   lead: WorkflowLeadFields;
   want_times: { days: string[]; part_of_day: Preference["partOfDay"] } | null;
+  thinks_estimate_booked: boolean;
 };
 
 const nullableString = { type: ["string", "null"] };
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["answer", "update_suggestion", "action", "summary", "reason", "message", "time_ids", "book_time_id", "lead", "want_times"],
+  required: ["answer", "update_suggestion", "action", "summary", "reason", "message", "time_ids", "book_time_id", "lead", "want_times", "thinks_estimate_booked"],
   properties: {
     answer: { type: "string" },
     update_suggestion: { type: "boolean" },
+    thinks_estimate_booked: { type: "boolean" },
     action: { type: "string", enum: ["text", "book", "wait", "needs_you", "close"] },
     summary: { type: "string" },
     reason: { type: "string" },
@@ -266,7 +268,6 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
     trigger: describeTrigger(card),
     estimate_minutes: card.settings.minutes,
     lead_exists: Boolean(card.leadId),
-    lead_status: card.leadStatus,
     customer: { name: card.name, phone: card.phone, email: card.email, address: card.address },
     opted_out_of_texts: card.optedOut,
     notes: card.notes,
@@ -388,7 +389,8 @@ function describeHistory(card: WorkflowCardDetail) {
   if (!history) return null;
   const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: card.timezone, year: "numeric", month: "short", day: "numeric" }) : null);
   return {
-    deals: history.deals.map((deal) => ({ status: deal.status, started: day(deal.createdAt), address: deal.address, this_card: deal.thisCard })),
+    // No deal status: whether an estimate is booked comes from appointments_booked only.
+    deals: history.deals.map((deal) => ({ started: day(deal.createdAt), address: deal.address, this_card: deal.thisCard })),
     proposals: history.proposals.map((proposal) => ({
       name: proposal.name,
       status: proposal.status,
@@ -463,6 +465,16 @@ async function decide(id: string, chat: WorkflowChatLine[] | null) {
     }
     if (suggestion.action === "text" && !suggestion.message) {
       suggestion = { ...suggestion, action: "needs_you", reason: "The AI didn't write a text." };
+    }
+    // Only a real upcoming appointment means an estimate is booked, whatever the AI read.
+    const hasUpcoming = card.appointments.some((visit) => new Date(visit.startsAt).getTime() > Date.now());
+    if (!chat && raw.thinks_estimate_booked && !hasUpcoming) {
+      suggestion = {
+        ...suggestion,
+        action: "needs_you",
+        summary: "AI thinks an estimate is booked; none is",
+        reason: "The AI thinks they already have an estimate booked, but there's no upcoming appointment. Check before replying.",
+      };
     }
     // The hard rules. A manager telling it what to do in the chat overrides them.
     const block = chat ? null : bookingBlock(card);
