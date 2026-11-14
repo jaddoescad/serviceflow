@@ -176,6 +176,8 @@ function instructions(card: WorkflowCardDetail) {
 
 Your only job is getting a first on-site estimate booked. Before anything else, ask yourself: is there still an estimate to book with this person? If the conversation or lead_status shows they are past that (the estimate already happened, they have or accepted a proposal, they are talking about the job itself, colours, paint, start dates, crew, invoices or payment), there is nothing to book: choose "close" and say so in reason, like "Proposal accepted; no estimate to book". Never offer estimate times to someone who already has a proposal or a job.
 
+An estimate is scheduled only if it is in appointments_booked. Nothing else counts: not your own earlier suggestions, not a time we offered in a text. If they or we say an estimate is set but appointments_booked has no upcoming one, choose "needs_you" with reason "They say an estimate is set, but none is booked". Someone asking for another estimate or about another property is a new estimate to book, even if they had one before.
+
 Pick one action:
 - "text": a text to send them. Reply to a missed call or voicemail, ask what they need painted, their name and the address, answer a simple question about booking, or offer times. To offer times, offer two from open_times: put their ids in time_ids, and in the message write each one as its id in double braces, like "Would {{t1}} or {{t3}} work for a free estimate?". Never write the day or time out yourself; the braces become "Tuesday, Nov 17 at 10:30 AM".
 - "book": they agreed to one of open_times. Put its id in book_time_id and write nothing in message. For someone with no lead yet, fill lead.name and lead.address.
@@ -215,11 +217,15 @@ async function ask(card: WorkflowCardDetail, options: WorkflowTime[], noTimes: s
       call_next_steps: message.call?.nextSteps,
       call_transcript: message.call?.transcript?.slice(0, 6000),
     })),
-    booked: card.appointments,
+    // Real appointments on the lead; the only proof an estimate is scheduled.
+    appointments_booked: card.appointments,
     open_times: options.slice(0, AI_OPTIONS).map(({ id, label, person, near }) => ({ id, when: label, with: person, near })),
     no_times_because: noTimes,
-    current_suggestion: card.suggestion
+    // Only while the manager is chatting, so a fresh run after a new message
+    // isn't swayed by a draft nobody approved.
+    current_suggestion: chat && card.suggestion
       ? {
+          status: "Draft only: not approved, nothing was sent or booked.",
           action: card.suggestion.action,
           summary: card.suggestion.summary,
           reason: card.suggestion.reason,
