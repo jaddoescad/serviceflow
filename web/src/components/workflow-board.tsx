@@ -10,6 +10,7 @@ import {
   getWorkflowDay,
   getWorkflowCard,
   moveWorkflowCard,
+  resetWorkflowTestCard,
   suggestNext,
 } from "@/lib/actions/workflows";
 import type { DrawnDay } from "@/lib/booking-types";
@@ -657,6 +658,10 @@ function AiChat({
  * with the AI, which is how the suggestion gets changed, opens from the Ask AI
  * button in the corner.
  */
+// Debug, while testing: the owner's own phone (Jad Slim) gets a button to wipe its thread.
+const TEST_PHONE = "6137001531";
+const isTestPhone = (phone: string | null) => Boolean(phone && phone.replace(/\D/g, "").endsWith(TEST_PHONE));
+
 function CardDialog({
   summary,
   onClose,
@@ -862,6 +867,16 @@ function CardDialog({
               {summary.stage === "closed" ? (
                 <Button type="button" variant="secondary" disabled={pending} onClick={() => move("new")}>
                   Reopen
+                </Button>
+              ) : null}
+              {isTestPhone(summary.phone) ? (
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={pending}
+                  onClick={() => sure("Debug: delete this test thread's texts and card so you can test again?", () => resetWorkflowTestCard(summary.id))}
+                >
+                  Clear test thread
                 </Button>
               ) : null}
             </div>

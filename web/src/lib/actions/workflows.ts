@@ -410,6 +410,11 @@ export async function moveWorkflowCard(id: string, stage: WorkflowStage, reason?
   return staffWrite("workflow_move", { requested_card: id, requested_stage: stage, requested_reason: reason ?? null }, PATHS);
 }
 
+/** Debug: wipe the owner's test thread (its texts and card) so the next text starts fresh. */
+export async function resetWorkflowTestCard(id: string): Promise<ActionResult> {
+  return staffWrite("workflow_debug_reset", { requested_card: id }, PATHS);
+}
+
 export async function saveWorkflowSettings(prompt: string, skills: WorkflowSkill[], minutes: number): Promise<ActionResult> {
   return staffWrite(
     "save_workflow_settings",
