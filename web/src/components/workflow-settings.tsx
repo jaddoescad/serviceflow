@@ -57,15 +57,16 @@ export function WorkflowSettingsForm({
       <SettingsSection
         id="prompt"
         title="Prompt"
-        description="How the AI should talk and what to know about your company. Out of scope (prices, complaints, existing jobs) always goes to Needs you."
+        description="Everything the AI is told: its job, when to text, book, wait, close or send to Needs you, how texts should sound, and what to know about your company. It reads each card's conversation, history and open times, and answers in a fixed format."
       >
         <Textarea
           aria-label="Prompt"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          rows={10}
-          maxLength={8000}
-          placeholder="We're Ottawa Painters. Sign texts as Ottawa Painters. Estimates are free and take about an hour…"
+          rows={28}
+          maxLength={20000}
+          className="font-mono text-[12.5px] leading-5"
+          placeholder="You help a painting company's office book on-site estimates…"
         />
       </SettingsSection>
 
